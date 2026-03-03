@@ -37,12 +37,14 @@ module.exports = async function seedCausas(prisma) {
           codigoCnj: causa.codigoCnj,
           descricao: causa.descricao,
           ativo: true,
+          isOficial: false,
         },
         create: {
           tenantId: tenant.id,
           nome: causa.nome,
           codigoCnj: causa.codigoCnj,
           descricao: causa.descricao,
+          isOficial: false,
         },
       });
     }

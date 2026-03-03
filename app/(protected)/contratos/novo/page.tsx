@@ -36,6 +36,10 @@ import {
   useProcuracoesDisponiveis,
 } from "@/app/hooks/use-clientes";
 import { useDadosBancariosAtivos } from "@/app/hooks/use-dados-bancarios";
+import {
+  useModelosContrato,
+  useTiposModeloContrato,
+} from "@/app/hooks/use-modelos-contrato";
 import { Select, SelectItem } from "@heroui/react";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 
@@ -86,6 +90,11 @@ export default function NovoContratoPage() {
     useProcuracoesDisponiveis(formData.clienteId || null);
   const { dadosBancarios, isLoading: isLoadingDadosBancarios } =
     useDadosBancariosAtivos();
+  const { tipos, isLoading: isLoadingTiposContrato } = useTiposModeloContrato();
+  const { modelos, isLoading: isLoadingModelosContrato } = useModelosContrato({
+    ativo: true,
+    tipoId: formData.tipoContratoId || undefined,
+  });
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente: any) => cliente.id)),
     [clientes],
@@ -102,6 +111,22 @@ export default function NovoContratoPage() {
     formData.dadosBancariosId &&
     dadosBancariosKeys.has(formData.dadosBancariosId)
       ? [formData.dadosBancariosId]
+      : [];
+  const tipoContratoKeySet = useMemo(
+    () => new Set((tipos || []).map((tipo) => tipo.id)),
+    [tipos],
+  );
+  const modeloContratoKeySet = useMemo(
+    () => new Set((modelos || []).map((modelo) => modelo.id)),
+    [modelos],
+  );
+  const selectedTipoContratoKeys =
+    formData.tipoContratoId && tipoContratoKeySet.has(formData.tipoContratoId)
+      ? [formData.tipoContratoId]
+      : [];
+  const selectedModeloContratoKeys =
+    formData.modeloContratoId && modeloContratoKeySet.has(formData.modeloContratoId)
+      ? [formData.modeloContratoId]
       : [];
   const selectedProcuracaoKeys =
     procuracaoSelecionada &&
@@ -154,6 +179,18 @@ export default function NovoContratoPage() {
       setVincularProcuracao(true);
     }
   }, [formData.clienteId, returnProcuracaoId, autoVincularProcuracao]);
+
+  useEffect(() => {
+    if (
+      formData.modeloContratoId &&
+      !modeloContratoKeySet.has(formData.modeloContratoId)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        modeloContratoId: undefined,
+      }));
+    }
+  }, [formData.modeloContratoId, modeloContratoKeySet]);
 
   if (isLoadingClientes && !clienteIdParam) {
     return (
@@ -427,6 +464,68 @@ export default function NovoContratoPage() {
                 setFormData((prev) => ({ ...prev, titulo: value }))
               }
             />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select
+                description="Classificação para relatórios e filtros operacionais."
+                isLoading={isLoadingTiposContrato}
+                label="Tipo de contrato"
+                placeholder="Selecione o tipo"
+                selectedKeys={selectedTipoContratoKeys}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    tipoContratoId: selected || undefined,
+                    modeloContratoId:
+                      selected && selected === prev.tipoContratoId
+                        ? prev.modeloContratoId
+                        : undefined,
+                  }));
+                }}
+              >
+                {(tipos || []).map((tipo) => (
+                  <SelectItem key={tipo.id} textValue={tipo.nome}>
+                    {tipo.nome}
+                  </SelectItem>
+                ))}
+              </Select>
+
+              <Select
+                description="Modelo pronto para iniciar o texto-base do contrato."
+                isDisabled={!formData.tipoContratoId || isLoadingModelosContrato}
+                isLoading={isLoadingModelosContrato}
+                label="Modelo de contrato"
+                placeholder={
+                  formData.tipoContratoId
+                    ? "Selecione um modelo"
+                    : "Escolha o tipo primeiro"
+                }
+                selectedKeys={selectedModeloContratoKeys}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    modeloContratoId: selected || undefined,
+                  }));
+                }}
+              >
+                {(modelos || []).map((modelo) => (
+                  <SelectItem key={modelo.id} textValue={modelo.nome}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">{modelo.nome}</span>
+                      {modelo.categoria ? (
+                        <span className="text-xs text-default-400">
+                          {modelo.categoria}
+                        </span>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
 
             {/* Nota sobre vinculação de procuração */}
             {formData.clienteId && (

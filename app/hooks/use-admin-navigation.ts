@@ -60,6 +60,12 @@ export function useAdminNavigation() {
         description: "Base de dados de juízes",
       },
       {
+        label: "Causas Oficiais",
+        href: "/admin/causas",
+        icon: "Causas",
+        description: "Sincronizar catálogo oficial de causas por tenant",
+      },
+      {
         label: "Pacotes Premium",
         href: "/admin/pacotes",
         icon: "Crown",

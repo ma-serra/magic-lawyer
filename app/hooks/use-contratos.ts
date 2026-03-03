@@ -1,8 +1,11 @@
 import useSWR from "swr";
 
 import {
+  type ContratoListFilters,
+  type ContratoListPaginatedResult,
   getAllContratos,
   getContratoById,
+  getContratosPaginated,
   getContratosComParcelas,
 } from "@/app/actions/contratos";
 
@@ -29,6 +32,72 @@ export function useAllContratos() {
 
   return {
     contratos: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+    refresh: mutate,
+  };
+}
+
+/**
+ * Hook para buscar contratos com paginação server-side
+ */
+export function useContratosPaginated(params: {
+  page: number;
+  pageSize: number;
+  filtros?: ContratoListFilters;
+}) {
+  const { page, pageSize, filtros } = params;
+  const key = [
+    "contratos-paginated",
+    page,
+    pageSize,
+    filtros?.search ?? "",
+    filtros?.status ?? "",
+    filtros?.clienteId ?? "",
+    filtros?.advogadoId ?? "",
+    filtros?.tipoId ?? "",
+    filtros?.modeloId ?? "",
+    String(filtros?.comArquivo ?? ""),
+    String(filtros?.valorMin ?? ""),
+    String(filtros?.valorMax ?? ""),
+    filtros?.ordenacao ?? "recente",
+  ];
+
+  const { data, error, isLoading, mutate } = useSWR<ContratoListPaginatedResult>(
+    key,
+    async () => {
+      const result = await getContratosPaginated({
+        page,
+        pageSize,
+        filtros,
+      });
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Erro ao carregar contratos");
+      }
+
+      return result.data;
+    },
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    },
+  );
+
+  return {
+    data,
+    contratos: data?.items ?? [],
+    metrics: data?.metrics,
+    pagination: data
+      ? {
+          page: data.page,
+          pageSize: data.pageSize,
+          total: data.total,
+          totalPages: data.totalPages,
+        }
+      : undefined,
     isLoading,
     isError: !!error,
     error,

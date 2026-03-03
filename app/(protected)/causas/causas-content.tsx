@@ -1,31 +1,46 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Button } from "@heroui/button";
-import { Input, Textarea } from "@heroui/input";
-import { Chip } from "@heroui/chip";
-import { Divider } from "@heroui/divider";
-import { Switch } from "@heroui/switch";
 import {
+  Button,
+  Card,
+  CardBody,
+  Chip,
+  Divider,
+  Input,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
-} from "@heroui/modal";
-import { Skeleton } from "@heroui/react";
-import { Plus, RefreshCw, Edit3 } from "lucide-react";
-import { toast } from "@/lib/toast";
+  Pagination,
+  Select,
+  SelectItem,
+  Skeleton,
+  Switch,
+  Textarea,
+} from "@heroui/react";
+import { Edit3, Filter, Search } from "lucide-react";
 
 import {
-  listCausas,
   createCausa,
-  updateCausa,
+  listCausas,
   setCausaAtiva,
+  syncCausasOficiais,
+  updateCausa,
+  type CausasListResult,
+  type CausasListParams,
 } from "@/app/actions/causas";
-import { title } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader, PeoplePanel } from "@/components/people-ui";
+import { toast } from "@/lib/toast";
+
+const PAGE_SIZE_OPTIONS = [12, 24, 48];
+
+type CausaStatusFilter = "all" | "ativas" | "arquivadas";
+type CausaOrigemFilter = "all" | "oficiais" | "internas";
+type CausaOrderBy = "nome" | "createdAt" | "updatedAt";
+type CausaOrderDirection = "asc" | "desc";
 
 interface CausaDto {
   id: string;
@@ -33,45 +48,240 @@ interface CausaDto {
   codigoCnj: string | null;
   descricao: string | null;
   ativo: boolean;
+  isOficial: boolean;
   createdAt: string;
   updatedAt: string;
+  processoCount?: number | null;
+  diligenciaCount?: number | null;
+  peticaoCount?: number | null;
+  prazoCount?: number | null;
 }
 
-const causasFetcher = async () => {
-  const result = await listCausas();
+interface CausasPagedResponse {
+  causas: CausaDto[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  filtros?: {
+    totalAtivas?: number;
+    totalArquivadas?: number;
+    totalOficiais?: number;
+  };
+}
 
-  if (!result.success) {
-    throw new Error(result.error || "Erro ao carregar causas");
+interface FormState {
+  nome: string;
+  codigoCnj: string;
+  descricao: string;
+}
+
+function getSingleSelectionKey(value: unknown): string | undefined {
+  if (!value || value === "all") {
+    return undefined;
   }
 
-  return result.causas?.map((causa) => ({
-    ...causa,
-    createdAt: causa.createdAt.toISOString(),
-    updatedAt: causa.updatedAt.toISOString(),
-  })) as CausaDto[];
-};
+  if (value instanceof Set) {
+    const first = Array.from(value)[0];
 
-export function CausasContent() {
-  const { data, mutate, isLoading, isValidating } = useSWR(
-    "causas",
-    causasFetcher,
-    {
-      revalidateOnFocus: false,
-    },
-  );
+    if (typeof first === "string" && first !== "all") {
+      return first;
+    }
+  }
 
-  const [form, setForm] = useState({
+  return typeof value === "string" ? value : undefined;
+}
+
+interface CausasContentProps {
+  canSyncOficiais?: boolean;
+}
+
+export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
+  const [filtros, setFiltros] = useState({
+    search: "",
+    status: "all" as CausaStatusFilter,
+    origem: "all" as CausaOrigemFilter,
+    orderBy: "nome" as CausaOrderBy,
+    orderDirection: "asc" as CausaOrderDirection,
+  });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
+  const [createForm, setCreateForm] = useState<FormState>({
+    nome: "",
+    codigoCnj: "",
+    descricao: "",
+  });
+  const [editingCausa, setEditingCausa] = useState<CausaDto | null>(null);
+  const [editForm, setEditForm] = useState<FormState>({
     nome: "",
     codigoCnj: "",
     descricao: "",
   });
   const [isCreating, setIsCreating] = useState(false);
-  const [editingCausa, setEditingCausa] = useState<CausaDto | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSyncingOficiais, setIsSyncingOficiais] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState<Set<string>>(new Set());
 
-  const causas = useMemo(() => data ?? [], [data]);
+  const swrKey = useMemo(
+    () => [
+      "causas",
+      filtros.search.trim().toLowerCase(),
+      filtros.status,
+      filtros.origem,
+      filtros.orderBy,
+      filtros.orderDirection,
+      page,
+      pageSize,
+    ],
+    [
+      filtros.search,
+      filtros.status,
+      filtros.origem,
+      filtros.orderBy,
+      filtros.orderDirection,
+      page,
+      pageSize,
+    ],
+  );
+
+  const fetcher = useCallback(async () => {
+    const params: CausasListParams = {
+      search: filtros.search || undefined,
+      status: filtros.status,
+      origem: filtros.origem,
+      orderBy: filtros.orderBy,
+      orderDirection: filtros.orderDirection,
+      page,
+      pageSize,
+    };
+    const result = await listCausas(params);
+
+    if (!result.success) {
+      throw new Error(result.error || "Erro ao carregar causas");
+    }
+
+    const paginated = result as CausasListResult;
+    const causaItems = paginated.causas.map((causa) => ({
+      ...causa,
+      createdAt: causa.createdAt.toISOString(),
+      updatedAt: causa.updatedAt.toISOString(),
+    }));
+
+    return {
+      causas: causaItems,
+      total: paginated.total ?? causaItems.length,
+      page: paginated.page ?? page,
+      pageSize: paginated.pageSize ?? pageSize,
+      totalPages:
+        paginated.totalPages ??
+        Math.max(1, Math.ceil((paginated.total ?? causaItems.length) / pageSize)),
+      filtros: paginated.filtros,
+    } satisfies CausasPagedResponse;
+  }, [
+    filtros.search,
+    filtros.status,
+    filtros.origem,
+    filtros.orderBy,
+    filtros.orderDirection,
+    page,
+    pageSize,
+  ]);
+
+  const { data, mutate, isLoading } = useSWR<CausasPagedResponse>(swrKey, fetcher, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+  });
+
+  const causas = useMemo<CausaDto[]>(() => data?.causas ?? [], [data]);
+  const total = data?.total ?? causas.length;
+  const totalPages = data?.totalPages ?? 1;
+  const totalAtivas = data?.filtros?.totalAtivas ?? causas.filter((item) => item.ativo).length;
+  const totalArquivadas = data?.filtros?.totalArquivadas ?? causas.filter((item) => !item.ativo).length;
+  const totalOficiais = data?.filtros?.totalOficiais ?? causas.filter((item) => item.isOficial).length;
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filtros.search,
+    filtros.status,
+    filtros.origem,
+    filtros.orderBy,
+    filtros.orderDirection,
+    pageSize,
+  ]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(Math.max(totalPages, 1));
+    }
+  }, [page, totalPages]);
+
+  const limparForm = useCallback(() => {
+    setCreateForm({ nome: "", codigoCnj: "", descricao: "" });
+  }, []);
+
+  const setFiltroStatus = (value: unknown) => {
+    const nextStatus = getSingleSelectionKey(value) || "all";
+    setFiltros((prev) => ({ ...prev, status: nextStatus as CausaStatusFilter }));
+  };
+
+  const setFiltroOrigem = (value: unknown) => {
+    const nextOrigem = getSingleSelectionKey(value) || "all";
+    setFiltros((prev) => ({ ...prev, origem: nextOrigem as CausaOrigemFilter }));
+  };
+
+  const setFiltroOrdem = (value: unknown) => {
+    const next = getSingleSelectionKey(value);
+
+    if (!next) {
+      return;
+    }
+
+    if (next === "nome") {
+      setFiltros((prev) => ({
+        ...prev,
+        orderBy: "nome",
+        orderDirection: "asc",
+      }));
+      return;
+    }
+
+    if (next === "createdAt") {
+      setFiltros((prev) => ({
+        ...prev,
+        orderBy: "createdAt",
+        orderDirection: "desc",
+      }));
+      return;
+    }
+
+    if (next === "updatedAt") {
+      setFiltros((prev) => ({
+        ...prev,
+        orderBy: "updatedAt",
+        orderDirection: "desc",
+      }));
+    }
+  };
+
+  const setPageSizeValue = (value: unknown) => {
+    const next = getSingleSelectionKey(value);
+
+    if (!next) {
+      return;
+    }
+
+    const parsed = Number(next);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    setPageSize(parsed);
+  };
 
   const handleCreate = useCallback(async () => {
-    if (!form.nome.trim()) {
+    if (!createForm.nome.trim()) {
       toast.error("Informe o nome da causa");
 
       return;
@@ -81,9 +291,9 @@ export function CausasContent() {
 
     try {
       const result = await createCausa({
-        nome: form.nome.trim(),
-        codigoCnj: form.codigoCnj.trim() || undefined,
-        descricao: form.descricao.trim() || undefined,
+        nome: createForm.nome.trim(),
+        codigoCnj: createForm.codigoCnj.trim() || undefined,
+        descricao: createForm.descricao.trim() || undefined,
       });
 
       if (!result.success) {
@@ -93,47 +303,101 @@ export function CausasContent() {
       }
 
       toast.success("Causa criada com sucesso");
-      setForm({ nome: "", codigoCnj: "", descricao: "" });
+      limparForm();
       await mutate();
     } catch {
       toast.error("Erro ao criar causa");
     } finally {
       setIsCreating(false);
     }
-  }, [form, mutate]);
+  }, [createForm, limparForm, mutate]);
 
   const handleToggleAtiva = useCallback(
     async (causa: CausaDto, ativo: boolean) => {
-      const previous = causa.ativo;
-
-      if (previous === ativo) return;
-
-      const result = await setCausaAtiva(causa.id, ativo);
-
-      if (!result.success) {
-        toast.error(result.error || "Erro ao atualizar status");
-
+      if (causa.ativo === ativo) {
         return;
       }
 
-      await mutate();
-      toast.success("Status atualizado");
+      setIsUpdatingStatus((prev) => {
+        const next = new Set(prev);
+
+        next.add(causa.id);
+
+        return next;
+      });
+
+      try {
+        const result = await setCausaAtiva(causa.id, ativo);
+
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar status");
+
+          return;
+        }
+
+        await mutate();
+        toast.success("Status atualizado");
+      } catch {
+        toast.error("Erro ao atualizar status");
+      } finally {
+        setIsUpdatingStatus((prev) => {
+          const next = new Set(prev);
+
+          next.delete(causa.id);
+
+          return next;
+        });
+      }
     },
     [mutate],
   );
 
-  const handleOpenEdit = useCallback((causa: CausaDto) => {
+  const causaMetaRows = (causa: CausaDto) => {
+    const rows = [
+      `Processos: ${causa.processoCount ?? 0}`,
+      `Diligências: ${causa.diligenciaCount ?? 0}`,
+      `Petições: ${causa.peticaoCount ?? 0}`,
+    ].filter(Boolean);
+
+    return rows.join(" • ");
+  };
+
+  const openEdit = useCallback((causa: CausaDto) => {
     setEditingCausa(causa);
+    setEditForm({
+      nome: causa.nome,
+      codigoCnj: causa.codigoCnj ?? "",
+      descricao: causa.descricao ?? "",
+    });
   }, []);
 
-  const handleEditSave = useCallback(
-    async (payload: { nome: string; codigoCnj: string; descricao: string }) => {
-      if (!editingCausa) return;
+  const closeEdit = useCallback(() => {
+    setEditingCausa(null);
+    setEditForm({
+      nome: "",
+      codigoCnj: "",
+      descricao: "",
+    });
+  }, []);
 
+  const handleEditSave = useCallback(async () => {
+    if (!editingCausa) {
+      return;
+    }
+
+    if (!editForm.nome.trim()) {
+      toast.error("Informe o nome da causa");
+
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
       const result = await updateCausa(editingCausa.id, {
-        nome: payload.nome,
-        codigoCnj: payload.codigoCnj,
-        descricao: payload.descricao,
+        nome: editForm.nome.trim(),
+        codigoCnj: editForm.codigoCnj.trim(),
+        descricao: editForm.descricao.trim(),
       });
 
       if (!result.success) {
@@ -143,291 +407,431 @@ export function CausasContent() {
       }
 
       toast.success("Causa atualizada");
-      setEditingCausa(null);
+      closeEdit();
       await mutate();
-    },
-    [editingCausa, mutate],
-  );
-
-  return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 py-10 px-4 sm:px-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>Causas</h1>
-          <p className="text-sm text-default-500">
-            Cadastre e gerencie os assuntos utilizados na classificação dos
-            processos.
-          </p>
-        </div>
-        <Button
-          color="primary"
-          isLoading={isValidating}
-          radius="full"
-          startContent={<RefreshCw className="h-4 w-4" />}
-          variant="flat"
-          onPress={() => mutate()}
-        >
-          Atualizar
-        </Button>
-      </header>
-
-      <Card className="border border-default-100/30 bg-default-50/10">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold text-default-700">
-              Nova causa
-            </h2>
-          </div>
-        </CardHeader>
-        <Divider className="border-default-100/20" />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
-          <Input
-            isRequired
-            label="Nome"
-            placeholder="Ex.: Ameaça"
-            value={form.nome}
-            onValueChange={(value) =>
-              setForm((prev) => ({
-                ...prev,
-                nome: value,
-              }))
-            }
-          />
-          <Input
-            label="Código CNJ"
-            placeholder="Opcional"
-            value={form.codigoCnj}
-            onValueChange={(value) =>
-              setForm((prev) => ({
-                ...prev,
-                codigoCnj: value,
-              }))
-            }
-          />
-          <div className="sm:col-span-2">
-            <Textarea
-              label="Descrição"
-              placeholder="Notas internas sobre a causa"
-              value={form.descricao}
-              onValueChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  descricao: value,
-                }))
-              }
-            />
-          </div>
-          <div className="sm:col-span-2 flex justify-end">
-            <Button
-              color="primary"
-              isLoading={isCreating}
-              onPress={handleCreate}
-            >
-              Salvar causa
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-default-700">
-            Causas cadastradas
-          </h2>
-          <Chip color="primary" size="sm" variant="flat">
-            {causas.length}
-          </Chip>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Card
-                key={`causa-skeleton-${index}`}
-                className="border border-default-100/30 bg-default-50/10"
-              >
-                <CardBody>
-                  <Skeleton className="h-5 w-48 rounded-lg" isLoaded={false} />
-                  <Skeleton
-                    className="mt-2 h-3 w-64 rounded-lg"
-                    isLoaded={false}
-                  />
-                </CardBody>
-              </Card>
-            ))}
-          </div>
-        ) : causas.length ? (
-          <div className="space-y-3">
-            {causas.map((causa) => (
-              <Card
-                key={causa.id}
-                className="border border-default-100/30 bg-default-50/10"
-              >
-                <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-base font-semibold text-default-700">
-                        {causa.nome}
-                      </h3>
-                      <Chip
-                        color={causa.ativo ? "success" : "default"}
-                        size="sm"
-                        variant="flat"
-                      >
-                        {causa.ativo ? "Ativa" : "Arquivada"}
-                      </Chip>
-                    </div>
-                    {causa.codigoCnj && (
-                      <p className="text-xs text-default-500">
-                        Código CNJ: {causa.codigoCnj}
-                      </p>
-                    )}
-                    {causa.descricao && (
-                      <p className="text-xs text-default-500">
-                        {causa.descricao}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      isSelected={causa.ativo}
-                      size="sm"
-                      onValueChange={(selected) =>
-                        handleToggleAtiva(causa, selected)
-                      }
-                    >
-                      Ativa
-                    </Switch>
-                    <Button
-                      size="sm"
-                      startContent={<Edit3 className="h-3.5 w-3.5" />}
-                      variant="light"
-                      onPress={() => handleOpenEdit(causa)}
-                    >
-                      Editar
-                    </Button>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <Card className="border border-default-100/30 bg-default-50/10">
-            <CardBody className="text-sm text-default-500">
-              Nenhuma causa cadastrada até o momento.
-            </CardBody>
-          </Card>
-        )}
-      </section>
-
-      <EditCausaModal
-        causa={editingCausa}
-        onClose={() => setEditingCausa(null)}
-        onSave={handleEditSave}
-      />
-    </section>
-  );
-}
-
-interface EditCausaModalProps {
-  causa: CausaDto | null;
-  onClose: () => void;
-  onSave: (payload: {
-    nome: string;
-    codigoCnj: string;
-    descricao: string;
-  }) => void;
-}
-
-function EditCausaModal({ causa, onClose, onSave }: EditCausaModalProps) {
-  const [nome, setNome] = useState(causa?.nome ?? "");
-  const [codigoCnj, setCodigoCnj] = useState(causa?.codigoCnj ?? "");
-  const [descricao, setDescricao] = useState(causa?.descricao ?? "");
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) {
-        onClose();
-      }
-    },
-    [onClose],
-  );
-
-  const handleConfirm = async () => {
-    if (!causa) return;
-
-    if (!nome.trim()) {
-      toast.error("Informe o nome da causa");
-
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      await onSave({
-        nome: nome.trim(),
-        codigoCnj: codigoCnj.trim(),
-        descricao: descricao.trim(),
-      });
     } catch {
       toast.error("Erro ao atualizar causa");
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [editingCausa, editForm, closeEdit, mutate]);
+
+  const hasActiveFilters =
+    filtros.search.trim().length > 0 ||
+    filtros.status !== "all" ||
+    filtros.origem !== "all";
+
+  const clearFilters = useCallback(() => {
+    setFiltros({
+      search: "",
+      status: "all",
+      origem: "all",
+      orderBy: "nome",
+      orderDirection: "asc",
+    });
+  }, []);
+
+  const handleSyncOficiais = useCallback(async () => {
+    setIsSyncingOficiais(true);
+
+    try {
+      const result = await syncCausasOficiais();
+
+      if (!result.success) {
+        toast.error(result.error || "Erro ao sincronizar causas oficiais");
+
+        return;
+      }
+
+      toast.success(
+        `Catálogo oficial sincronizado. Criadas: ${result.criadas ?? 0}, atualizadas: ${
+          result.atualizadas ?? 0
+        }`,
+      );
+      await mutate();
+    } catch {
+      toast.error("Erro ao sincronizar causas oficiais");
+    } finally {
+      setIsSyncingOficiais(false);
+    }
+  }, [mutate]);
+
+  const renderResult = isLoading ? (
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <Card key={`causa-skeleton-${index}`} className="border border-white/10 bg-background/60">
+          <CardBody className="space-y-2 p-4">
+            <Skeleton className="h-5 w-52 rounded-lg" isLoaded={false} />
+            <Skeleton className="h-3 w-72 rounded-lg" isLoaded={false} />
+            <Skeleton className="h-3 w-20 rounded-lg" isLoaded={false} />
+          </CardBody>
+        </Card>
+      ))}
+    </div>
+  ) : causas.length ? (
+    <div className="space-y-3">
+      {causas.map((causa) => (
+        <Card
+          key={causa.id}
+          className="border border-white/10 bg-background/60 transition-all duration-300 hover:border-primary/40 hover:bg-background/80"
+        >
+          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-base font-semibold text-foreground">{causa.nome}</h3>
+                {causa.isOficial ? (
+                  <Chip color="primary" size="sm" variant="flat">
+                    OFICIAL
+                  </Chip>
+                ) : null}
+                <Chip
+                  color={causa.ativo ? "success" : "default"}
+                  size="sm"
+                  variant="flat"
+                >
+                  {causa.ativo ? "Ativa" : "Arquivada"}
+                </Chip>
+              </div>
+              {causa.codigoCnj && (
+                <p className="text-xs text-default-500">Código CNJ: {causa.codigoCnj}</p>
+              )}
+              {causa.descricao && (
+                <p className="text-xs text-default-500">{causa.descricao}</p>
+              )}
+              <p className="text-[11px] text-default-400">{causaMetaRows(causa)}</p>
+              <p className="text-[11px] text-default-400">
+                Atualizada em {new Date(causa.updatedAt).toLocaleDateString("pt-BR")}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                isDisabled={isUpdatingStatus.has(causa.id)}
+                isSelected={causa.ativo}
+                size="sm"
+                onValueChange={(value) => handleToggleAtiva(causa, value)}
+              >
+                Ativa
+              </Switch>
+              <Button
+                size="sm"
+                startContent={<Edit3 className="h-3.5 w-3.5" />}
+                variant="flat"
+                onPress={() => openEdit(causa)}
+              >
+                Editar
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      ))}
+    </div>
+  ) : (
+    <Card className="border border-white/10 bg-background/60">
+      <CardBody className="space-y-2 p-6">
+        <p className="text-sm text-default-500">
+          Nenhuma causa encontrada com os filtros selecionados.
+        </p>
+        {hasActiveFilters ? (
+          <Button size="sm" variant="light" onPress={clearFilters}>
+            Limpar filtros
+          </Button>
+        ) : (
+          <p className="text-xs text-default-400">
+            Cadastre a primeira causa para começar o catálogo jurídico.
+          </p>
+        )}
+      </CardBody>
+    </Card>
+  );
 
   return (
-    <Modal isOpen={!!causa} size="md" onOpenChange={handleOpenChange}>
-      <ModalContent>
-        {() => (
-          <>
-            <ModalHeader className="flex flex-col gap-1">
-              <h3 className="text-lg font-semibold text-default-900">
-                Editar causa
-              </h3>
-              {causa && (
-                <p className="text-sm text-default-400">
-                  Criada em{" "}
-                  {new Date(causa.createdAt).toLocaleDateString("pt-BR")}
-                </p>
-              )}
-            </ModalHeader>
-            <ModalBody className="space-y-3">
-              <Input
-                isRequired
-                label="Nome"
-                value={nome}
-                onValueChange={setNome}
-              />
-              <Input
-                label="Código CNJ"
-                value={codigoCnj}
-                onValueChange={setCodigoCnj}
-              />
-              <Textarea
-                label="Descrição"
-                value={descricao}
-                onValueChange={setDescricao}
-              />
-            </ModalBody>
-            <ModalFooter>
-              <Button disabled={isSaving} variant="light" onPress={onClose}>
-                Cancelar
-              </Button>
+    <div className="space-y-6">
+      <PeoplePageHeader
+        description="Catálogo padrão para classificar processos, diligências, petições e documentos."
+        title="Causas"
+      />
+
+      <PeoplePanel title="Métricas do catálogo" description="Visão rápida da base ativa e arquivada">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <PeopleMetricCard
+            icon={<Filter className="h-4 w-4" />}
+            label="Total de causas"
+            value={total}
+            tone="primary"
+          />
+          <PeopleMetricCard
+            icon={<Filter className="h-4 w-4" />}
+            label="Ativas"
+            value={totalAtivas}
+            tone="success"
+            helper="Disponíveis para uso nos cadastros"
+          />
+          <PeopleMetricCard
+            icon={<Filter className="h-4 w-4" />}
+            label="Arquivadas"
+            value={totalArquivadas}
+            tone="default"
+            helper="Encerradas no catálogo"
+          />
+          <PeopleMetricCard
+            icon={<Filter className="h-4 w-4" />}
+            label="Oficiais"
+            value={totalOficiais}
+            tone="secondary"
+            helper="Importadas da fonte oficial"
+          />
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Nova causa"
+        description="Preencha o cadastro inicial. O nome deve ser único por tenant."
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              isRequired
+              label="Nome"
+              placeholder="Ex.: Ameaça, Ação de Divórcio..."
+              value={createForm.nome}
+              onValueChange={(value) =>
+                setCreateForm((prev) => ({
+                  ...prev,
+                  nome: value,
+                }))
+              }
+            />
+            <Input
+              label="Código CNJ"
+              placeholder="Opcional"
+              value={createForm.codigoCnj}
+              onValueChange={(value) =>
+                setCreateForm((prev) => ({
+                  ...prev,
+                  codigoCnj: value,
+                }))
+              }
+            />
+          </div>
+          <Textarea
+            label="Descrição"
+            placeholder="Observação breve para uso interno"
+            value={createForm.descricao}
+            onValueChange={(value) =>
+              setCreateForm((prev) => ({
+                ...prev,
+                descricao: value,
+              }))
+            }
+          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="flat"
+              onPress={limparForm}
+              disabled={isCreating || isLoading}
+            >
+              Limpar
+            </Button>
               <Button
                 color="primary"
-                isLoading={isSaving}
-                onPress={handleConfirm}
+                isLoading={isCreating}
+                onPress={handleCreate}
               >
-                Salvar alterações
+                Salvar causa
               </Button>
-            </ModalFooter>
+            </div>
+        </div>
+      </PeoplePanel>
+
+    <PeoplePanel
+      title="Causas cadastradas"
+      description="A busca é parcial e já inclui nome, código CNJ e descrição."
+        actions={
+          <>
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={clearFilters}
+            >
+              Limpar filtros
+            </Button>
+            {canSyncOficiais ? (
+              <Button
+                color="primary"
+                size="sm"
+                isLoading={isSyncingOficiais}
+                variant="flat"
+                onPress={handleSyncOficiais}
+              >
+                Sincronizar oficiais
+              </Button>
+            ) : null}
           </>
-        )}
-      </ModalContent>
-    </Modal>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr_0.95fr_auto] lg:grid-cols-[1.3fr_1fr_1fr_1fr_auto_auto] md:grid-cols-3">
+            <Input
+              isClearable
+              className="w-full"
+              label="Buscar causa"
+              placeholder="Digite nome, código CNJ ou descrição"
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={filtros.search}
+              onValueChange={(value) =>
+                setFiltros((prev) => ({
+                  ...prev,
+                  search: value,
+                }))
+              }
+            />
+
+            <Select
+              className="w-full"
+              label="Status"
+              selectedKeys={new Set([filtros.status])}
+              onSelectionChange={setFiltroStatus}
+            >
+              <SelectItem key="all" textValue="Todas">
+                Todas
+              </SelectItem>
+              <SelectItem key="ativas" textValue="Ativas">
+                Ativas
+              </SelectItem>
+              <SelectItem key="arquivadas" textValue="Arquivadas">
+                Arquivadas
+              </SelectItem>
+            </Select>
+
+            <Select
+              className="w-full"
+              label="Origem"
+              selectedKeys={new Set([filtros.origem])}
+              onSelectionChange={setFiltroOrigem}
+            >
+              <SelectItem key="all" textValue="Todas">
+                Todas
+              </SelectItem>
+              <SelectItem key="oficiais" textValue="Oficiais">
+                Mostrar apenas oficiais
+              </SelectItem>
+              <SelectItem key="internas" textValue="Internas">
+                Mostrar apenas internas
+              </SelectItem>
+            </Select>
+
+            <Select
+              className="w-full"
+              label="Ordenar"
+              selectedKeys={new Set([filtros.orderBy])}
+              onSelectionChange={setFiltroOrdem}
+            >
+              <SelectItem key="nome" textValue="Nome">
+                Nome
+              </SelectItem>
+              <SelectItem key="createdAt" textValue="Mais recentes">
+                Mais recentes
+              </SelectItem>
+              <SelectItem key="updatedAt" textValue="Atualização">
+                Última atualização
+              </SelectItem>
+            </Select>
+
+            <Select
+              className="w-full"
+              label="Por página"
+              selectedKeys={new Set([String(pageSize)])}
+              onSelectionChange={setPageSizeValue}
+            >
+              {PAGE_SIZE_OPTIONS.map((item) => (
+                <SelectItem key={String(item)} textValue={`${item} por página`}>
+                  {item} por página
+                </SelectItem>
+              ))}
+            </Select>
+
+            <div className="flex items-end">
+              <Chip color="primary" size="sm" variant="flat">
+                {total} encontrados
+              </Chip>
+            </div>
+          </div>
+
+          <Divider className="border-white/10" />
+
+          {renderResult}
+
+          {totalPages > 1 ? (
+            <div className="flex justify-end">
+              <Pagination
+                showControls
+                total={totalPages}
+                page={page}
+                onChange={setPage}
+              />
+            </div>
+          ) : null}
+        </div>
+      </PeoplePanel>
+
+      <Modal isOpen={!!editingCausa} size="md" onOpenChange={closeEdit}>
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-foreground">Editar causa</h3>
+                {editingCausa ? (
+                  <p className="text-sm text-default-400">
+                    Atualizado em{" "}
+                    {new Date(editingCausa.updatedAt).toLocaleDateString("pt-BR")}
+                  </p>
+                ) : null}
+              </ModalHeader>
+              <ModalBody className="space-y-3">
+                <Input
+                  isRequired
+                  label="Nome"
+                  value={editForm.nome}
+                  onValueChange={(value) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      nome: value,
+                    }))
+                  }
+                />
+                <Input
+                  label="Código CNJ"
+                  value={editForm.codigoCnj}
+                  onValueChange={(value) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      codigoCnj: value,
+                    }))
+                  }
+                />
+                <Textarea
+                  label="Descrição"
+                  value={editForm.descricao}
+                  onValueChange={(value) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      descricao: value,
+                    }))
+                  }
+                />
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={closeEdit}>
+                  Cancelar
+                </Button>
+                <Button color="primary" isLoading={isSaving} onPress={handleEditSave}>
+                  Salvar alterações
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+    </div>
   );
 }

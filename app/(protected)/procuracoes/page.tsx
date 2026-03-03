@@ -25,9 +25,9 @@ export default async function ProcuracoesPage() {
     return <ProcuracoesContent />;
   }
 
-  // Para outros roles, verificar permissão clientes.visualizar
+  // Para outros roles, verificar permissão procurarções.visualizar
   try {
-    const hasPermission = await checkPermission("clientes", "visualizar");
+    const hasPermission = await checkPermission("procuracoes", "visualizar");
 
     if (!hasPermission) {
       redirect("/dashboard");

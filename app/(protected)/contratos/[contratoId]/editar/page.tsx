@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useState, useEffect } from "react";
+import React, { type ChangeEvent, use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -26,6 +26,8 @@ import {
   Building2,
   AlertCircle,
   LinkIcon,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/lib/toast";
@@ -34,7 +36,7 @@ import { Spinner } from "@heroui/spinner";
 import { title } from "@/components/primitives";
 import {
   getContratoById,
-  updateContrato,
+  updateContratoComArquivo,
   vincularContratoProcuracao,
   type ContratoCreateInput,
 } from "@/app/actions/contratos";
@@ -45,6 +47,10 @@ import {
 } from "@/app/hooks/use-clientes";
 import { useContratoDetalhado } from "@/app/hooks/use-contratos";
 import { useDadosBancariosAtivos } from "@/app/hooks/use-dados-bancarios";
+import {
+  useModelosContrato,
+  useTiposModeloContrato,
+} from "@/app/hooks/use-modelos-contrato";
 import { Select, SelectItem } from "@heroui/react";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 
@@ -79,6 +85,10 @@ export default function EditarContratoPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedContratoArquivo, setSelectedContratoArquivo] =
+    useState<File | null>(null);
+  const [removerArquivoAtual, setRemoverArquivoAtual] = useState(false);
+  const contratoArquivoInputRef = React.useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<ContratoCreateInput>({
     titulo: "",
     resumo: "",
@@ -97,6 +107,11 @@ export default function EditarContratoPage({
   const { contrato, mutate } = useContratoDetalhado(contratoId);
   const { dadosBancarios, isLoading: isLoadingDadosBancarios } =
     useDadosBancariosAtivos();
+  const { tipos, isLoading: isLoadingTiposContrato } = useTiposModeloContrato();
+  const { modelos, isLoading: isLoadingModelosContrato } = useModelosContrato({
+    ativo: true,
+    tipoId: formData.tipoContratoId || undefined,
+  });
   const clienteKeys = React.useMemo(
     () => new Set((clientes || []).map((cliente: any) => cliente.id)),
     [clientes],
@@ -117,6 +132,22 @@ export default function EditarContratoPage({
     formData.dadosBancariosId &&
     dadosBancariosKeys.has(formData.dadosBancariosId)
       ? [formData.dadosBancariosId]
+      : [];
+  const tipoContratoKeySet = React.useMemo(
+    () => new Set((tipos || []).map((tipo) => tipo.id)),
+    [tipos],
+  );
+  const modeloContratoKeySet = React.useMemo(
+    () => new Set((modelos || []).map((modelo) => modelo.id)),
+    [modelos],
+  );
+  const selectedTipoContratoKeys =
+    formData.tipoContratoId && tipoContratoKeySet.has(formData.tipoContratoId)
+      ? [formData.tipoContratoId]
+      : [];
+  const selectedModeloContratoKeys =
+    formData.modeloContratoId && modeloContratoKeySet.has(formData.modeloContratoId)
+      ? [formData.modeloContratoId]
       : [];
   const selectedProcuracaoKeys =
     selectedProcuracao && procuracaoKeys.has(selectedProcuracao)
@@ -144,9 +175,15 @@ export default function EditarContratoPage({
               ? new Date(contrato.dataFim).toISOString().split("T")[0]
               : undefined,
             clienteId: contrato.clienteId,
+            tipoContratoId: contrato.tipo?.id || undefined,
+            modeloContratoId: contrato.modelo?.id || undefined,
+            advogadoId: contrato.advogadoResponsavel?.id || undefined,
+            processoId: contrato.processo?.id || undefined,
             dadosBancariosId: contrato.dadosBancariosId || undefined,
             observacoes: contrato.observacoes || "",
           });
+          setSelectedContratoArquivo(null);
+          setRemoverArquivoAtual(false);
         } else {
           setError(result.error || "Erro ao carregar contrato");
         }
@@ -159,6 +196,18 @@ export default function EditarContratoPage({
 
     loadContrato();
   }, [contratoId]);
+
+  useEffect(() => {
+    if (
+      formData.modeloContratoId &&
+      !modeloContratoKeySet.has(formData.modeloContratoId)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        modeloContratoId: undefined,
+      }));
+    }
+  }, [formData.modeloContratoId, modeloContratoKeySet]);
 
   const handleVincularProcuracao = async () => {
     if (!selectedProcuracao) {
@@ -191,6 +240,51 @@ export default function EditarContratoPage({
     }
   };
 
+  const handleArquivoContratoChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      setSelectedContratoArquivo(null);
+
+      return;
+    }
+
+    if (
+      file.type !== "application/pdf" &&
+      !file.name.toLowerCase().endsWith(".pdf")
+    ) {
+      toast.error("Apenas arquivos PDF são permitidos.");
+      if (contratoArquivoInputRef.current) {
+        contratoArquivoInputRef.current.value = "";
+      }
+      setSelectedContratoArquivo(null);
+
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Arquivo muito grande. Máximo 10MB.");
+      if (contratoArquivoInputRef.current) {
+        contratoArquivoInputRef.current.value = "";
+      }
+      setSelectedContratoArquivo(null);
+
+      return;
+    }
+
+    setSelectedContratoArquivo(file);
+    setRemoverArquivoAtual(false);
+  };
+
+  const clearArquivoContrato = () => {
+    setSelectedContratoArquivo(null);
+    if (contratoArquivoInputRef.current) {
+      contratoArquivoInputRef.current.value = "";
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.titulo.trim()) {
       toast.error("Título do contrato é obrigatório");
@@ -207,7 +301,49 @@ export default function EditarContratoPage({
     setIsSaving(true);
 
     try {
-      const result = await updateContrato(contratoId, formData);
+      const payload = new FormData();
+      payload.set("contratoId", contratoId);
+      payload.set("titulo", formData.titulo.trim());
+      payload.set("resumo", formData.resumo?.trim() || "");
+      payload.set("status", (formData.status || ContratoStatus.RASCUNHO) as string);
+      payload.set("clienteId", formData.clienteId);
+      payload.set("tipoContratoId", formData.tipoContratoId || "");
+      payload.set("modeloContratoId", formData.modeloContratoId || "");
+      payload.set("dadosBancariosId", formData.dadosBancariosId || "");
+      payload.set("advogadoId", formData.advogadoId || "");
+      payload.set("processoId", formData.processoId || "");
+      payload.set("observacoes", formData.observacoes?.trim() || "");
+      payload.set("removerArquivoContrato", removerArquivoAtual ? "true" : "false");
+      if (formData.valor !== undefined) {
+        payload.set("valor", String(formData.valor));
+      } else {
+        payload.set("valor", "");
+      }
+      if (formData.dataInicio) {
+        payload.set(
+          "dataInicio",
+          formData.dataInicio instanceof Date
+            ? formData.dataInicio.toISOString()
+            : String(formData.dataInicio),
+        );
+      } else {
+        payload.set("dataInicio", "");
+      }
+      if (formData.dataFim) {
+        payload.set(
+          "dataFim",
+          formData.dataFim instanceof Date
+            ? formData.dataFim.toISOString()
+            : String(formData.dataFim),
+        );
+      } else {
+        payload.set("dataFim", "");
+      }
+      if (selectedContratoArquivo) {
+        payload.set("arquivoContrato", selectedContratoArquivo);
+      }
+
+      const result = await updateContratoComArquivo(payload);
 
       if (result.success) {
         toast.success("Contrato atualizado com sucesso!");
@@ -329,6 +465,68 @@ export default function EditarContratoPage({
               }
             />
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select
+                description="Classificação para relatórios e filtros do módulo."
+                isLoading={isLoadingTiposContrato}
+                label="Tipo de contrato"
+                placeholder="Selecione o tipo"
+                selectedKeys={selectedTipoContratoKeys}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    tipoContratoId: selected || undefined,
+                    modeloContratoId:
+                      selected && selected === prev.tipoContratoId
+                        ? prev.modeloContratoId
+                        : undefined,
+                  }));
+                }}
+              >
+                {(tipos || []).map((tipo) => (
+                  <SelectItem key={tipo.id} textValue={tipo.nome}>
+                    {tipo.nome}
+                  </SelectItem>
+                ))}
+              </Select>
+
+              <Select
+                description="Modelo base opcional para padrão de conteúdo."
+                isDisabled={!formData.tipoContratoId || isLoadingModelosContrato}
+                isLoading={isLoadingModelosContrato}
+                label="Modelo de contrato"
+                placeholder={
+                  formData.tipoContratoId
+                    ? "Selecione o modelo"
+                    : "Escolha o tipo primeiro"
+                }
+                selectedKeys={selectedModeloContratoKeys}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    modeloContratoId: selected || undefined,
+                  }));
+                }}
+              >
+                {(modelos || []).map((modelo) => (
+                  <SelectItem key={modelo.id} textValue={modelo.nome}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">{modelo.nome}</span>
+                      {modelo.categoria ? (
+                        <span className="text-xs text-default-400">
+                          {modelo.categoria}
+                        </span>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+
             {/* Status e Valor */}
             <div className="grid gap-4 sm:grid-cols-2">
               <Select
@@ -376,12 +574,13 @@ export default function EditarContratoPage({
               label="Conta Bancária para Recebimento"
               placeholder="Selecione uma conta (opcional)"
               selectedKeys={selectedDadosBancariosKeys}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as string | undefined;
                 setFormData((prev) => ({
                   ...prev,
-                  dadosBancariosId: Array.from(keys)[0] as string,
-                }))
-              }
+                  dadosBancariosId: selected || undefined,
+                }));
+              }}
             >
               {dadosBancarios.map((conta: any) => {
                 const bancoNome = formatBancoLabel(conta);
@@ -444,6 +643,81 @@ export default function EditarContratoPage({
                 }))
               }
              />
+
+            <div className="space-y-3 rounded-lg border border-default-200 p-4">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-semibold text-default-700">Contrato em PDF</p>
+                <p className="text-xs text-default-500">
+                  Substitua o PDF atual ou remova o arquivo para manter apenas o cadastro.
+                </p>
+              </div>
+
+              <input
+                ref={contratoArquivoInputRef}
+                accept=".pdf"
+                className="hidden"
+                type="file"
+                onChange={handleArquivoContratoChange}
+              />
+
+              {selectedContratoArquivo ? (
+                <div className="rounded-lg border border-success/30 bg-success/5 p-3">
+                  <p className="text-sm font-semibold text-success">
+                    {selectedContratoArquivo.name}
+                  </p>
+                  <p className="text-xs text-default-500">
+                    {(selectedContratoArquivo.size / 1024).toFixed(2)} KB
+                  </p>
+                  <Button
+                    className="mt-2"
+                    color="danger"
+                    size="sm"
+                    startContent={<Trash2 className="h-3.5 w-3.5" />}
+                    variant="flat"
+                    onPress={clearArquivoContrato}
+                  >
+                    Remover arquivo selecionado
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    startContent={<Upload className="h-4 w-4" />}
+                    variant="flat"
+                    onPress={() => contratoArquivoInputRef.current?.click()}
+                  >
+                    Selecionar novo PDF
+                  </Button>
+                  {contrato?.arquivoUrl ? (
+                    <>
+                      <Button
+                        as="a"
+                        href={contrato.arquivoUrl}
+                        rel="noopener noreferrer"
+                        size="sm"
+                        target="_blank"
+                        variant="light"
+                      >
+                        Ver PDF atual
+                      </Button>
+                      <Button
+                        color={removerArquivoAtual ? "danger" : "default"}
+                        size="sm"
+                        variant={removerArquivoAtual ? "solid" : "flat"}
+                        onPress={() => setRemoverArquivoAtual((prev) => !prev)}
+                      >
+                        {removerArquivoAtual ? "Arquivo será removido" : "Remover PDF atual"}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-default-500">
+                      Sem PDF anexado.
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Resumo */}
             <Textarea

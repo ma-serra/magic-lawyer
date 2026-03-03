@@ -61,13 +61,19 @@ import {
   renameExplorerFolder,
   uploadDocumentoExplorer,
 } from "@/app/actions/documentos-explorer";
-import { title } from "@/components/primitives";
 import { fadeInUp } from "@/components/ui/motion-presets";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 
 interface DocumentosContentProps {
   initialData: DocumentExplorerData | null;
   initialClientes: DocumentExplorerClienteSummary[];
   initialError?: string;
+  canManageDocumentos: boolean;
+  canDeleteDocumentos: boolean;
 }
 
 interface ExplorerTreeNode {
@@ -98,6 +104,9 @@ interface FiltrosState {
   dataUpload: { start: string | null; end: string | null } | null;
   tamanhoKB: number[]; // [min, max]
 }
+
+const FILES_PER_PAGE = 50;
+const PROCESSOS_PER_PAGE = 20;
 
 interface FilterSectionProps {
   title: string;
@@ -331,6 +340,8 @@ export function DocumentosContent({
   initialData,
   initialClientes,
   initialError,
+  canManageDocumentos,
+  canDeleteDocumentos,
 }: DocumentosContentProps) {
   const [selectedClienteId, setSelectedClienteId] = useState<string | null>(
     initialClientes[0]?.id ?? null,
@@ -360,10 +371,8 @@ export function DocumentosContent({
     dataUpload: null,
     tamanhoKB: [0, 512000],
   });
-  const [isLoadingCliente, setIsLoadingCliente] = useState(false);
-  const [previousClienteId, setPreviousClienteId] = useState<string | null>(
-    initialClientes[0]?.id ?? null,
-  );
+  const [processosPage, setProcessosPage] = useState(1);
+  const [filesPage, setFilesPage] = useState(1);
 
   const {
     data,
@@ -372,23 +381,37 @@ export function DocumentosContent({
     isValidating,
     mutate,
   } = useSWR(
-    selectedClienteId ? ["documentos-explorer", selectedClienteId] : null,
-    async ([, clienteId]) => {
-      setIsLoadingCliente(true);
-      try {
-        const result = await getDocumentExplorerData(clienteId);
+    selectedClienteId
+      ? [
+          "documentos-explorer",
+          selectedClienteId,
+          selectedProcessoId ?? "__geral__",
+          processosPage,
+        ]
+      : null,
+    async ([, clienteId, processoIdToken, processosPageToken]) => {
+      const processoIdForTree =
+        processoIdToken === "__geral__" ? null : processoIdToken;
+      const page =
+        typeof processosPageToken === "number"
+          ? processosPageToken
+          : Number(processosPageToken);
+      const result = await getDocumentExplorerData(clienteId, {
+        processoIdForTree,
+        includeCloudinaryTree: true,
+        processosPage: Number.isFinite(page) ? page : 1,
+        processosPageSize: PROCESSOS_PER_PAGE,
+      });
 
-        if (!result.success) {
-          throw new Error(result.error || "Erro ao carregar documentos");
-        }
-
-        return result.data ?? null;
-      } finally {
-        setIsLoadingCliente(false);
+      if (!result.success) {
+        throw new Error(result.error || "Erro ao carregar documentos");
       }
+
+      return result.data ?? null;
     },
     {
       fallbackData: initialData ?? undefined,
+      keepPreviousData: true,
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
     },
@@ -397,16 +420,12 @@ export function DocumentosContent({
   useEffect(() => {
     if (!data) return;
 
-    if (
-      !selectedClienteId ||
-      !data.clientes.some((cliente) => cliente.id === selectedClienteId)
-    ) {
+    if (!selectedClienteId) {
       const firstCliente = data.clientes[0];
 
       setSelectedClienteId(firstCliente ? firstCliente.id : null);
       setSelectedProcessoId(firstCliente?.processos[0]?.id ?? null);
       setSelectedFolderSegments([]);
-      setPreviousClienteId(firstCliente ? firstCliente.id : null);
 
       return;
     }
@@ -414,11 +433,6 @@ export function DocumentosContent({
     const cliente = data.clientes.find((item) => item.id === selectedClienteId);
 
     if (!cliente) return;
-
-    // Quando os dados terminam de carregar, atualiza o previousClienteId
-    if (isLoadingCliente === false && selectedClienteId !== previousClienteId) {
-      setPreviousClienteId(selectedClienteId);
-    }
 
     // Se não há processo selecionado, seleciona o primeiro
     if (!selectedProcessoId && cliente.processos.length > 0) {
@@ -433,15 +447,27 @@ export function DocumentosContent({
       setSelectedProcessoId(cliente.processos[0]?.id ?? null);
       setSelectedFolderSegments([]);
     }
-  }, [data, selectedClienteId, selectedProcessoId, isLoadingCliente, previousClienteId]);
+  }, [data, selectedClienteId, selectedProcessoId]);
 
   const selectedCliente = useMemo(() => {
-    if (!data || !selectedClienteId) return null;
+    if (!data) return null;
+    if (!selectedClienteId) return data.clientes[0] ?? null;
 
-    return (
-      data.clientes.find((cliente) => cliente.id === selectedClienteId) ?? null
-    );
+    return data.clientes.find((cliente) => cliente.id === selectedClienteId) ?? null;
   }, [data, selectedClienteId]);
+
+  const processosTotalPages = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil((selectedCliente?.counts.processos ?? 0) / PROCESSOS_PER_PAGE),
+      ),
+    [selectedCliente?.counts.processos],
+  );
+
+  useEffect(() => {
+    setProcessosPage((prev) => Math.min(prev, processosTotalPages));
+  }, [processosTotalPages]);
 
   const selectedProcesso = useMemo(() => {
     if (!selectedCliente || !selectedProcessoId) return null;
@@ -521,12 +547,30 @@ export function DocumentosContent({
     });
   }, [tree, selectedFolderSegments, filtros]);
 
+  const filesTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filesInCurrentFolder.length / FILES_PER_PAGE)),
+    [filesInCurrentFolder.length],
+  );
+
+  const pagedFiles = useMemo(() => {
+    const startIndex = (filesPage - 1) * FILES_PER_PAGE;
+
+    return filesInCurrentFolder.slice(startIndex, startIndex + FILES_PER_PAGE);
+  }, [filesInCurrentFolder, filesPage]);
+
+  useEffect(() => {
+    setFilesPage((prev) => Math.min(prev, filesTotalPages));
+  }, [filesTotalPages]);
+
+  useEffect(() => {
+    setFilesPage(1);
+  }, [selectedFolderSegments, filtros, selectedProcessoId, selectedClienteId]);
+
   const handleSelectCliente = (clienteId: string) => {
     if (clienteId === selectedClienteId) return;
-    
-    setPreviousClienteId(selectedClienteId);
+
+    setProcessosPage(1);
     setSelectedClienteId(clienteId);
-    setSelectedProcessoId(null);
     setSelectedFolderSegments([]);
   };
 
@@ -540,6 +584,12 @@ export function DocumentosContent({
   };
 
   const handleCreateFolder = useCallback(async () => {
+    if (!canManageDocumentos) {
+      toast.error("Você não tem permissão para criar pastas.");
+
+      return;
+    }
+
     if (!selectedCliente || !selectedProcesso) {
       toast.error("Selecione um processo para criar pastas");
 
@@ -565,9 +615,21 @@ export function DocumentosContent({
 
     toast.success("Pasta criada com sucesso");
     await mutate();
-  }, [selectedCliente, selectedProcesso, selectedFolderSegments, mutate]);
+  }, [
+    canManageDocumentos,
+    selectedCliente,
+    selectedProcesso,
+    selectedFolderSegments,
+    mutate,
+  ]);
 
   const handleRenameFolder = useCallback(async () => {
+    if (!canManageDocumentos) {
+      toast.error("Você não tem permissão para renomear pastas.");
+
+      return;
+    }
+
     if (!selectedCliente || !selectedProcesso) {
       toast.error("Selecione um processo para renomear pastas");
 
@@ -608,9 +670,21 @@ export function DocumentosContent({
       return updated;
     });
     await mutate();
-  }, [selectedCliente, selectedProcesso, selectedFolderSegments, mutate]);
+  }, [
+    canManageDocumentos,
+    selectedCliente,
+    selectedProcesso,
+    selectedFolderSegments,
+    mutate,
+  ]);
 
   const handleDeleteFolder = useCallback(async () => {
+    if (!canDeleteDocumentos) {
+      toast.error("Você não tem permissão para excluir pastas.");
+
+      return;
+    }
+
     if (!selectedCliente || !selectedProcesso) {
       toast.error("Selecione um processo");
 
@@ -644,7 +718,13 @@ export function DocumentosContent({
     toast.success("Pasta excluída");
     setSelectedFolderSegments([]);
     await mutate();
-  }, [selectedCliente, selectedProcesso, selectedFolderSegments, mutate]);
+  }, [
+    canDeleteDocumentos,
+    selectedCliente,
+    selectedProcesso,
+    selectedFolderSegments,
+    mutate,
+  ]);
 
   const openUploadModalForFiles = useCallback(
     (files: FileList | null) => {
@@ -652,6 +732,12 @@ export function DocumentosContent({
 
       if (!selectedCliente) {
         toast.error("Selecione um cliente para anexar documentos");
+
+        return;
+      }
+
+      if (!canManageDocumentos) {
+        toast.error("Você não tem permissão para enviar documentos.");
 
         return;
       }
@@ -675,7 +761,7 @@ export function DocumentosContent({
       setPendingFiles(files);
       setIsUploadModalOpen(true);
     },
-    [selectedCliente, selectedProcesso],
+    [canManageDocumentos, selectedCliente, selectedProcesso],
   );
 
   const handleUploadModalClose = useCallback(() => {
@@ -686,6 +772,12 @@ export function DocumentosContent({
   }, [isUploading]);
 
   const performUpload = useCallback(async () => {
+    if (!canManageDocumentos) {
+      toast.error("Você não tem permissão para enviar documentos.");
+
+      return;
+    }
+
     if (!pendingFiles || !pendingFiles.length) {
       toast.error("Nenhum arquivo selecionado");
 
@@ -745,6 +837,7 @@ export function DocumentosContent({
       setIsUploading(false);
     }
   }, [
+    canManageDocumentos,
     pendingFiles,
     selectedCliente,
     uploadOptions,
@@ -763,6 +856,12 @@ export function DocumentosContent({
 
   const handleDeleteFile = useCallback(
     async (documento: DocumentExplorerFile) => {
+      if (!canDeleteDocumentos) {
+        toast.error("Você não tem permissão para remover arquivos.");
+
+        return;
+      }
+
       const confirmDelete = confirm(`Remover o arquivo "${documento.nome}"?`);
 
       if (!confirmDelete) return;
@@ -781,16 +880,42 @@ export function DocumentosContent({
       toast.success("Arquivo removido");
       await mutate();
     },
-    [mutate],
+    [canDeleteDocumentos, mutate],
+  );
+
+  const clientesDisponiveis = useMemo(
+    () => {
+      const merged = new Map(
+        initialClientes.map((cliente) => [cliente.id, { ...cliente }]),
+      );
+
+      if (data?.clientes.length) {
+        for (const cliente of data.clientes) {
+          merged.set(cliente.id, {
+            id: cliente.id,
+            nome: cliente.nome,
+            documento: cliente.documento,
+            email: cliente.email,
+            telefone: cliente.telefone,
+            processos: cliente.counts.processos,
+          });
+        }
+      }
+
+      return Array.from(merged.values()).sort((a, b) =>
+        a.nome.localeCompare(b.nome, "pt-BR"),
+      );
+    },
+    [data, initialClientes],
   );
 
   const filteredClientes = useMemo(() => {
-    if (!searchTerm) return initialClientes;
+    if (!searchTerm) return clientesDisponiveis;
 
-    return initialClientes.filter((cliente) =>
+    return clientesDisponiveis.filter((cliente) =>
       cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()),
     );
-  }, [initialClientes, searchTerm]);
+  }, [clientesDisponiveis, searchTerm]);
 
   const canConfirmUpload = Boolean(
     pendingFiles?.length &&
@@ -874,844 +999,612 @@ export function DocumentosContent({
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-8">
-      {/* Header Hero */}
+    <div className="container mx-auto space-y-6 p-6">
       <motion.div animate="visible" initial="hidden" variants={fadeInUp}>
-        <Card className="relative overflow-hidden border-none bg-linear-to-br from-blue-900 via-blue-900/90 to-indigo-800 text-white shadow-2xl">
-          <CardBody className="space-y-8">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-3 max-w-2xl">
-                <h1 className="text-3xl font-semibold tracking-tight">
-                  Biblioteca de Documentos
-                </h1>
-                <p className="text-white/80">
-                  Organize por cliente e processo, sincronize com Cloudinary e aplique filtros avançados rapidamente.
-                </p>
-              </div>
-              <Button
-                color="secondary"
-                isLoading={isValidating}
-                radius="full"
-                startContent={<RefreshCw className="h-4 w-4" />}
-                variant="flat"
-                onPress={() => mutate()}
-              >
-                Atualizar
-              </Button>
-            </div>
-          </CardBody>
-          <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-        </Card>
+        <PeoplePageHeader
+          description="Organize documentos por cliente e processo com escopo de acesso, trilha de upload e filtros operacionais."
+          tag="Gestao documental"
+          title="Documentos"
+          actions={
+            <Button
+              color="primary"
+              isLoading={isValidating}
+              size="sm"
+              startContent={<RefreshCw className="h-4 w-4" />}
+              variant="flat"
+              onPress={() => mutate()}
+            >
+              Sincronizar
+            </Button>
+          }
+        />
       </motion.div>
 
-      {/* Dashboard Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        {/* Card Total de Clientes */}
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        >
-          <Card className="bg-linear-to-br from-blue-50 via-blue-100 to-indigo-200 dark:from-blue-900/30 dark:via-blue-800/20 dark:to-indigo-900/30 border-blue-300 dark:border-blue-600 shadow-xl hover:shadow-2xl transition-all duration-500 group">
-            <CardBody className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-blue-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Users className="text-white" size={24} />
-                </div>
-                <Badge color="success" content="+" variant="shadow">
-                  <TrendingUp
-                    className="text-blue-600 dark:text-blue-400"
-                    size={20}
-                  />
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-                  Total de Clientes
-                </p>
-                <p className="text-4xl font-bold text-blue-800 dark:text-blue-200">
-                  {initialClientes.length}
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-400">
-                  Carteira de clientes
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        {/* Card Processos */}
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          <Card className="bg-linear-to-br from-emerald-50 via-green-100 to-teal-200 dark:from-green-900/30 dark:via-emerald-800/20 dark:to-teal-900/30 border-green-300 dark:border-green-600 shadow-xl hover:shadow-2xl transition-all duration-500 group">
-            <CardBody className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-green-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Briefcase className="text-white" size={24} />
-                </div>
-                <Badge color="success" content="✓" variant="shadow">
-                  <Activity
-                    className="text-green-600 dark:text-green-400"
-                    size={20}
-                  />
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
-                  Processos
-                </p>
-                <p className="text-4xl font-bold text-green-800 dark:text-green-200">
-                  {selectedCliente?.processos.length ?? 0}
-                </p>
-                <p className="text-xs text-green-600 dark:text-green-400">
-                  Associados ao cliente
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        {/* Card Documentos */}
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-        >
-          <Card className="bg-linear-to-br from-purple-50 via-violet-100 to-purple-200 dark:from-purple-900/30 dark:via-violet-800/20 dark:to-purple-900/30 border-purple-300 dark:border-purple-600 shadow-xl hover:shadow-2xl transition-all duration-500 group">
-            <CardBody className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-purple-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <FileText className="text-white" size={24} />
-                </div>
-                <Badge color="secondary" content="📄" variant="shadow">
-                  <FileText
-                    className="text-purple-600 dark:text-purple-400"
-                    size={20}
-                  />
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide">
-                  Documentos
-                </p>
-                <p className="text-4xl font-bold text-purple-800 dark:text-purple-200">
-                  {selectedCliente?.counts.documentos ?? 0}
-                </p>
-                <p className="text-xs text-purple-600 dark:text-purple-400">
-                  Total de documentos
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        {/* Card Arquivos */}
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-        >
-          <Card className="bg-linear-to-br from-amber-50 via-orange-100 to-amber-200 dark:from-amber-900/30 dark:via-orange-800/20 dark:to-amber-900/30 border-amber-300 dark:border-amber-600 shadow-xl hover:shadow-2xl transition-all duration-500 group">
-            <CardBody className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-amber-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Files className="text-white" size={24} />
-                </div>
-                <Badge color="warning" content="📁" variant="shadow">
-                  <Files
-                    className="text-amber-600 dark:text-amber-400"
-                    size={20}
-                  />
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide">
-                  Arquivos
-                </p>
-                <p className="text-4xl font-bold text-amber-800 dark:text-amber-200">
-                  {selectedCliente?.counts.arquivos ?? 0}
-                </p>
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Total de arquivos
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Base de clientes com documentos"
+          icon={<Users className="h-4 w-4" />}
+          label="Clientes"
+          tone="primary"
+          value={data.totals.clientes}
+        />
+        <PeopleMetricCard
+          helper="Processos do cliente selecionado"
+          icon={<Briefcase className="h-4 w-4" />}
+          label="Processos"
+          tone="success"
+          value={selectedCliente?.processos.length ?? 0}
+        />
+        <PeopleMetricCard
+          helper="Documentos cadastrados"
+          icon={<FileText className="h-4 w-4" />}
+          label="Documentos"
+          tone="secondary"
+          value={selectedCliente?.counts.documentos ?? 0}
+        />
+        <PeopleMetricCard
+          helper="Arquivos e versões disponíveis"
+          icon={<Files className="h-4 w-4" />}
+          label="Arquivos"
+          tone="warning"
+          value={selectedCliente?.counts.arquivos ?? 0}
+        />
       </div>
 
-      {/* Filtros Avançados Melhorados */}
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: -20 }}
-        transition={{ duration: 0.3 }}
-      >
-        <Card className="shadow-lg border-2 border-slate-200 dark:border-slate-700">
-          <CardHeader className="bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-linear-to-br from-blue-500 to-indigo-600 rounded-lg">
-                  <Filter className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                    Filtros Inteligentes
-                  </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Encontre exatamente o documento que precisa
-                  </p>
-                </div>
-                {hasActiveFilters && (
-                  <motion.div
-                    animate={{ scale: 1 }}
-                    initial={{ scale: 0 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  >
-                    <Badge
-                      color="primary"
-                      content={
-                        [
-                          filtros.busca,
-                          filtros.origem !== "TODOS",
-                          filtros.visibilidade !== "TODOS",
-                          filtros.dataUpload !== null,
-                          filtros.tamanhoKB[0] !== 0 || filtros.tamanhoKB[1] !== 512000,
-                        ].filter(Boolean).length
-                      }
-                      size="lg"
-                      variant="shadow"
-                    >
-                      <Chip
-                        className="font-semibold"
-                        color="primary"
-                        size="lg"
-                        variant="flat"
-                      >
-                        {
-                          [
-                            filtros.busca,
-                            filtros.origem !== "TODOS",
-                            filtros.visibilidade !== "TODOS",
-                            filtros.dataUpload !== null,
-                            filtros.tamanhoKB[0] !== 0 || filtros.tamanhoKB[1] !== 512000,
-                          ].filter(Boolean).length
-                        }{" "}
-                        filtro(s) ativo(s)
-                      </Chip>
-                    </Badge>
-                  </motion.div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Tooltip color="warning" content="Limpar todos os filtros">
-                  <Button
-                    className="hover:scale-105 transition-transform"
-                    color="warning"
-                    isDisabled={!hasActiveFilters}
-                    size="sm"
-                    startContent={<RotateCcw className="w-4 h-4" />}
-                    variant="light"
-                    onPress={clearFilters}
-                  >
-                    Limpar
-                  </Button>
-                </Tooltip>
-                <Tooltip
-                  color="primary"
-                  content={showFilters ? "Ocultar filtros" : "Mostrar filtros"}
-                >
-                  <Button
-                    className="hover:scale-105 transition-transform"
-                    color="primary"
-                    size="sm"
-                    startContent={
-                      showFilters ? (
-                        <XCircle className="w-4 h-4" />
-                      ) : (
-                        <Filter className="w-4 h-4" />
-                      )
-                    }
-                    variant="light"
-                    onPress={() => setShowFilters(!showFilters)}
-                  >
-                    {showFilters ? "Ocultar" : "Mostrar"}
-                  </Button>
-                </Tooltip>
-              </div>
-            </div>
-          </CardHeader>
-
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                initial={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <CardBody className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <FilterSection
-                      icon={Search}
-                      title="Busca e identificação"
-                      description="Busque por nome, origem e visibilidade dos documentos."
-                    >
-                      <div className="space-y-3">
-                        <Input
-                          label="Busca"
-                          placeholder="Nome ou descrição"
-                          startContent={<Search className="h-4 w-4 text-default-400" />}
-                          value={filtros.busca}
-                          variant="bordered"
-                          onValueChange={(value) =>
-                            setFiltros((prev) => ({ ...prev, busca: value }))
-                          }
-                        />
-                        <Select
-                          label="Origem"
-                          selectedKeys={[filtros.origem]}
-                          onSelectionChange={(keys) => {
-                            const [value] = Array.from(keys) as OrigemFiltro[];
-                            setFiltros((prev) => ({ ...prev, origem: value }));
-                          }}
-                        >
-                          <SelectItem key="TODOS" textValue="Todas">Todas</SelectItem>
-                          <SelectItem key="CLIENTE" textValue="Cliente">Cliente</SelectItem>
-                          <SelectItem key="ESCRITORIO" textValue="Escritório">Escritório</SelectItem>
-                          <SelectItem key="SISTEMA" textValue="Sistema">Sistema</SelectItem>
-                        </Select>
-                        <Select
-                          label="Visível para"
-                          selectedKeys={[filtros.visibilidade]}
-                          onSelectionChange={(keys) => {
-                            const [value] = Array.from(keys) as VisibilidadeFiltro[];
-                            setFiltros((prev) => ({ ...prev, visibilidade: value }));
-                          }}
-                        >
-                          <SelectItem key="TODOS" textValue="Todos">Todos</SelectItem>
-                          <SelectItem key="CLIENTE" textValue="Cliente">Cliente</SelectItem>
-                          <SelectItem key="EQUIPE" textValue="Somente equipe">Somente equipe</SelectItem>
-                        </Select>
-                      </div>
-                    </FilterSection>
-
-                    <FilterSection
-                      icon={Calendar}
-                      title="Data e período"
-                      description="Filtre por data de upload dos documentos."
-                    >
-                      <div className="space-y-3">
-                        <DateRangeInput
-                          label="Data de upload"
-                          startValue={filtros.dataUpload?.start ?? ""}
-                          endValue={filtros.dataUpload?.end ?? ""}
-                          visibleMonths={1}
-                          onRangeChange={({ start, end }) => {
-                            if (!start || !end) {
-                              setFiltros((prev) => ({
-                                ...prev,
-                                dataUpload: { start: null, end: null },
-                              }));
-                              return;
-                            }
-                            setFiltros((prev) => ({
-                              ...prev,
-                              dataUpload: {
-                                start,
-                                end,
-                              },
-                            }));
-                          }}
-                        />
-                      </div>
-                    </FilterSection>
-
-                    <FilterSection
-                      icon={Files}
-                      title="Tamanho do arquivo"
-                      description="Filtre documentos por tamanho em KB."
-                    >
-                      <div className="space-y-3">
-                        <Slider
-                          label="Tamanho (KB)"
-                          maxValue={512000}
-                          minValue={0}
-                          step={1024}
-                          value={filtros.tamanhoKB}
-                          onChange={(value) =>
-                            setFiltros((prev) => ({
-                              ...prev,
-                              tamanhoKB: Array.isArray(value) ? value : [0, 512000],
-                            }))
-                          }
-                        />
-                        <div className="flex items-center justify-between text-xs text-default-500">
-                          <span>{filtros.tamanhoKB[0]} KB</span>
-                          <span>{filtros.tamanhoKB[1]} KB</span>
-                        </div>
-                      </div>
-                    </FilterSection>
-                  </div>
-
-                  {/* Resumo dos Filtros Ativos */}
-                  {hasActiveFilters && (
-                    <motion.div
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700"
-                      initial={{ opacity: 0, y: 10 }}
-                      transition={{ delay: 0.3 }}
-                    >
-                      <h5 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center gap-2">
-                        <Info className="w-4 h-4" />
-                        Filtros Aplicados
-                      </h5>
-                      <div className="flex flex-wrap gap-2">
-                        {filtros.busca && (
-                          <Chip color="primary" size="sm" variant="flat">
-                            Busca: "{filtros.busca}"
-                          </Chip>
-                        )}
-                        {filtros.origem !== "TODOS" && (
-                          <Chip color="success" size="sm" variant="flat">
-                            Origem: {filtros.origem}
-                          </Chip>
-                        )}
-                        {filtros.visibilidade !== "TODOS" && (
-                          <Chip color="warning" size="sm" variant="flat">
-                            Visibilidade: {filtros.visibilidade}
-                          </Chip>
-                        )}
-                        {filtros.dataUpload && (
-                          <Chip color="secondary" size="sm" variant="flat">
-                            Data: {filtros.dataUpload.start ? new Date(filtros.dataUpload.start).toLocaleDateString("pt-BR") : ""} - {filtros.dataUpload.end ? new Date(filtros.dataUpload.end).toLocaleDateString("pt-BR") : ""}
-                          </Chip>
-                        )}
-                        {(filtros.tamanhoKB[0] !== 0 || filtros.tamanhoKB[1] !== 512000) && (
-                          <Chip color="default" size="sm" variant="flat">
-                            Tamanho: {filtros.tamanhoKB[0]} KB - {filtros.tamanhoKB[1]} KB
-                          </Chip>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </CardBody>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Card>
-      </motion.div>
-
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
+      {displayError ? (
+        <PeoplePanel
+          description={displayError}
+          title="Aviso ao carregar dados"
         >
-          <Card className="shadow-xl border-2 border-slate-200 dark:border-slate-700">
-            <CardHeader className="bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3 w-full">
-                <div className="p-2 bg-linear-to-br from-indigo-500 to-purple-600 rounded-lg">
-                  <Users className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                    Clientes
-                  </h2>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    {filteredClientes.length} cliente(s) encontrado(s)
-                  </p>
-                </div>
-              </div>
-            </CardHeader>
-            <Divider className="border-slate-200 dark:border-slate-700" />
-            <CardBody className="flex flex-col gap-4">
-              <Input
-                aria-label="Buscar cliente"
-                placeholder="Buscar cliente..."
-                startContent={<Search className="h-4 w-4 text-default-400" />}
-                value={searchTerm}
-                variant="bordered"
-                onValueChange={setSearchTerm}
-              />
-              <div
-                className="flex flex-col gap-2 overflow-y-auto pr-1"
-                style={{ maxHeight: "520px" }}
+          <Button
+            color="warning"
+            size="sm"
+            startContent={<RefreshCw className="h-4 w-4" />}
+            variant="flat"
+            onPress={() => mutate()}
+          >
+            Tentar novamente
+          </Button>
+        </PeoplePanel>
+      ) : null}
+
+      <PeoplePanel
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              color="warning"
+              isDisabled={!hasActiveFilters}
+              size="sm"
+              startContent={<RotateCcw className="h-3.5 w-3.5" />}
+              variant="flat"
+              onPress={clearFilters}
+            >
+              Limpar filtros
+            </Button>
+            <Button
+              color="primary"
+              size="sm"
+              startContent={
+                showFilters ? (
+                  <XCircle className="h-3.5 w-3.5" />
+                ) : (
+                  <Filter className="h-3.5 w-3.5" />
+                )
+              }
+              variant="flat"
+              onPress={() => setShowFilters((prev) => !prev)}
+            >
+              {showFilters ? "Ocultar" : "Exibir filtros"}
+            </Button>
+          </div>
+        }
+        description="Filtre rapidamente por nome, origem, visibilidade, período e tamanho do arquivo."
+        title="Filtros de Documentos"
+      >
+        {showFilters ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <FilterSection
+                description="Busque por nome e refine por origem/visibilidade."
+                icon={Search}
+                title="Identificação"
               >
-                <AnimatePresence mode="popLayout">
-                  {filteredClientes.map((cliente) => {
-                    const isActive = cliente.id === selectedClienteId;
+                <div className="space-y-3">
+                  <Input
+                    label="Busca"
+                    placeholder="Nome do arquivo ou descrição"
+                    startContent={<Search className="h-4 w-4 text-default-400" />}
+                    value={filtros.busca}
+                    variant="bordered"
+                    onValueChange={(value) =>
+                      setFiltros((prev) => ({ ...prev, busca: value }))
+                    }
+                  />
+                  <Select
+                    label="Origem"
+                    selectedKeys={[filtros.origem]}
+                    onSelectionChange={(keys) => {
+                      const [value] = Array.from(keys) as OrigemFiltro[];
+                      setFiltros((prev) => ({ ...prev, origem: value }));
+                    }}
+                  >
+                    <SelectItem key="TODOS" textValue="Todas">
+                      Todas
+                    </SelectItem>
+                    <SelectItem key="CLIENTE" textValue="Cliente">
+                      Cliente
+                    </SelectItem>
+                    <SelectItem key="ESCRITORIO" textValue="Escritório">
+                      Escritório
+                    </SelectItem>
+                    <SelectItem key="SISTEMA" textValue="Sistema">
+                      Sistema
+                    </SelectItem>
+                  </Select>
+                  <Select
+                    label="Visibilidade"
+                    selectedKeys={[filtros.visibilidade]}
+                    onSelectionChange={(keys) => {
+                      const [value] = Array.from(keys) as VisibilidadeFiltro[];
+                      setFiltros((prev) => ({ ...prev, visibilidade: value }));
+                    }}
+                  >
+                    <SelectItem key="TODOS" textValue="Todos">
+                      Todos
+                    </SelectItem>
+                    <SelectItem key="CLIENTE" textValue="Cliente">
+                      Cliente
+                    </SelectItem>
+                    <SelectItem key="EQUIPE" textValue="Somente equipe">
+                      Somente equipe
+                    </SelectItem>
+                  </Select>
+                </div>
+              </FilterSection>
+
+              <FilterSection
+                description="Controle por intervalo de upload."
+                icon={Calendar}
+                title="Período"
+              >
+                <DateRangeInput
+                  label="Data de upload"
+                  startValue={filtros.dataUpload?.start ?? ""}
+                  endValue={filtros.dataUpload?.end ?? ""}
+                  visibleMonths={1}
+                  onRangeChange={({ start, end }) => {
+                    if (!start || !end) {
+                      setFiltros((prev) => ({
+                        ...prev,
+                        dataUpload: { start: null, end: null },
+                      }));
+
+                      return;
+                    }
+                    setFiltros((prev) => ({
+                      ...prev,
+                      dataUpload: { start, end },
+                    }));
+                  }}
+                />
+              </FilterSection>
+
+              <FilterSection
+                description="Ajuste a faixa de tamanho em KB."
+                icon={Files}
+                title="Tamanho"
+              >
+                <div className="space-y-3">
+                  <Slider
+                    label="Tamanho (KB)"
+                    maxValue={512000}
+                    minValue={0}
+                    step={1024}
+                    value={filtros.tamanhoKB}
+                    onChange={(value) =>
+                      setFiltros((prev) => ({
+                        ...prev,
+                        tamanhoKB: Array.isArray(value) ? value : [0, 512000],
+                      }))
+                    }
+                  />
+                  <div className="flex items-center justify-between text-xs text-default-500">
+                    <span>{filtros.tamanhoKB[0]} KB</span>
+                    <span>{filtros.tamanhoKB[1]} KB</span>
+                  </div>
+                </div>
+              </FilterSection>
+            </div>
+            {hasActiveFilters ? (
+              <div className="flex flex-wrap gap-2">
+                {filtros.busca ? (
+                  <Chip color="primary" size="sm" variant="flat">
+                    Busca: {filtros.busca}
+                  </Chip>
+                ) : null}
+                {filtros.origem !== "TODOS" ? (
+                  <Chip color="secondary" size="sm" variant="flat">
+                    Origem: {filtros.origem}
+                  </Chip>
+                ) : null}
+                {filtros.visibilidade !== "TODOS" ? (
+                  <Chip color="warning" size="sm" variant="flat">
+                    Visibilidade: {filtros.visibilidade}
+                  </Chip>
+                ) : null}
+                {filtros.dataUpload?.start && filtros.dataUpload?.end ? (
+                  <Chip color="success" size="sm" variant="flat">
+                    {new Date(filtros.dataUpload.start).toLocaleDateString("pt-BR")}{" "}
+                    - {new Date(filtros.dataUpload.end).toLocaleDateString("pt-BR")}
+                  </Chip>
+                ) : null}
+                {filtros.tamanhoKB[0] !== 0 || filtros.tamanhoKB[1] !== 512000 ? (
+                  <Chip size="sm" variant="flat">
+                    {filtros.tamanhoKB[0]} KB - {filtros.tamanhoKB[1]} KB
+                  </Chip>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-default-500">
+            Filtros recolhidos. Clique em <strong>Exibir filtros</strong> para ajustar.
+          </p>
+        )}
+      </PeoplePanel>
+
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <PeoplePanel
+          description={`${filteredClientes.length} cliente(s) visível(is) no seu escopo.`}
+          title="Clientes"
+        >
+          <div className="space-y-3">
+            <Input
+              aria-label="Buscar cliente"
+              placeholder="Buscar cliente..."
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={searchTerm}
+              variant="bordered"
+              onValueChange={setSearchTerm}
+            />
+            <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+              <AnimatePresence mode="popLayout">
+                {filteredClientes.map((cliente) => {
+                  const isActive = cliente.id === selectedClienteId;
+
+                  return (
+                    <motion.button
+                      key={cliente.id}
+                      type="button"
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        isActive
+                          ? "border-primary/50 bg-primary/10"
+                          : "border-white/10 bg-background/60 hover:border-primary/30"
+                      }`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleSelectCliente(cliente.id);
+                      }}
+                    >
+                      <p className="line-clamp-2 text-sm font-semibold text-foreground">
+                        {cliente.nome}
+                      </p>
+                      <p className="text-xs text-default-400">
+                        {cliente.processos} processo(s)
+                      </p>
+                    </motion.button>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+        </PeoplePanel>
+
+        <div className="space-y-6">
+          <PeoplePanel
+            description={`${selectedCliente?.counts.processos ?? 0} processo(s) vinculados ao cliente selecionado.`}
+            title="Processos"
+          >
+            <AnimatePresence mode="popLayout">
+              {selectedCliente?.processos.length ? (
+                <div className="space-y-2">
+                  {selectedCliente.processos.map((processo) => {
+                    const isActive = processo.id === selectedProcessoId;
 
                     return (
                       <motion.button
-                        key={cliente.id}
+                        key={processo.id}
                         type="button"
                         layout
-                        initial={{ opacity: 0, y: 8 }}
+                        initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.15 }}
-                        className={`group relative flex flex-col gap-1 overflow-hidden rounded-xl border-2 px-3 py-3 text-left transition min-h-[64px] ${isActive ? "border-primary/50 bg-primary/10 shadow-md" : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-primary/30 hover:shadow-lg"}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleSelectCliente(cliente.id);
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          isActive
+                            ? "border-primary/50 bg-primary/10"
+                            : "border-white/10 bg-background/60 hover:border-primary/30"
+                        }`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleSelectProcesso(processo.id);
                         }}
                       >
-                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 line-clamp-2">
-                          {cliente.nome}
-                        </span>
-                        <span className="text-xs text-slate-600 dark:text-slate-400">
-                          {cliente.processos} processos
-                        </span>
-                        <span className="absolute inset-0 -z-10 bg-linear-to-br from-primary/5 via-slate-100/0 to-transparent opacity-0 transition group-hover:opacity-100" />
+                        <p className="text-sm font-semibold text-foreground">
+                          {processo.numero}
+                        </p>
+                        <p className="line-clamp-1 text-xs text-default-400">
+                          {processo.titulo || "Sem título"}
+                        </p>
+                        <p className="pt-1 text-[11px] text-default-500">
+                          {processo.counts.arquivos} arquivo(s) · {processo.status}
+                        </p>
                       </motion.button>
                     );
                   })}
-                </AnimatePresence>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        <div className="flex flex-col gap-6">
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 20 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          >
-            <Card className="shadow-xl border-2 border-slate-200 dark:border-slate-700">
-              <CardHeader className="bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-linear-to-br from-emerald-500 to-teal-600 rounded-lg">
-                      <Briefcase className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                        Processos
-                      </h2>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        {selectedCliente?.processos.length ?? 0} associados ao cliente
-                      </p>
-                    </div>
-                  </div>
-                  {selectedCliente && (
-                    <Badge
-                      color="primary"
-                      content={selectedCliente.counts.arquivos}
-                      size="lg"
-                      variant="shadow"
-                    >
-                      <Target
-                        className="text-emerald-600 dark:text-emerald-400"
-                        size={20}
-                      />
-                    </Badge>
-                  )}
                 </div>
-              </CardHeader>
-              <Divider className="border-slate-200 dark:border-slate-700" />
-              <CardBody className="flex flex-col gap-2">
-                <AnimatePresence mode="popLayout">
-                  {isLoadingCliente && selectedClienteId !== previousClienteId ? (
-                    <div className="space-y-2">
-                      {Array.from({ length: 3 }).map((_, index) => (
-                        <Skeleton
-                          key={index}
-                          className="h-20 w-full rounded-xl"
-                          isLoaded={false}
-                        />
-                      ))}
-                    </div>
-                  ) : selectedCliente?.processos.length ? (
-                    selectedCliente.processos.map((processo) => {
-                      const isActive = processo.id === selectedProcessoId;
+              ) : (
+                <div className="py-8 text-center text-sm text-default-500">
+                  Nenhum processo vinculado ao cliente.
+                </div>
+              )}
+            </AnimatePresence>
+            {selectedCliente?.counts.processos ? (
+              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+                <p className="text-xs text-default-400">
+                  Página {processosPage} de {processosTotalPages} ·{" "}
+                  {selectedCliente.counts.processos} processo(s)
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    isDisabled={processosPage <= 1}
+                    size="sm"
+                    variant="flat"
+                    onPress={() =>
+                      setProcessosPage((prev) => Math.max(1, prev - 1))
+                    }
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    isDisabled={processosPage >= processosTotalPages}
+                    size="sm"
+                    variant="flat"
+                    onPress={() =>
+                      setProcessosPage((prev) =>
+                        Math.min(processosTotalPages, prev + 1),
+                      )
+                    }
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </PeoplePanel>
 
-                      return (
-                        <motion.button
-                          key={processo.id}
-                          type="button"
-                          layout
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.15 }}
-                          className={`flex flex-col gap-1 rounded-xl border-2 px-3 py-2 text-left transition min-h-[72px] ${isActive ? "border-primary/50 bg-primary/10 shadow-md" : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-primary/30 hover:shadow-lg"}`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleSelectProcesso(processo.id);
-                          }}
-                        >
-                          <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                            {processo.numero}
-                          </span>
-                          <span className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1">
-                            {processo.titulo || "Sem título"}
-                          </span>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                            <span>{processo.counts.arquivos} arquivos</span>
-                            <span>•</span>
-                            <span>{processo.status}</span>
-                          </div>
-                        </motion.button>
-                      );
-                    })
-                  ) : (
-                    <motion.div
-                      key="no-processos"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex items-center justify-center py-6 text-sm text-slate-400"
-                    >
-                      Nenhum processo vinculado
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </CardBody>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 20 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
+          <PeoplePanel
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  color="primary"
+                  isDisabled={!canManageDocumentos}
+                  size="sm"
+                  startContent={<FolderPlus className="h-3.5 w-3.5" />}
+                  variant="flat"
+                  onPress={handleCreateFolder}
+                >
+                  Nova pasta
+                </Button>
+                <Tooltip content="Renomear pasta selecionada">
+                  <Button
+                    isDisabled={!canManageDocumentos}
+                    size="sm"
+                    variant="flat"
+                    onPress={handleRenameFolder}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Excluir pasta selecionada">
+                  <Button
+                    color="danger"
+                    isDisabled={!canDeleteDocumentos}
+                    size="sm"
+                    variant="flat"
+                    onPress={handleDeleteFolder}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </Tooltip>
+              </div>
+            }
+            description={
+              selectedProcesso
+                ? "Estrutura de pastas do processo selecionado."
+                : "Estrutura de documentos gerais do cliente."
+            }
+            title="Explorador de Arquivos"
           >
-            <Card className="shadow-xl border-2 border-slate-200 dark:border-slate-700">
-              <CardHeader className="bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-linear-to-br from-purple-500 to-violet-600 rounded-lg">
-                      <Folder className="w-6 h-6 text-white" />
+            {!selectedCliente ? (
+              <div className="py-10 text-center text-sm text-default-500">
+                Selecione um cliente para abrir o explorador.
+              </div>
+            ) : !tree ? (
+              <div className="py-10 text-center text-sm text-default-500">
+                Nenhuma estrutura de pastas encontrada.
+              </div>
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+                <div className="rounded-xl border border-white/10 bg-background/60 p-3">
+                  <FolderTree
+                    root={tree}
+                    selectedPath={selectedFolderSegments}
+                    onSelectFolder={handleSelectFolder}
+                  />
+                </div>
+                <div className="rounded-xl border border-white/10 bg-background/60">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Folder className="h-4 w-4 text-primary" />
+                      {selectedFolderSegments.length
+                        ? selectedFolderSegments[selectedFolderSegments.length - 1]
+                        : "Pasta principal"}
                     </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                        Explorador de arquivos
-                      </h2>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        {selectedProcesso
-                          ? "Pastas do processo"
-                          : "Documentos gerais do cliente"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       color="primary"
+                      isDisabled={!canManageDocumentos}
+                      isLoading={isUploading}
                       size="sm"
-                      startContent={<FolderPlus className="h-3.5 w-3.5" />}
+                      startContent={<UploadCloud className="h-3.5 w-3.5" />}
                       variant="flat"
-                      onPress={handleCreateFolder}
+                      onPress={() => {
+                        if (isUploading || !canManageDocumentos) return;
+                        const input = document.createElement("input");
+
+                        input.type = "file";
+                        input.multiple = true;
+                        input.onchange = () => {
+                          handleUpload(input.files);
+                          input.value = "";
+                        };
+                        input.click();
+                      }}
                     >
-                      Nova pasta
+                      Enviar arquivos
                     </Button>
-                    <Tooltip content="Renomear pasta selecionada">
-                      <Button
-                        size="sm"
-                        variant="light"
-                        onPress={handleRenameFolder}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="Excluir pasta selecionada">
-                      <Button
-                        color="danger"
-                        size="sm"
-                        variant="light"
-                        onPress={handleDeleteFolder}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </Tooltip>
+                  </div>
+                  <div
+                    className={`m-4 flex min-h-[160px] flex-col gap-3 rounded-lg border border-dashed border-white/20 p-4 text-sm text-default-500 ${
+                      isUploading ? "opacity-60" : ""
+                    }`}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (isUploading || !canManageDocumentos) return;
+                      handleUpload(event.dataTransfer.files);
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-2 text-default-400">
+                      <UploadCloud className="h-4 w-4" />
+                      {canManageDocumentos
+                        ? "Arraste arquivos aqui ou use o botão de envio."
+                        : "Acesso somente leitura."}
+                    </div>
+                    {filesInCurrentFolder.length ? (
+                      <div className="space-y-2">
+                        {pagedFiles.map((arquivo) => (
+                          <div
+                            key={`${arquivo.documentoId}-${arquivo.versaoId ?? "v1"}`}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-background/80 px-3 py-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {arquivo.nome}
+                              </p>
+                              <p className="text-xs text-default-400">
+                                {formatBytes(arquivo.tamanhoBytes)} ·{" "}
+                                {formatDate(arquivo.uploadedAt)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                as="a"
+                                href={arquivo.url}
+                                rel="noopener noreferrer"
+                                size="sm"
+                                target="_blank"
+                                variant="flat"
+                              >
+                                Abrir
+                              </Button>
+                              {canDeleteDocumentos ? (
+                                <Button
+                                  color="danger"
+                                  size="sm"
+                                  variant="flat"
+                                  onPress={() => handleDeleteFile(arquivo)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                        {filesTotalPages > 1 ? (
+                          <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                            <p className="text-xs text-default-400">
+                              Página {filesPage} de {filesTotalPages} ·{" "}
+                              {filesInCurrentFolder.length} arquivo(s)
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                isDisabled={filesPage <= 1}
+                                size="sm"
+                                variant="flat"
+                                onPress={() =>
+                                  setFilesPage((prev) => Math.max(1, prev - 1))
+                                }
+                              >
+                                Anterior
+                              </Button>
+                              <Button
+                                isDisabled={filesPage >= filesTotalPages}
+                                size="sm"
+                                variant="flat"
+                                onPress={() =>
+                                  setFilesPage((prev) =>
+                                    Math.min(filesTotalPages, prev + 1),
+                                  )
+                                }
+                              >
+                                Próxima
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center text-xs text-default-500">
+                        Nenhum arquivo nesta pasta.
+                      </div>
+                    )}
                   </div>
                 </div>
-              </CardHeader>
-              <Divider className="border-slate-200 dark:border-slate-700" />
-              <CardBody className="space-y-4">
-                {!selectedCliente ? (
-                  <div className="flex items-center justify-center py-20 text-sm text-slate-400">
-                    Selecione um cliente para visualizar documentos
-                  </div>
-                ) : isLoadingCliente && selectedClienteId !== previousClienteId ? (
-                  <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-                    {/* Skeleton da árvore de pastas */}
-                    <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
-                      <div className="space-y-2">
-                        <Skeleton className="h-10 w-full rounded-lg" isLoaded={false} />
-                        {Array.from({ length: 4 }).map((_, index) => (
-                          <Skeleton
-                            key={index}
-                            className="h-8 w-full rounded-lg ml-4"
-                            isLoaded={false}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Skeleton da área de arquivos */}
-                    <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-4 py-3 bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
-                        <Skeleton className="h-6 w-32 rounded-lg" isLoaded={false} />
-                        <Skeleton className="h-9 w-28 rounded-lg" isLoaded={false} />
-                      </div>
-                      <div className="mx-4 my-4 space-y-2">
-                        {Array.from({ length: 3 }).map((_, index) => (
-                          <Skeleton
-                            key={index}
-                            className="h-16 w-full rounded-lg"
-                            isLoaded={false}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : !tree ? (
-                  <div className="flex items-center justify-center py-20 text-sm text-slate-400">
-                    Nenhuma estrutura encontrada
-                  </div>
-                ) : (
-                  <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-                    <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
-                      <FolderTree
-                        root={tree}
-                        selectedPath={selectedFolderSegments}
-                        onSelectFolder={handleSelectFolder}
-                      />
-                    </div>
-
-                    <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-4 py-3 bg-linear-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                          <Folder className="h-4 w-4 text-primary" />
-                          {selectedFolderSegments.length
-                            ? selectedFolderSegments[
-                                selectedFolderSegments.length - 1
-                              ]
-                            : "Pasta principal"}
-                        </div>
-                        <Button
-                          color="primary"
-                          isLoading={isUploading}
-                          size="sm"
-                          startContent={<UploadCloud className="h-3.5 w-3.5" />}
-                          variant="flat"
-                          onPress={() => {
-                            if (isUploading) return;
-
-                            const input = document.createElement("input");
-
-                            input.type = "file";
-                            input.multiple = true;
-                            input.onchange = () => {
-                              handleUpload(input.files);
-                              input.value = "";
-                            };
-                            input.click();
-                          }}
-                        >
-                          Enviar arquivos
-                        </Button>
-                      </div>
-
-                      <div
-                        className={`mx-4 my-4 flex min-h-[160px] flex-col gap-3 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 p-4 text-sm text-slate-500 ${isUploading ? "opacity-60" : ""}`}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          if (isUploading) return;
-                          handleUpload(event.dataTransfer.files);
-                        }}
-                      >
-                        <div className="flex items-center justify-center gap-2 text-slate-400">
-                          <UploadCloud className="h-4 w-4" />
-                          Arraste arquivos aqui ou clique em enviar
-                        </div>
-                        {filesInCurrentFolder.length ? (
-                          <div className="space-y-2">
-                            {filesInCurrentFolder.map((arquivo) => (
-                              <div
-                                key={`${arquivo.documentoId}-${arquivo.versaoId ?? "v1"}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 hover:border-primary/30 hover:shadow-md transition-all"
-                              >
-                                <div className="flex flex-1 items-center gap-3">
-                                  <FileText className="h-4 w-4 text-slate-400" />
-                                  <div>
-                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                      {arquivo.nome}
-                                    </p>
-                                    <p className="text-xs text-slate-500">
-                                      {formatBytes(arquivo.tamanhoBytes)} ·{" "}
-                                      {formatDate(arquivo.uploadedAt)}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    as="a"
-                                    href={arquivo.url}
-                                    rel="noopener noreferrer"
-                                    size="sm"
-                                    target="_blank"
-                                    variant="light"
-                                  >
-                                    Abrir
-                                  </Button>
-                                  <Button
-                                    color="danger"
-                                    size="sm"
-                                    variant="light"
-                                    onPress={() => handleDeleteFile(arquivo)}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex flex-1 items-center justify-center text-xs text-slate-400">
-                            Nenhum arquivo nesta pasta
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </motion.div>
+              </div>
+            )}
+          </PeoplePanel>
         </div>
       </div>
 
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: 20 }}
-        transition={{ duration: 0.4, delay: 0.4 }}
-      >
-        <Card className="shadow-lg border-2 border-slate-200 dark:border-slate-700">
-          <CardBody className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-              <Sparkles className="h-4 w-4 text-primary/80" />
-              <span>
-                Estrutura sincronizada em{" "}
-                {data.generatedAt ? formatDate(data.generatedAt) : "--"}
-              </span>
-            </div>
-            <span className="text-xs text-slate-500">
-              Cloudinary folder base:{" "}
-              <code className="text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+      <Card className="border border-white/10 bg-background/70">
+        <CardBody className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-xs text-default-400">
+            <Sparkles className="h-4 w-4 text-primary/80" />
+            <span>
+              Estrutura sincronizada em{" "}
+              {data.generatedAt ? formatDate(data.generatedAt) : "--"}
+            </span>
+          </div>
+          {canManageDocumentos ? (
+            <span className="text-xs text-default-500">
+              Base Cloudinary:{" "}
+              <code className="rounded bg-default-100/20 px-2 py-1 text-default-300">
                 magiclawyer/{data.tenantSlug}
               </code>
             </span>
-          </CardBody>
-        </Card>
-      </motion.div>
+          ) : (
+            <span className="text-xs text-default-500">
+              Biblioteca sincronizada para o seu escopo de acesso.
+            </span>
+          )}
+        </CardBody>
+      </Card>
 
       <UploadOptionsModal
         canConfirm={canConfirmUpload}
@@ -1905,7 +1798,14 @@ function UploadOptionsModal({
     });
   };
 
-  const causaKeys = uploadOptions.causaId ? [uploadOptions.causaId] : [];
+  const causasKeySet = useMemo(
+    () => new Set(causas.map((causa) => causa.id)),
+    [causas],
+  );
+  const causaKeys =
+    uploadOptions.causaId && causasKeySet.has(uploadOptions.causaId)
+      ? [uploadOptions.causaId]
+      : ["__none"];
 
   return (
     <Modal

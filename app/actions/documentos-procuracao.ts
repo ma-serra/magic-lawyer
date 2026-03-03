@@ -8,6 +8,29 @@ import { UploadService, DocumentUploadOptions } from "@/lib/upload-service";
 import { PrismaClient } from "@/generated/prisma";
 import logger from "@/lib/logger";
 import { DocumentNotifier } from "@/app/lib/notifications/document-notifier";
+import { checkPermission } from "@/app/actions/equipe";
+import { getScopedProcuracaoId } from "@/app/actions/procuracoes";
+import { headers } from "next/headers";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
+
+const PROCURACOES_MODULE = "procuracoes";
+
+const permissionErrors: Record<"visualizar" | "editar", string> = {
+  visualizar: "Você não tem permissão para visualizar documentos da procuração",
+  editar: "Você não tem permissão para editar documentos da procuração",
+};
+
+async function requirePermission(
+  action: "visualizar" | "editar",
+): Promise<string | null> {
+  const allowed = await checkPermission(PROCURACOES_MODULE, action);
+
+  if (!allowed) {
+    return permissionErrors[action];
+  }
+
+  return null;
+}
 
 const prisma = new PrismaClient();
 
@@ -35,6 +58,27 @@ async function getSession() {
   return await getServerSession(authOptions);
 }
 
+async function getRequestContext() {
+  const headersList = await headers();
+  const ipRaw =
+    headersList.get("x-forwarded-for") ??
+    headersList.get("x-real-ip") ??
+    headersList.get("cf-connecting-ip");
+  const ip = ipRaw ? ipRaw.split(",")[0]?.trim() || null : null;
+  const userAgent = headersList.get("user-agent");
+
+  return { ip, userAgent };
+}
+
+function getActorName(user: {
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  id?: string;
+}) {
+  return `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || user.id || "Usuário";
+}
+
 // ============================================
 // ACTIONS - DOCUMENTOS DE PROCURAÇÃO
 // ============================================
@@ -52,6 +96,12 @@ export async function uploadDocumentoProcuracao(
   },
 ) {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user?.id) {
@@ -60,15 +110,27 @@ export async function uploadDocumentoProcuracao(
 
     const user = session.user as any;
     const tenantId = user.tenantId;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
     const uploaderDisplayName =
       `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
       user.email ||
       user.id;
 
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return { success: false, error: "Procuração não encontrada ou sem acesso" };
+    }
+
     // Verificar se a procuração existe e pertence ao tenant
     const procuracao = await prisma.procuracao.findFirst({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
         tenantId,
       },
       select: {
@@ -161,7 +223,7 @@ export async function uploadDocumentoProcuracao(
     });
 
     // Revalidar cache
-    revalidatePath(`/procuracoes/${procuracaoId}`);
+    revalidatePath(`/procuracoes/${scopedProcuracaoId}`);
 
     try {
       await DocumentNotifier.notifyUploaded({
@@ -181,6 +243,39 @@ export async function uploadDocumentoProcuracao(
         "Falha ao emitir notificações de documento.uploaded (procuração)",
         error,
       );
+    }
+
+    try {
+      await logAudit({
+        tenantId,
+        usuarioId: user.id,
+        acao: "DOCUMENTO_PROCURAÇÃO_UPLOADED",
+        entidade: "DocumentoProcuracao",
+        entidadeId: documento.id,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoId: procuracao.id,
+          numeroProcuracao: procuracao.numero,
+          documentoNome: documento.fileName,
+          documentoTipo: documento.tipo,
+          tamanhoBytes: documento.size,
+          mimeType: documento.mimeType,
+          clienteId: procuracao.clienteId,
+        }),
+        changedFields: [
+          "fileName",
+          "originalName",
+          "description",
+          "tipo",
+          "url",
+          "size",
+          "mimeType",
+        ],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de upload de documento da procuração", auditError);
     }
 
     return {
@@ -203,6 +298,12 @@ export async function uploadDocumentoProcuracao(
  */
 export async function getDocumentosProcuracao(procuracaoId: string) {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user?.id) {
@@ -211,11 +312,20 @@ export async function getDocumentosProcuracao(procuracaoId: string) {
 
     const user = session.user as any;
     const tenantId = user.tenantId;
+    if (!tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return { success: false, error: "Procuração não encontrada ou sem acesso" };
+    }
 
     // Verificar se a procuração existe e pertence ao tenant
     const procuracao = await prisma.procuracao.findFirst({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
         tenantId,
       },
       select: {
@@ -230,7 +340,7 @@ export async function getDocumentosProcuracao(procuracaoId: string) {
     // Buscar documentos
     const documentos = await prisma.documentoProcuracao.findMany({
       where: {
-        procuracaoId: procuracao.id,
+        procuracaoId: scopedProcuracaoId,
         tenantId,
       },
       orderBy: {
@@ -257,6 +367,12 @@ export async function getDocumentosProcuracao(procuracaoId: string) {
  */
 export async function deleteDocumentoProcuracao(documentoId: string) {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user?.id) {
@@ -265,6 +381,12 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
 
     const user = session.user as any;
     const tenantId = user.tenantId;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
     // Buscar documento
     const documento = await prisma.documentoProcuracao.findFirst({
@@ -285,11 +407,12 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
       return { success: false, error: "Documento não encontrado" };
     }
 
-    // Verificar permissão (apenas quem fez upload ou admin pode deletar)
-    if (documento.uploadedBy !== user.id && user.role !== "ADMIN") {
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, documento.procuracaoId);
+
+    if (!scopedProcuracaoId) {
       return {
         success: false,
-        error: "Sem permissão para deletar este documento",
+        error: "Documento não encontrado ou sem acesso",
       };
     }
 
@@ -315,11 +438,6 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
       // Continuar mesmo se falhar no Cloudinary
     }
 
-    // TODO: Implementar log de auditoria quando modelo estiver disponível
-    logger.info(
-      `🗑️ Documento deletado: ${documentoCompleto?.fileName} por usuário ${user.id}`,
-    );
-
     // Deletar registro do banco
     await prisma.documentoProcuracao.delete({
       where: {
@@ -327,8 +445,41 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
       },
     });
 
+    try {
+      await logAudit({
+        tenantId,
+        usuarioId: user.id,
+        acao: "DOCUMENTO_PROCURAÇÃO_DELETADO",
+        entidade: "DocumentoProcuracao",
+        entidadeId: documentoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoId: documento.procuracaoId,
+          documentoNome: documentoCompleto?.fileName,
+          documentoTipo: documentoCompleto?.tipo,
+          tamanhoBytes: documentoCompleto?.size,
+          mimeType: documentoCompleto?.mimeType,
+          publicId: documento.publicId,
+          clienteNome: documentoCompleto?.procuracao?.cliente?.nome,
+        }),
+        previousValues: toAuditJson({
+          fileName: documentoCompleto?.fileName,
+          description: documentoCompleto?.description,
+          tipo: documentoCompleto?.tipo,
+          url: documento.url,
+          publicId: documento.publicId,
+          procuracaoId: documento.procuracaoId,
+        }),
+        changedFields: ["deleted"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de exclusão de documento da procuração", auditError);
+    }
+
     // Revalidar cache
-    revalidatePath(`/procuracoes/${documento.procuracaoId}`);
+    revalidatePath(`/procuracoes/${scopedProcuracaoId}`);
 
     return {
       success: true,
@@ -410,7 +561,6 @@ export async function cleanupOrphanedDocuments() {
 
     logger.info("✅ Limpeza concluída:", result);
 
-    // TODO: Implementar log de auditoria quando modelo estiver disponível
     logger.info(
       `📊 Resumo da limpeza: ${totalProcessed} processados, ${totalDeleted} deletados, ${totalErrors} erros`,
     );
@@ -419,7 +569,6 @@ export async function cleanupOrphanedDocuments() {
   } catch (error) {
     logger.error("❌ Erro na limpeza de documentos órfãos:", error);
 
-    // TODO: Implementar log de auditoria quando modelo estiver disponível
     const errorMessage =
       error instanceof Error ? error.message : "Erro desconhecido";
 
@@ -442,6 +591,12 @@ export async function updateDocumentoProcuracao(
   },
 ) {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user?.id) {
@@ -450,6 +605,12 @@ export async function updateDocumentoProcuracao(
 
     const user = session.user as any;
     const tenantId = user.tenantId;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
     // Buscar documento
     const documento = await prisma.documentoProcuracao.findFirst({
@@ -468,13 +629,28 @@ export async function updateDocumentoProcuracao(
       return { success: false, error: "Documento não encontrado" };
     }
 
-    // Verificar permissão (apenas quem fez upload ou admin pode editar)
-    if (documento.uploadedBy !== user.id && user.role !== "ADMIN") {
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, documento.procuracaoId);
+
+    if (!scopedProcuracaoId) {
       return {
         success: false,
-        error: "Sem permissão para editar este documento",
+        error: "Documento não encontrado ou sem acesso",
       };
     }
+
+    const documentoAnterior = await prisma.documentoProcuracao.findUnique({
+      where: {
+        id: documentoId,
+      },
+      select: {
+        fileName: true,
+        description: true,
+        tipo: true,
+        size: true,
+        mimeType: true,
+        url: true,
+      },
+    });
 
     // Atualizar documento
     const documentoAtualizado = await prisma.documentoProcuracao.update({
@@ -490,7 +666,37 @@ export async function updateDocumentoProcuracao(
     });
 
     // Revalidar cache
-    revalidatePath(`/procuracoes/${documento.procuracaoId}`);
+    revalidatePath(`/procuracoes/${scopedProcuracaoId}`);
+
+    try {
+      await logAudit({
+        tenantId,
+        usuarioId: user.id,
+        acao: "DOCUMENTO_PROCURAÇÃO_ATUALIZADO",
+        entidade: "DocumentoProcuracao",
+        entidadeId: documentoAtualizado.id,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoId: documento.procuracaoId,
+          ...data,
+        }),
+        previousValues: toAuditJson({
+          fileName: documentoAnterior?.fileName,
+          description: documentoAnterior?.description,
+          tipo: documentoAnterior?.tipo,
+          size: documentoAnterior?.size,
+          mimeType: documentoAnterior?.mimeType,
+          url: documentoAnterior?.url,
+        }),
+        changedFields: Object.keys(data).filter(
+          (field) => data[field as keyof typeof data] !== undefined,
+        ) as string[],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de atualização de documento da procuração", auditError);
+    }
 
     return {
       success: true,

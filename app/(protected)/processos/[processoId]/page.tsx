@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -40,6 +40,7 @@ import {
   Info,
   Users,
   FileSignature,
+  UploadCloud,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -50,6 +51,7 @@ import {
   useDocumentosProcesso,
   useEventosProcesso,
 } from "@/app/hooks/use-processos";
+import { usePermissionCheck } from "@/app/hooks/use-permission-check";
 import { useProcuracoesDisponiveis } from "@/app/hooks/use-clientes";
 import { title } from "@/components/primitives";
 import {
@@ -69,6 +71,7 @@ import {
   linkProcuracaoAoProcesso,
   unlinkProcuracaoDoProcesso,
 } from "@/app/actions/processos";
+import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
 import JuizModal from "@/components/juiz-modal";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
@@ -97,6 +100,86 @@ const prazoFormInitial = {
   descricao: "",
   fundamentoLegal: "",
 };
+
+const MAX_PROCESSO_DOCUMENTOS_UPLOAD = 10;
+const PROCESSO_UPLOAD_LIMIT_BYTES = {
+  pdf: 25 * 1024 * 1024,
+  image: 25 * 1024 * 1024,
+  audio: 50 * 1024 * 1024,
+  video: 100 * 1024 * 1024,
+} as const;
+
+type ProcessoUploadFileType = keyof typeof PROCESSO_UPLOAD_LIMIT_BYTES;
+
+const IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
+]);
+const AUDIO_EXTENSIONS = new Set([
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "aac",
+  "flac",
+  "wma",
+  "opus",
+]);
+const VIDEO_EXTENSIONS = new Set([
+  "mp4",
+  "mov",
+  "avi",
+  "mkv",
+  "webm",
+  "mpeg",
+  "mpg",
+  "m4v",
+]);
+const PROCESSO_ALLOWED_UPLOAD_EXTENSIONS = [
+  "pdf",
+  ...Array.from(IMAGE_EXTENSIONS),
+  ...Array.from(AUDIO_EXTENSIONS),
+  ...Array.from(VIDEO_EXTENSIONS),
+];
+
+function getFileExtension(fileName: string): string {
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+
+  return extension ?? "";
+}
+
+function resolveProcessoUploadType(file: File): ProcessoUploadFileType | null {
+  const mimeType = (file.type || "").toLowerCase();
+  const extension = getFileExtension(file.name);
+
+  if (mimeType === "application/pdf" || extension === "pdf") {
+    return "pdf";
+  }
+
+  if (mimeType.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+
+  if (mimeType.startsWith("audio/") || AUDIO_EXTENSIONS.has(extension)) {
+    return "audio";
+  }
+
+  if (mimeType.startsWith("video/") || VIDEO_EXTENSIONS.has(extension)) {
+    return "video";
+  }
+
+  return null;
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
 
 interface InfoItemProps {
   label: string;
@@ -283,7 +366,7 @@ export default function ProcessoDetalhesPage() {
 
   const { processo, isCliente, isLoading, isError, mutate } =
     useProcessoDetalhado(processoId);
-  const { documentos, isLoading: isLoadingDocs } =
+  const { documentos, isLoading: isLoadingDocs, mutate: mutateDocumentos } =
     useDocumentosProcesso(processoId);
   const { eventos, isLoading: isLoadingEventos } =
     useEventosProcesso(processoId);
@@ -307,8 +390,21 @@ export default function ProcessoDetalhesPage() {
   const [isCreatingPrazo, setIsCreatingPrazo] = useState(false);
   const [isLinkingProcuracao, setIsLinkingProcuracao] = useState(false);
   const [isJuizModalOpen, setIsJuizModalOpen] = useState(false);
+  const [documentoDescricao, setDocumentoDescricao] = useState("");
+  const [documentoVisivelCliente, setDocumentoVisivelCliente] = useState(true);
+  const [documentoFiles, setDocumentoFiles] = useState<File[]>([]);
+  const [isUploadingDocumento, setIsUploadingDocumento] = useState(false);
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
+  const documentoInputRef = useRef<HTMLInputElement | null>(null);
   const [, startTransition] = useTransition();
+  const { hasPermission: canUploadProcessoDocumentos } = usePermissionCheck(
+    isCliente ? null : "documentos",
+    isCliente ? null : "criar",
+    {
+      enabled: !isCliente,
+      enableEarlyAccess: true,
+    },
+  );
 
   const prazosOrdenados = useMemo(() => {
     if (!processo?.prazos) return [];
@@ -608,6 +704,137 @@ export default function ProcessoDetalhesPage() {
     } finally {
       setProcuracaoActionId(null);
     }
+  };
+
+  const handleUploadDocumento = async () => {
+    if (!canUploadProcessoDocumentos) {
+      toast.error("Você não tem permissão para anexar documentos");
+
+      return;
+    }
+
+    if (!documentoFiles.length) {
+      toast.error("Selecione ao menos um arquivo para anexar ao processo");
+
+      return;
+    }
+
+    if (!processo?.cliente?.id) {
+      toast.error("Cliente do processo não encontrado");
+
+      return;
+    }
+
+    setIsUploadingDocumento(true);
+    try {
+      let successCount = 0;
+      const failedUploads: Array<{ file: File; reason: string }> = [];
+
+      for (const file of documentoFiles) {
+        const formData = new FormData();
+
+        formData.append("file", file);
+        formData.append("processoIds", processoId);
+
+        const result = await uploadDocumentoExplorer(
+          processo.cliente.id,
+          processoId,
+          formData,
+          {
+            description: documentoDescricao.trim() || undefined,
+            visivelParaCliente: documentoVisivelCliente,
+            allowedExtensions: PROCESSO_ALLOWED_UPLOAD_EXTENSIONS,
+          },
+        );
+
+        if (result.success) {
+          successCount += 1;
+          continue;
+        }
+
+        failedUploads.push({
+          file,
+          reason: result.error || "Falha no upload",
+        });
+      }
+
+      if (successCount > 0) {
+        toast.success(
+          `${successCount} documento(s) anexado(s) ao processo com sucesso`,
+        );
+      }
+
+      if (failedUploads.length > 0) {
+        toast.error(
+          `Falha em ${failedUploads.length} arquivo(s). Exemplo: ${failedUploads[0].file.name} (${failedUploads[0].reason})`,
+        );
+      }
+
+      setDocumentoFiles(failedUploads.map((item) => item.file));
+      setDocumentoDescricao("");
+      setDocumentoVisivelCliente(true);
+      if (documentoInputRef.current && failedUploads.length === 0) {
+        documentoInputRef.current.value = "";
+      }
+
+      if (successCount > 0) {
+        await Promise.all([mutateDocumentos(), mutate()]);
+      }
+    } catch (error) {
+      toast.error("Erro ao anexar documento");
+    } finally {
+      setIsUploadingDocumento(false);
+    }
+  };
+
+  const handleSelectDocumentoFiles = (files: FileList | null) => {
+    const selectedFiles = Array.from(files ?? []);
+
+    if (selectedFiles.length === 0) {
+      setDocumentoFiles([]);
+      return;
+    }
+
+    const limitedFiles =
+      selectedFiles.length > MAX_PROCESSO_DOCUMENTOS_UPLOAD
+        ? selectedFiles.slice(0, MAX_PROCESSO_DOCUMENTOS_UPLOAD)
+        : selectedFiles;
+
+    if (selectedFiles.length > MAX_PROCESSO_DOCUMENTOS_UPLOAD) {
+      toast.error(
+        `Máximo de ${MAX_PROCESSO_DOCUMENTOS_UPLOAD} arquivos por envio`,
+      );
+    }
+
+    const validFiles: File[] = [];
+    const rejected: string[] = [];
+
+    for (const file of limitedFiles) {
+      const fileType = resolveProcessoUploadType(file);
+
+      if (!fileType) {
+        rejected.push(`${file.name} (formato não permitido)`);
+        continue;
+      }
+
+      const limitBytes = PROCESSO_UPLOAD_LIMIT_BYTES[fileType];
+      if (file.size > limitBytes) {
+        rejected.push(
+          `${file.name} (limite ${formatMegabytes(limitBytes)} para ${fileType})`,
+        );
+        continue;
+      }
+
+      validFiles.push(file);
+    }
+
+    if (rejected.length > 0) {
+      toast.error(
+        `${rejected.length} arquivo(s) rejeitado(s). Exemplo: ${rejected[0]}`,
+      );
+    }
+
+    setDocumentoFiles(validFiles);
   };
 
   return (
@@ -1091,7 +1318,7 @@ export default function ProcessoDetalhesPage() {
         >
           <div
             className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-prazos"
+            id="processo-partes"
           >
             <Card className="border border-default-200">
               <CardHeader>
@@ -1171,7 +1398,7 @@ export default function ProcessoDetalhesPage() {
               </CardBody>
             </Card>
 
-            {!isCliente && (
+            {!isCliente && canUploadProcessoDocumentos && (
               <Card className="border border-default-200">
                 <CardHeader>
                   <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -1280,7 +1507,7 @@ export default function ProcessoDetalhesPage() {
         >
           <div
             className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-documentos"
+            id="processo-prazos"
           >
             <Card className="border border-default-200">
               <CardHeader>
@@ -1503,8 +1730,138 @@ export default function ProcessoDetalhesPage() {
         >
           <div
             className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-eventos"
+            id="processo-documentos"
           >
+            {!isCliente && (
+              <Card className="border border-default-200">
+                <CardHeader>
+                  <div className="w-full flex flex-col gap-1">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <UploadCloud className="h-4 w-4" />
+                      Anexar documento ao processo
+                    </h3>
+                    <p className="text-xs text-default-500">
+                      O arquivo entra na pasta do processo e fica disponível em
+                      Documentos do processo e no módulo de Documentos.
+                    </p>
+                  </div>
+                </CardHeader>
+                <Divider />
+                <CardBody className="space-y-4">
+                  <input
+                    ref={documentoInputRef}
+                    accept=".pdf,image/*,audio/*,video/*"
+                    className="hidden"
+                    type="file"
+                    multiple
+                    onChange={(event) => handleSelectDocumentoFiles(event.target.files)}
+                  />
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Button
+                      startContent={<UploadCloud className="h-4 w-4" />}
+                      variant="bordered"
+                      onPress={() => documentoInputRef.current?.click()}
+                    >
+                      {documentoFiles.length
+                        ? "Alterar seleção"
+                        : "Selecionar arquivos"}
+                    </Button>
+                    <Input
+                      isReadOnly
+                      label="Arquivos selecionados"
+                      placeholder="Nenhum arquivo selecionado"
+                      value={
+                        documentoFiles.length === 0
+                          ? ""
+                          : documentoFiles.length === 1
+                            ? documentoFiles[0].name
+                            : `${documentoFiles.length} arquivos selecionados`
+                      }
+                    />
+                  </div>
+
+                  {documentoFiles.length > 0 ? (
+                    <div className="rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
+                        Prévia da seleção
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {documentoFiles.slice(0, 8).map((file) => (
+                          <Chip key={`${file.name}-${file.size}`} size="sm" variant="flat">
+                            {file.name}
+                          </Chip>
+                        ))}
+                        {documentoFiles.length > 8 ? (
+                          <Chip size="sm" variant="flat">
+                            +{documentoFiles.length - 8} arquivo(s)
+                          </Chip>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <Textarea
+                    label="Descrição interna"
+                    minRows={2}
+                    placeholder="Opcional: observação para equipe sobre este anexo"
+                    value={documentoDescricao}
+                    onValueChange={setDocumentoDescricao}
+                  />
+
+                  <Select
+                    label="Visibilidade no portal do cliente"
+                    selectedKeys={[documentoVisivelCliente ? "SIM" : "NAO"]}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys)[0] as string | undefined;
+                      setDocumentoVisivelCliente(selected !== "NAO");
+                    }}
+                  >
+                    <SelectItem key="SIM" textValue="Visível para cliente">
+                      Visível para cliente
+                    </SelectItem>
+                    <SelectItem key="NAO" textValue="Somente equipe">
+                      Somente equipe interna
+                    </SelectItem>
+                  </Select>
+
+                  <div className="rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
+                      Regras de anexo
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-default-600">
+                      <li>Máximo de 10 arquivos por envio.</li>
+                      <li>PDF e imagem: até 25 MB por arquivo.</li>
+                      <li>Áudio: até 50 MB por arquivo.</li>
+                      <li>Vídeo: até 100 MB por arquivo.</li>
+                      <li>
+                        Formatos aceitos: PDF, imagens, áudios e vídeos.
+                      </li>
+                      <li>
+                        Os limites existem para segurança, performance e custo
+                        operacional do sistema.
+                      </li>
+                      <li>
+                        Se marcado como visível, o cliente pode acessar no portal.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      color="primary"
+                      isLoading={isUploadingDocumento}
+                      isDisabled={documentoFiles.length === 0}
+                      startContent={<UploadCloud className="h-4 w-4" />}
+                      onPress={handleUploadDocumento}
+                    >
+                      Anexar documentos
+                    </Button>
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+
             {isLoadingDocs ? (
               <div className="flex justify-center py-8">
                 <Spinner />
@@ -1516,6 +1873,11 @@ export default function ProcessoDetalhesPage() {
                   <p className="mt-4 text-lg font-semibold text-default-600">
                     Nenhum documento disponível
                   </p>
+                  {!isCliente && canUploadProcessoDocumentos && (
+                    <p className="mt-2 text-sm text-default-500">
+                      Use o bloco acima para anexar o primeiro documento.
+                    </p>
+                  )}
                 </CardBody>
               </Card>
             ) : (
@@ -1526,15 +1888,15 @@ export default function ProcessoDetalhesPage() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <p className="text-sm font-semibold">
-                            {doc.titulo || doc.nomeArquivo}
+                            {doc.nome}
                           </p>
                           <p className="text-xs text-default-400">
                             {DateUtils.formatDate(doc.createdAt)}
                           </p>
                         </div>
-                        {doc.tamanho && (
+                        {doc.tamanhoBytes && (
                           <Chip size="sm" variant="flat">
-                            {(doc.tamanho / 1024).toFixed(2)} KB
+                            {(doc.tamanhoBytes / 1024).toFixed(2)} KB
                           </Chip>
                         )}
                       </div>
@@ -1544,18 +1906,31 @@ export default function ProcessoDetalhesPage() {
                         </p>
                       )}
                       {doc.url && (
-                        <Button
-                          as="a"
-                          color="primary"
-                          href={doc.url}
-                          rel="noopener noreferrer"
-                          size="sm"
-                          startContent={<Eye className="h-3 w-3" />}
-                          target="_blank"
-                          variant="flat"
-                        >
-                          Visualizar
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            as="a"
+                            color="primary"
+                            href={`/api/documentos/${doc.id}/view`}
+                            rel="noopener noreferrer"
+                            size="sm"
+                            startContent={<Eye className="h-3 w-3" />}
+                            target="_blank"
+                            variant="flat"
+                          >
+                            Visualizar
+                          </Button>
+                          <Button
+                            as="a"
+                            href={`/api/documentos/${doc.id}/view?download=1`}
+                            rel="noopener noreferrer"
+                            size="sm"
+                            startContent={<Download className="h-3 w-3" />}
+                            target="_blank"
+                            variant="bordered"
+                          >
+                            Baixar
+                          </Button>
+                        </div>
                       )}
                     </CardBody>
                   </Card>
@@ -1581,7 +1956,7 @@ export default function ProcessoDetalhesPage() {
         >
           <div
             className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-procuracoes"
+            id="processo-eventos"
           >
             {isLoadingEventos ? (
               <div className="flex justify-center py-8">
@@ -1657,7 +2032,7 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-procuracoes">
             <Card className="border border-default-200">
               <CardHeader>
                 <div className="flex items-center justify-between w-full">

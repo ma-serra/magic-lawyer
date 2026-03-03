@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardBody } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -45,10 +45,11 @@ import {
   useClientesParaSelect,
   useProcuracoesDisponiveis,
 } from "@/app/hooks/use-clientes";
-import { useAllContratos } from "@/app/hooks/use-contratos";
+import { useContratosPaginated } from "@/app/hooks/use-contratos";
 import { deleteContrato, vincularContratoProcuracao } from "@/app/actions/contratos";
 import { DateUtils } from "@/app/lib/date-utils";
 import { Select, SelectItem } from "@heroui/react";
+import { Pagination } from "@heroui/pagination";
 import {
   PeopleMetricCard,
   PeoplePageHeader,
@@ -87,6 +88,8 @@ export default function ContratosContent() {
   const [filtroValorMin, setFiltroValorMin] = useState<string>("");
   const [filtroValorMax, setFiltroValorMax] = useState<string>("");
   const [ordenacao, setOrdenacao] = useState<string>("recente");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
 
   const {
     isOpen: isVincularOpen,
@@ -101,9 +104,48 @@ export default function ContratosContent() {
     onOpenChange: onDeleteOpenChange,
   } = useDisclosure();
   const { clientes } = useClientesParaSelect();
-  const { contratos, isLoading, isError, mutate } = useAllContratos();
+  const filtros = useMemo(
+    () => {
+      const parsedMin =
+        filtroValorMin !== "" ? Number.parseFloat(filtroValorMin) : undefined;
+      const parsedMax =
+        filtroValorMax !== "" ? Number.parseFloat(filtroValorMax) : undefined;
+
+      return {
+        search: searchTerm.trim() || undefined,
+        status: filtroStatus !== "todos" ? (filtroStatus as any) : undefined,
+        clienteId: filtroCliente !== "todos" ? filtroCliente : undefined,
+        valorMin: Number.isFinite(parsedMin) ? parsedMin : undefined,
+        valorMax: Number.isFinite(parsedMax) ? parsedMax : undefined,
+        ordenacao: ordenacao as any,
+      };
+    },
+    [searchTerm, filtroStatus, filtroCliente, filtroValorMin, filtroValorMax, ordenacao],
+  );
+  const {
+    contratos,
+    metrics,
+    pagination,
+    isLoading,
+    isError,
+    mutate,
+  } = useContratosPaginated({
+    page: currentPage,
+    pageSize,
+    filtros,
+  });
   const { procuracoes, isLoading: isLoadingProcuracoes } =
     useProcuracoesDisponiveis(selectedContrato?.cliente?.id || null);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filtroStatus, filtroCliente, filtroValorMin, filtroValorMax, ordenacao, pageSize]);
+
+  useEffect(() => {
+    if (pagination && pagination.page !== currentPage) {
+      setCurrentPage(pagination.page);
+    }
+  }, [pagination, currentPage]);
 
   const handleVincularProcuracao = async () => {
     if (!selectedContrato || !selectedProcuracao) {
@@ -193,116 +235,43 @@ export default function ContratosContent() {
     );
   }, [searchTerm, filtroStatus, filtroCliente, filtroValorMin, filtroValorMax]);
 
-  const contratosFiltrados = useMemo(() => {
-    if (!contratos) return [];
+  const ordenacaoKeySet = useMemo(
+    () => new Set(ORDENACAO_OPTIONS.map((option) => option.key)),
+    [],
+  );
+  const statusKeySet = useMemo(
+    () => new Set(["todos", ...STATUS_OPTIONS.map((option) => option.key)]),
+    [],
+  );
+  const clienteItems = useMemo(
+    () => [{ id: "todos", nome: "Todos" }, ...(clientes || [])],
+    [clientes],
+  );
+  const clienteKeySet = useMemo(
+    () => new Set(clienteItems.map((cliente) => cliente.id)),
+    [clienteItems],
+  );
+  const selectedOrdenacaoKeys = ordenacaoKeySet.has(ordenacao)
+    ? [ordenacao]
+    : ["recente"];
+  const selectedStatusKeys = statusKeySet.has(filtroStatus)
+    ? [filtroStatus]
+    : ["todos"];
+  const selectedClienteKeys = clienteKeySet.has(filtroCliente)
+    ? [filtroCliente]
+    : ["todos"];
 
-    let resultado = [...contratos];
-
-    // Filtro de busca por texto
-    if (searchTerm) {
-      resultado = resultado.filter(
-        (contrato) =>
-          contrato.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          contrato.cliente?.nome
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          contrato.resumo?.toLowerCase().includes(searchTerm.toLowerCase()),
-      );
-    }
-
-    // Filtro por status
-    if (filtroStatus !== "todos") {
-      resultado = resultado.filter(
-        (contrato) => contrato.status === filtroStatus,
-      );
-    }
-
-    // Filtro por cliente
-    if (filtroCliente !== "todos") {
-      resultado = resultado.filter(
-        (contrato) => contrato.clienteId === filtroCliente,
-      );
-    }
-
-    // Filtro por valor mínimo
-    if (filtroValorMin) {
-      const valorMin = parseFloat(filtroValorMin);
-
-      if (!isNaN(valorMin)) {
-        resultado = resultado.filter(
-          (contrato) => (contrato.valor || 0) >= valorMin,
-        );
-      }
-    }
-
-    // Filtro por valor máximo
-    if (filtroValorMax) {
-      const valorMax = parseFloat(filtroValorMax);
-
-      if (!isNaN(valorMax)) {
-        resultado = resultado.filter(
-          (contrato) => (contrato.valor || 0) <= valorMax,
-        );
-      }
-    }
-
-    // Ordenação
-    switch (ordenacao) {
-      case "recente":
-        resultado.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-        break;
-      case "antigo":
-        resultado.sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        );
-        break;
-      case "valor-desc":
-        resultado.sort((a, b) => (b.valor || 0) - (a.valor || 0));
-        break;
-      case "valor-asc":
-        resultado.sort((a, b) => (a.valor || 0) - (b.valor || 0));
-        break;
-      case "titulo":
-        resultado.sort((a, b) => a.titulo.localeCompare(b.titulo));
-        break;
-    }
-
-    return resultado;
-  }, [
-    contratos,
-    searchTerm,
-    filtroStatus,
-    filtroCliente,
-    filtroValorMin,
-    filtroValorMax,
-    ordenacao,
-  ]);
-
-  const contratosMetricas = useMemo(() => {
-    if (!contratos) {
-      return {
+  const contratosMetricas = useMemo(
+    () =>
+      metrics || {
         total: 0,
         ativos: 0,
         rascunhos: 0,
         comProcesso: 0,
         comArquivo: 0,
-      };
-    }
-
-    return {
-      total: contratos.length,
-      ativos: contratos.filter((contrato) => contrato.status === "ATIVO").length,
-      rascunhos: contratos.filter(
-        (contrato) => contrato.status === "RASCUNHO",
-      ).length,
-      comProcesso: contratos.filter((contrato) => contrato.processo).length,
-      comArquivo: contratos.filter((contrato) => contrato.arquivoUrl).length,
-    };
-  }, [contratos]);
+      },
+    [metrics],
+  );
 
   if (isLoading) {
     return (
@@ -430,11 +399,13 @@ export default function ContratosContent() {
               <Select
                 className="w-48"
                 placeholder="Ordenar por"
-                selectedKeys={[ordenacao]}
+                selectedKeys={selectedOrdenacaoKeys}
                 startContent={
                   <ArrowUpDown className="h-4 w-4 text-default-400" />
                 }
-                onChange={(e) => setOrdenacao(e.target.value)}
+                onSelectionChange={(keys) =>
+                  setOrdenacao((Array.from(keys)[0] as string) || "recente")
+                }
               >
                 {ORDENACAO_OPTIONS.map((option) => (
                   <SelectItem key={option.key} textValue={option.label}>
@@ -451,8 +422,10 @@ export default function ContratosContent() {
               <Select
                 label="Status"
                 placeholder="Todos os status"
-                selectedKeys={filtroStatus !== "todos" ? [filtroStatus] : []}
-                onChange={(e) => setFiltroStatus(e.target.value || "todos")}
+                selectedKeys={selectedStatusKeys}
+                onSelectionChange={(keys) =>
+                  setFiltroStatus((Array.from(keys)[0] as string) || "todos")
+                }
               >
                 {[{ key: "todos", label: "Todos" }, ...STATUS_OPTIONS].map(
                   (option) => (
@@ -466,16 +439,16 @@ export default function ContratosContent() {
               <Select
                 label="Cliente"
                 placeholder="Todos os clientes"
-                selectedKeys={filtroCliente !== "todos" ? [filtroCliente] : []}
-                onChange={(e) => setFiltroCliente(e.target.value || "todos")}
+                selectedKeys={selectedClienteKeys}
+                onSelectionChange={(keys) =>
+                  setFiltroCliente((Array.from(keys)[0] as string) || "todos")
+                }
               >
-                {[{ id: "todos", nome: "Todos" }, ...(clientes || [])].map(
-                  (cliente) => (
-                    <SelectItem key={cliente.id} textValue={cliente.nome}>
-                      {cliente.nome}
-                    </SelectItem>
-                  ),
-                )}
+                {clienteItems.map((cliente) => (
+                  <SelectItem key={cliente.id} textValue={cliente.nome}>
+                    {cliente.nome}
+                  </SelectItem>
+                ))}
               </Select>
 
               <Input
@@ -564,19 +537,19 @@ export default function ContratosContent() {
           )}
 
           <div className="text-xs text-default-500">
-            {contratosFiltrados.length}{" "}
-            {contratosFiltrados.length === 1
+            {pagination?.total ?? contratos.length}{" "}
+            {(pagination?.total ?? contratos.length) === 1
               ? "contrato encontrado"
               : "contratos encontrados"}
-            {contratos &&
-              contratos.length !== contratosFiltrados.length &&
-              ` de ${contratos.length} total`}
+            {pagination
+              ? ` - página ${pagination.page} de ${pagination.totalPages}`
+              : ""}
           </div>
         </div>
       </PeoplePanel>
 
       {/* Lista de Contratos */}
-      {contratosFiltrados.length === 0 ? (
+      {contratos.length === 0 ? (
         <Card>
           <CardBody className="py-12 text-center">
             <FileText className="mx-auto h-12 w-12 text-default-300" />
@@ -595,10 +568,10 @@ export default function ContratosContent() {
       ) : (
         <PeoplePanel
           description="Clique em uma ação para detalhar o contrato, alterar vínculos ou gerenciar documentos."
-          title={`Lista de contratos (${contratosFiltrados.length})`}
+          title={`Lista de contratos (${pagination?.total ?? contratos.length})`}
         >
         <div className="grid gap-4">
-          {contratosFiltrados.map((contrato) => (
+          {contratos.map((contrato) => (
             <Card
               key={contrato.id}
               className="border border-white/10 bg-background/70 backdrop-blur-sm"
@@ -738,6 +711,38 @@ export default function ContratosContent() {
             </Card>
           ))}
         </div>
+        {pagination ? (
+          <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-default-500">Itens por página:</span>
+              <Select
+                className="w-28"
+                selectedKeys={[String(pageSize)]}
+                size="sm"
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+                  const nextPageSize = Number.parseInt(selected || "", 10);
+                  if (Number.isFinite(nextPageSize) && nextPageSize > 0) {
+                    setPageSize(nextPageSize);
+                  }
+                }}
+              >
+                {[6, 12, 24, 48].map((size) => (
+                  <SelectItem key={String(size)} textValue={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+            <Pagination
+              page={pagination.page}
+              showControls
+              size="sm"
+              total={pagination.totalPages}
+              onChange={(page) => setCurrentPage(page)}
+            />
+          </div>
+        ) : null}
         </PeoplePanel>
       )}
 

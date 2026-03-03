@@ -1137,6 +1137,7 @@ model Causa {
   codigoCnj          String?
   descricao          String?
   ativo              Boolean             @default(true)
+  isOficial          Boolean             @default(false)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1148,6 +1149,7 @@ model Causa {
 
   @@unique([tenantId, nome])
   @@index([tenantId, ativo])
+  @@index([tenantId, isOficial])
   @@schema("magiclawyer")
 }
 

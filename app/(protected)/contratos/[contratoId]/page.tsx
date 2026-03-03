@@ -203,6 +203,16 @@ export default function ContratoPage({
                 </div>
               )}
 
+              {contrato.modelo && (
+                <div className="flex items-start gap-2">
+                  <FileText className="h-4 w-4 text-default-400 mt-0.5" />
+                  <div>
+                    <p className="text-xs text-default-500">Modelo utilizado</p>
+                    <p className="font-semibold">{contrato.modelo.nome}</p>
+                  </div>
+                </div>
+              )}
+
               {contrato.dataInicio && (
                 <div className="flex items-start gap-2">
                   <Calendar className="h-4 w-4 text-default-400 mt-0.5" />

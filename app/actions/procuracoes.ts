@@ -3,15 +3,69 @@
 import { getSession } from "@/app/lib/auth";
 import prisma, { toNumber } from "@/app/lib/prisma";
 import logger from "@/lib/logger";
+import { headers } from "next/headers";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import {
   Prisma,
   ProcuracaoEmitidaPor,
   ProcuracaoStatus,
 } from "@/generated/prisma";
+import { checkPermission } from "@/app/actions/equipe";
 import {
   getAccessibleAdvogadoIds,
 } from "@/app/lib/advogado-access";
 import { gerarPdfProcuracaoBuffer } from "@/app/lib/procuracao-pdf";
+
+type ProcuracaoPermissionAction =
+  | "visualizar"
+  | "criar"
+  | "editar"
+  | "excluir";
+
+const PROCURACOES_MODULE = "procuracoes";
+const permissionErrors: Record<ProcuracaoPermissionAction, string> = {
+  visualizar: "Você não tem permissão para visualizar procurações",
+  criar: "Você não tem permissão para criar procurações",
+  editar: "Você não tem permissão para editar procurações",
+  excluir: "Você não tem permissão para excluir procurações",
+};
+
+const AUDIT_ENTITY = "Procuracao";
+
+function isAdminRole(user: { role?: string }) {
+  return user.role === "ADMIN" || user.role === "SUPER_ADMIN";
+}
+
+async function requirePermission(
+  action: ProcuracaoPermissionAction,
+): Promise<string | null> {
+  const allowed = await checkPermission(PROCURACOES_MODULE, action);
+
+  if (!allowed) {
+    return permissionErrors[action];
+  }
+
+  return null;
+}
+
+async function getScopedProcuracaoId(
+  session: { user: any },
+  user: any,
+  procuracaoId: string,
+): Promise<string | null> {
+  const whereClause = await buildProcuracaoAccessWhere(session, user, {
+    procuracaoId,
+  });
+
+  const procuracao = await prisma.procuracao.findFirst({
+    where: whereClause,
+    select: { id: true },
+  });
+
+  return procuracao?.id || null;
+}
+
+export { getScopedProcuracaoId };
 
 // ============================================
 // TYPES
@@ -21,10 +75,10 @@ export interface ProcuracaoFormData {
   numero?: string;
   arquivoUrl?: string;
   observacoes?: string;
-  emitidaEm?: Date;
-  validaAte?: Date;
-  revogadaEm?: Date;
-  assinadaPeloClienteEm?: Date;
+  emitidaEm?: Date | string;
+  validaAte?: Date | string;
+  revogadaEm?: Date | string;
+  assinadaPeloClienteEm?: Date | string;
   emitidaPor: "ESCRITORIO" | "ADVOGADO";
   clienteId: string;
   modeloId?: string;
@@ -36,6 +90,36 @@ export interface ProcuracaoFormData {
     titulo?: string;
     descricao: string;
   }[];
+}
+
+async function getRequestContext() {
+  const headersList = await headers();
+  const ipRaw =
+    headersList.get("x-forwarded-for") ??
+    headersList.get("x-real-ip") ??
+    headersList.get("cf-connecting-ip");
+  const ip = ipRaw ? ipRaw.split(",")[0]?.trim() || null : null;
+  const userAgent = headersList.get("user-agent");
+
+  return { ip, userAgent };
+}
+
+function getActorName(user: { firstName?: string | null; lastName?: string | null; email?: string | null; id?: string }) {
+  return `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || user.id || "Usuário";
+}
+
+function toDateOrUndefined(value: Date | string | null | undefined): Date | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value;
+  }
+
+  const parsed = new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 export type ProcuracaoCreateInput = ProcuracaoFormData;
@@ -345,21 +429,66 @@ export async function getAllProcuracoes(): Promise<{
   error?: string;
 }> {
   try {
-    const result = await getProcuracoesPaginated({
-      page: 1,
-      pageSize: 100,
-    });
+    const permissionDenied = await requirePermission("visualizar");
 
-    if (!result.success) {
+    if (permissionDenied) {
       return {
         success: false,
-        error: result.error,
+        error: permissionDenied,
       };
+    }
+
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado" };
+    }
+
+    const user = session.user as any;
+
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const pageSize = 200;
+    let page = 1;
+    const procuracoes: Array<any> = [];
+
+    while (true) {
+      const result = await getProcuracoesPaginated({
+        page,
+        pageSize,
+        filtros: {
+          status: "",
+          clienteId: "",
+          advogadoId: "",
+          emitidaPor: "",
+          search: "",
+        },
+      });
+
+      if (!result.success || !result.data) {
+        return {
+          success: false,
+          error: result.error || "Erro ao buscar todas as procurações",
+        };
+      }
+
+      // Segurança: respeitar escopo e evitar retorno parcial por mudança de filtros
+      const safeItems = result.data.items.filter((item) => item.id);
+
+      procuracoes.push(...safeItems);
+
+      if (page >= result.data.totalPages) {
+        break;
+      }
+
+      page += 1;
     }
 
     return {
       success: true,
-      procuracoes: result.data?.items ?? [],
+      procuracoes,
     };
   } catch (error) {
     logger.error("Erro ao buscar todas as procurações:", error);
@@ -379,6 +508,15 @@ export async function getProcuracoesPaginated(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -386,6 +524,8 @@ export async function getProcuracoesPaginated(
     }
 
     const user = session.user as any;
+    const { ip, userAgent } = await getRequestContext();
+    const actorName = getActorName(user);
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
@@ -480,6 +620,15 @@ export async function getProcuracaoById(procuracaoId: string): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -492,12 +641,17 @@ export async function getProcuracaoById(procuracaoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    const whereClause = await buildProcuracaoAccessWhere(session, user, {
-      procuracaoId,
-    });
+    const scopedId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
 
     const procuracao = await prisma.procuracao.findFirst({
-      where: whereClause,
+      where: { id: scopedId },
       include: {
         cliente: {
           select: {
@@ -610,6 +764,15 @@ export async function getProcuracoesCliente(clienteId: string): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -751,6 +914,15 @@ export async function generateProcuracaoPdf(procuracaoId: string): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -763,12 +935,17 @@ export async function generateProcuracaoPdf(procuracaoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    const where = await buildProcuracaoAccessWhere(session, user, {
-      procuracaoId,
-    });
+    const scopedId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
 
     const procuracao = await prisma.procuracao.findFirst({
-      where,
+      where: { id: scopedId },
       include: {
         cliente: {
           select: {
@@ -867,6 +1044,15 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("criar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -874,38 +1060,58 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se é ADMIN ou ADVOGADO
-    if (
-      user.role !== "ADMIN" &&
-      user.role !== "SUPER_ADMIN" &&
-      user.role !== "ADVOGADO"
-    ) {
-      return { success: false, error: "Acesso negado" };
-    }
-
+    const isAdmin = isAdminRole(user);
+    const advogadoIdsPermitidos = await getAccessibleAdvogadoIds(session);
     const advogadoIds = Array.from(
       new Set((data.advogadoIds ?? []).filter(Boolean)),
     );
     const processoIds = Array.from(
       new Set((data.processoIds ?? []).filter(Boolean)),
     );
+    const whereCliente = isAdmin
+      ? {
+          id: data.clienteId,
+          tenantId: user.tenantId,
+          deletedAt: null,
+        }
+      : {
+          id: data.clienteId,
+          tenantId: user.tenantId,
+          deletedAt: null,
+          OR: [
+            {
+              advogadoClientes: {
+                some: {
+                  advogadoId: {
+                    in: advogadoIdsPermitidos,
+                  },
+                },
+              },
+            },
+            {
+              usuario: {
+                createdById: user.id,
+              },
+            },
+          ],
+        };
 
-    // Verificar se o cliente existe e está acessível
     const cliente = await prisma.cliente.findFirst({
-      where: {
-        id: data.clienteId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: whereCliente,
     });
 
     if (!cliente) {
-      return { success: false, error: "Cliente não encontrado" };
+      return {
+        success: false,
+        error: "Cliente não encontrado ou sem acesso para criação",
+      };
     }
 
     let modeloSnapshot:
@@ -956,7 +1162,6 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
       };
     }
 
-    // Verificar se os advogados existem
     if (advogadoIds.length > 0) {
       const advogados = await prisma.advogado.findMany({
         where: {
@@ -973,24 +1178,55 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
           error: "Um ou mais advogados não encontrados",
         };
       }
+
+      if (!isAdmin && !advogadoIds.every((id) => advogadoIdsPermitidos.includes(id))) {
+        return {
+          success: false,
+          error: "Você não tem acesso a um ou mais advogados informados",
+        };
+      }
     }
 
-    // Verificar se os processos existem (se fornecidos)
+    // Verificar se os processos existem e estão acessíveis (se fornecidos)
     if (processoIds.length > 0) {
-      const processos = await prisma.processo.findMany({
-        where: {
-          id: {
-            in: processoIds,
-          },
-          tenantId: user.tenantId,
-          deletedAt: null,
+      const processoFilter: Prisma.ProcessoWhereInput = {
+        id: {
+          in: processoIds,
         },
+        clienteId: data.clienteId,
+        tenantId: user.tenantId,
+        deletedAt: null,
+      };
+
+      if (!isAdminRole(user)) {
+        processoFilter.OR = [
+          {
+            advogadoResponsavelId: {
+              in: advogadoIdsPermitidos,
+            },
+          },
+          {
+            cliente: {
+              advogadoClientes: {
+                some: {
+                  advogadoId: {
+                    in: advogadoIdsPermitidos,
+                  },
+                },
+              },
+            },
+          },
+        ];
+      }
+
+      const processos = await prisma.processo.findMany({
+        where: processoFilter,
       });
 
       if (processos.length !== processoIds.length) {
         return {
           success: false,
-          error: "Um ou mais processos não encontrados",
+          error: "Um ou mais processos não encontrados, fora do cliente ou sem acesso",
         };
       }
     }
@@ -1009,10 +1245,10 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
           numero: data.numero,
           arquivoUrl: data.arquivoUrl,
           observacoes: data.observacoes,
-          emitidaEm: data.emitidaEm,
-          validaAte: data.validaAte,
-          revogadaEm: data.revogadaEm,
-          assinadaPeloClienteEm: data.assinadaPeloClienteEm,
+          emitidaEm: toDateOrUndefined(data.emitidaEm),
+          validaAte: toDateOrUndefined(data.validaAte),
+          revogadaEm: toDateOrUndefined(data.revogadaEm),
+          assinadaPeloClienteEm: toDateOrUndefined(data.assinadaPeloClienteEm),
           emitidaPor:
             data.emitidaPor === "ADVOGADO"
               ? ProcuracaoEmitidaPor.ADVOGADO
@@ -1072,6 +1308,43 @@ export async function createProcuracao(data: ProcuracaoFormData): Promise<{
       });
     });
 
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_CRIADA",
+        entidade: AUDIT_ENTITY,
+        entidadeId: procuracao.id,
+        dados: toAuditJson({
+          actor: actorName,
+          numero: procuracao.numero,
+          clienteId: procuracao.clienteId,
+          modeloId: procuracao.modeloId,
+          status: procuracao.status,
+          ativo: procuracao.ativa,
+          emitidaPor: procuracao.emitidaPor,
+          processoIds,
+          advogadoIds,
+          poderesCount: procuracao.poderes?.length,
+        }),
+        changedFields: [
+          "clienteId",
+          "modeloId",
+          "numero",
+          "status",
+          "emitidaPor",
+          "ativa",
+          "processoIds",
+          "advogadoIds",
+          "poderes",
+        ],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de criação de procuração", auditError);
+    }
+
     return {
       success: true,
       procuracao: procuracao,
@@ -1094,9 +1367,9 @@ export interface ProcuracaoUpdateInput {
   numero?: string;
   arquivoUrl?: string;
   observacoes?: string;
-  emitidaEm?: string;
-  validaAte?: string;
-  revogadaEm?: string;
+  emitidaEm?: string | Date;
+  validaAte?: string | Date;
+  revogadaEm?: string | Date;
   status?: ProcuracaoStatus;
   emitidaPor?: ProcuracaoEmitidaPor;
   ativa?: boolean;
@@ -1111,6 +1384,15 @@ export async function updateProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1118,41 +1400,111 @@ export async function updateProcuracao(
     }
 
     const user = session.user as any;
+    const { ip, userAgent } = await getRequestContext();
+    const actorName = getActorName(user);
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se a procuração existe e o usuário tem acesso
-    const procuracaoExistente = await prisma.procuracao.findFirst({
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
+    const procuracaoAnterior = await prisma.procuracao.findFirst({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
         tenantId: user.tenantId,
+      },
+      include: {
+        outorgados: {
+          select: { id: true, advogadoId: true },
+        },
+        processos: {
+          select: { id: true, processoId: true },
+        },
+        poderes: {
+          select: { id: true, titulo: true, descricao: true, ativo: true },
+        },
       },
     });
 
-    if (!procuracaoExistente) {
-      return { success: false, error: "Procuração não encontrada" };
+    if (!procuracaoAnterior) {
+      return {
+        success: false,
+        error: "Procuração não encontrada",
+      };
     }
+
+    const updateData: Prisma.ProcuracaoUpdateInput = {
+      numero: data.numero,
+      arquivoUrl: data.arquivoUrl,
+      observacoes: data.observacoes,
+      emitidaEm: data.emitidaEm ? toDateOrUndefined(data.emitidaEm) : undefined,
+      validaAte: data.validaAte ? toDateOrUndefined(data.validaAte) : undefined,
+      revogadaEm: data.revogadaEm ? toDateOrUndefined(data.revogadaEm) : undefined,
+      status: data.status,
+      emitidaPor: data.emitidaPor,
+      ativa: data.ativa,
+    };
 
     // Atualizar procuração
     const procuracao = await prisma.procuracao.update({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
       },
-      data: {
-        numero: data.numero,
-        arquivoUrl: data.arquivoUrl,
-        observacoes: data.observacoes,
-        emitidaEm: data.emitidaEm ? new Date(data.emitidaEm) : undefined,
-        validaAte: data.validaAte ? new Date(data.validaAte) : undefined,
-        revogadaEm: data.revogadaEm ? new Date(data.revogadaEm) : undefined,
-        status: data.status,
-        emitidaPor: data.emitidaPor,
-        ativa: data.ativa,
-      },
+      data: updateData,
       include: procuracaoListInclude,
     });
+
+    const changedFields = Object.keys(updateData).filter(
+      (field) => updateData[field as keyof typeof updateData] !== undefined,
+    );
+
+    if (changedFields.length > 0) {
+      try {
+        await logAudit({
+          tenantId: user.tenantId,
+          usuarioId: user.id,
+          acao: "PROCURAÇÃO_ATUALIZADA",
+          entidade: AUDIT_ENTITY,
+          entidadeId: procuracao.id,
+          dados: toAuditJson({
+            actor: actorName,
+            numero: procuracao.numero,
+            arquivoUrl: procuracao.arquivoUrl,
+            observacoes: procuracao.observacoes,
+            emitidaEm: procuracao.emitidaEm,
+            validaAte: procuracao.validaAte,
+            revogadaEm: procuracao.revogadaEm,
+            status: procuracao.status,
+            emitidaPor: procuracao.emitidaPor,
+            ativa: procuracao.ativa,
+          }),
+          previousValues: toAuditJson({
+            numero: procuracaoAnterior.numero,
+            arquivoUrl: procuracaoAnterior.arquivoUrl,
+            observacoes: procuracaoAnterior.observacoes,
+            emitidaEm: procuracaoAnterior.emitidaEm,
+            validaAte: procuracaoAnterior.validaAte,
+            revogadaEm: procuracaoAnterior.revogadaEm,
+            status: procuracaoAnterior.status,
+            emitidaPor: procuracaoAnterior.emitidaPor,
+            ativa: procuracaoAnterior.ativa,
+          }),
+          changedFields: changedFields.map((field) => String(field)),
+          ip,
+          userAgent,
+        });
+      } catch (auditError) {
+        logger.warn("Falha ao registrar auditoria de atualização de procuração", auditError);
+      }
+    }
 
     return {
       success: true,
@@ -1177,6 +1529,15 @@ export async function deleteProcuracao(procuracaoId: string): Promise<{
   error?: string;
 }> {
   try {
+  const permissionDenied = await requirePermission("excluir");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1184,29 +1545,90 @@ export async function deleteProcuracao(procuracaoId: string): Promise<{
     }
 
     const user = session.user as any;
+    const { ip, userAgent } = await getRequestContext();
+    const actorName = getActorName(user);
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se a procuração existe e o usuário tem acesso
-    const procuracao = await prisma.procuracao.findFirst({
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
+    const procuracao = await prisma.procuracao.findUnique({
       where: {
-        id: procuracaoId,
-        tenantId: user.tenantId,
+        id: scopedProcuracaoId,
+      },
+      select: {
+        id: true,
+        numero: true,
+        observacoes: true,
+        status: true,
+        ativa: true,
+        clienteId: true,
+        modeloId: true,
+        _count: {
+          select: {
+            outorgados: true,
+            processos: true,
+            poderes: true,
+          },
+        },
       },
     });
 
     if (!procuracao) {
-      return { success: false, error: "Procuração não encontrada" };
+      return {
+        success: false,
+        error: "Procuração não encontrada",
+      };
     }
 
     // Deletar procuração (cascade deleta os relacionamentos)
     await prisma.procuracao.delete({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
       },
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_EXCLUÍDA",
+        entidade: AUDIT_ENTITY,
+        entidadeId: procuracao.id,
+        dados: toAuditJson({
+          actor: actorName,
+          numero: procuracao.numero,
+          clienteId: procuracao.clienteId,
+          modeloId: procuracao.modeloId,
+          status: procuracao.status,
+          ativo: procuracao.ativa,
+          totalOutorgados: procuracao._count?.outorgados ?? 0,
+          totalProcessos: procuracao._count?.processos ?? 0,
+          totalPoderes: procuracao._count?.poderes ?? 0,
+        }),
+        previousValues: toAuditJson({
+          numero: procuracao.numero,
+          observacoes: procuracao.observacoes,
+          status: procuracao.status,
+          ativa: procuracao.ativa,
+          deletedAt: new Date().toISOString(),
+        }),
+        changedFields: ["deleted"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de exclusão de procuração", auditError);
+    }
 
     return {
       success: true,
@@ -1233,6 +1655,15 @@ export async function adicionarAdvogadoNaProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1240,21 +1671,20 @@ export async function adicionarAdvogadoNaProcuracao(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se a procuração existe
-    const procuracao = await prisma.procuracao.findFirst({
-      where: {
-        id: procuracaoId,
-        tenantId: user.tenantId,
-      },
-    });
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
 
-    if (!procuracao) {
-      return { success: false, error: "Procuração não encontrada" };
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
     }
 
     // Verificar se o advogado existe
@@ -1272,8 +1702,9 @@ export async function adicionarAdvogadoNaProcuracao(
     // Verificar se já existe o vínculo
     const vinculoExistente = await prisma.procuracaoAdvogado.findFirst({
       where: {
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         advogadoId,
+        tenantId: user.tenantId,
       },
     });
 
@@ -1281,14 +1712,66 @@ export async function adicionarAdvogadoNaProcuracao(
       return { success: false, error: "Advogado já está na procuração" };
     }
 
+    if (!isAdminRole(user)) {
+      const advogadoIdsPermitidos = await getAccessibleAdvogadoIds(session);
+
+      if (!advogadoIdsPermitidos.includes(advogadoId)) {
+        return {
+          success: false,
+          error: "Você não tem acesso a este advogado",
+        };
+      }
+    }
+
+    const procuracao = await prisma.procuracao.findFirst({
+      where: {
+        id: scopedProcuracaoId,
+        tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+        numero: true,
+        clienteId: true,
+      },
+    });
+
+    if (!procuracao) {
+      return { success: false, error: "Procuração não encontrada" };
+    }
+
     // Criar vínculo
     await prisma.procuracaoAdvogado.create({
       data: {
         tenantId: user.tenantId,
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         advogadoId,
       },
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_ADVOGADO_ADICIONADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoNumero: procuracao.numero,
+          procuracaoId: scopedProcuracaoId,
+          clienteId: procuracao.clienteId,
+          advogadoId,
+        }),
+        changedFields: ["advogadoIds"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de adição de advogado em procuração",
+        auditError,
+      );
+    }
 
     return {
       success: true,
@@ -1311,6 +1794,15 @@ export async function removerAdvogadoDaProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1318,15 +1810,42 @@ export async function removerAdvogadoDaProcuracao(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
+    const procuracao = await prisma.procuracao.findFirst({
+      where: {
+        id: scopedProcuracaoId,
+        tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+        numero: true,
+        clienteId: true,
+      },
+    });
+
+    if (!procuracao) {
+      return { success: false, error: "Procuração não encontrada" };
+    }
+
     // Remover vínculo
     const result = await prisma.procuracaoAdvogado.deleteMany({
       where: {
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         advogadoId,
         tenantId: user.tenantId,
       },
@@ -1334,6 +1853,31 @@ export async function removerAdvogadoDaProcuracao(
 
     if (result.count === 0) {
       return { success: false, error: "Vínculo não encontrado" };
+    }
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_ADVOGADO_REMOVIDO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoNumero: procuracao.numero,
+          procuracaoId: scopedProcuracaoId,
+          clienteId: procuracao.clienteId,
+          advogadoId,
+        }),
+        changedFields: ["advogadoIds"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de remoção de advogado da procuração",
+        auditError,
+      );
     }
 
     return {
@@ -1361,6 +1905,15 @@ export async function vincularProcesso(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1368,16 +1921,31 @@ export async function vincularProcesso(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se a procuração existe
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
     const procuracao = await prisma.procuracao.findFirst({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
         tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+        numero: true,
+        clienteId: true,
       },
     });
 
@@ -1385,12 +1953,38 @@ export async function vincularProcesso(
       return { success: false, error: "Procuração não encontrada" };
     }
 
-    // Verificar se o processo existe
+    const processoWhere: Prisma.ProcessoWhereInput = {
+      id: processoId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+      clienteId: procuracao.clienteId,
+    };
+
+    if (!isAdminRole(user)) {
+      const advogadoIdsPermitidos = await getAccessibleAdvogadoIds(session);
+
+      processoWhere.OR = [
+        {
+          advogadoResponsavelId: {
+            in: advogadoIdsPermitidos,
+          },
+        },
+        {
+          cliente: {
+            advogadoClientes: {
+              some: {
+                advogadoId: {
+                  in: advogadoIdsPermitidos,
+                },
+              },
+            },
+          },
+        },
+      ];
+    }
+
     const processo = await prisma.processo.findFirst({
-      where: {
-        id: processoId,
-        tenantId: user.tenantId,
-      },
+      where: processoWhere,
     });
 
     if (!processo) {
@@ -1400,8 +1994,9 @@ export async function vincularProcesso(
     // Verificar se já existe o vínculo
     const vinculoExistente = await prisma.procuracaoProcesso.findFirst({
       where: {
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         processoId,
+        tenantId: user.tenantId,
       },
     });
 
@@ -1413,10 +2008,35 @@ export async function vincularProcesso(
     await prisma.procuracaoProcesso.create({
       data: {
         tenantId: user.tenantId,
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         processoId,
       },
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_PROCESSO_VINCULADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoNumero: procuracao.numero,
+          procuracaoId: scopedProcuracaoId,
+          clienteId: procuracao.clienteId,
+          processoId,
+        }),
+        changedFields: ["processoIds"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de vínculo de processo na procuração",
+        auditError,
+      );
+    }
 
     return {
       success: true,
@@ -1439,6 +2059,15 @@ export async function desvincularProcesso(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1446,15 +2075,55 @@ export async function desvincularProcesso(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
+    const procuracao = await prisma.procuracao.findFirst({
+      where: {
+        id: scopedProcuracaoId,
+        tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+        numero: true,
+        clienteId: true,
+      },
+    });
+
+    if (!procuracao) {
+      return { success: false, error: "Procuração não encontrada" };
+    }
+
+    const vinculoAtual = await prisma.procuracaoProcesso.findFirst({
+      where: {
+        procuracaoId: scopedProcuracaoId,
+        processoId,
+        tenantId: user.tenantId,
+      },
+      select: { id: true },
+    });
+
+    if (!vinculoAtual) {
+      return { success: false, error: "Vínculo não encontrado" };
+    }
+
     // Remover vínculo
     const result = await prisma.procuracaoProcesso.deleteMany({
       where: {
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         processoId,
         tenantId: user.tenantId,
       },
@@ -1462,6 +2131,31 @@ export async function desvincularProcesso(
 
     if (result.count === 0) {
       return { success: false, error: "Vínculo não encontrado" };
+    }
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_PROCESSO_DESVINCULADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoNumero: procuracao.numero,
+          procuracaoId: scopedProcuracaoId,
+          clienteId: procuracao.clienteId,
+          processoId,
+        }),
+        changedFields: ["processoIds"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de remoção de processo da procuração",
+        auditError,
+      );
     }
 
     return {
@@ -1492,6 +2186,15 @@ export async function adicionarPoderNaProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1499,6 +2202,8 @@ export async function adicionarPoderNaProcuracao(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
@@ -1511,9 +2216,18 @@ export async function adicionarPoderNaProcuracao(
       return { success: false, error: "Descrição do poder é obrigatória" };
     }
 
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
     const procuracao = await prisma.procuracao.findFirst({
       where: {
-        id: procuracaoId,
+        id: scopedProcuracaoId,
         tenantId: user.tenantId,
       },
       select: {
@@ -1525,15 +2239,42 @@ export async function adicionarPoderNaProcuracao(
       return { success: false, error: "Procuração não encontrada" };
     }
 
-    await prisma.procuracaoPoder.create({
-      data: {
-        tenantId: user.tenantId,
-        procuracaoId,
-        titulo: titulo || null,
-        descricao,
-        ativo: true,
-      },
+    const novoPoder = await prisma.$transaction(async (tx) => {
+      return tx.procuracaoPoder.create({
+        data: {
+          tenantId: user.tenantId,
+          procuracaoId: scopedProcuracaoId,
+          titulo: titulo || null,
+          descricao,
+          ativo: true,
+        },
+      });
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_PODER_ADICIONADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoId: scopedProcuracaoId,
+          poderId: novoPoder.id,
+          titulo: novoPoder.titulo,
+          descricao: novoPoder.descricao,
+        }),
+        changedFields: ["poderes"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de adição de poder à procuração",
+        auditError,
+      );
+    }
 
     return {
       success: true,
@@ -1556,6 +2297,15 @@ export async function revogarPoderDaProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return {
+        success: false,
+        error: permissionDenied,
+      };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -1563,19 +2313,32 @@ export async function revogarPoderDaProcuracao(
     }
 
     const user = session.user as any;
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const scopedProcuracaoId = await getScopedProcuracaoId(session, user, procuracaoId);
+
+    if (!scopedProcuracaoId) {
+      return {
+        success: false,
+        error: "Procuração não encontrada ou sem acesso",
+      };
+    }
+
     const poder = await prisma.procuracaoPoder.findFirst({
       where: {
         id: poderId,
-        procuracaoId,
+        procuracaoId: scopedProcuracaoId,
         tenantId: user.tenantId,
       },
       select: {
         id: true,
+        titulo: true,
+        descricao: true,
         ativo: true,
       },
     });
@@ -1588,7 +2351,7 @@ export async function revogarPoderDaProcuracao(
       return { success: false, error: "Este poder já está revogado" };
     }
 
-    await prisma.procuracaoPoder.update({
+    const poderAtualizado = await prisma.procuracaoPoder.update({
       where: {
         id: poder.id,
       },
@@ -1597,6 +2360,38 @@ export async function revogarPoderDaProcuracao(
         revogadoEm: new Date(),
       },
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCURAÇÃO_PODER_REVOKADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: scopedProcuracaoId,
+        dados: toAuditJson({
+          actor: actorName,
+          procuracaoId: scopedProcuracaoId,
+          poderId: poderAtualizado.id,
+          titulo: poderAtualizado.titulo,
+          descricao: poderAtualizado.descricao,
+          ativoAnterior: true,
+          ativoAtual: false,
+        }),
+        previousValues: toAuditJson({
+          titulo: poder.titulo,
+          descricao: poder.descricao,
+          ativo: true,
+        }),
+        changedFields: ["poderes"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de revogação de poder da procuração",
+        auditError,
+      );
+    }
 
     return {
       success: true,

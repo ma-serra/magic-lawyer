@@ -30,7 +30,7 @@ export default async function ModelosContratoPage() {
   }
 
   try {
-    const hasPermission = await checkPermission("financeiro", "visualizar");
+    const hasPermission = await checkPermission("contratos", "visualizar");
 
     if (!hasPermission) {
       redirect("/dashboard");

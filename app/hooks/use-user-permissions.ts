@@ -51,7 +51,7 @@ const PERMISSION_MAP: Record<
   canViewFinancialData: { modulo: "financeiro", acao: "visualizar" },
   canManageTeam: { modulo: "equipe", acao: "visualizar" },
   canViewReports: { modulo: "relatorios", acao: "visualizar" },
-  canManageContracts: { modulo: "financeiro", acao: "criar" }, // Criar/editar contratos
+  canManageContracts: { modulo: "contratos", acao: "criar" }, // Criar/editar contratos
 
   // Agenda - usar módulo agenda específico
   canViewAllEvents: { modulo: "agenda", acao: "visualizar" },

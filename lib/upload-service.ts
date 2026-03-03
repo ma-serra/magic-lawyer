@@ -654,7 +654,7 @@ export class UploadService {
 
   async deleteFolderRecursive(
     path: string,
-    resourceType: CloudinaryResourceType = "raw",
+    resourceTypes: CloudinaryResourceType[] = ["raw", "image", "video"],
   ): Promise<UploadResult> {
     try {
       if (!this.useCloudinary) {
@@ -664,11 +664,19 @@ export class UploadService {
         };
       }
 
-      const normalizedType = this.normalizeResourceType(resourceType);
+      const uniqueTypes = Array.from(
+        new Set(
+          resourceTypes.map((resourceType) =>
+            this.normalizeResourceType(resourceType),
+          ),
+        ),
+      );
 
-      await cloudinary.api.delete_resources_by_prefix(path, {
-        resource_type: normalizedType,
-      });
+      for (const normalizedType of uniqueTypes) {
+        await cloudinary.api.delete_resources_by_prefix(path, {
+          resource_type: normalizedType,
+        });
+      }
       await cloudinary.api.delete_folder(path);
 
       return {

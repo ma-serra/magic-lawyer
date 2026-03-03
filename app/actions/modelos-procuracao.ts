@@ -5,6 +5,56 @@ import prisma from "@/app/lib/prisma";
 import { Prisma } from "@/generated/prisma";
 import logger from "@/lib/logger";
 import { generateProcuracaoPdf } from "@/app/actions/procuracoes";
+import { checkPermission } from "@/app/actions/equipe";
+import { headers } from "next/headers";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
+
+const AUDIT_ENTITY = "ModeloProcuracao";
+
+async function getRequestContext() {
+  const headersList = await headers();
+  const ipRaw =
+    headersList.get("x-forwarded-for") ??
+    headersList.get("x-real-ip") ??
+    headersList.get("cf-connecting-ip");
+  const ip = ipRaw ? ipRaw.split(",")[0]?.trim() || null : null;
+  const userAgent = headersList.get("user-agent");
+
+  return { ip, userAgent };
+}
+
+function getActorName(user: {
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  id?: string;
+}) {
+  return `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || user.id || "Usuário";
+}
+
+const PROCURACOES_MODULE = "procuracoes";
+
+const permissionErrors: Record<
+  "visualizar" | "criar" | "editar" | "excluir",
+  string
+> = {
+  visualizar: "Você não tem permissão para visualizar modelos de procuração",
+  criar: "Você não tem permissão para criar modelos de procuração",
+  editar: "Você não tem permissão para editar modelos de procuração",
+  excluir: "Você não tem permissão para excluir modelos de procuração",
+};
+
+async function requirePermission(
+  action: "visualizar" | "criar" | "editar" | "excluir",
+): Promise<string | null> {
+  const allowed = await checkPermission(PROCURACOES_MODULE, action);
+
+  if (!allowed) {
+    return permissionErrors[action];
+  }
+
+  return null;
+}
 
 // ============================================
 // TYPES
@@ -31,6 +81,12 @@ export async function getAllModelosProcuracao(): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -84,6 +140,12 @@ export async function getModeloProcuracaoById(modeloId: string): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -141,6 +203,12 @@ export async function createModeloProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("criar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -153,14 +221,8 @@ export async function createModeloProcuracao(
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se é ADMIN ou ADVOGADO
-    if (
-      user.role !== "ADMIN" &&
-      user.role !== "SUPER_ADMIN" &&
-      user.role !== "ADVOGADO"
-    ) {
-      return { success: false, error: "Acesso negado" };
-    }
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     const modelo = await prisma.$transaction(async (tx) => {
       const novoModelo = await tx.modeloProcuracao.create({
@@ -203,6 +265,35 @@ export async function createModeloProcuracao(
       });
     });
 
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "MODELO_PROCURAÇÃO_CRIADO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: modelo.id,
+        dados: toAuditJson({
+          actor: actorName,
+          nome: modelo.nome,
+          descricao: modelo.descricao,
+          categoria: modelo.categoria,
+          ativo: modelo.ativo,
+          conteudoPreview: modelo.conteudo?.slice(0, 80),
+        }),
+        changedFields: [
+          "nome",
+          "descricao",
+          "conteudo",
+          "categoria",
+          "ativo",
+        ],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de criação de modelo de procuração", auditError);
+    }
+
     return {
       success: true,
       modelo: modelo,
@@ -229,6 +320,12 @@ export async function updateModeloProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("editar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -241,14 +338,8 @@ export async function updateModeloProcuracao(
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se é ADMIN ou ADVOGADO
-    if (
-      user.role !== "ADMIN" &&
-      user.role !== "SUPER_ADMIN" &&
-      user.role !== "ADVOGADO"
-    ) {
-      return { success: false, error: "Acesso negado" };
-    }
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     // Verificar se o modelo existe e pertence ao tenant
     const modeloExistente = await prisma.modeloProcuracao.findFirst({
@@ -264,6 +355,9 @@ export async function updateModeloProcuracao(
     }
 
     const updateData: Prisma.ModeloProcuracaoUpdateInput = { ...data };
+    const changedFields = Object.keys(data).filter(
+      (field) => data[field as keyof typeof data] !== undefined,
+    );
 
     const modelo = await prisma.$transaction(async (tx) => {
       const atualizado = await tx.modeloProcuracao.update({
@@ -314,6 +408,37 @@ export async function updateModeloProcuracao(
       });
     });
 
+    if (changedFields.length > 0) {
+      try {
+        await logAudit({
+          tenantId: user.tenantId,
+          usuarioId: user.id,
+          acao: "MODELO_PROCURAÇÃO_ATUALIZADO",
+          entidade: AUDIT_ENTITY,
+          entidadeId: modelo.id,
+          dados: toAuditJson({
+            actor: actorName,
+            ...data,
+          }),
+          previousValues: toAuditJson({
+            nome: modeloExistente.nome,
+            descricao: modeloExistente.descricao,
+            conteudo: modeloExistente.conteudo,
+            categoria: modeloExistente.categoria,
+            ativo: modeloExistente.ativo,
+          }),
+          changedFields,
+          ip,
+          userAgent,
+        });
+      } catch (auditError) {
+        logger.warn(
+          "Falha ao registrar auditoria de atualização de modelo de procuração",
+          auditError,
+        );
+      }
+    }
+
     return {
       success: true,
       modelo: modelo,
@@ -336,6 +461,12 @@ export async function deleteModeloProcuracao(modeloId: string): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("excluir");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -348,14 +479,8 @@ export async function deleteModeloProcuracao(modeloId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se é ADMIN ou ADVOGADO
-    if (
-      user.role !== "ADMIN" &&
-      user.role !== "SUPER_ADMIN" &&
-      user.role !== "ADVOGADO"
-    ) {
-      return { success: false, error: "Acesso negado" };
-    }
+    const actorName = getActorName(user);
+    const { ip, userAgent } = await getRequestContext();
 
     // Verificar se o modelo existe e pertence ao tenant
     const modeloExistente = await prisma.modeloProcuracao.findFirst({
@@ -384,15 +509,59 @@ export async function deleteModeloProcuracao(modeloId: string): Promise<{
       };
     }
 
-    await prisma.modeloProcuracao.update({
-      where: {
-        id: modeloId,
-      },
-      data: {
-        deletedAt: new Date(),
-        ativo: false,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.modeloProcuracao.update({
+        where: {
+          id: modeloId,
+        },
+        data: {
+          deletedAt: new Date(),
+          ativo: false,
+        },
+      });
+
+      await tx.modeloProcuracaoVersao.updateMany({
+        where: {
+          modeloId,
+        },
+        data: {
+          ativo: false,
+        },
+      });
     });
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "MODELO_PROCURAÇÃO_EXCLUÍDO",
+        entidade: AUDIT_ENTITY,
+        entidadeId: modeloId,
+        dados: toAuditJson({
+          actor: actorName,
+          nome: modeloExistente.nome,
+          categoria: modeloExistente.categoria,
+          ativo: modeloExistente.ativo,
+          tenantId: user.tenantId,
+          deletadoEm: new Date().toISOString(),
+        }),
+        previousValues: toAuditJson({
+          nome: modeloExistente.nome,
+          descricao: modeloExistente.descricao,
+          categoria: modeloExistente.categoria,
+          ativo: modeloExistente.ativo,
+          deletedAt: modeloExistente.deletedAt,
+        }),
+        changedFields: ["deletedAt", "ativo"],
+        ip,
+        userAgent,
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de exclusão de modelo de procuração",
+        auditError,
+      );
+    }
 
     return {
       success: true,
@@ -416,6 +585,12 @@ export async function getModelosProcuracaoParaSelect(): Promise<{
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     const session = await getSession();
 
     if (!session?.user) {
@@ -472,6 +647,12 @@ export async function gerarPdfProcuracao(
   error?: string;
 }> {
   try {
+    const permissionDenied = await requirePermission("visualizar");
+
+    if (permissionDenied) {
+      return { success: false, error: permissionDenied };
+    }
+
     // Mantida por compatibilidade: delega para a action oficial do módulo de procurações.
     const result = await generateProcuracaoPdf(procuracaoId);
 

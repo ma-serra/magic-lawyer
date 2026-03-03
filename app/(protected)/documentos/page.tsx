@@ -37,6 +37,8 @@ export default async function DocumentosPage() {
 
     return (
       <DocumentosContent
+        canDeleteDocumentos={true}
+        canManageDocumentos={true}
         initialClientes={clientesResult.success ? clientesResult.data ?? [] : []}
         initialData={null}
         initialError={
@@ -46,12 +48,16 @@ export default async function DocumentosPage() {
     );
   }
 
-  // Para outros roles, verificar permissão processos.visualizar
-  // (documentos usa processos como proxy)
+  // Para outros roles, verificar permissões explícitas do módulo documentos.
   try {
-    const hasPermission = await checkPermission("processos", "visualizar");
+    const [canViewDocumentos, canEditDocumentos, canDeleteDocumentos] =
+      await Promise.all([
+        checkPermission("documentos", "visualizar"),
+        checkPermission("documentos", "editar"),
+        checkPermission("documentos", "excluir"),
+      ]);
 
-    if (!hasPermission) {
+    if (!canViewDocumentos) {
       redirect("/dashboard");
     }
 
@@ -59,6 +65,8 @@ export default async function DocumentosPage() {
 
     return (
       <DocumentosContent
+        canDeleteDocumentos={canDeleteDocumentos}
+        canManageDocumentos={canEditDocumentos}
         initialClientes={clientesResult.success ? clientesResult.data ?? [] : []}
         initialData={null}
         initialError={

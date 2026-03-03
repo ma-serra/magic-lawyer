@@ -624,6 +624,7 @@ const navIconMap: Record<string, ReactElement> = {
   Suporte: <HelpIcon />,
   "Pacotes Premium": <WalletIcon />,
   Auditoria: <ScaleIcon />,
+  "Causas Oficiais": <ScaleIcon />,
 };
 
 export type SidebarNavItem = {

@@ -33,27 +33,25 @@ export default async function CausasPage() {
     redirect("/dashboard");
   }
 
-  // Admin sempre tem acesso
-  if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-    return <CausasContent />;
-  }
+  const hasCausasPermission = await checkPermission("causas", "visualizar");
 
-  // Para outros roles, verificar permissão processos.visualizar OU equipe.editar
-  // (causas requerem canViewAllProcesses ou canManageOfficeSettings)
-  try {
-    const hasProcessosPermission = await checkPermission(
-      "processos",
-      "visualizar",
-    );
-    const hasEquipePermission = await checkPermission("equipe", "editar");
+  // Compatibilidade com fluxo legado de processos/equipe.
+  const hasProcessosPermission = await checkPermission("processos", "visualizar");
+  const hasEquipePermission = await checkPermission("equipe", "editar");
 
-    if (!hasProcessosPermission && !hasEquipePermission) {
-      redirect("/dashboard");
-    }
+  const hasPermission =
+    hasCausasPermission || hasProcessosPermission || hasEquipePermission;
 
-    return <CausasContent />;
-  } catch (error) {
-    console.error("Erro ao verificar permissões para /causas:", error);
+  if (
+    user.role !== UserRole.ADMIN &&
+    user.role !== UserRole.SUPER_ADMIN &&
+    !hasPermission
+  ) {
     redirect("/dashboard");
   }
+
+  const canSyncOficiais =
+    user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+
+  return <CausasContent canSyncOficiais={canSyncOficiais} />;
 }

@@ -31,9 +31,9 @@ export default async function ContratosPage() {
     return <ContratosContent />;
   }
 
-    // Para outros roles, verificar permissão financeiro.visualizar
-    try {
-    const hasPermission = await checkPermission("financeiro", "visualizar");
+  // Para outros roles, verificar permissão contratos.visualizar
+  try {
+    const hasPermission = await checkPermission("contratos", "visualizar");
 
     if (!hasPermission) {
       redirect("/dashboard");

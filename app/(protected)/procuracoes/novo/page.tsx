@@ -53,9 +53,14 @@ type ModeloSelectItem = { id: string; nome: string; categoria?: string | null };
 
 const emptyPoder = { titulo: "", descricao: "" };
 
-const formatDateInput = (value?: Date | null) => {
+const formatDateInput = (value?: Date | string | null) => {
   if (!value) return "";
+
   const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
 
   return date.toISOString().split("T")[0];
 };

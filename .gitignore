@@ -62,3 +62,4 @@ tmp/
 output/
 playwright-report/
 test-results/
+dump.rdb

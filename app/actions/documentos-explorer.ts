@@ -14,6 +14,7 @@ import prisma from "@/app/lib/prisma";
 import { UploadService, CloudinaryFolderNode } from "@/lib/upload-service";
 import logger from "@/lib/logger";
 import { DocumentNotifier } from "@/app/lib/notifications/document-notifier";
+import { checkPermission } from "@/app/actions/equipe";
 
 export interface DocumentExplorerFile {
   id: string;
@@ -153,6 +154,247 @@ interface DeleteFolderInput {
 interface DeleteFileInput {
   documentoId: string;
   versaoId?: string;
+}
+
+interface DocumentExplorerLoadOptions {
+  processoIdForTree?: string | null;
+  includeCloudinaryTree?: boolean;
+  processosPage?: number;
+  processosPageSize?: number;
+}
+
+type ExplorerPermissionAction = "visualizar" | "criar" | "editar" | "excluir";
+
+interface ExplorerAccessScope {
+  clienteFilter?: Prisma.ClienteWhereInput;
+  processoFilter?: Prisma.ProcessoWhereInput;
+  documentoFilter?: Prisma.DocumentoWhereInput;
+}
+
+type UploadFileCategory = "document" | "image" | "audio" | "video";
+
+const UPLOAD_MAX_BYTES_BY_CATEGORY: Record<UploadFileCategory, number> = {
+  document: 25 * 1024 * 1024,
+  image: 25 * 1024 * 1024,
+  audio: 50 * 1024 * 1024,
+  video: 100 * 1024 * 1024,
+};
+
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  "pdf",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "csv",
+  "txt",
+  "rtf",
+  "odt",
+  "ods",
+  "ppt",
+  "pptx",
+  "zip",
+  "7z",
+  "rar",
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "aac",
+  "flac",
+  "wma",
+  "opus",
+  "mp4",
+  "mov",
+  "avi",
+  "mkv",
+  "webm",
+  "mpeg",
+  "mpg",
+  "m4v",
+]);
+
+const ALLOWED_UPLOAD_MIME_PREFIXES = [
+  "application/pdf",
+  "image/",
+  "audio/",
+  "video/",
+  "text/plain",
+  "text/csv",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.oasis.opendocument",
+  "application/rtf",
+  "application/zip",
+  "application/x-7z-compressed",
+  "application/x-rar-compressed",
+];
+
+const IMAGE_UPLOAD_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
+]);
+const AUDIO_UPLOAD_EXTENSIONS = new Set([
+  "mp3",
+  "wav",
+  "ogg",
+  "m4a",
+  "aac",
+  "flac",
+  "wma",
+  "opus",
+]);
+const VIDEO_UPLOAD_EXTENSIONS = new Set([
+  "mp4",
+  "mov",
+  "avi",
+  "mkv",
+  "webm",
+  "mpeg",
+  "mpg",
+  "m4v",
+]);
+
+function resolveUploadFileCategory(
+  extension: string,
+  mimeType: string,
+): UploadFileCategory | null {
+  if (mimeType === "application/pdf" || extension === "pdf") {
+    return "document";
+  }
+
+  if (
+    mimeType.startsWith("image/") ||
+    IMAGE_UPLOAD_EXTENSIONS.has(extension)
+  ) {
+    return "image";
+  }
+
+  if (
+    mimeType.startsWith("audio/") ||
+    AUDIO_UPLOAD_EXTENSIONS.has(extension)
+  ) {
+    return "audio";
+  }
+
+  if (
+    mimeType.startsWith("video/") ||
+    VIDEO_UPLOAD_EXTENSIONS.has(extension)
+  ) {
+    return "video";
+  }
+
+  if (
+    extension &&
+    ALLOWED_UPLOAD_EXTENSIONS.has(extension)
+  ) {
+    return "document";
+  }
+
+  return null;
+}
+
+function formatUploadLimit(limitInBytes: number): string {
+  return `${Math.round(limitInBytes / (1024 * 1024))}MB`;
+}
+
+function getUploadCategoryLabel(category: UploadFileCategory): string {
+  switch (category) {
+    case "image":
+      return "imagem";
+    case "audio":
+      return "áudio";
+    case "video":
+      return "vídeo";
+    case "document":
+    default:
+      return "documento";
+  }
+}
+
+function isPrivilegedRole(role: string): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
+async function hasExplorerPermission(
+  user: SessionUser,
+  action: ExplorerPermissionAction,
+): Promise<boolean> {
+  if (isPrivilegedRole(user.role)) {
+    return true;
+  }
+
+  return checkPermission("documentos", action);
+}
+
+async function getExplorerAccessScope(
+  session: { user: any },
+  user: SessionUser,
+): Promise<{ success: true; scope: ExplorerAccessScope } | { success: false; error: string }> {
+  if (isPrivilegedRole(user.role)) {
+    return { success: true, scope: {} };
+  }
+
+  if (user.role === "CLIENTE") {
+    const clienteId = await getClienteIdFromSession(session);
+
+    if (!clienteId) {
+      return { success: false, error: "Cliente não encontrado" };
+    }
+
+    return {
+      success: true,
+      scope: {
+        clienteFilter: { id: clienteId },
+        processoFilter: { clienteId },
+        documentoFilter: {
+          OR: [{ clienteId }, { processo: { clienteId } }],
+        },
+      },
+    };
+  }
+
+  const { getAccessibleAdvogadoIds } = await import("@/app/lib/advogado-access");
+  const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
+  const advogadoScopeFilter: Prisma.ClienteWhereInput = {
+    advogadoClientes: {
+      some: {
+        advogadoId: {
+          in: accessibleAdvogados,
+        },
+      },
+    },
+  };
+
+  return {
+    success: true,
+    scope: {
+      clienteFilter: advogadoScopeFilter,
+      processoFilter: { cliente: advogadoScopeFilter },
+      documentoFilter: {
+        OR: [
+          { cliente: advogadoScopeFilter },
+          { processo: { cliente: advogadoScopeFilter } },
+        ],
+      },
+    },
+  };
 }
 
 function sanitizeSegment(value: string): string {
@@ -298,7 +540,11 @@ function mapDocumentoToFiles(
     } | null;
   },
   tenantSlug: string,
+  options?: {
+    includeUploaderEmail?: boolean;
+  },
 ): DocumentExplorerFile[] {
+  const includeUploaderEmail = options?.includeUploaderEmail ?? true;
   const versions =
     documento.versoes && documento.versoes.length > 0
       ? documento.versoes
@@ -325,6 +571,9 @@ function mapDocumentoToFiles(
       versao?.numeroVersao && versao.numeroVersao > 1
         ? `${documento.nome} (v${versao.numeroVersao})`
         : documento.nome;
+    const secureFileUrl = versao?.id
+      ? `/api/documentos/${documento.id}/view?versaoId=${encodeURIComponent(versao.id)}`
+      : `/api/documentos/${documento.id}/view`;
 
     return {
       id: versao?.id ?? documento.id,
@@ -332,7 +581,7 @@ function mapDocumentoToFiles(
       versaoId: versao?.id,
       nome: nomeArquivo,
       fileName,
-      url: fileUrl,
+      url: secureFileUrl,
       contentType: documento.contentType || null,
       tamanhoBytes: documento.tamanhoBytes ?? null,
       uploadedAt: (versao?.createdAt || documento.createdAt).toISOString(),
@@ -343,7 +592,7 @@ function mapDocumentoToFiles(
               [documento.uploadedBy.firstName, documento.uploadedBy.lastName]
                 .filter(Boolean)
                 .join(" ") || null,
-            email: documento.uploadedBy.email,
+            email: includeUploaderEmail ? documento.uploadedBy.email : null,
           }
         : undefined,
       visivelParaCliente: documento.visivelParaCliente,
@@ -352,9 +601,6 @@ function mapDocumentoToFiles(
       folderPath: folderSegments.join("/"),
       versionNumber: versao?.numeroVersao,
       metadata: {
-        ...(typeof documento.metadados === "object"
-          ? ((documento.metadados as any) || {})
-          : {}),
         origem: (documento as any).origem ?? undefined,
         visivel: documento.visivelParaCliente,
       },
@@ -380,39 +626,28 @@ export async function getDocumentExplorerClientes(): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const canViewDocumentos = await hasExplorerPermission(user, "visualizar");
+    if (!canViewDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para visualizar documentos",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
     let whereCliente: Prisma.ClienteWhereInput = {
       tenantId: user.tenantId,
       deletedAt: null,
     };
 
-    const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
-
-    if (user.role === "CLIENTE") {
-      const clienteId = await getClienteIdFromSession(session);
-
-      if (!clienteId) {
-        return { success: false, error: "Cliente não encontrado" };
-      }
-
-      whereCliente = { ...whereCliente, id: clienteId };
-    } else if (!isAdmin) {
-      const { getAccessibleAdvogadoIds } = await import(
-        "@/app/lib/advogado-access"
-      );
-      const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-      if (accessibleAdvogados.length > 0) {
-        whereCliente = {
-          ...whereCliente,
-          advogadoClientes: {
-            some: {
-              advogadoId: {
-                in: accessibleAdvogados,
-              },
-            },
-          },
-        };
-      }
+    if (accessScopeResult.scope.clienteFilter) {
+      whereCliente = {
+        AND: [whereCliente, accessScopeResult.scope.clienteFilter],
+      };
     }
 
     const clientes = await prisma.cliente.findMany({
@@ -452,6 +687,7 @@ export async function getDocumentExplorerClientes(): Promise<{
 
 export async function getDocumentExplorerData(
   clienteId?: string,
+  options: DocumentExplorerLoadOptions = {},
 ): Promise<{
   success: boolean;
   data?: DocumentExplorerData;
@@ -470,6 +706,39 @@ export async function getDocumentExplorerData(
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const canViewDocumentos = await hasExplorerPermission(user, "visualizar");
+    if (!canViewDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para visualizar documentos",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    const isClientRole = user.role === "CLIENTE";
+    const includeCloudinaryTree = options.includeCloudinaryTree ?? true;
+    const selectedProcessoForTree = options.processoIdForTree ?? null;
+    const processosPage = Math.max(1, options.processosPage ?? 1);
+    const processosPageSize = Math.max(
+      5,
+      Math.min(100, options.processosPageSize ?? 20),
+    );
+    const processosSkip = (processosPage - 1) * processosPageSize;
+    const canManageUpload = await hasExplorerPermission(user, "criar");
+    const documentoVisibilidadeWhere: Prisma.DocumentoWhereInput = isClientRole
+      ? {
+          deletedAt: null,
+          visivelParaCliente: true,
+        }
+      : {
+          deletedAt: null,
+          visivelParaEquipe: true,
+        };
+
     let whereCliente: Prisma.ClienteWhereInput = clienteId
       ? { tenantId: user.tenantId, id: clienteId, deletedAt: null }
       : {
@@ -477,36 +746,10 @@ export async function getDocumentExplorerData(
           deletedAt: null,
         };
 
-    const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
-
-    if (user.role === "CLIENTE") {
-      const clienteId = await getClienteIdFromSession(session);
-
-      if (!clienteId) {
-        return { success: false, error: "Cliente não encontrado" };
-      }
-
-      whereCliente = { ...whereCliente, id: clienteId };
-    } else if (!isAdmin) {
-      // Staff vinculado ou ADVOGADO - usar advogados acessíveis
-      const { getAccessibleAdvogadoIds } = await import(
-        "@/app/lib/advogado-access"
-      );
-      const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-      // Se não há vínculos, acesso total (sem filtros)
-      if (accessibleAdvogados.length > 0) {
-        whereCliente = {
-          ...whereCliente,
-          advogadoClientes: {
-            some: {
-              advogadoId: {
-                in: accessibleAdvogados,
-              },
-            },
-          },
-        };
-      }
+    if (accessScopeResult.scope.clienteFilter) {
+      whereCliente = {
+        AND: [whereCliente, accessScopeResult.scope.clienteFilter],
+      };
     }
 
     const [clientes, causasCatalogo, regimesCatalogo] = await Promise.all([
@@ -516,27 +759,6 @@ export async function getDocumentExplorerData(
           processos: {
             where: { deletedAt: null },
             include: {
-              documentos: {
-                where: { deletedAt: null },
-                include: {
-                  versoes: {
-                    orderBy: {
-                      numeroVersao: "desc",
-                    },
-                  },
-                  uploadedBy: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      email: true,
-                    },
-                  },
-                },
-                orderBy: {
-                  createdAt: "desc",
-                },
-              },
               causasVinculadas: {
                 include: {
                   causa: {
@@ -547,14 +769,21 @@ export async function getDocumentExplorerData(
                   },
                 },
               },
+              _count: {
+                select: {
+                  documentos: { where: documentoVisibilidadeWhere },
+                },
+              },
             },
             orderBy: {
               createdAt: "desc",
             },
+            skip: processosSkip,
+            take: processosPageSize,
           },
           documentos: {
             where: {
-              deletedAt: null,
+              ...documentoVisibilidadeWhere,
               processoId: null,
             },
             include: {
@@ -562,6 +791,7 @@ export async function getDocumentExplorerData(
                 orderBy: {
                   numeroVersao: "desc",
                 },
+                take: 1,
               },
               uploadedBy: {
                 select: {
@@ -576,22 +806,24 @@ export async function getDocumentExplorerData(
               createdAt: "desc",
             },
           },
-          contratos: {
-            where: { deletedAt: null },
-            select: {
-              id: true,
-              titulo: true,
-              status: true,
-              processoId: true,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
+          contratos: canManageUpload
+            ? {
+                where: { deletedAt: null },
+                select: {
+                  id: true,
+                  titulo: true,
+                  status: true,
+                  processoId: true,
+                },
+                orderBy: {
+                  createdAt: "desc",
+                },
+              }
+            : false,
           _count: {
             select: {
               processos: { where: { deletedAt: null } },
-              documentos: { where: { deletedAt: null } },
+              documentos: { where: documentoVisibilidadeWhere },
             },
           },
         },
@@ -599,24 +831,35 @@ export async function getDocumentExplorerData(
           nome: "asc",
         },
       }),
-      prisma.causa.findMany({
-        where: {
-          tenantId: user.tenantId,
-          ativo: true,
-        },
-        orderBy: {
-          nome: "asc",
-        },
-      }),
-      prisma.regimePrazo.findMany({
-        where: {
-          OR: [{ tenantId: user.tenantId }, { tenantId: null }],
-        },
-        orderBy: {
-          nome: "asc",
-        },
-      }),
+      canManageUpload
+        ? prisma.causa.findMany({
+            where: {
+              tenantId: user.tenantId,
+              ativo: true,
+            },
+            orderBy: {
+              nome: "asc",
+            },
+          })
+        : Promise.resolve([]),
+      canManageUpload
+        ? prisma.regimePrazo.findMany({
+            where: {
+              OR: [{ tenantId: user.tenantId }, { tenantId: null }],
+            },
+            orderBy: {
+              nome: "asc",
+            },
+          })
+        : Promise.resolve([]),
     ]);
+
+    if (clienteId && clientes.length === 0) {
+      return {
+        success: false,
+        error: "Cliente não encontrado ou sem acesso autorizado",
+      };
+    }
 
     const uploadService = UploadService.getInstance();
 
@@ -626,16 +869,68 @@ export async function getDocumentExplorerData(
     let totalDocumentos = 0;
     let totalArquivos = 0;
     let cloudinaryRateLimited = false;
+    const includeUploaderEmail = !isClientRole;
 
     for (const cliente of clientes) {
       const processosDto: DocumentExplorerProcess[] = [];
       let clienteArquivos = 0;
       let clienteDocumentos = cliente.documentos.length;
 
-      for (const processo of cliente.processos) {
-        const documentosProcesso = processo.documentos.flatMap((documento) =>
-          mapDocumentoToFiles(documento as any, user.tenantSlug),
+      let documentosProcessoSelecionado: DocumentExplorerFile[] = [];
+      if (
+        selectedProcessoForTree &&
+        cliente.processos.some((processo: any) => processo.id === selectedProcessoForTree)
+      ) {
+        const documentosSelecionados = await prisma.documento.findMany({
+          where: {
+            ...documentoVisibilidadeWhere,
+            tenantId: user.tenantId,
+            clienteId: cliente.id,
+            OR: [
+              { processoId: selectedProcessoForTree },
+              {
+                processosVinculados: {
+                  some: {
+                    processoId: selectedProcessoForTree,
+                  },
+                },
+              },
+            ],
+          },
+          include: {
+            versoes: {
+              orderBy: {
+                numeroVersao: "desc",
+              },
+              take: 1,
+            },
+            uploadedBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+
+        documentosProcessoSelecionado = documentosSelecionados.flatMap(
+          (documento) =>
+            mapDocumentoToFiles(documento as any, user.tenantSlug, {
+              includeUploaderEmail,
+            }),
         );
+      }
+
+      for (const processo of cliente.processos) {
+        const documentosProcesso =
+          selectedProcessoForTree === processo.id
+            ? documentosProcessoSelecionado
+            : [];
 
         const baseFolder = buildProcessFolderBase(
           user.tenantSlug,
@@ -643,10 +938,17 @@ export async function getDocumentExplorerData(
           { id: processo.id, numero: processo.numero },
         );
 
-        const folderTreeResult =
-          cloudinaryRateLimited
-            ? { success: false, tree: null, error: "Limite da API do Cloudinary excedido" }
-            : await uploadService.buildFolderTree(baseFolder);
+        const shouldLoadTreeForProcess =
+          includeCloudinaryTree && selectedProcessoForTree === processo.id;
+        const folderTreeResult = shouldLoadTreeForProcess
+          ? cloudinaryRateLimited
+            ? {
+                success: false,
+                tree: null,
+                error: "Limite da API do Cloudinary excedido",
+              }
+            : await uploadService.buildFolderTree(baseFolder)
+          : { success: true, tree: null };
 
         if (folderTreeResult.error?.includes("Limite da API")) {
           cloudinaryRateLimited = true;
@@ -671,21 +973,23 @@ export async function getDocumentExplorerData(
           folderTree: folderTreeResult.success ? folderTreeResult.tree : null,
           causas: causasProcesso,
           counts: {
-            documentos: processo.documentos.length,
-            arquivos: documentosProcesso.length,
+            documentos: processo._count?.documentos ?? 0,
+            arquivos: processo._count?.documentos ?? 0,
           },
         });
 
-        totalDocumentos += processo.documentos.length;
-        totalArquivos += documentosProcesso.length;
-        clienteArquivos += documentosProcesso.length;
-        clienteDocumentos += processo.documentos.length;
+        totalDocumentos += processo._count?.documentos ?? 0;
+        totalArquivos += processo._count?.documentos ?? 0;
+        clienteArquivos += processo._count?.documentos ?? 0;
+        clienteDocumentos += processo._count?.documentos ?? 0;
       }
 
-      totalProcessos += cliente.processos.length;
+      totalProcessos += cliente._count?.processos ?? 0;
 
       const documentosGerais = cliente.documentos.flatMap((documento) =>
-        mapDocumentoToFiles(documento as any, user.tenantSlug),
+        mapDocumentoToFiles(documento as any, user.tenantSlug, {
+          includeUploaderEmail,
+        }),
       );
 
       clienteArquivos += documentosGerais.length;
@@ -697,16 +1001,24 @@ export async function getDocumentExplorerData(
         id: cliente.id,
         nome: cliente.nome,
       });
-      const treeResult = cloudinaryRateLimited
-        ? { success: false, tree: null, error: "Limite da API do Cloudinary excedido" }
-        : await uploadService.buildFolderTree(baseFolderCliente);
+      const shouldLoadClienteTree = includeCloudinaryTree && !selectedProcessoForTree;
 
-      if (treeResult.error?.includes("Limite da API")) {
-        cloudinaryRateLimited = true;
-      }
+      if (shouldLoadClienteTree) {
+        const treeResult = cloudinaryRateLimited
+          ? {
+              success: false,
+              tree: null,
+              error: "Limite da API do Cloudinary excedido",
+            }
+          : await uploadService.buildFolderTree(baseFolderCliente);
 
-      if (treeResult.success) {
-        documentosGeraisTree = treeResult.tree;
+        if (treeResult.error?.includes("Limite da API")) {
+          cloudinaryRateLimited = true;
+        }
+
+        if (treeResult.success) {
+          documentosGeraisTree = treeResult.tree;
+        }
       }
 
       clientesDto.push({
@@ -719,14 +1031,14 @@ export async function getDocumentExplorerData(
         processos: processosDto,
         documentosGerais,
         documentosGeraisTree,
-        contratos: cliente.contratos.map((contrato: any) => ({
+        contratos: (cliente.contratos ?? []).map((contrato: any) => ({
           id: contrato.id,
           titulo: contrato.titulo,
           status: contrato.status,
           processoId: contrato.processoId,
         })),
         counts: {
-          processos: cliente.processos.length,
+          processos: cliente._count?.processos ?? 0,
           documentos: clienteDocumentos,
           arquivos: clienteArquivos,
         },
@@ -778,6 +1090,7 @@ export async function uploadDocumentoExplorer(
     folderSegments?: string[];
     description?: string;
     visivelParaCliente?: boolean;
+    allowedExtensions?: string[];
   } = {},
 ) {
   try {
@@ -800,18 +1113,86 @@ export async function uploadDocumentoExplorer(
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const canUploadDocumentos = await hasExplorerPermission(user, "criar");
+    if (!canUploadDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para enviar documentos",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
       return { success: false, error: "Arquivo não recebido" };
     }
 
+    const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
+    const normalizedMimeType = (file.type || "").toLowerCase();
+    const extensionAllowed = ALLOWED_UPLOAD_EXTENSIONS.has(fileExtension);
+    const mimeAllowed = ALLOWED_UPLOAD_MIME_PREFIXES.some((prefix) =>
+      normalizedMimeType.startsWith(prefix),
+    );
+
+    if (!extensionAllowed && !mimeAllowed) {
+      return {
+        success: false,
+        error:
+          "Formato não suportado. Use PDF, imagem, áudio, vídeo ou documento de escritório.",
+      };
+    }
+
+    const allowedExtensionsOverride = (options.allowedExtensions ?? [])
+      .map((extension) => extension.trim().toLowerCase())
+      .filter(Boolean);
+    if (
+      allowedExtensionsOverride.length > 0 &&
+      !allowedExtensionsOverride.includes(fileExtension)
+    ) {
+      return {
+        success: false,
+        error:
+          "Formato não permitido para este tipo de upload. Ajuste o arquivo e tente novamente.",
+      };
+    }
+
+    const fileCategory = resolveUploadFileCategory(
+      fileExtension,
+      normalizedMimeType,
+    );
+    if (!fileCategory) {
+      return {
+        success: false,
+        error:
+          "Formato não suportado. Use PDF, imagem, áudio, vídeo ou documento de escritório.",
+      };
+    }
+
+    const maxUploadBytes = UPLOAD_MAX_BYTES_BY_CATEGORY[fileCategory];
+    if (file.size > maxUploadBytes) {
+      return {
+        success: false,
+        error: `Arquivo excede o limite de ${formatUploadLimit(maxUploadBytes)} para ${getUploadCategoryLabel(fileCategory)}.`,
+      };
+    }
+
+    let clienteWhere: Prisma.ClienteWhereInput = {
+      id: clienteId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.clienteFilter) {
+      clienteWhere = {
+        AND: [clienteWhere, accessScopeResult.scope.clienteFilter],
+      };
+    }
     const cliente = await prisma.cliente.findFirst({
-      where: {
-        id: clienteId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: clienteWhere,
       select: { id: true, nome: true },
     });
 
@@ -832,20 +1213,31 @@ export async function uploadDocumentoExplorer(
 
     const processoIds = Array.from(new Set(processoIdsRaw));
 
-    const processos = processoIds.length
+    let processoWhere: Prisma.ProcessoWhereInput = {
+      id: { in: processoIds },
+      tenantId: user.tenantId,
+      clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      processoWhere = {
+        AND: [processoWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
+
+    const processosRaw = processoIds.length
       ? await prisma.processo.findMany({
-          where: {
-            id: { in: processoIds },
-            tenantId: user.tenantId,
-            clienteId,
-            deletedAt: null,
-          },
+          where: processoWhere,
           select: {
             id: true,
             numero: true,
           },
         })
       : [];
+    const processosById = new Map(processosRaw.map((processo) => [processo.id, processo]));
+    const processos = processoIds
+      .map((processoIdSelecionado) => processosById.get(processoIdSelecionado))
+      .filter((processo): processo is { id: string; numero: string } => Boolean(processo));
 
     if (processoIds.length && processos.length !== processoIds.length) {
       return { success: false, error: "Processo selecionado inválido" };
@@ -895,6 +1287,9 @@ export async function uploadDocumentoExplorer(
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
+    const normalizedFolderSegments = (options.folderSegments || [])
+      .map((segment) => sanitizeSegment(segment))
+      .filter(Boolean);
 
     const uploadService = UploadService.getInstance();
 
@@ -915,10 +1310,15 @@ export async function uploadDocumentoExplorer(
               numero: processos[0].numero,
             }
           : undefined,
-        subpastas: options.folderSegments,
+        subpastas: normalizedFolderSegments,
         fileName: file.name,
         contentType: file.type,
-        resourceType: file.type.startsWith("image/") ? "image" : "raw",
+        resourceType:
+          fileCategory === "image"
+            ? "image"
+            : fileCategory === "video"
+              ? "video"
+              : "raw",
         tags: [
           "processo",
           ...(processos.length ? processos.map((proc) => proc.id) : []),
@@ -964,7 +1364,7 @@ export async function uploadDocumentoExplorer(
           visivelParaEquipe: true,
           metadados: {
             folderPath: uploadedFolderPath,
-            subpastas: options.folderSegments || [],
+            subpastas: normalizedFolderSegments,
             originalFileName: file.name,
             processos: processos.map((proc) => proc.id),
             contratos: contratos.map((contrato) => contrato.id),
@@ -1117,23 +1517,51 @@ export async function createExplorerFolder(input: CreateFolderInput) {
     }
 
     const user = session.user as any as SessionUser;
+    if (!user.tenantId || !user.tenantSlug) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
+    const canManageFolders = await hasExplorerPermission(user, "editar");
+    if (!canManageFolders) {
+      return {
+        success: false,
+        error: "Sem permissão para criar pastas",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    let clienteWhere: Prisma.ClienteWhereInput = {
+      id: input.clienteId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.clienteFilter) {
+      clienteWhere = {
+        AND: [clienteWhere, accessScopeResult.scope.clienteFilter],
+      };
+    }
     const cliente = await prisma.cliente.findFirst({
-      where: {
-        id: input.clienteId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: clienteWhere,
       select: { id: true, nome: true },
     });
 
+    let processoWhere: Prisma.ProcessoWhereInput = {
+      id: input.processoId,
+      tenantId: user.tenantId,
+      clienteId: input.clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      processoWhere = {
+        AND: [processoWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
     const processo = await prisma.processo.findFirst({
-      where: {
-        id: input.processoId,
-        tenantId: user.tenantId,
-        clienteId: input.clienteId,
-        deletedAt: null,
-      },
+      where: processoWhere,
       select: { id: true, numero: true },
     });
 
@@ -1146,11 +1574,20 @@ export async function createExplorerFolder(input: CreateFolderInput) {
       cliente,
       processo,
     );
+    const nomePastaSegment = sanitizeSegment(input.nomePasta);
+
+    if (!nomePastaSegment) {
+      return { success: false, error: "Nome da pasta inválido" };
+    }
+
+    const parentSegments = (input.parentSegments || [])
+      .map((segment) => sanitizeSegment(segment))
+      .filter(Boolean);
 
     const fullPathSegments = [
       baseFolder,
-      ...(input.parentSegments || []).map((segment) => segment.trim()),
-      sanitizeSegment(input.nomePasta),
+      ...parentSegments,
+      nomePastaSegment,
     ].filter(Boolean);
 
     const fullPath = fullPathSegments.join("/");
@@ -1187,23 +1624,51 @@ export async function renameExplorerFolder(input: RenameFolderInput) {
     }
 
     const user = session.user as any as SessionUser;
+    if (!user.tenantId || !user.tenantSlug) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
+    const canManageFolders = await hasExplorerPermission(user, "editar");
+    if (!canManageFolders) {
+      return {
+        success: false,
+        error: "Sem permissão para renomear pastas",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    let clienteWhere: Prisma.ClienteWhereInput = {
+      id: input.clienteId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.clienteFilter) {
+      clienteWhere = {
+        AND: [clienteWhere, accessScopeResult.scope.clienteFilter],
+      };
+    }
     const cliente = await prisma.cliente.findFirst({
-      where: {
-        id: input.clienteId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: clienteWhere,
       select: { id: true, nome: true },
     });
 
+    let processoWhere: Prisma.ProcessoWhereInput = {
+      id: input.processoId,
+      tenantId: user.tenantId,
+      clienteId: input.clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      processoWhere = {
+        AND: [processoWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
     const processo = await prisma.processo.findFirst({
-      where: {
-        id: input.processoId,
-        tenantId: user.tenantId,
-        clienteId: input.clienteId,
-        deletedAt: null,
-      },
+      where: processoWhere,
       select: { id: true, numero: true },
     });
 
@@ -1217,16 +1682,23 @@ export async function renameExplorerFolder(input: RenameFolderInput) {
       processo,
     );
 
-    if (!input.currentSegments.length) {
+    const currentSegments = (input.currentSegments || [])
+      .map((segment) => sanitizeSegment(segment))
+      .filter(Boolean);
+
+    if (!currentSegments.length) {
       return { success: false, error: "Selecione uma pasta para renomear" };
     }
 
-    const oldPath = [baseFolder, ...input.currentSegments].join("/");
-    const newPathSegments = [...input.currentSegments];
+    const oldPath = [baseFolder, ...currentSegments].join("/");
+    const newPathSegments = [...currentSegments];
+    const novoNomeSanitizado = sanitizeSegment(input.novoNome);
 
-    newPathSegments[newPathSegments.length - 1] = sanitizeSegment(
-      input.novoNome,
-    );
+    if (!novoNomeSanitizado) {
+      return { success: false, error: "Novo nome da pasta inválido" };
+    }
+
+    newPathSegments[newPathSegments.length - 1] = novoNomeSanitizado;
     const newPath = [baseFolder, ...newPathSegments].join("/");
 
     const uploadService = UploadService.getInstance();
@@ -1325,23 +1797,51 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
     }
 
     const user = session.user as any as SessionUser;
+    if (!user.tenantId || !user.tenantSlug) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
+    const canDeleteFolders = await hasExplorerPermission(user, "excluir");
+    if (!canDeleteFolders) {
+      return {
+        success: false,
+        error: "Sem permissão para excluir pastas",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    let clienteWhere: Prisma.ClienteWhereInput = {
+      id: input.clienteId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.clienteFilter) {
+      clienteWhere = {
+        AND: [clienteWhere, accessScopeResult.scope.clienteFilter],
+      };
+    }
     const cliente = await prisma.cliente.findFirst({
-      where: {
-        id: input.clienteId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: clienteWhere,
       select: { id: true, nome: true },
     });
 
+    let processoWhere: Prisma.ProcessoWhereInput = {
+      id: input.processoId,
+      tenantId: user.tenantId,
+      clienteId: input.clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      processoWhere = {
+        AND: [processoWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
     const processo = await prisma.processo.findFirst({
-      where: {
-        id: input.processoId,
-        tenantId: user.tenantId,
-        clienteId: input.clienteId,
-        deletedAt: null,
-      },
+      where: processoWhere,
       select: { id: true, numero: true },
     });
 
@@ -1354,8 +1854,18 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
       cliente,
       processo,
     );
+    const targetSegments = (input.targetSegments || [])
+      .map((segment) => sanitizeSegment(segment))
+      .filter(Boolean);
 
-    const targetPath = [baseFolder, ...input.targetSegments].join("/");
+    if (!targetSegments.length) {
+      return {
+        success: false,
+        error: "Selecione uma pasta válida para exclusão",
+      };
+    }
+
+    const targetPath = [baseFolder, ...targetSegments].join("/");
 
     const versoesParaDeletar = await prisma.documentoVersao.findMany({
       where: {
@@ -1401,18 +1911,22 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
 
     await uploadService.deleteFolderRecursive(targetPath);
 
-    if (versaoIds.length) {
-      await prisma.documentoVersao.deleteMany({
-        where: { id: { in: versaoIds } },
-      });
-    }
+    if (versaoIds.length || documentoIds.length) {
+      await prisma.$transaction(async (tx) => {
+        if (versaoIds.length) {
+          await tx.documentoVersao.deleteMany({
+            where: { id: { in: versaoIds } },
+          });
+        }
 
-    if (documentoIds.length) {
-      await prisma.documento.updateMany({
-        where: { id: { in: documentoIds } },
-        data: {
-          deletedAt: new Date(),
-        },
+        if (documentoIds.length) {
+          await tx.documento.updateMany({
+            where: { id: { in: documentoIds } },
+            data: {
+              deletedAt: new Date(),
+            },
+          });
+        }
       });
     }
 
@@ -1440,13 +1954,36 @@ export async function deleteExplorerFile(input: DeleteFileInput) {
     }
 
     const user = session.user as any as SessionUser;
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const canDeleteDocumentos = await hasExplorerPermission(user, "excluir");
+    if (!canDeleteDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para remover arquivos",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    let documentoWhere: Prisma.DocumentoWhereInput = {
+      id: input.documentoId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.documentoFilter) {
+      documentoWhere = {
+        AND: [documentoWhere, accessScopeResult.scope.documentoFilter],
+      };
+    }
 
     const documento = await prisma.documento.findFirst({
-      where: {
-        id: input.documentoId,
-        tenantId: user.tenantId,
-        deletedAt: null,
-      },
+      where: documentoWhere,
       include: {
         versoes: true,
       },
@@ -1456,9 +1993,20 @@ export async function deleteExplorerFile(input: DeleteFileInput) {
       return { success: false, error: "Documento não encontrado" };
     }
 
+    const versoesOrdenadas = [...documento.versoes].sort((a, b) => {
+      if (a.numeroVersao !== b.numeroVersao) {
+        return b.numeroVersao - a.numeroVersao;
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
     const versaoAlvo = input.versaoId
-      ? documento.versoes.find((versao) => versao.id === input.versaoId)
-      : documento.versoes[0];
+      ? versoesOrdenadas.find((versao) => versao.id === input.versaoId)
+      : versoesOrdenadas[0];
+
+    if (input.versaoId && !versaoAlvo) {
+      return { success: false, error: "Versão do documento não encontrada" };
+    }
 
     const uploadService = UploadService.getInstance();
 
@@ -1474,27 +2022,31 @@ export async function deleteExplorerFile(input: DeleteFileInput) {
     if (publicId) {
       const resourceType = documento.contentType?.startsWith("image/")
         ? "image"
-        : "raw";
+        : documento.contentType?.startsWith("video/")
+          ? "video"
+          : "raw";
 
       await uploadService.deleteResources([publicId], resourceType);
     }
 
-    if (versaoAlvo) {
-      await prisma.documentoVersao.delete({ where: { id: versaoAlvo.id } });
-    }
+    await prisma.$transaction(async (tx) => {
+      if (versaoAlvo) {
+        await tx.documentoVersao.delete({ where: { id: versaoAlvo.id } });
+      }
 
-    const versoesRestantes = await prisma.documentoVersao.findMany({
-      where: {
-        documentoId: documento.id,
-      },
-    });
-
-    if (!versoesRestantes.length) {
-      await prisma.documento.update({
-        where: { id: documento.id },
-        data: { deletedAt: new Date() },
+      const versoesRestantes = await tx.documentoVersao.count({
+        where: {
+          documentoId: documento.id,
+        },
       });
-    }
+
+      if (versoesRestantes === 0) {
+        await tx.documento.update({
+          where: { id: documento.id },
+          data: { deletedAt: new Date() },
+        });
+      }
+    });
 
     revalidatePath("/documentos");
 

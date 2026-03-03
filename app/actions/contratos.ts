@@ -6,14 +6,114 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/auth";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import { UploadService } from "@/lib/upload-service";
-import { ContratoStatus } from "@/generated/prisma";
+import { Prisma, ContratoStatus, UserRole } from "@/generated/prisma";
 import logger from "@/lib/logger";
 import { checkPermission } from "@/app/actions/equipe";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import {
   getAccessibleAdvogadoIds,
   getAdvogadoIdFromSession,
 } from "@/app/lib/advogado-access";
-import { UserRole } from "@/generated/prisma";
+
+export interface ContratoListFilters {
+  search?: string;
+  status?: ContratoStatus | "";
+  clienteId?: string;
+  advogadoId?: string;
+  tipoId?: string;
+  modeloId?: string;
+  comArquivo?: boolean;
+  valorMin?: number;
+  valorMax?: number;
+  ordenacao?:
+    | "recente"
+    | "antigo"
+    | "valor-desc"
+    | "valor-asc"
+    | "titulo";
+}
+
+export interface ContratoListPaginatedParams {
+  page?: number;
+  pageSize?: number;
+  filtros?: ContratoListFilters;
+}
+
+interface ContratoListMetrics {
+  total: number;
+  ativos: number;
+  rascunhos: number;
+  comProcesso: number;
+  comArquivo: number;
+}
+
+export interface ContratoListPaginatedResult {
+  items: any[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  metrics: ContratoListMetrics;
+}
+
+const CONTRATOS_PAGE_SIZE_DEFAULT = 12;
+const CONTRATOS_PAGE_SIZE_MAX = 60;
+
+const contratoListInclude = Prisma.validator<Prisma.ContratoInclude>()({
+  cliente: {
+    select: {
+      id: true,
+      nome: true,
+      tipoPessoa: true,
+      documento: true,
+      email: true,
+    },
+  },
+  dadosBancarios: true,
+  tipo: {
+    select: {
+      id: true,
+      nome: true,
+    },
+  },
+  modelo: {
+    select: {
+      id: true,
+      nome: true,
+    },
+  },
+  advogadoResponsavel: {
+    select: {
+      id: true,
+      oabNumero: true,
+      oabUf: true,
+      usuario: {
+        select: {
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  },
+  processo: {
+    select: {
+      id: true,
+      numero: true,
+      titulo: true,
+      procuracoesVinculadas: {
+        select: {
+          procuracao: {
+            select: {
+              id: true,
+              numero: true,
+              ativa: true,
+            },
+          },
+        },
+      },
+    },
+  },
+});
 
 // ============================================
 // TYPES
@@ -22,17 +122,17 @@ import { UserRole } from "@/generated/prisma";
 export interface ContratoCreateInput {
   titulo: string;
   resumo?: string;
-  tipoContratoId?: string;
-  modeloContratoId?: string;
-  arquivoUrl?: string;
+  tipoContratoId?: string | null;
+  modeloContratoId?: string | null;
+  arquivoUrl?: string | null;
   status?: ContratoStatus;
   valor?: number;
-  dataInicio?: Date | string;
-  dataFim?: Date | string;
+  dataInicio?: Date | string | null;
+  dataFim?: Date | string | null;
   clienteId: string;
-  advogadoId?: string;
-  processoId?: string;
-  dadosBancariosId?: string;
+  advogadoId?: string | null;
+  processoId?: string | null;
+  dadosBancariosId?: string | null;
   observacoes?: string;
 }
 
@@ -213,6 +313,296 @@ function normalizeContratoStatus(value: string): ContratoStatus | undefined {
   return Object.values(ContratoStatus).includes(status)
     ? status
     : undefined;
+}
+
+function normalizeBooleanFromForm(
+  value: FormDataEntryValue | null,
+): boolean | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  if (value === "true" || value === "1" || value === "on") {
+    return true;
+  }
+
+  if (value === "false" || value === "0") {
+    return false;
+  }
+
+  return undefined;
+}
+
+function normalizeDateInput(
+  value: Date | string | null | undefined,
+): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function clampContratosPagination(
+  page?: number,
+  pageSize?: number,
+): { page: number; pageSize: number } {
+  const normalizedPage = Number.isFinite(page) ? Number(page) : 1;
+  const normalizedPageSize = Number.isFinite(pageSize)
+    ? Number(pageSize)
+    : CONTRATOS_PAGE_SIZE_DEFAULT;
+
+  return {
+    page: Math.max(1, normalizedPage),
+    pageSize: Math.min(Math.max(6, normalizedPageSize), CONTRATOS_PAGE_SIZE_MAX),
+  };
+}
+
+function mergeWhereConditions(
+  base: Prisma.ContratoWhereInput,
+  extra?: Prisma.ContratoWhereInput,
+): Prisma.ContratoWhereInput {
+  if (!extra) {
+    return base;
+  }
+
+  return {
+    AND: [base, extra],
+  };
+}
+
+async function getClienteIdFromSession(session: {
+  user?: { id?: string; tenantId?: string };
+}): Promise<string | null> {
+  if (!session?.user?.id || !session.user.tenantId) {
+    return null;
+  }
+
+  const cliente = await prisma.cliente.findFirst({
+    where: {
+      usuarioId: session.user.id,
+      tenantId: session.user.tenantId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return cliente?.id ?? null;
+}
+
+async function buildContratoAccessWhere(
+  session: { user: any },
+  user: any,
+  opts?: { contratoId?: string },
+): Promise<Prisma.ContratoWhereInput> {
+  const baseWhere: Prisma.ContratoWhereInput = {
+    tenantId: user.tenantId,
+    deletedAt: null,
+    ...(opts?.contratoId ? { id: opts.contratoId } : {}),
+  };
+
+  const isAdmin = user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+
+  if (isAdmin) {
+    return baseWhere;
+  }
+
+  const clienteId = await getClienteIdFromSession(session);
+
+  if (clienteId) {
+    return {
+      ...baseWhere,
+      clienteId,
+    };
+  }
+
+  const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
+
+  const orConditions: Prisma.ContratoWhereInput[] = [
+    {
+      advogadoResponsavelId: {
+        in: accessibleAdvogados,
+      },
+    },
+    {
+      cliente: {
+        advogadoClientes: {
+          some: {
+            advogadoId: {
+              in: accessibleAdvogados,
+            },
+          },
+        },
+      },
+    },
+    {
+      processo: {
+        advogadoResponsavelId: {
+          in: accessibleAdvogados,
+        },
+      },
+    },
+  ];
+
+  if (user.role === UserRole.ADVOGADO) {
+    orConditions.push({
+      cliente: {
+        usuario: {
+          createdById: user.id,
+        },
+      },
+    });
+  }
+
+  return {
+    ...baseWhere,
+    OR: orConditions,
+  };
+}
+
+function buildContratoListWhere(
+  accessWhere: Prisma.ContratoWhereInput,
+  filtros?: ContratoListFilters,
+): Prisma.ContratoWhereInput {
+  if (!filtros) {
+    return accessWhere;
+  }
+
+  const conditions: Prisma.ContratoWhereInput[] = [accessWhere];
+  const search = filtros.search?.trim();
+
+  if (search) {
+    conditions.push({
+      OR: [
+        {
+          titulo: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          resumo: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          cliente: {
+            nome: {
+              contains: search,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          processo: {
+            numero: {
+              contains: search,
+              mode: "insensitive",
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  if (filtros.status) {
+    conditions.push({
+      status: filtros.status,
+    });
+  }
+
+  if (filtros.clienteId) {
+    conditions.push({
+      clienteId: filtros.clienteId,
+    });
+  }
+
+  if (filtros.advogadoId) {
+    conditions.push({
+      advogadoResponsavelId: filtros.advogadoId,
+    });
+  }
+
+  if (filtros.tipoId) {
+    conditions.push({
+      tipoId: filtros.tipoId,
+    });
+  }
+
+  if (filtros.modeloId) {
+    conditions.push({
+      modeloId: filtros.modeloId,
+    });
+  }
+
+  if (filtros.comArquivo === true) {
+    conditions.push({
+      arquivoUrl: {
+        not: null,
+      },
+    });
+  }
+
+  if (filtros.comArquivo === false) {
+    conditions.push({
+      arquivoUrl: null,
+    });
+  }
+
+  if (typeof filtros.valorMin === "number") {
+    conditions.push({
+      valor: {
+        gte: filtros.valorMin,
+      },
+    });
+  }
+
+  if (typeof filtros.valorMax === "number") {
+    conditions.push({
+      valor: {
+        lte: filtros.valorMax,
+      },
+    });
+  }
+
+  if (conditions.length === 1) {
+    return accessWhere;
+  }
+
+  return {
+    AND: conditions,
+  };
+}
+
+function buildContratoOrderBy(
+  ordenacao?: ContratoListFilters["ordenacao"],
+): Prisma.ContratoOrderByWithRelationInput[] {
+  switch (ordenacao) {
+    case "antigo":
+      return [{ createdAt: "asc" }];
+    case "valor-desc":
+      return [{ valor: "desc" }, { createdAt: "desc" }];
+    case "valor-asc":
+      return [{ valor: "asc" }, { createdAt: "desc" }];
+    case "titulo":
+      return [{ titulo: "asc" }, { createdAt: "desc" }];
+    case "recente":
+    default:
+      return [{ createdAt: "desc" }];
+  }
 }
 
 // ============================================
@@ -419,7 +809,7 @@ export async function createContrato(data: ContratoCreateInput) {
     }
 
     // Verificar permissão para criar contratos
-    const podeCriar = await checkPermission("financeiro", "criar");
+    const podeCriar = await checkPermission("contratos", "criar");
 
     if (!podeCriar) {
       return {
@@ -522,6 +912,38 @@ export async function createContrato(data: ContratoCreateInput) {
       },
     });
 
+    try {
+      const actorName =
+        `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
+        (user.email as string | undefined) ||
+        "Usuário";
+      const auditData = {
+        contratoId: contrato.id,
+        titulo: contrato.titulo,
+        status: contrato.status,
+        clienteId: contrato.clienteId,
+        tipoId: contrato.tipoId,
+        modeloId: contrato.modeloId,
+        processoId: contrato.processoId,
+        advogadoResponsavelId: contrato.advogadoResponsavelId,
+        arquivoUrl: contrato.arquivoUrl,
+        criadoPor: actorName,
+      };
+
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "CONTRATO_CRIADO",
+        entidade: "Contrato",
+        entidadeId: contrato.id,
+        dados: toAuditJson(auditData),
+        previousValues: null,
+        changedFields: Object.keys(auditData),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de criação de contrato", auditError);
+    }
+
     // Notificar criação do contrato
     try {
       const { NotificationService } = await import(
@@ -587,7 +1009,7 @@ export async function createContrato(data: ContratoCreateInput) {
       }
     } catch (notificationError) {
       // Não falhar criação do contrato se notificação falhar
-      console.error(
+      logger.warn(
         "[Contrato] Erro ao enviar notificação:",
         notificationError,
       );
@@ -800,6 +1222,115 @@ export async function createContratoComArquivo(formData: FormData) {
 // ACTIONS - LISTAR CONTRATOS
 // ============================================
 
+export async function getContratosPaginated(
+  params?: ContratoListPaginatedParams,
+): Promise<{
+  success: boolean;
+  data?: ContratoListPaginatedResult;
+  error?: string;
+}> {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado" };
+    }
+
+    const user = session.user as any;
+
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const isAdmin =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin) {
+      const podeVisualizar = await checkPermission("contratos", "visualizar");
+
+      if (!podeVisualizar) {
+        return {
+          success: false,
+          error: "Você não tem permissão para visualizar contratos",
+        };
+      }
+    }
+
+    const { page, pageSize } = clampContratosPagination(
+      params?.page,
+      params?.pageSize,
+    );
+    const accessWhere = await buildContratoAccessWhere(session, user);
+    const where = buildContratoListWhere(accessWhere, params?.filtros);
+    const orderBy = buildContratoOrderBy(params?.filtros?.ordenacao);
+
+    const total = await prisma.contrato.count({ where });
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const currentPage = Math.min(page, totalPages);
+    const skip = (currentPage - 1) * pageSize;
+
+    const [items, ativos, rascunhos, comProcesso, comArquivo] = await Promise.all([
+      prisma.contrato.findMany({
+        where,
+        include: contratoListInclude,
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      prisma.contrato.count({
+        where: mergeWhereConditions(where, {
+          status: ContratoStatus.ATIVO,
+        }),
+      }),
+      prisma.contrato.count({
+        where: mergeWhereConditions(where, {
+          status: ContratoStatus.RASCUNHO,
+        }),
+      }),
+      prisma.contrato.count({
+        where: mergeWhereConditions(where, {
+          processoId: {
+            not: null,
+          },
+        }),
+      }),
+      prisma.contrato.count({
+        where: mergeWhereConditions(where, {
+          arquivoUrl: {
+            not: null,
+          },
+        }),
+      }),
+    ]);
+
+    const convertedItems = items.map((item) => convertAllDecimalFields(item));
+
+    return {
+      success: true,
+      data: {
+        items: convertedItems,
+        page: currentPage,
+        pageSize,
+        total,
+        totalPages,
+        metrics: {
+          total,
+          ativos,
+          rascunhos,
+          comProcesso,
+          comArquivo,
+        },
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar contratos paginados:", error);
+
+    return {
+      success: false,
+      error: "Erro ao buscar contratos",
+    };
+  }
+}
+
 /**
  * Busca todos os contratos do tenant
  */
@@ -821,88 +1352,31 @@ export async function getAllContratos(): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Controlar acesso por role
-    let whereClause: any = {
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
+    const isAdmin =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin) {
+      const podeVisualizar = await checkPermission("contratos", "visualizar");
 
-    const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
-
-    if (!isAdmin && user.role !== "CLIENTE") {
-      // Staff vinculado ou ADVOGADO - usar advogados acessíveis
-      const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-      // Se não há vínculos, acesso total (sem filtros)
-      if (accessibleAdvogados.length > 0) {
-        whereClause.advogadoResponsavelId = {
-          in: accessibleAdvogados,
+      if (!podeVisualizar) {
+        return {
+          success: false,
+          error: "Você não tem permissão para visualizar contratos",
         };
       }
     }
 
+    const where = await buildContratoAccessWhere(session, user);
     const contratos = await prisma.contrato.findMany({
-      where: whereClause,
-      include: {
-        cliente: {
-          select: {
-            id: true,
-            nome: true,
-            tipoPessoa: true,
-            documento: true,
-          },
-        },
-        dadosBancarios: true,
-        tipo: {
-          select: {
-            nome: true,
-          },
-        },
-        advogadoResponsavel: {
-          select: {
-            id: true,
-            oabNumero: true,
-            oabUf: true,
-            usuario: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-        processo: {
-          select: {
-            id: true,
-            numero: true,
-            titulo: true,
-            procuracoesVinculadas: {
-              select: {
-                procuracao: {
-                  select: {
-                    id: true,
-                    numero: true,
-                    ativa: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      where,
+      include: contratoListInclude,
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    // Converter Decimal para number
-    const contratosFormatted = contratos.map((c: any) => ({
-      ...c,
-      valor: Number(c.valor),
-      comissaoAdvogado: Number(c.comissaoAdvogado),
-      percentualAcaoGanha: Number(c.percentualAcaoGanha),
-      valorAcaoGanha: Number(c.valorAcaoGanha),
-    }));
+    const contratosFormatted = contratos.map((contrato) =>
+      convertAllDecimalFields(contrato),
+    );
 
     return {
       success: true,
@@ -940,7 +1414,7 @@ export async function deleteContrato(contratoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    const podeExcluir = await checkPermission("financeiro", "excluir");
+    const podeExcluir = await checkPermission("contratos", "excluir");
 
     if (!podeExcluir) {
       return {
@@ -949,13 +1423,18 @@ export async function deleteContrato(contratoId: string): Promise<{
       };
     }
 
+    const where = await buildContratoAccessWhere(session, user, { contratoId });
     const contrato = await prisma.contrato.findFirst({
-      where: {
-        id: contratoId,
-        tenantId: user.tenantId,
-        deletedAt: null,
+      where,
+      select: {
+        id: true,
+        titulo: true,
+        status: true,
+        clienteId: true,
+        advogadoResponsavelId: true,
+        processoId: true,
+        arquivoUrl: true,
       },
-      select: { id: true, titulo: true },
     });
 
     if (!contrato) {
@@ -967,7 +1446,26 @@ export async function deleteContrato(contratoId: string): Promise<{
       data: { deletedAt: new Date() },
     });
 
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "CONTRATO_EXCLUIDO",
+        entidade: "Contrato",
+        entidadeId: contratoId,
+        dados: toAuditJson({
+          titulo: contrato.titulo,
+          deletedAt: new Date().toISOString(),
+        }),
+        previousValues: toAuditJson(contrato),
+        changedFields: ["deletedAt"],
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de exclusão de contrato", auditError);
+    }
+
     revalidatePath("/contratos");
+    revalidatePath(`/contratos/${contratoId}`);
 
     return {
       success: true,
@@ -1004,20 +1502,22 @@ export async function getContratoById(contratoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Se for ADVOGADO, buscar apenas contratos onde ele é responsável
-    let whereClause: any = {
-      id: contratoId,
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
+    const isAdmin =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin) {
+      const podeVisualizar = await checkPermission("contratos", "visualizar");
 
-    if (user.role === "ADVOGADO") {
-      const advogadoId = await getAdvogadoIdFromSession(session);
-
-      if (advogadoId) {
-        whereClause.advogadoResponsavelId = advogadoId;
+      if (!podeVisualizar) {
+        return {
+          success: false,
+          error: "Você não tem permissão para visualizar contratos",
+        };
       }
     }
+
+    const whereClause = await buildContratoAccessWhere(session, user, {
+      contratoId,
+    });
 
     const contrato = await prisma.contrato.findFirst({
       where: whereClause,
@@ -1033,6 +1533,12 @@ export async function getContratoById(contratoId: string): Promise<{
         },
         dadosBancarios: true,
         tipo: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+        modelo: {
           select: {
             id: true,
             nome: true,
@@ -1147,7 +1653,7 @@ export async function updateContrato(
     }
 
     // Verificar permissão para editar contratos
-    const podeEditar = await checkPermission("financeiro", "editar");
+    const podeEditar = await checkPermission("contratos", "editar");
 
     if (!podeEditar) {
       return {
@@ -1156,17 +1662,40 @@ export async function updateContrato(
       };
     }
 
-    // Verificar se o contrato existe e o usuário tem permissão
+    const accessWhere = await buildContratoAccessWhere(session, user, {
+      contratoId,
+    });
     const contratoExistente = await prisma.contrato.findFirst({
-      where: {
-        id: contratoId,
-        tenantId: user.tenantId,
-        deletedAt: null,
+      where: accessWhere,
+      select: {
+        id: true,
+        titulo: true,
+        status: true,
+        valor: true,
+        resumo: true,
+        observacoes: true,
+        dataInicio: true,
+        dataFim: true,
+        clienteId: true,
+        advogadoResponsavelId: true,
+        processoId: true,
+        dadosBancariosId: true,
+        tipoId: true,
+        modeloId: true,
+        arquivoUrl: true,
       },
     });
 
     if (!contratoExistente) {
       return { success: false, error: "Contrato não encontrado" };
+    }
+
+    if (data.titulo !== undefined && !data.titulo.trim()) {
+      return { success: false, error: "Título do contrato é obrigatório" };
+    }
+
+    if (data.clienteId !== undefined && !data.clienteId.trim()) {
+      return { success: false, error: "Cliente é obrigatório" };
     }
 
     if (
@@ -1208,8 +1737,14 @@ export async function updateContrato(
           data.dadosBancariosId === undefined
             ? contratoExistente.dadosBancariosId
             : data.dadosBancariosId,
-        tipoContratoId: data.tipoContratoId || null,
-        modeloContratoId: data.modeloContratoId || null,
+        tipoContratoId:
+          data.tipoContratoId === undefined
+            ? contratoExistente.tipoId
+            : data.tipoContratoId,
+        modeloContratoId:
+          data.modeloContratoId === undefined
+            ? contratoExistente.modeloId
+            : data.modeloContratoId,
       },
       true,
     );
@@ -1222,34 +1757,42 @@ export async function updateContrato(
     }
 
     // Preparar dados para atualização
-    const updateData: any = {};
+    const updateData: Prisma.ContratoUncheckedUpdateInput = {};
 
-    if (data.titulo !== undefined) updateData.titulo = data.titulo;
-    if (data.resumo !== undefined) updateData.resumo = data.resumo;
+    if (data.titulo !== undefined) updateData.titulo = data.titulo.trim();
+    if (data.resumo !== undefined) updateData.resumo = data.resumo?.trim() || null;
     if (data.status !== undefined) updateData.status = data.status;
     if (data.valor !== undefined) updateData.valor = data.valor;
-    if (data.dataInicio !== undefined) {
-      updateData.dataInicio =
-        data.dataInicio instanceof Date
-          ? data.dataInicio
-          : new Date(data.dataInicio);
+    const dataInicio = normalizeDateInput(data.dataInicio);
+    const dataFim = normalizeDateInput(data.dataFim);
+    if (data.dataInicio !== undefined && data.dataInicio !== null && !dataInicio) {
+      return { success: false, error: "Data de início inválida." };
     }
-    if (data.dataFim !== undefined) {
-      updateData.dataFim =
-        data.dataFim instanceof Date ? data.dataFim : new Date(data.dataFim);
+    if (data.dataFim !== undefined && data.dataFim !== null && !dataFim) {
+      return { success: false, error: "Data de término inválida." };
+    }
+
+    if (data.dataInicio !== undefined && dataInicio !== undefined) {
+      updateData.dataInicio = dataInicio;
+    }
+    if (data.dataFim !== undefined && dataFim !== undefined) {
+      updateData.dataFim = dataFim;
     }
     if (data.observacoes !== undefined)
-      updateData.observacoes = data.observacoes;
+      updateData.observacoes = data.observacoes?.trim() || null;
     if (data.clienteId !== undefined) updateData.clienteId = data.clienteId;
     if (data.advogadoId !== undefined)
-      updateData.advogadoResponsavelId = data.advogadoId;
-    if (data.processoId !== undefined) updateData.processoId = data.processoId;
+      updateData.advogadoResponsavelId = data.advogadoId || null;
+    if (data.processoId !== undefined) updateData.processoId = data.processoId || null;
     if (data.tipoContratoId !== undefined)
-      updateData.tipoId = data.tipoContratoId;
+      updateData.tipoId = data.tipoContratoId || null;
     if (data.modeloContratoId !== undefined)
-      updateData.modeloId = data.modeloContratoId;
+      updateData.modeloId = data.modeloContratoId || null;
     if (data.dadosBancariosId !== undefined)
-      updateData.dadosBancariosId = data.dadosBancariosId;
+      updateData.dadosBancariosId = data.dadosBancariosId || null;
+    if (data.arquivoUrl !== undefined) {
+      updateData.arquivoUrl = data.arquivoUrl || null;
+    }
 
     // Detectar mudança de status para notificações
     const statusChanged =
@@ -1272,6 +1815,13 @@ export async function updateContrato(
         dadosBancarios: true,
         tipo: {
           select: {
+            id: true,
+            nome: true,
+          },
+        },
+        modelo: {
+          select: {
+            id: true,
             nome: true,
           },
         },
@@ -1289,6 +1839,52 @@ export async function updateContrato(
         },
       },
     });
+
+    const changedFields = Object.keys(updateData);
+    if (changedFields.length > 0) {
+      try {
+        await logAudit({
+          tenantId: user.tenantId,
+          usuarioId: user.id,
+          acao: "CONTRATO_ATUALIZADO",
+          entidade: "Contrato",
+          entidadeId: contratoId,
+          dados: toAuditJson({
+            id: contratoAtualizado.id,
+            titulo: contratoAtualizado.titulo,
+            status: contratoAtualizado.status,
+            clienteId: contratoAtualizado.clienteId,
+            advogadoResponsavelId: contratoAtualizado.advogadoResponsavelId,
+            processoId: contratoAtualizado.processoId,
+            dadosBancariosId: contratoAtualizado.dadosBancariosId,
+            tipoId: contratoAtualizado.tipoId,
+            modeloId: contratoAtualizado.modeloId,
+            arquivoUrl: contratoAtualizado.arquivoUrl,
+            valor: contratoAtualizado.valor,
+            dataInicio: contratoAtualizado.dataInicio,
+            dataFim: contratoAtualizado.dataFim,
+          }),
+          previousValues: toAuditJson({
+            id: contratoExistente.id,
+            titulo: contratoExistente.titulo,
+            status: contratoExistente.status,
+            clienteId: contratoExistente.clienteId,
+            advogadoResponsavelId: contratoExistente.advogadoResponsavelId,
+            processoId: contratoExistente.processoId,
+            dadosBancariosId: contratoExistente.dadosBancariosId,
+            tipoId: contratoExistente.tipoId,
+            modeloId: contratoExistente.modeloId,
+            arquivoUrl: contratoExistente.arquivoUrl,
+            valor: contratoExistente.valor,
+            dataInicio: contratoExistente.dataInicio,
+            dataFim: contratoExistente.dataFim,
+          }),
+          changedFields,
+        });
+      } catch (auditError) {
+        logger.warn("Falha ao registrar auditoria de atualização de contrato", auditError);
+      }
+    }
 
     // Notificar mudança de status
     if (statusChanged && newStatus) {
@@ -1395,7 +1991,7 @@ export async function updateContrato(
           await NotificationService.publishNotification(event);
         }
       } catch (notificationError) {
-        console.error(
+        logger.warn(
           "[Contrato] Erro ao enviar notificação de status:",
           notificationError,
         );
@@ -1417,6 +2013,225 @@ export async function updateContrato(
     };
   } catch (error) {
     logger.error("Erro ao atualizar contrato:", error);
+
+    return {
+      success: false,
+      error: "Erro ao atualizar contrato",
+    };
+  }
+}
+
+export async function updateContratoComArquivo(formData: FormData): Promise<{
+  success: boolean;
+  contrato?: any;
+  error?: string;
+}> {
+  const contratoId = getFormStringValue(formData.get("contratoId"));
+  const file = toPdfFile(formData.get("arquivoContrato"));
+  const removerArquivo = normalizeBooleanFromForm(
+    formData.get("removerArquivoContrato"),
+  );
+
+  if (!contratoId) {
+    return { success: false, error: "Contrato inválido" };
+  }
+
+  const session = await getSession();
+
+  if (!session?.user) {
+    return { success: false, error: "Não autorizado" };
+  }
+
+  const user = session.user as any;
+  const accessWhere = await buildContratoAccessWhere(session, user, { contratoId });
+  const contratoAtual = await prisma.contrato.findFirst({
+    where: accessWhere,
+    select: {
+      id: true,
+      tenantId: true,
+      clienteId: true,
+      arquivoUrl: true,
+    },
+  });
+
+  if (!contratoAtual) {
+    return { success: false, error: "Contrato não encontrado" };
+  }
+
+  let uploadedArquivoUrl: string | undefined;
+  let uploadedArquivoPublicId: string | undefined;
+
+  try {
+    if (file) {
+      const mimeType = file.type?.toLowerCase() || "";
+      const fileName = file.name || "contrato.pdf";
+      const hasPdfMime = mimeType === "application/pdf";
+      const hasPdfExtension = fileName.toLowerCase().endsWith(".pdf");
+
+      if (!hasPdfMime && !hasPdfExtension) {
+        return { success: false, error: "Apenas arquivos PDF são permitidos." };
+      }
+
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        return {
+          success: false,
+          error: "Arquivo muito grande. Máximo permitido: 10MB",
+        };
+      }
+
+      const tenantSlug =
+        user.tenantSlug ||
+        (await prisma.tenant
+          .findUnique({ where: { id: contratoAtual.tenantId }, select: { slug: true } })
+          .then((tenant) => tenant?.slug)) ||
+        "default";
+
+      const uploadService = UploadService.getInstance();
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const uploadResult = await uploadService.uploadDocumento(
+        buffer,
+        user.id,
+        fileName,
+        tenantSlug,
+        {
+          tipo: "contrato",
+          identificador: contratoAtual.clienteId,
+          fileName,
+        },
+      );
+
+      if (!uploadResult.success) {
+        return {
+          success: false,
+          error: uploadResult.error || "Erro ao anexar PDF",
+        };
+      }
+
+      uploadedArquivoUrl = uploadResult.url;
+      uploadedArquivoPublicId = uploadResult.publicId;
+    }
+
+    const payload: Partial<ContratoCreateInput> = {};
+    const titulo = getFormStringValue(formData.get("titulo"));
+    const resumo = getFormStringValue(formData.get("resumo"));
+    const observacoes = getFormStringValue(formData.get("observacoes"));
+    const status = normalizeContratoStatus(getFormStringValue(formData.get("status")));
+    const valor = parseNumberFromText(getFormStringValue(formData.get("valor")));
+
+    if (formData.has("titulo")) payload.titulo = titulo;
+    if (formData.has("resumo")) payload.resumo = resumo || "";
+    if (formData.has("observacoes")) payload.observacoes = observacoes || "";
+    if (formData.has("status")) payload.status = status;
+    if (formData.has("valor")) payload.valor = valor;
+
+    if (formData.has("clienteId")) {
+      payload.clienteId = getFormStringValue(formData.get("clienteId"));
+    }
+    if (formData.has("advogadoId")) {
+      payload.advogadoId = getFormStringValue(formData.get("advogadoId")) || null;
+    }
+    if (formData.has("processoId")) {
+      payload.processoId = getFormStringValue(formData.get("processoId")) || null;
+    }
+    if (formData.has("dadosBancariosId")) {
+      payload.dadosBancariosId =
+        getFormStringValue(formData.get("dadosBancariosId")) || null;
+    }
+    if (formData.has("tipoContratoId")) {
+      payload.tipoContratoId =
+        getFormStringValue(formData.get("tipoContratoId")) || null;
+    }
+    if (formData.has("modeloContratoId")) {
+      payload.modeloContratoId =
+        getFormStringValue(formData.get("modeloContratoId")) || null;
+    }
+
+    if (formData.has("dataInicio")) {
+      const raw = getFormStringValue(formData.get("dataInicio"));
+      if (!raw) {
+        payload.dataInicio = null;
+      } else {
+        const normalized = normalizeDateFromForm(raw);
+        if (!normalized) {
+          return { success: false, error: "Data de início inválida." };
+        }
+        payload.dataInicio = normalized;
+      }
+    }
+
+    if (formData.has("dataFim")) {
+      const raw = getFormStringValue(formData.get("dataFim"));
+      if (!raw) {
+        payload.dataFim = null;
+      } else {
+        const normalized = normalizeDateFromForm(raw);
+        if (!normalized) {
+          return { success: false, error: "Data de término inválida." };
+        }
+        payload.dataFim = normalized;
+      }
+    }
+
+    if (uploadedArquivoUrl) {
+      payload.arquivoUrl = uploadedArquivoUrl;
+    } else if (removerArquivo === true) {
+      payload.arquivoUrl = null;
+    }
+
+    const result = await updateContrato(contratoId, payload);
+
+    if (!result.success) {
+      if (uploadedArquivoUrl) {
+        const uploadService = UploadService.getInstance();
+        const cleanup = await uploadService.deleteDocumento(uploadedArquivoUrl, user.id);
+        if (!cleanup.success) {
+          logger.warn("Falha ao limpar novo PDF após erro de atualização", {
+            contratoId,
+            contratoArquivoUrl: uploadedArquivoUrl,
+            publicId: uploadedArquivoPublicId,
+          });
+        }
+      }
+      return result;
+    }
+
+    if (uploadedArquivoUrl || removerArquivo) {
+      const oldFileUrl = contratoAtual.arquivoUrl;
+      if (oldFileUrl && oldFileUrl !== uploadedArquivoUrl) {
+        const uploadService = UploadService.getInstance();
+        const deleteOld = await uploadService.deleteDocumento(oldFileUrl, user.id);
+        if (!deleteOld.success) {
+          logger.warn("Falha ao remover PDF antigo de contrato", {
+            contratoId,
+            contratoArquivoUrl: oldFileUrl,
+          });
+        }
+      }
+    }
+
+    revalidatePath("/contratos");
+    revalidatePath(`/contratos/${contratoId}`);
+    revalidatePath(`/contratos/${contratoId}/editar`);
+
+    return result;
+  } catch (error) {
+    if (uploadedArquivoUrl) {
+      try {
+        const uploadService = UploadService.getInstance();
+        const cleanup = await uploadService.deleteDocumento(uploadedArquivoUrl, user.id);
+        if (!cleanup.success) {
+          logger.warn("Falha ao limpar PDF após erro crítico de edição", {
+            contratoId,
+            contratoArquivoUrl: uploadedArquivoUrl,
+          });
+        }
+      } catch (cleanupError) {
+        logger.warn("Falha extra de limpeza após erro crítico na edição", cleanupError);
+      }
+    }
+
+    logger.error("Erro ao atualizar contrato com arquivo:", error);
 
     return {
       success: false,
@@ -1447,25 +2262,19 @@ export async function getContratosComParcelas(): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Controlar acesso por role
-    let whereClause: any = {
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
-
-    const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
-
-    if (!isAdmin && user.role !== "CLIENTE") {
-      // Staff vinculado ou ADVOGADO - usar advogados acessíveis
-      const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-      // Se não há vínculos, acesso total (sem filtros)
-      if (accessibleAdvogados.length > 0) {
-        whereClause.advogadoResponsavelId = {
-          in: accessibleAdvogados,
+    const isAdmin =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+    if (!isAdmin) {
+      const podeVisualizar = await checkPermission("contratos", "visualizar");
+      if (!podeVisualizar) {
+        return {
+          success: false,
+          error: "Você não tem permissão para visualizar contratos",
         };
       }
     }
+
+    const whereClause = await buildContratoAccessWhere(session, user);
 
     const contratos = await prisma.contrato.findMany({
       where: whereClause,
@@ -1480,6 +2289,7 @@ export async function getContratosComParcelas(): Promise<{
         },
         tipo: {
           select: {
+            id: true,
             nome: true,
           },
         },

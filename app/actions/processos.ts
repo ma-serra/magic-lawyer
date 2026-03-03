@@ -727,6 +727,18 @@ export async function getAllProcessos(): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
+    const canViewDocumentos =
+      user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+        ? true
+        : await checkPermission("documentos", "visualizar");
+
+    if (!canViewDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para visualizar documentos",
+      };
+    }
+
     let whereClause: Prisma.ProcessoWhereInput = {
       tenantId: user.tenantId,
       deletedAt: null,
@@ -1427,6 +1439,35 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
 
     if (isCliente) {
       whereProcesso.clienteId = clienteId;
+    } else if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+      const advogadoId = await getAdvogadoIdFromSession(session);
+
+      if (!advogadoId) {
+        return { success: false, error: "Acesso negado" };
+      }
+
+      whereProcesso.OR = [
+        {
+          cliente: {
+            usuario: {
+              createdById: user.id,
+            },
+          },
+        },
+        {
+          procuracoesVinculadas: {
+            some: {
+              procuracao: {
+                outorgados: {
+                  some: {
+                    advogadoId,
+                  },
+                },
+              },
+            },
+          },
+        },
+      ];
     }
 
     const processo = await prisma.processo.findFirst({
@@ -1439,13 +1480,25 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
 
     // Buscar documentos
     const whereDocumentos: Prisma.DocumentoWhereInput = {
-      processoId: processoId,
+      tenantId: user.tenantId,
       deletedAt: null,
+      OR: [
+        { processoId: processoId },
+        {
+          processosVinculados: {
+            some: {
+              processoId,
+            },
+          },
+        },
+      ],
     };
 
     // Se for cliente, apenas documentos visíveis
     if (isCliente) {
       whereDocumentos.visivelParaCliente = true;
+    } else {
+      whereDocumentos.visivelParaEquipe = true;
     }
 
     const documentos = await prisma.documento.findMany({
