@@ -562,7 +562,7 @@ export default function PeticoesPage({
                 <div
                   key={peticao.id}
                   aria-label={`Ver detalhes da petição ${peticao.titulo}`}
-                  className="cursor-pointer px-5 py-4 transition-colors hover:bg-white/[0.03]"
+                  className="ml-wave-surface cursor-pointer px-5 py-4 transition-colors hover:bg-white/[0.03]"
                   role="button"
                   tabIndex={0}
                   onClick={() => openViewModal(peticao)}

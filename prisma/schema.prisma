@@ -604,6 +604,7 @@ model AdvogadoCliente {
 model Juiz {
   id                String                  @id @default(cuid())
   tribunalId        String?
+  tipoAutoridade    JuizTipoAutoridade      @default(JUIZ)
   nome              String
   nomeCompleto      String?
   cpf               String?                 @unique
@@ -2862,6 +2863,13 @@ enum JuizNivel {
   DESEMBARGADOR
   MINISTRO
   OUTROS
+
+  @@schema("magiclawyer")
+}
+
+enum JuizTipoAutoridade {
+  JUIZ
+  PROMOTOR
 
   @@schema("magiclawyer")
 }

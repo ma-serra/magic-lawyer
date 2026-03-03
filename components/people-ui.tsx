@@ -157,7 +157,7 @@ export function PeopleEntityCard({
         className={joinClasses(
           "group border border-white/10 bg-background/60 transition-all duration-300 hover:border-primary/40 hover:bg-background/80",
           isSelected && "border-primary/50 bg-primary/10",
-          isPressable && "cursor-pointer",
+          isPressable && "cursor-pointer ml-wave-surface",
           className,
         )}
         {...cardProps}

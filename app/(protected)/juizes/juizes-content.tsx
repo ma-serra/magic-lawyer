@@ -4,9 +4,10 @@ import type {
   JuizFilters,
   JuizSerializado,
   JuizFormData,
+  JuizCatalogoOpcao,
 } from "@/app/actions/juizes";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardBody, CardHeader, CardFooter } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -17,6 +18,7 @@ import {
 import { Divider } from "@heroui/divider";
 import { Avatar } from "@heroui/avatar";
 import { Textarea } from "@heroui/input";
+import { Checkbox } from "@heroui/checkbox";
 import {
   Plus,
   Search,
@@ -27,6 +29,7 @@ import {
   Star,
   MapPin,
   Scale,
+  Gavel,
   User,
   Award,
   Briefcase,
@@ -35,6 +38,7 @@ import {
   Sparkles,
   AlertCircle,
   Download,
+  Layers,
   Copy,
   Check,
 } from "lucide-react";
@@ -49,25 +53,42 @@ import { Modal } from "@/components/ui/modal";
 import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { PermissionGuard } from "@/components/permission-guard";
 import { CpfInput } from "@/components/cpf-input";
-import { useJuizes, useJuizFormData } from "@/app/hooks/use-juizes";
+import {
+  useJuizes,
+  useJuizFormData,
+  useJuizesCatalogoPorNome,
+  useProcessosParaVinculoAutoridade,
+} from "@/app/hooks/use-juizes";
 import {
   deleteJuizTenant,
   createJuizTenant,
   updateJuizTenant,
+  vincularAutoridadeAProcessos,
+  desvincularAutoridadeDeProcessos,
 } from "@/app/actions/juizes";
 import {
   EspecialidadeJuridica,
   JuizStatus,
   JuizNivel,
+  JuizTipoAutoridade,
 } from "@/generated/prisma";
 import { JuizFotoUpload } from "@/app/(protected)/juizes/juiz-foto-upload";
-import { title, subtitle } from "@/components/primitives";
+import {
+  PeopleEntityCard,
+  PeopleEntityCardBody,
+  PeopleEntityCardHeader,
+  PeopleMetricCard,
+  PeoplePageHeader,
+} from "@/components/people-ui";
 import { Select, SelectItem } from "@heroui/react";
+import { DateInput } from "@/components/ui/date-input";
 
 export function JuizesContent() {
   const { permissions } = useUserPermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedTipoAutoridade, setSelectedTipoAutoridade] =
+    useState<string>("all");
   const [selectedEspecialidade, setSelectedEspecialidade] =
     useState<string>("all");
   const [selectedNivel, setSelectedNivel] = useState<string>("all");
@@ -78,8 +99,27 @@ export function JuizesContent() {
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  const formatDateInput = (value?: Date | string | null) => {
+    if (!value) return "";
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "";
+
+    return date.toISOString().split("T")[0] ?? "";
+  };
+
+  const parseDateInput = (value: string) => {
+    if (!value) return undefined;
+    const parsedDate = new Date(`${value}T12:00:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) return undefined;
+
+    return parsedDate;
+  };
+
   // Estados do formulário - tipado com JuizFormData
   const initialFormState: JuizFormData = {
+    tipoAutoridade: "JUIZ" as JuizTipoAutoridade,
     nome: "",
     nomeCompleto: "",
     cpf: "",
@@ -92,25 +132,45 @@ export function JuizesContent() {
     comarca: "",
     cidade: "",
     estado: "",
+    dataNascimento: undefined,
+    dataPosse: undefined,
+    dataAposentadoria: undefined,
     status: "ATIVO" as JuizStatus,
     nivel: "JUIZ_TITULAR" as JuizNivel,
     especialidades: [] as EspecialidadeJuridica[],
     biografia: "",
     formacao: "",
     experiencia: "",
+    premios: "",
+    publicacoes: "",
+    website: "",
+    linkedin: "",
+    twitter: "",
+    instagram: "",
+    observacoes: "",
+    tribunalId: "",
     foto: "",
   };
 
   const [formState, setFormState] = useState<JuizFormData>(initialFormState);
+  const [selectedCatalogJudge, setSelectedCatalogJudge] =
+    useState<JuizCatalogoOpcao | null>(null);
 
   // Buscar dados do formulário
   const { formData, isLoading: isLoadingFormData } = useJuizFormData();
+  const shouldSearchCatalog = isCreateModalOpen && !isEditModalOpen;
+  const { opcoes: catalogoJuizes, isLoading: isLoadingCatalogoJuizes } =
+    useJuizesCatalogoPorNome(formState.nome || "", shouldSearchCatalog);
 
   // Construir filtros
   const filters: JuizFilters = {
     search: searchTerm || undefined,
     status:
       selectedStatus !== "all" ? (selectedStatus as JuizStatus) : undefined,
+    tipoAutoridade:
+      selectedTipoAutoridade !== "all"
+        ? (selectedTipoAutoridade as JuizTipoAutoridade)
+        : undefined,
     especialidades:
       selectedEspecialidade !== "all"
         ? [selectedEspecialidade as EspecialidadeJuridica]
@@ -120,6 +180,26 @@ export function JuizesContent() {
 
   // Buscar juízes com filtros
   const { juizes, isLoading, error, mutate } = useJuizes(filters);
+  const [isLinkProcessosModalOpen, setIsLinkProcessosModalOpen] =
+    useState(false);
+  const [isConfirmLinkActionModalOpen, setIsConfirmLinkActionModalOpen] =
+    useState(false);
+  const [pendingLinkAction, setPendingLinkAction] = useState<
+    "vincular" | "desvincular" | null
+  >(null);
+  const [processoSearchTerm, setProcessoSearchTerm] = useState("");
+  const [selectedProcessoIds, setSelectedProcessoIds] = useState<string[]>([]);
+  const [isLinkingProcessos, setIsLinkingProcessos] = useState(false);
+  const selectedJuizIdForLink =
+    isLinkProcessosModalOpen && selectedJuiz?.id ? selectedJuiz.id : null;
+  const {
+    processos: processosParaVinculo,
+    isLoading: isLoadingProcessosParaVinculo,
+    mutate: mutateProcessosParaVinculo,
+  } = useProcessosParaVinculoAutoridade(
+    selectedJuizIdForLink,
+    isLinkProcessosModalOpen,
+  );
 
   const especialidadesOptions =
     formData?.especialidades?.map((esp) => ({
@@ -147,6 +227,14 @@ export function JuizesContent() {
     })) || []),
   ];
 
+  const tipoAutoridadeOptions = [
+    { key: "all", label: "Todos" },
+    ...(formData?.tiposAutoridade?.map((tipo) => ({
+      key: tipo,
+      label: tipo === "PROMOTOR" ? "Promotor" : "Juiz",
+    })) || []),
+  ];
+
   const nivelOptions = [
     { key: "all", label: "Todos" },
     ...(formData?.niveis?.map((nivel) => ({
@@ -157,6 +245,29 @@ export function JuizesContent() {
         .replace(/\b\w/g, (l) => l.toUpperCase()),
     })) || []),
   ];
+
+  const tribunalIds = useMemo(
+    () => new Set((formData?.tribunais || []).map((tribunal) => tribunal.id)),
+    [formData?.tribunais],
+  );
+
+  const resumo = useMemo(() => {
+    const total = juizes.length;
+    const ativos = juizes.filter((juiz) => juiz.status === "ATIVO").length;
+    const premium = juizes.filter((juiz) => juiz.isPremium).length;
+    const promotores = juizes.filter(
+      (juiz) => juiz.tipoAutoridade === "PROMOTOR",
+    ).length;
+
+    return { total, ativos, premium, promotores };
+  }, [juizes]);
+
+  const errorMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "Não foi possível carregar os juízes.";
 
   const getStatusColor = (status: JuizStatus) => {
     switch (status) {
@@ -185,6 +296,186 @@ export function JuizesContent() {
         return "default";
       default:
         return "default";
+    }
+  };
+
+  const processosFiltradosParaVinculo = useMemo(() => {
+    const query = processoSearchTerm.trim().toLowerCase();
+
+    if (!query) return processosParaVinculo;
+
+    return processosParaVinculo.filter((processo) => {
+      const haystack = [
+        processo.numero,
+        processo.titulo || "",
+        processo.clienteNome,
+        processo.advogadoResponsavelNome || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [processosParaVinculo, processoSearchTerm]);
+
+  const selectedProcessoIdsSet = useMemo(
+    () => new Set(selectedProcessoIds),
+    [selectedProcessoIds],
+  );
+
+  const processosFiltradosIds = useMemo(
+    () => processosFiltradosParaVinculo.map((processo) => processo.id),
+    [processosFiltradosParaVinculo],
+  );
+
+  const allFilteredSelected =
+    processosFiltradosIds.length > 0 &&
+    processosFiltradosIds.every((id) => selectedProcessoIdsSet.has(id));
+
+  const selectedLinkedCount = useMemo(() => {
+    if (!selectedJuiz) return 0;
+
+    return processosParaVinculo.filter(
+      (processo) =>
+        selectedProcessoIdsSet.has(processo.id) &&
+        processo.juizId === selectedJuiz.id,
+    ).length;
+  }, [processosParaVinculo, selectedProcessoIdsSet, selectedJuiz]);
+
+  const selectedNotLinkedCount = selectedProcessoIds.length - selectedLinkedCount;
+
+  const handleToggleProcessoSelecionado = (
+    processoId: string,
+    isChecked: boolean,
+  ) => {
+    setSelectedProcessoIds((prev) => {
+      if (isChecked) {
+        if (prev.includes(processoId)) return prev;
+
+        return [...prev, processoId];
+      }
+
+      return prev.filter((id) => id !== processoId);
+    });
+  };
+
+  const handleToggleSelecionarTodosFiltrados = (isChecked: boolean) => {
+    setSelectedProcessoIds((prev) => {
+      if (isChecked) {
+        return Array.from(new Set([...prev, ...processosFiltradosIds]));
+      }
+
+      const removeSet = new Set(processosFiltradosIds);
+
+      return prev.filter((id) => !removeSet.has(id));
+    });
+  };
+
+  const handleOpenLinkProcessosModal = (juiz: JuizSerializado) => {
+    setSelectedJuiz(juiz);
+    setProcessoSearchTerm("");
+    setSelectedProcessoIds([]);
+    setPendingLinkAction(null);
+    setIsConfirmLinkActionModalOpen(false);
+    setIsLinkProcessosModalOpen(true);
+  };
+
+  const handleCloseLinkProcessosModal = () => {
+    setIsLinkProcessosModalOpen(false);
+    setIsConfirmLinkActionModalOpen(false);
+    setPendingLinkAction(null);
+    setSelectedProcessoIds([]);
+    setProcessoSearchTerm("");
+  };
+
+  const handleRequestBatchActionConfirmation = (
+    action: "vincular" | "desvincular",
+  ) => {
+    if (!selectedJuiz) {
+      toast.error("Selecione uma autoridade para vincular");
+
+      return;
+    }
+
+    if (selectedProcessoIds.length === 0) {
+      toast.error("Selecione ao menos um processo");
+
+      return;
+    }
+
+    if (action === "desvincular" && selectedLinkedCount === 0) {
+      toast.error("Nenhum processo selecionado está vinculado a esta autoridade");
+
+      return;
+    }
+
+    if (action === "vincular" && selectedNotLinkedCount === 0) {
+      toast.info("Todos os processos selecionados já estão vinculados");
+
+      return;
+    }
+
+    setPendingLinkAction(action);
+    setIsConfirmLinkActionModalOpen(true);
+  };
+
+  const handleConfirmBatchAction = async () => {
+    if (!selectedJuiz || !pendingLinkAction) {
+      toast.error("Ação inválida para os processos selecionados");
+
+      return;
+    }
+
+    setIsLinkingProcessos(true);
+    try {
+      if (pendingLinkAction === "vincular") {
+        const result = await vincularAutoridadeAProcessos({
+          juizId: selectedJuiz.id,
+          processoIds: selectedProcessoIds,
+        });
+
+        if (!result.success) {
+          toast.error(result.error || "Não foi possível vincular processos");
+
+          return;
+        }
+
+        const vinculados = result.vinculados || 0;
+        const ignorados = result.ignorados || 0;
+        const detalhesIgnorados =
+          ignorados > 0 ? ` (${ignorados} fora do escopo)` : "";
+
+        toast.success(
+          `${vinculados} processo(s) vinculado(s) com sucesso${detalhesIgnorados}.`,
+        );
+      } else {
+        const result = await desvincularAutoridadeDeProcessos({
+          juizId: selectedJuiz.id,
+          processoIds: selectedProcessoIds,
+        });
+
+        if (!result.success) {
+          toast.error(result.error || "Não foi possível desvincular processos");
+
+          return;
+        }
+
+        const desvinculados = result.desvinculados || 0;
+        const ignorados = result.ignorados || 0;
+        const detalhesIgnorados =
+          ignorados > 0 ? ` (${ignorados} fora do escopo ou não vinculados)` : "";
+
+        toast.success(
+          `${desvinculados} processo(s) desvinculado(s) com sucesso${detalhesIgnorados}.`,
+        );
+      }
+      handleCloseLinkProcessosModal();
+      mutateProcessosParaVinculo();
+      mutate();
+    } catch (error) {
+      toast.error("Erro ao aplicar ação em massa");
+    } finally {
+      setIsLinkingProcessos(false);
     }
   };
 
@@ -241,11 +532,13 @@ export function JuizesContent() {
 
   const handleEditJuiz = (juiz: JuizSerializado) => {
     setSelectedJuiz(juiz);
+    setSelectedCatalogJudge(null);
 
     // DEBUG removido para produção
 
     // Popula o formulário com os dados do juiz
     const newFormState: JuizFormData = {
+      tipoAutoridade: juiz.tipoAutoridade || "JUIZ",
       nome: juiz.nome || "",
       nomeCompleto: juiz.nomeCompleto || "",
       cpf: juiz.cpf || "",
@@ -258,12 +551,23 @@ export function JuizesContent() {
       comarca: juiz.comarca || "",
       cidade: juiz.cidade || "",
       estado: juiz.estado || "",
+      dataNascimento: juiz.dataNascimento || undefined,
+      dataPosse: juiz.dataPosse || undefined,
+      dataAposentadoria: juiz.dataAposentadoria || undefined,
       status: juiz.status || "ATIVO",
       nivel: juiz.nivel || "JUIZ_TITULAR",
       especialidades: juiz.especialidades || [],
       biografia: juiz.biografia || "",
       formacao: juiz.formacao || "",
       experiencia: juiz.experiencia || "",
+      premios: juiz.premios || "",
+      publicacoes: juiz.publicacoes || "",
+      website: juiz.website || "",
+      linkedin: juiz.linkedin || "",
+      twitter: juiz.twitter || "",
+      instagram: juiz.instagram || "",
+      observacoes: juiz.observacoes || "",
+      tribunalId: juiz.tribunalId || "",
       foto: juiz.foto || "",
     };
 
@@ -275,11 +579,16 @@ export function JuizesContent() {
 
   const resetForm = () => {
     setFormState(initialFormState);
+    setSelectedCatalogJudge(null);
   };
 
   const handleSaveJuiz = async () => {
     if (!formState.nome || !formState.vara) {
-      toast.error("Preencha os campos obrigatórios: Nome e Vara");
+      toast.error(
+        `Preencha os campos obrigatórios: Nome e ${
+          formState.tipoAutoridade === "PROMOTOR" ? "Promotoria" : "Vara"
+        }`,
+      );
 
       return;
     }
@@ -287,6 +596,7 @@ export function JuizesContent() {
     setIsSaving(true);
     try {
       const juizData: JuizFormData = {
+        tipoAutoridade: formState.tipoAutoridade,
         nome: formState.nome,
         nomeCompleto: formState.nomeCompleto || undefined,
         cpf: formState.cpf || undefined,
@@ -299,12 +609,23 @@ export function JuizesContent() {
         comarca: formState.comarca || undefined,
         cidade: formState.cidade || undefined,
         estado: formState.estado || undefined,
+        dataNascimento: formState.dataNascimento || undefined,
+        dataPosse: formState.dataPosse || undefined,
+        dataAposentadoria: formState.dataAposentadoria || undefined,
         status: formState.status,
         nivel: formState.nivel,
         especialidades: formState.especialidades,
         biografia: formState.biografia || undefined,
         formacao: formState.formacao || undefined,
         experiencia: formState.experiencia || undefined,
+        premios: formState.premios || undefined,
+        publicacoes: formState.publicacoes || undefined,
+        website: formState.website || undefined,
+        linkedin: formState.linkedin || undefined,
+        twitter: formState.twitter || undefined,
+        instagram: formState.instagram || undefined,
+        observacoes: formState.observacoes || undefined,
+        tribunalId: formState.tribunalId || undefined,
         foto: formState.foto || undefined,
       };
 
@@ -325,7 +646,10 @@ export function JuizesContent() {
         }
       } else {
         // Criar novo juiz - Multi-tenant com auditoria
-        result = await createJuizTenant(juizData);
+        result = await createJuizTenant({
+          ...juizData,
+          juizBaseId: selectedCatalogJudge?.id,
+        });
         if (result.success) {
           toast.success("Juiz criado com sucesso!");
         } else {
@@ -363,217 +687,183 @@ export function JuizesContent() {
   return (
     <PermissionGuard permission="canViewJudgesDatabase">
       <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 py-8 px-3 sm:px-6">
-        {/* Header com gradiente */}
-        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-primary/20 via-secondary/10 to-background p-8 backdrop-blur-xl border border-primary/20">
-          <div className="absolute inset-0 bg-grid-white/[0.02] pointer-events-none" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-3">
-              <Scale className="w-5 h-5 text-primary" />
-              <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-                Base de Juízes
+        <PeoplePageHeader
+          description={`Base de dados com ${resumo.total} ${
+            resumo.total === 1 ? "autoridade" : "autoridades"
+          } (juízes e promotores) para apoio estratégico dos processos.`}
+          tag="Gestao de pessoas"
+          title="Base de Juizes e Promotores"
+          actions={
+            permissions.canCreateJudgeProfiles ? (
+              <Button
+                color="primary"
+                size="sm"
+                startContent={<Plus className="h-4 w-4" />}
+                onPress={() => {
+                  resetForm();
+                  setIsCreateModalOpen(true);
+                }}
+              >
+                Nova Autoridade
+              </Button>
+            ) : undefined
+          }
+        />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <PeopleMetricCard
+            helper="Base cadastrada"
+            icon={<Scale className="h-4 w-4" />}
+            label="Total de autoridades"
+            tone="primary"
+            value={resumo.total}
+          />
+          <PeopleMetricCard
+            helper={`${resumo.total > 0 ? Math.round((resumo.ativos / resumo.total) * 100) : 0}% ativos`}
+            icon={<Check className="h-4 w-4" />}
+            label="Autoridades ativas"
+            tone="success"
+            value={resumo.ativos}
+          />
+          <PeopleMetricCard
+            helper="Disponiveis para pacote"
+            icon={<Star className="h-4 w-4" />}
+            label="Perfis premium"
+            tone="warning"
+            value={resumo.premium}
+          />
+          <PeopleMetricCard
+            helper="Vínculos do Ministério Público"
+            icon={<Sparkles className="h-4 w-4" />}
+            label="Promotores"
+            tone="secondary"
+            value={resumo.promotores}
+          />
+        </div>
+
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardHeader className="flex flex-col items-start gap-2 pb-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Filtros rápidos</h2>
+              <p className="text-sm text-default-400">
+                Encontre por nome, tipo de autoridade, status, especialidade e nível.
               </p>
             </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <h1 className={title({ size: "lg", color: "blue" })}>
-                  Gestão de Juízes
-                </h1>
-                <p className={subtitle({ fullWidth: true })}>
-                  Base de dados completa com {juizes?.length || 0}{" "}
-                  {juizes?.length === 1 ? "juiz" : "juízes"}, especialidades e
-                  histórico de julgamentos.
-                </p>
-              </div>
-              {permissions.canCreateJudgeProfiles && (
-                <Button
-                  className="flex-shrink-0 font-semibold"
-                  color="primary"
-                  size="lg"
-                  startContent={<Plus className="w-5 h-5" />}
-                  onPress={() => {
-                    resetForm();
-                    setIsCreateModalOpen(true);
-                  }}
-                >
-                  Novo Juiz
-                </Button>
-              )}
+            {(searchTerm ||
+              selectedStatus !== "all" ||
+              selectedTipoAutoridade !== "all" ||
+              selectedEspecialidade !== "all" ||
+              selectedNivel !== "all") && (
+              <Button
+                size="sm"
+                startContent={<Filter className="h-4 w-4" />}
+                variant="flat"
+                onPress={() => {
+                  setSearchTerm("");
+                  setSelectedStatus("all");
+                  setSelectedTipoAutoridade("all");
+                  setSelectedEspecialidade("all");
+                  setSelectedNivel("all");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            )}
+          </CardHeader>
+          <Divider className="border-white/10" />
+          <CardBody className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+              <Input
+                className="lg:col-span-2"
+                id="juiz-search"
+                placeholder="Buscar por nome, vara ou comarca"
+                startContent={<Search className="h-4 w-4 text-default-400" />}
+                value={searchTerm}
+                onValueChange={setSearchTerm}
+              />
+
+              <Select
+                items={tipoAutoridadeOptions}
+                label="Tipo"
+                placeholder="Todos"
+                selectedKeys={[selectedTipoAutoridade]}
+                onSelectionChange={(keys) =>
+                  setSelectedTipoAutoridade(Array.from(keys)[0] as string)
+                }
+              >
+                {(tipo) => (
+                  <SelectItem key={tipo.key} textValue={tipo.label}>
+                    {tipo.label}
+                  </SelectItem>
+                )}
+              </Select>
+
+              <Select
+                items={statusOptions}
+                label="Status"
+                placeholder="Todos"
+                selectedKeys={[selectedStatus]}
+                onSelectionChange={(keys) =>
+                  setSelectedStatus(Array.from(keys)[0] as string)
+                }
+              >
+                {(status) => (
+                  <SelectItem key={status.key} textValue={status.label}>
+                    {status.label}
+                  </SelectItem>
+                )}
+              </Select>
+
+              <Select
+                items={nivelOptions}
+                label="Nível"
+                placeholder="Todos"
+                selectedKeys={[selectedNivel]}
+                onSelectionChange={(keys) =>
+                  setSelectedNivel(Array.from(keys)[0] as string)
+                }
+              >
+                {(nivel) => (
+                  <SelectItem key={nivel.key} textValue={nivel.label}>
+                    {nivel.label}
+                  </SelectItem>
+                )}
+              </Select>
             </div>
-          </div>
-        </div>
 
-        {/* Filtros Ultra Modernos */}
-        <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-linear-to-br from-background/95 via-primary/5 to-background/95 backdrop-blur-2xl shadow-2xl">
-          {/* Background decorativo */}
-          <div className="absolute inset-0 bg-grid-white/[0.02] pointer-events-none" />
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Select
+                items={[
+                  { key: "all", label: "Todas as especialidades" },
+                  ...especialidadesOptions,
+                ]}
+                label="Especialidade"
+                placeholder="Todas"
+                selectedKeys={[selectedEspecialidade]}
+                onSelectionChange={(keys) =>
+                  setSelectedEspecialidade(Array.from(keys)[0] as string)
+                }
+              >
+                {(esp) => (
+                  <SelectItem key={esp.key} textValue={esp.label}>
+                    {esp.label}
+                  </SelectItem>
+                )}
+              </Select>
 
-          <div className="relative z-10">
-            {/* Header dos filtros */}
-            <div className="flex items-center gap-3 p-6 pb-4">
-              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-linear-to-br from-primary to-secondary shadow-lg">
-                <Filter className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-white">
-                  Filtros de Busca
-                </h3>
-                <p className="text-sm text-default-400">
-                  Refine sua pesquisa na base de juízes
-                </p>
-              </div>
+              <Card className="border border-white/10 bg-background/50">
+                <CardBody className="flex h-full items-center justify-center py-3">
+                  <p className="text-sm text-default-400">
+                    {juizes.length}{" "}
+                    {juizes.length === 1
+                      ? "autoridade encontrada"
+                      : "autoridades encontradas"}
+                  </p>
+                </CardBody>
+              </Card>
             </div>
-
-            <Divider className="bg-primary/10" />
-
-            {/* Conteúdo dos filtros */}
-            <div className="p-6 pt-5 space-y-5">
-              {/* Campo de busca destacado */}
-              <div className="space-y-2">
-                <label
-                  className="text-sm font-medium text-default-500 flex items-center gap-2"
-                  htmlFor="juiz-search"
-                >
-                  <Search className="w-4 h-4 text-primary" />
-                  Busca Geral
-                </label>
-                <Input
-                  classNames={{
-                    input: "text-base font-medium",
-                    inputWrapper:
-                      "border-2 border-primary/20 hover:border-primary/40 focus-within:border-primary bg-background/50 backdrop-blur-sm shadow-sm",
-                  }}
-                  id="juiz-search"
-                  placeholder="Digite nome, vara, comarca ou cidade..."
-                  size="lg"
-                  startContent={
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
-                      <Search className="w-4 h-4 text-primary" />
-                    </div>
-                  }
-                  value={searchTerm}
-                  variant="bordered"
-                  onValueChange={setSearchTerm}
-                />
-              </div>
-
-              {/* Grid de filtros */}
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-default-500 flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-secondary" />
-                  Filtros Avançados
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Select
-                    classNames={{
-                      trigger:
-                        "border-2 border-primary/20 hover:border-primary/40 data-[focus=true]:border-primary bg-background/50 backdrop-blur-sm shadow-sm",
-                      label: "font-semibold text-default-600",
-                      value: "font-medium",
-                    }}
-                    items={statusOptions}
-                    label="Status"
-                    placeholder="Selecione o status"
-                    selectedKeys={[selectedStatus]}
-                    size="lg"
-                    variant="bordered"
-                    onSelectionChange={(keys) =>
-                      setSelectedStatus(Array.from(keys)[0] as string)
-                    }
-                  >
-                    {(status) => (
-                      <SelectItem key={status.key} textValue={status.label}>{status.label}</SelectItem>
-                    )}
-                  </Select>
-
-                  <Select
-                    classNames={{
-                      trigger:
-                        "border-2 border-primary/20 hover:border-primary/40 data-[focus=true]:border-primary bg-background/50 backdrop-blur-sm shadow-sm",
-                      label: "font-semibold text-default-600",
-                      value: "font-medium",
-                    }}
-                    items={[
-                      { key: "all", label: "Todas" },
-                      ...especialidadesOptions,
-                    ]}
-                    label="Especialidade"
-                    placeholder="Selecione a área"
-                    selectedKeys={[selectedEspecialidade]}
-                    size="lg"
-                    variant="bordered"
-                    onSelectionChange={(keys) =>
-                      setSelectedEspecialidade(Array.from(keys)[0] as string)
-                    }
-                  >
-                    {(esp) => (
-                      <SelectItem key={esp.key} textValue={esp.label}>{esp.label}</SelectItem>
-                    )}
-                  </Select>
-
-                  <Select
-                    classNames={{
-                      trigger:
-                        "border-2 border-primary/20 hover:border-primary/40 data-[focus=true]:border-primary bg-background/50 backdrop-blur-sm shadow-sm",
-                      label: "font-semibold text-default-600",
-                      value: "font-medium",
-                    }}
-                    items={nivelOptions}
-                    label="Nível"
-                    placeholder="Selecione o nível"
-                    selectedKeys={[selectedNivel]}
-                    size="lg"
-                    variant="bordered"
-                    onSelectionChange={(keys) =>
-                      setSelectedNivel(Array.from(keys)[0] as string)
-                    }
-                  >
-                    {(nivel) => (
-                      <SelectItem key={nivel.key} textValue={nivel.label}>{nivel.label}</SelectItem>
-                    )}
-                  </Select>
-                </div>
-              </div>
-
-              {/* Contador de resultados */}
-              {juizes && (
-                <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/10">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/20">
-                      <Scale className="w-4 h-4 text-primary" />
-                    </div>
-                    <span className="text-sm font-medium text-default-600">
-                      {juizes.length}{" "}
-                      {juizes.length === 1
-                        ? "juiz encontrado"
-                        : "juízes encontrados"}
-                    </span>
-                  </div>
-                  {(searchTerm ||
-                    selectedStatus !== "all" ||
-                    selectedEspecialidade !== "all" ||
-                    selectedNivel !== "all") && (
-                    <Button
-                      className="font-semibold"
-                      color="primary"
-                      size="sm"
-                      variant="flat"
-                      onPress={() => {
-                        setSearchTerm("");
-                        setSelectedStatus("all");
-                        setSelectedEspecialidade("all");
-                        setSelectedNivel("all");
-                      }}
-                    >
-                      Limpar Filtros
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+          </CardBody>
+        </Card>
 
         {/* Loading State */}
         {isLoading && (
@@ -606,7 +896,7 @@ export function JuizesContent() {
               <h3 className="text-xl font-bold text-danger mb-2">
                 Erro ao carregar juízes
               </h3>
-              <p className="text-default-400 mb-6">{error}</p>
+              <p className="text-default-400 mb-6">{errorMessage}</p>
               <Button
                 className="font-semibold"
                 color="primary"
@@ -622,210 +912,249 @@ export function JuizesContent() {
         {/* Lista de Juízes com design aprimorado */}
         {!isLoading && !error && juizes && (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {juizes.map((juiz) => (
-              <Card
-                key={juiz.id}
-                className="border border-white/10 bg-linear-to-br from-background/80 to-background/60 backdrop-blur-xl hover:border-primary/30 transition-all duration-300 hover:shadow-xl"
-              >
-                <CardHeader className="flex flex-col gap-3 pb-3">
-                  <div className="flex items-start justify-between w-full">
-                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <Avatar
-                        classNames={{
-                          base: "bg-linear-to-br from-primary to-secondary",
-                          icon: "text-white",
-                        }}
-                        icon={
-                          !juiz.foto ? <Scale className="w-5 h-5" /> : undefined
-                        }
-                        size="md"
-                        src={juiz.foto || undefined}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-white truncate">
-                            {juiz.nome}
-                          </h3>
-                          {juiz.isPremium && (
-                            <Sparkles className="w-4 h-4 text-warning" />
+            {juizes.map((juiz) => {
+              const processosCount = juiz._count?.processos ?? 0;
+              const julgamentosCount = juiz._count?.julgamentos ?? 0;
+
+              return (
+                <PeopleEntityCard
+                  key={juiz.id}
+                  className="h-full"
+                  isPressable
+                  onPress={() => handleViewJuiz(juiz)}
+                >
+                  <PeopleEntityCardHeader className="flex flex-col gap-3 pb-3">
+                    <div className="flex items-start justify-between w-full">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <Avatar
+                          classNames={{
+                            base: "bg-linear-to-br from-primary to-secondary",
+                            icon: "text-white",
+                          }}
+                          icon={
+                            !juiz.foto ? (
+                              juiz.tipoAutoridade === "PROMOTOR" ? (
+                                <Gavel className="w-5 h-5" />
+                              ) : (
+                                <Scale className="w-5 h-5" />
+                              )
+                            ) : undefined
+                          }
+                          size="md"
+                          src={juiz.foto || undefined}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold text-white truncate">
+                              {juiz.nome}
+                            </h3>
+                            {juiz.isPremium && (
+                              <Sparkles className="w-4 h-4 text-warning" />
+                            )}
+                          </div>
+                          <p className="text-sm text-default-400 truncate">
+                            {juiz.nomeCompleto}
+                          </p>
+                          {juiz.oab && (
+                            <p className="text-xs text-default-500 mt-1">
+                              OAB: {juiz.oab}
+                            </p>
                           )}
                         </div>
-                        <p className="text-sm text-default-400 truncate">
-                          {juiz.nomeCompleto}
+                      </div>
+                      <Dropdown>
+                        <DropdownTrigger>
+                          <Button
+                            isIconOnly
+                            className="hover:bg-primary/10"
+                            size="sm"
+                            variant="light"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownTrigger>
+                        <DropdownMenu variant="flat">
+                          <DropdownItem
+                            key="view"
+                            className="text-primary"
+                            startContent={<Eye className="w-4 h-4" />}
+                            onPress={() => handleViewJuiz(juiz)}
+                          >
+                            Ver Detalhes
+                          </DropdownItem>
+                          {permissions.canEditJudgeProfiles ? (
+                            <DropdownItem
+                              key="edit"
+                              startContent={<Edit className="w-4 h-4" />}
+                              onPress={() => handleEditJuiz(juiz)}
+                            >
+                              Editar
+                            </DropdownItem>
+                          ) : null}
+                          {permissions.canDeleteJudgeProfiles ? (
+                            <DropdownItem
+                              key="delete"
+                              className="text-danger"
+                              color="danger"
+                              startContent={<Trash2 className="w-4 h-4" />}
+                              onPress={() => handleDeleteJuiz(juiz.id)}
+                            >
+                              Excluir
+                            </DropdownItem>
+                          ) : null}
+                        </DropdownMenu>
+                      </Dropdown>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Chip
+                        classNames={{
+                          base: "font-semibold",
+                        }}
+                        color={juiz.tipoAutoridade === "PROMOTOR" ? "warning" : "primary"}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {juiz.tipoAutoridade === "PROMOTOR" ? "Promotor" : "Juiz"}
+                      </Chip>
+                      <Chip
+                        classNames={{
+                          base: "font-semibold",
+                        }}
+                        color={getStatusColor(juiz.status)}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {juiz.status}
+                      </Chip>
+                      <Chip
+                        classNames={{
+                          base: "font-semibold",
+                        }}
+                        color={getNivelColor(juiz.nivel)}
+                        size="sm"
+                        startContent={<Award className="w-3 h-3" />}
+                        variant="flat"
+                      >
+                        {juiz.nivel.replace(/_/g, " ")}
+                      </Chip>
+                      {juiz.isPremium && (
+                        <Chip
+                          classNames={{
+                            base: "font-semibold",
+                          }}
+                          color="warning"
+                          size="sm"
+                          startContent={<Star className="w-3 h-3" />}
+                          variant="flat"
+                        >
+                          Premium
+                        </Chip>
+                      )}
+                      {juiz.isPublico && (
+                        <Chip
+                          classNames={{
+                            base: "font-semibold",
+                          }}
+                          color="success"
+                          size="sm"
+                          variant="flat"
+                        >
+                          Público
+                        </Chip>
+                      )}
+                    </div>
+                  </PeopleEntityCardHeader>
+                  <Divider />
+                  <PeopleEntityCardBody className="pt-4 gap-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-primary/80">
+                          Processos
                         </p>
-                        {juiz.oab && (
-                          <p className="text-xs text-default-500 mt-1">
-                            OAB: {juiz.oab}
-                          </p>
-                        )}
+                        <p className="text-base font-semibold text-white">
+                          {processosCount}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-secondary/15 bg-secondary/5 px-2.5 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-secondary/80">
+                          Julgamentos
+                        </p>
+                        <p className="text-base font-semibold text-white">
+                          {julgamentosCount}
+                        </p>
                       </div>
                     </div>
-                    <Dropdown>
-                      <DropdownTrigger>
-                        <Button
-                          isIconOnly
-                          className="hover:bg-primary/10"
-                          size="sm"
-                          variant="light"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownTrigger>
-                      <DropdownMenu variant="flat">
-                        <DropdownItem
-                          key="view"
-                          className="text-primary"
-                          startContent={<Eye className="w-4 h-4" />}
-                          onPress={() => handleViewJuiz(juiz)}
-                        >
-                          Ver Detalhes
-                        </DropdownItem>
-                        {permissions.canEditJudgeProfiles ? (
-                          <DropdownItem
-                            key="edit"
-                            startContent={<Edit className="w-4 h-4" />}
-                            onPress={() => handleEditJuiz(juiz)}
+                    <div className="flex items-start gap-2 text-sm">
+                      <Briefcase className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span className="text-default-300 line-clamp-2">
+                        {juiz.vara} - {juiz.comarca}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="w-4 h-4 text-secondary flex-shrink-0" />
+                      <span className="text-default-400 truncate">
+                        {juiz.cidade}, {juiz.estado}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {juiz.especialidades
+                        ?.slice(0, 3)
+                        .map((esp: EspecialidadeJuridica) => (
+                          <Chip
+                            key={esp}
+                            classNames={{
+                              base: "border-primary/20",
+                            }}
+                            color="primary"
+                            size="sm"
+                            variant="dot"
                           >
-                            Editar
-                          </DropdownItem>
-                        ) : null}
-                        {permissions.canDeleteJudgeProfiles ? (
-                          <DropdownItem
-                            key="delete"
-                            className="text-danger"
-                            color="danger"
-                            startContent={<Trash2 className="w-4 h-4" />}
-                            onPress={() => handleDeleteJuiz(juiz.id)}
-                          >
-                            Excluir
-                          </DropdownItem>
-                        ) : null}
-                      </DropdownMenu>
-                    </Dropdown>
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Chip
-                      classNames={{
-                        base: "font-semibold",
-                      }}
-                      color={getStatusColor(juiz.status)}
-                      size="sm"
-                      variant="flat"
-                    >
-                      {juiz.status}
-                    </Chip>
-                    <Chip
-                      classNames={{
-                        base: "font-semibold",
-                      }}
-                      color={getNivelColor(juiz.nivel)}
-                      size="sm"
-                      startContent={<Award className="w-3 h-3" />}
-                      variant="flat"
-                    >
-                      {juiz.nivel.replace(/_/g, " ")}
-                    </Chip>
-                    {juiz.isPremium && (
-                      <Chip
-                        classNames={{
-                          base: "font-semibold",
-                        }}
-                        color="warning"
-                        size="sm"
-                        startContent={<Star className="w-3 h-3" />}
-                        variant="flat"
-                      >
-                        Premium
-                      </Chip>
-                    )}
-                    {juiz.isPublico && (
-                      <Chip
-                        classNames={{
-                          base: "font-semibold",
-                        }}
-                        color="success"
-                        size="sm"
-                        variant="flat"
-                      >
-                        Público
-                      </Chip>
-                    )}
-                  </div>
-                </CardHeader>
-                <Divider />
-                <CardBody className="pt-4 gap-3">
-                  <div className="flex items-start gap-2 text-sm">
-                    <Briefcase className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                    <span className="text-default-300 line-clamp-2">
-                      {juiz.vara} - {juiz.comarca}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="w-4 h-4 text-secondary flex-shrink-0" />
-                    <span className="text-default-400 truncate">
-                      {juiz.cidade}, {juiz.estado}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {juiz.especialidades
-                      ?.slice(0, 3)
-                      .map((esp: EspecialidadeJuridica) => (
-                        <Chip
-                          key={esp}
-                          classNames={{
-                            base: "border-primary/20",
-                          }}
-                          color="primary"
-                          size="sm"
-                          variant="dot"
-                        >
-                          {esp.replace(/_/g, " ")}
+                            {esp.replace(/_/g, " ")}
+                          </Chip>
+                        ))}
+                      {juiz.especialidades && juiz.especialidades.length > 3 && (
+                        <Chip color="default" size="sm" variant="flat">
+                          +{juiz.especialidades.length - 3}
                         </Chip>
-                      ))}
-                    {juiz.especialidades && juiz.especialidades.length > 3 && (
-                      <Chip color="default" size="sm" variant="flat">
-                        +{juiz.especialidades.length - 3}
-                      </Chip>
-                    )}
-                  </div>
-                </CardBody>
-                {juiz.biografia && (
-                  <>
-                    <Divider />
-                    <CardFooter>
-                      <p className="text-sm text-default-500 line-clamp-2 leading-relaxed">
-                        {juiz.biografia}
-                      </p>
-                    </CardFooter>
-                  </>
-                )}
-              </Card>
-            ))}
+                      )}
+                    </div>
+                  </PeopleEntityCardBody>
+                  {juiz.biografia && (
+                    <>
+                      <Divider />
+                      <CardFooter>
+                        <p className="text-sm text-default-500 line-clamp-2 leading-relaxed">
+                          {juiz.biografia}
+                        </p>
+                      </CardFooter>
+                    </>
+                  )}
+                </PeopleEntityCard>
+              );
+            })}
           </div>
         )}
 
         {/* Empty State */}
         {!isLoading && !error && juizes && juizes.length === 0 && (
-          <Card className="border border-white/10 bg-linear-to-br from-background/70 to-background/50 backdrop-blur-xl">
-            <CardBody className="text-center py-16">
-              <div className="flex items-center justify-center mb-6">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
-                  <div className="relative bg-linear-to-br from-primary/10 to-secondary/10 p-6 rounded-full border border-primary/20">
-                    <Scale className="w-12 h-12 text-primary" />
-                  </div>
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+            <CardBody className="text-center py-14">
+              <div className="mb-4 flex items-center justify-center">
+                <div className="rounded-full border border-primary/30 bg-primary/10 p-4">
+                  <Scale className="h-8 w-8 text-primary" />
                 </div>
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">
-                Nenhum juiz encontrado
+              <h3 className="mb-2 text-xl font-semibold text-white">
+                Nenhuma autoridade encontrada
               </h3>
-              <p className="text-default-400 text-lg mb-6 max-w-md mx-auto">
+              <p className="mx-auto mb-6 max-w-md text-sm text-default-400">
                 {searchTerm ||
                 selectedStatus !== "all" ||
+                selectedTipoAutoridade !== "all" ||
                 selectedEspecialidade !== "all" ||
                 selectedNivel !== "all"
                   ? "Tente ajustar os filtros de busca para encontrar outros juízes."
-                  : "Comece adicionando juízes à base de dados para começar a gerenciar suas informações."}
+                  : "Comece adicionando juízes e promotores à base de dados para começar a gerenciar suas informações."}
               </p>
               {permissions.canCreateJudgeProfiles && (
                 <Button
@@ -838,7 +1167,7 @@ export function JuizesContent() {
                     setIsCreateModalOpen(true);
                   }}
                 >
-                  Adicionar Primeiro Juiz
+                  Adicionar Primeira Autoridade
                 </Button>
               )}
             </CardBody>
@@ -850,6 +1179,20 @@ export function JuizesContent() {
           backdrop="blur"
           footerContent={
             <div className="flex gap-2 w-full">
+              {permissions.canEditJudgeProfiles && (
+                <Button
+                  color="primary"
+                  startContent={<Layers className="w-4 h-4" />}
+                  variant="flat"
+                  onPress={() => {
+                    if (selectedJuiz) {
+                      handleOpenLinkProcessosModal(selectedJuiz);
+                    }
+                  }}
+                >
+                  Vincular Processos
+                </Button>
+              )}
               <Button
                 color="secondary"
                 startContent={<Download className="w-4 h-4" />}
@@ -875,7 +1218,7 @@ export function JuizesContent() {
                     }
                   }}
                 >
-                  Editar Juiz
+                  Editar
                 </Button>
               )}
               <Button
@@ -893,7 +1236,7 @@ export function JuizesContent() {
           isOpen={isViewModalOpen}
           showFooter={true}
           size="2xl"
-          title="Detalhes do Juiz"
+          title="Detalhes da Autoridade"
           onClose={() => {
             setIsViewModalOpen(false);
             setSelectedJuiz(null);
@@ -910,7 +1253,11 @@ export function JuizesContent() {
                   }}
                   icon={
                     !selectedJuiz.foto ? (
-                      <Scale className="w-10 h-10" />
+                      selectedJuiz.tipoAutoridade === "PROMOTOR" ? (
+                        <Gavel className="w-10 h-10" />
+                      ) : (
+                        <Scale className="w-10 h-10" />
+                      )
                     ) : undefined
                   }
                   src={selectedJuiz.foto || undefined}
@@ -933,6 +1280,19 @@ export function JuizesContent() {
                     </p>
                   )}
                   <div className="flex gap-2 flex-wrap">
+                    <Chip
+                      color={
+                        selectedJuiz.tipoAutoridade === "PROMOTOR"
+                          ? "warning"
+                          : "primary"
+                      }
+                      size="sm"
+                      variant="flat"
+                    >
+                      {selectedJuiz.tipoAutoridade === "PROMOTOR"
+                        ? "Promotor"
+                        : "Juiz"}
+                    </Chip>
                     <Chip
                       color={getStatusColor(selectedJuiz.status)}
                       size="sm"
@@ -962,13 +1322,58 @@ export function JuizesContent() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardBody className="gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary/80">
+                      Processos vinculados
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {selectedJuiz._count?.processos ?? 0}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border border-secondary/20 bg-secondary/5">
+                  <CardBody className="gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-secondary/80">
+                      Julgamentos
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {selectedJuiz._count?.julgamentos ?? 0}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border border-warning/20 bg-warning/5">
+                  <CardBody className="gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-300">
+                      Análises
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {selectedJuiz._count?.analises ?? 0}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border border-success/20 bg-success/5">
+                  <CardBody className="gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-success-700 dark:text-success-300">
+                      Favoritos
+                    </p>
+                    <p className="text-2xl font-bold text-white">
+                      {selectedJuiz._count?.favoritos ?? 0}
+                    </p>
+                  </CardBody>
+                </Card>
+              </div>
+
               {/* Informações Principais */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Card className="border border-white/10">
                   <CardBody className="gap-2">
                     <p className="text-sm text-default-400 font-semibold flex items-center gap-2">
                       <Scale className="w-4 h-4 text-primary" />
-                      Vara
+                      {selectedJuiz.tipoAutoridade === "PROMOTOR"
+                        ? "Promotoria"
+                        : "Vara"}
                     </p>
                     <p className="text-white">
                       {selectedJuiz.vara || "Não informado"}
@@ -1010,9 +1415,12 @@ export function JuizesContent() {
                   <CardBody className="gap-2">
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-default-400 font-semibold">
-                        OAB
+                        {selectedJuiz.tipoAutoridade === "PROMOTOR"
+                          ? "Registro funcional"
+                          : "OAB"}
                       </p>
-                      {selectedJuiz.oab && (
+                      {selectedJuiz.oab &&
+                      selectedJuiz.tipoAutoridade !== "PROMOTOR" ? (
                         <Button
                           isIconOnly
                           className="transition-all duration-300"
@@ -1027,7 +1435,7 @@ export function JuizesContent() {
                             <Copy className="w-4 h-4" />
                           )}
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-primary font-bold text-lg">
                       {selectedJuiz.oab || "Não informado"}
@@ -1340,18 +1748,19 @@ export function JuizesContent() {
                 startContent={<Plus className="w-4 h-4" />}
                 onPress={handleSaveJuiz}
               >
-                {isEditModalOpen ? "Salvar Alterações" : "Criar Juiz"}
+                {isEditModalOpen ? "Salvar Alterações" : "Criar Autoridade"}
               </Button>
             </>
           }
           isOpen={isCreateModalOpen || isEditModalOpen}
           showFooter={true}
           size="2xl"
-          title={isEditModalOpen ? "Editar Juiz" : "Novo Juiz"}
+          title={isEditModalOpen ? "Editar Autoridade" : "Nova Autoridade"}
           onClose={() => {
             setIsCreateModalOpen(false);
             setIsEditModalOpen(false);
             setSelectedJuiz(null);
+            setSelectedCatalogJudge(null);
           }}
         >
           <div className="space-y-6">
@@ -1366,13 +1775,41 @@ export function JuizesContent() {
               <JuizFotoUpload
                 currentFotoUrl={formState.foto}
                 juizId={selectedJuiz?.id}
-                juizNome={formState.nome || "Juiz"}
+                juizNome={formState.nome || "Autoridade"}
                 onFotoChange={(url: string) =>
                   setFormState({ ...formState, foto: url || "" })
                 }
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  items={
+                    formData?.tiposAutoridade?.map((tipo) => ({
+                      key: tipo,
+                      label: tipo === "PROMOTOR" ? "Promotor" : "Juiz",
+                    })) || []
+                  }
+                  label="Tipo de autoridade"
+                  selectedKeys={[formState.tipoAutoridade]}
+                  size="lg"
+                  variant="bordered"
+                  onSelectionChange={(keys) =>
+                    setFormState({
+                      ...formState,
+                      tipoAutoridade: Array.from(keys)[0] as JuizTipoAutoridade,
+                      nivel:
+                        Array.from(keys)[0] === "PROMOTOR"
+                          ? ("OUTROS" as JuizNivel)
+                          : formState.nivel,
+                    })
+                  }
+                >
+                  {(item) => (
+                    <SelectItem key={item.key} textValue={item.label}>
+                      {item.label}
+                    </SelectItem>
+                  )}
+                </Select>
                 <Input
                   isRequired
                   label="Nome"
@@ -1380,13 +1817,20 @@ export function JuizesContent() {
                   size="lg"
                   value={formState.nome}
                   variant="bordered"
-                  onValueChange={(value) =>
-                    setFormState({ ...formState, nome: value })
-                  }
+                  onValueChange={(value) => {
+                    setFormState({ ...formState, nome: value });
+                    if (
+                      selectedCatalogJudge &&
+                      value.trim().toLowerCase() !==
+                        selectedCatalogJudge.nome.trim().toLowerCase()
+                    ) {
+                      setSelectedCatalogJudge(null);
+                    }
+                  }}
                 />
                 <Input
                   label="Nome Completo"
-                  placeholder="Nome completo do juiz"
+                  placeholder="Nome completo da autoridade"
                   size="lg"
                   value={formState.nomeCompleto || ""}
                   variant="bordered"
@@ -1401,8 +1845,16 @@ export function JuizesContent() {
                   }
                 />
                 <Input
-                  label="OAB"
-                  placeholder="Número da OAB"
+                  label={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Registro funcional (opcional)"
+                      : "OAB"
+                  }
+                  placeholder={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Matrícula / registro"
+                      : "Número da OAB"
+                  }
                   size="lg"
                   value={formState.oab || ""}
                   variant="bordered"
@@ -1411,6 +1863,72 @@ export function JuizesContent() {
                   }
                 />
               </div>
+
+              {!isEditModalOpen && (
+                <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-primary">
+                      Reaproveitar autoridade já existente no ecossistema
+                    </p>
+                    {selectedCatalogJudge ? (
+                      <Button
+                        color="danger"
+                        size="sm"
+                        variant="light"
+                        onPress={() => setSelectedCatalogJudge(null)}
+                      >
+                        Desvincular
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-default-500">
+                    Digite pelo menos 3 letras no nome. Exibimos apenas nomes
+                    para evitar exposição de dados entre escritórios.
+                  </p>
+
+                  {selectedCatalogJudge ? (
+                    <Chip color="primary" variant="flat">
+                      Vinculado: {selectedCatalogJudge.nome}
+                    </Chip>
+                  ) : null}
+
+                  {!selectedCatalogJudge && formState.nome.trim().length >= 3 ? (
+                    isLoadingCatalogoJuizes ? (
+                      <div className="flex items-center gap-2 text-xs text-default-500">
+                        <Spinner size="sm" />
+                        Buscando nomes no catálogo...
+                      </div>
+                    ) : catalogoJuizes.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {catalogoJuizes.map((catalogoJuiz) => (
+                          <Button
+                            key={catalogoJuiz.id}
+                            color="primary"
+                            size="sm"
+                            variant="flat"
+                            onPress={() => {
+                              setSelectedCatalogJudge(catalogoJuiz);
+                              setFormState((prev) => ({
+                                ...prev,
+                                nome: catalogoJuiz.nome,
+                              }));
+                              toast.info(
+                                `Autoridade "${catalogoJuiz.nome}" selecionada para vínculo.`,
+                              );
+                            }}
+                          >
+                            {catalogoJuiz.nome}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-default-500">
+                        Nenhum nome compatível encontrado.
+                      </p>
+                    )
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <Divider className="bg-white/10" />
@@ -1457,8 +1975,16 @@ export function JuizesContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   isRequired
-                  label="Vara"
-                  placeholder="Ex: 1ª Vara Cível"
+                  label={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Promotoria"
+                      : "Vara"
+                  }
+                  placeholder={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Ex: 2ª Promotoria Criminal"
+                      : "Ex: 1ª Vara Cível"
+                  }
                   size="lg"
                   value={formState.vara}
                   variant="bordered"
@@ -1476,6 +2002,42 @@ export function JuizesContent() {
                     setFormState({ ...formState, comarca: value })
                   }
                 />
+                <Select
+                  items={[
+                    { key: "NONE", label: "Sem tribunal" },
+                    ...(formData?.tribunais?.map((tribunal) => ({
+                      key: tribunal.id,
+                      label: tribunal.sigla
+                        ? `${tribunal.sigla} - ${tribunal.nome}`
+                        : tribunal.nome,
+                    })) || []),
+                  ]}
+                  label="Tribunal"
+                  selectedKeys={[
+                    formState.tribunalId &&
+                    formState.tribunalId.length > 0 &&
+                    tribunalIds.has(formState.tribunalId)
+                      ? formState.tribunalId
+                      : "NONE",
+                  ]}
+                  size="lg"
+                  variant="bordered"
+                  onSelectionChange={(keys) =>
+                    setFormState({
+                      ...formState,
+                      tribunalId:
+                        (Array.from(keys)[0] as string) === "NONE"
+                          ? ""
+                          : ((Array.from(keys)[0] as string) || "").trim(),
+                    })
+                  }
+                >
+                  {(item) => (
+                    <SelectItem key={item.key} textValue={item.label}>
+                      {item.label}
+                    </SelectItem>
+                  )}
+                </Select>
                 <Input
                   label="Cidade"
                   placeholder="Ex: São Paulo"
@@ -1491,7 +2053,7 @@ export function JuizesContent() {
                   maxLength={2}
                   placeholder="Ex: SP"
                   size="lg"
-                  value={formState.estado}
+                  value={formState.estado || ""}
                   variant="bordered"
                   onValueChange={(value) =>
                     setFormState({ ...formState, estado: value.toUpperCase() })
@@ -1516,6 +2078,55 @@ export function JuizesContent() {
                   variant="bordered"
                   onValueChange={(value) =>
                     setFormState({ ...formState, cep: value })
+                  }
+                />
+              </div>
+            </div>
+
+            <Divider className="bg-white/10" />
+
+            {/* Datas Relevantes */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary" />
+                Datas Relevantes
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <DateInput
+                  label="Data de nascimento"
+                  value={formatDateInput(formState.dataNascimento)}
+                  variant="bordered"
+                  onChange={(event) =>
+                    setFormState({
+                      ...formState,
+                      dataNascimento: parseDateInput(event.target.value),
+                    })
+                  }
+                />
+                <DateInput
+                  label={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Data de ingresso no MP"
+                      : "Data de posse"
+                  }
+                  value={formatDateInput(formState.dataPosse)}
+                  variant="bordered"
+                  onChange={(event) =>
+                    setFormState({
+                      ...formState,
+                      dataPosse: parseDateInput(event.target.value),
+                    })
+                  }
+                />
+                <DateInput
+                  label="Data de aposentadoria"
+                  value={formatDateInput(formState.dataAposentadoria)}
+                  variant="bordered"
+                  onChange={(event) =>
+                    setFormState({
+                      ...formState,
+                      dataAposentadoria: parseDateInput(event.target.value),
+                    })
                   }
                 />
               </div>
@@ -1552,12 +2163,23 @@ export function JuizesContent() {
                 </Select>
                 <Select
                   items={
-                    formData?.niveis?.map((n) => ({
+                    (formState.tipoAutoridade === "PROMOTOR"
+                      ? ["OUTROS"]
+                      : formData?.niveis || []
+                    ).map((n) => ({
                       key: n,
-                      label: n.replace(/_/g, " "),
-                    })) || []
+                      label:
+                        n === "OUTROS"
+                          ? "Outro"
+                          : n.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()),
+                    }))
                   }
-                  label="Nível"
+                  isDisabled={formState.tipoAutoridade === "PROMOTOR"}
+                  label={
+                    formState.tipoAutoridade === "PROMOTOR"
+                      ? "Nível (fixo para promotor)"
+                      : "Nível"
+                  }
                   placeholder="Selecione o nível"
                   selectedKeys={[formState.nivel]}
                   size="lg"
@@ -1645,6 +2267,269 @@ export function JuizesContent() {
                   }
                 />
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Textarea
+                  label="Prêmios e reconhecimentos"
+                  minRows={2}
+                  placeholder="Premiações, menções honrosas..."
+                  size="lg"
+                  value={formState.premios || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, premios: value })
+                  }
+                />
+                <Textarea
+                  label="Publicações"
+                  minRows={2}
+                  placeholder="Artigos, livros, teses..."
+                  size="lg"
+                  value={formState.publicacoes || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, publicacoes: value })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Website"
+                  placeholder="https://..."
+                  size="lg"
+                  type="url"
+                  value={formState.website || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, website: value })
+                  }
+                />
+                <Input
+                  label="LinkedIn"
+                  placeholder="https://linkedin.com/in/..."
+                  size="lg"
+                  type="url"
+                  value={formState.linkedin || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, linkedin: value })
+                  }
+                />
+                <Input
+                  label="Twitter/X"
+                  placeholder="https://x.com/... ou @perfil"
+                  size="lg"
+                  value={formState.twitter || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, twitter: value })
+                  }
+                />
+                <Input
+                  label="Instagram"
+                  placeholder="https://instagram.com/... ou @perfil"
+                  size="lg"
+                  value={formState.instagram || ""}
+                  variant="bordered"
+                  onValueChange={(value) =>
+                    setFormState({ ...formState, instagram: value })
+                  }
+                />
+              </div>
+              <Textarea
+                label="Observações internas"
+                minRows={3}
+                placeholder="Anotações estratégicas e contexto adicional..."
+                size="lg"
+                value={formState.observacoes || ""}
+                variant="bordered"
+                onValueChange={(value) =>
+                  setFormState({ ...formState, observacoes: value })
+                }
+              />
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          backdrop="blur"
+          footerContent={
+            <>
+              <Button
+                variant="light"
+                onPress={handleCloseLinkProcessosModal}
+              >
+                Cancelar
+              </Button>
+              <Button
+                color="danger"
+                isDisabled={
+                  selectedLinkedCount === 0 || isLoadingProcessosParaVinculo
+                }
+                onPress={() =>
+                  handleRequestBatchActionConfirmation("desvincular")
+                }
+              >
+                Desvincular selecionados
+              </Button>
+              <Button
+                color="primary"
+                isDisabled={
+                  selectedNotLinkedCount === 0 ||
+                  isLoadingProcessosParaVinculo
+                }
+                onPress={() => handleRequestBatchActionConfirmation("vincular")}
+              >
+                Vincular selecionados
+              </Button>
+            </>
+          }
+          isOpen={isLinkProcessosModalOpen}
+          showFooter={true}
+          size="2xl"
+          title={`Vincular Processos${selectedJuiz ? ` · ${selectedJuiz.nome}` : ""}`}
+          onClose={handleCloseLinkProcessosModal}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-default-400">
+              Selecione os processos que esta autoridade deve assumir. A lista
+              respeita o seu escopo de visualização.
+            </p>
+
+            <Input
+              placeholder="Pesquisar por número, título, cliente ou responsável"
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={processoSearchTerm}
+              variant="bordered"
+              onValueChange={setProcessoSearchTerm}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-background/40 px-3 py-2">
+              <Checkbox
+                isDisabled={processosFiltradosIds.length === 0}
+                isSelected={allFilteredSelected}
+                onValueChange={handleToggleSelecionarTodosFiltrados}
+              >
+                Selecionar todos visíveis
+              </Checkbox>
+              <p className="text-xs text-default-400">
+                {selectedProcessoIds.length} selecionado(s) ·{" "}
+                {processosFiltradosParaVinculo.length} visível(is) ·{" "}
+                {selectedLinkedCount} já vinculados
+              </p>
+            </div>
+
+            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              {isLoadingProcessosParaVinculo ? (
+                <div className="flex items-center justify-center py-10">
+                  <Spinner size="lg" />
+                </div>
+              ) : processosFiltradosParaVinculo.length === 0 ? (
+                <div className="rounded-lg border border-white/10 bg-background/50 px-4 py-6 text-center text-sm text-default-500">
+                  Nenhum processo encontrado para os filtros aplicados.
+                </div>
+              ) : (
+                processosFiltradosParaVinculo.map((processo) => {
+                  const isSelected = selectedProcessoIdsSet.has(processo.id);
+                  const alreadyLinked =
+                    !!selectedJuiz && processo.juizId === selectedJuiz.id;
+
+                  return (
+                    <div
+                      key={processo.id}
+                      className="flex items-start gap-3 rounded-lg border border-white/10 bg-background/55 px-3 py-3"
+                    >
+                      <Checkbox
+                        isSelected={isSelected}
+                        onValueChange={(checked) =>
+                          handleToggleProcessoSelecionado(processo.id, checked)
+                        }
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {processo.numero}
+                        </p>
+                        <p className="line-clamp-1 text-xs text-default-400">
+                          {processo.titulo || "Sem título"} · Cliente:{" "}
+                          {processo.clienteNome}
+                        </p>
+                        <p className="line-clamp-1 text-[11px] text-default-500">
+                          Responsável:{" "}
+                          {processo.advogadoResponsavelNome || "Não definido"}
+                        </p>
+                      </div>
+                      <Chip
+                        color={alreadyLinked ? "success" : "default"}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {alreadyLinked ? "Já vinculado" : processo.status}
+                      </Chip>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          backdrop="blur"
+          footerContent={
+            <>
+              <Button
+                isDisabled={isLinkingProcessos}
+                variant="light"
+                onPress={() => {
+                  setIsConfirmLinkActionModalOpen(false);
+                  setPendingLinkAction(null);
+                }}
+              >
+                Voltar
+              </Button>
+              <Button
+                color={pendingLinkAction === "desvincular" ? "danger" : "primary"}
+                isLoading={isLinkingProcessos}
+                onPress={handleConfirmBatchAction}
+              >
+                {pendingLinkAction === "desvincular"
+                  ? "Confirmar desvínculo"
+                  : "Confirmar vínculo"}
+              </Button>
+            </>
+          }
+          isOpen={isConfirmLinkActionModalOpen}
+          showFooter={true}
+          size="lg"
+          title={
+            pendingLinkAction === "desvincular"
+              ? "Confirmar desvinculo em massa"
+              : "Confirmar vinculo em massa"
+          }
+          onClose={() => {
+            if (isLinkingProcessos) return;
+            setIsConfirmLinkActionModalOpen(false);
+            setPendingLinkAction(null);
+          }}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-default-300">
+              Você está prestes a{" "}
+              <span className="font-semibold text-white">
+                {pendingLinkAction === "desvincular" ? "desvincular" : "vincular"}
+              </span>{" "}
+              <span className="font-semibold text-white">
+                {selectedProcessoIds.length} processo(s)
+              </span>
+              .
+            </p>
+            <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning-600">
+              Esta operação altera processos em lote. Revise a seleção antes de
+              confirmar.
+            </div>
+            <div className="text-xs text-default-400">
+              {pendingLinkAction === "desvincular"
+                ? `${selectedLinkedCount} processo(s) estão vinculados atualmente a esta autoridade e serão afetados.`
+                : `${selectedNotLinkedCount} processo(s) serão vinculados; os já vinculados serão mantidos.`}
             </div>
           </div>
         </Modal>

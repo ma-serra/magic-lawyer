@@ -1349,7 +1349,7 @@ export default function AndamentosPage() {
                       </div>
 
                       <Card
-                        className={`flex-1 border border-white/10 bg-content1/40 transition-colors duration-300 hover:bg-content1/70 ${
+                        className={`ml-wave-surface flex-1 border border-white/10 bg-content1/40 transition-colors duration-300 hover:bg-content1/70 ${
                           andamento.tipo === "ANDAMENTO"
                             ? "border-l-4 border-l-blue-500"
                             : andamento.tipo === "PRAZO"

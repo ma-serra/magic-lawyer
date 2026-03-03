@@ -12,10 +12,10 @@ Guia de configuração inicial e integrações externas do Magic Lawyer.
 
 ### 📧 Email
 - **[email/nodemailer-migration.md](./email/nodemailer-migration.md)** - Migração e configuração do Nodemailer
+- **[ENV_MANAGEMENT.md](./ENV_MANAGEMENT.md)** - Convenção de variáveis de ambiente e organização
 
 ## 🚀 Ordem Recomendada de Setup
 
 1. Configurar NextAuth
 2. Configurar Email (Nodemailer)
 3. Configurar integrações externas (Google Calendar)
-

@@ -5,6 +5,8 @@ import type {
   JuizSerializado,
   JuizFormOptions,
   JuizFilters,
+  JuizCatalogoOpcao,
+  ProcessoVinculoAutoridade,
 } from "@/app/actions/juizes";
 
 import useSWR from "swr";
@@ -15,6 +17,8 @@ import {
   getJulgamentosDoJuiz,
   getJuizFormData,
   getJuizes,
+  buscarJuizesCatalogoPorNome,
+  getProcessosParaVinculoAutoridade,
   verificarFavoritoJuiz,
 } from "@/app/actions/juizes";
 
@@ -177,6 +181,42 @@ export function useJuizes(filters: JuizFilters = {}) {
 }
 
 /**
+ * Hook para buscar catálogo global de nomes de juízes
+ * Retorna apenas nome + id para vínculo (sem detalhes sensíveis).
+ */
+export function useJuizesCatalogoPorNome(search: string, enabled = true) {
+  const normalized = search.trim();
+  const key =
+    enabled && normalized.length >= 3 ? `juizes-catalogo-${normalized}` : null;
+
+  const { data, error, isLoading, mutate } = useSWR<JuizCatalogoOpcao[] | null>(
+    key,
+    async () => {
+      const result = await buscarJuizesCatalogoPorNome(normalized);
+
+      if (!result.success) {
+        throw new Error(result.error || "Erro ao buscar catálogo de juízes");
+      }
+
+      return result.data || [];
+    },
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    },
+  );
+
+  return {
+    opcoes: data ?? [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+    refresh: mutate,
+  };
+}
+
+/**
  * Hook para verificar se um juiz é favorito
  */
 export function useFavoritoJuiz(juizId: string | null) {
@@ -200,6 +240,45 @@ export function useFavoritoJuiz(juizId: string | null) {
 
   return {
     isFavorito: data ?? false,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+    refresh: mutate,
+  };
+}
+
+/**
+ * Hook para buscar processos visíveis para vínculo com autoridade.
+ */
+export function useProcessosParaVinculoAutoridade(
+  juizId: string | null,
+  enabled = true,
+) {
+  const key = enabled && juizId ? `processos-vinculo-autoridade-${juizId}` : null;
+
+  const { data, error, isLoading, mutate } = useSWR<
+    ProcessoVinculoAutoridade[] | null
+  >(
+    key,
+    async () => {
+      if (!juizId) return [];
+      const result = await getProcessosParaVinculoAutoridade(juizId);
+
+      if (!result.success) {
+        throw new Error(result.error || "Erro ao carregar processos");
+      }
+
+      return result.processos || [];
+    },
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    },
+  );
+
+  return {
+    processos: data ?? [],
     isLoading,
     isError: !!error,
     error,

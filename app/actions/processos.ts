@@ -251,6 +251,7 @@ export interface Processo {
   juizId: string | null;
   tribunalId: string | null;
   tags: Prisma.JsonValue | null;
+  origemSincronizacaoExterna?: boolean;
   prazoPrincipal: Date | null;
   numeroInterno: string | null;
   pastaCompartilhadaUrl: string | null;
@@ -703,6 +704,25 @@ const procuracaoProcessoInclude = {
 // ACTIONS - LISTAGEM
 // ============================================
 
+const EXTERNAL_SYNC_TAG = "origem:sincronizacao_externa";
+
+function normalizeProcessNumberForMatch(value?: string | null) {
+  if (!value) return "";
+  return value.replace(/\D/g, "");
+}
+
+function hasExternalSyncTag(tags: Prisma.JsonValue | null | undefined) {
+  if (!Array.isArray(tags)) {
+    return false;
+  }
+
+  return tags.some(
+    (tag) =>
+      typeof tag === "string" &&
+      tag.trim().toLowerCase() === EXTERNAL_SYNC_TAG,
+  );
+}
+
 /**
  * Busca todos os processos que o usuário pode ver
  * - ADMIN: Todos do tenant
@@ -893,6 +913,37 @@ export async function getAllProcessos(): Promise<{
       },
     });
 
+    const syncAuditLogs = await prisma.auditLog.findMany({
+      where: {
+        tenantId: user.tenantId,
+        acao: "SINCRONIZACAO_INICIAL_OAB_PROCESSOS",
+        entidade: "Processo",
+      },
+      select: {
+        dados: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 200,
+    });
+
+    const syncedProcessNumbers = new Set<string>();
+    for (const log of syncAuditLogs) {
+      const dados = log.dados as Record<string, unknown> | null;
+      const numeros = Array.isArray(dados?.processosNumeros)
+        ? dados.processosNumeros
+        : [];
+
+      for (const numero of numeros) {
+        if (typeof numero !== "string") continue;
+        const normalized = normalizeProcessNumberForMatch(numero);
+        if (normalized) {
+          syncedProcessNumbers.add(normalized);
+        }
+      }
+    }
+
     // Convert Decimal objects to numbers and serialize
     const convertedProcessos = processos.map((p) =>
       convertAllDecimalFields(p),
@@ -917,7 +968,17 @@ export async function getAllProcessos(): Promise<{
 
     return {
       success: true,
-      processos: serialized,
+      processos: serialized.map((processo: Processo) => ({
+        ...processo,
+        origemSincronizacaoExterna:
+          hasExternalSyncTag(processo.tags) ||
+          syncedProcessNumbers.has(
+            normalizeProcessNumberForMatch(processo.numero),
+          ) ||
+          syncedProcessNumbers.has(
+            normalizeProcessNumberForMatch(processo.numeroCnj),
+          ),
+      })),
     };
   } catch (error) {
     logger.error("Erro ao buscar processos:", error);
@@ -1808,10 +1869,11 @@ export async function createProcesso(data: ProcessoCreateInput) {
     }
 
     // Validar campos obrigatórios
-    if (!data.numero || !data.clienteId) {
+    if (!data.numero || !data.clienteId || !data.juizId) {
       return {
         success: false,
-        error: "Número do processo e cliente são obrigatórios",
+        error:
+          "Número do processo, cliente e autoridade do caso são obrigatórios",
       };
     }
 
@@ -1834,6 +1896,37 @@ export async function createProcesso(data: ProcessoCreateInput) {
 
     if (!cliente) {
       return { success: false, error: "Cliente não encontrado" };
+    }
+
+    const juiz = await prisma.juiz.findFirst({
+      where: {
+        id: data.juizId,
+        OR: [
+          { isPublico: true },
+          {
+            favoritos: {
+              some: {
+                tenantId: user.tenantId,
+              },
+            },
+          },
+          {
+            acessos: {
+              some: {
+                tenantId: user.tenantId,
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!juiz) {
+      return {
+        success: false,
+        error: "Autoridade informada não encontrada ou sem acesso",
+      };
     }
 
     // Se for ADVOGADO, validar vínculo com o cliente
@@ -2147,15 +2240,32 @@ export async function updateProcesso(
       const juiz = await prisma.juiz.findFirst({
         where: {
           id: data.juizId,
-          tribunal: {
-            tenantId,
-          },
+          OR: [
+            { isPublico: true },
+            {
+              favoritos: {
+                some: {
+                  tenantId,
+                },
+              },
+            },
+            {
+              acessos: {
+                some: {
+                  tenantId,
+                },
+              },
+            },
+          ],
         },
         select: { id: true },
       });
 
       if (!juiz) {
-        return { success: false, error: "Juiz informado não encontrado" };
+        return {
+          success: false,
+          error: "Autoridade informada não encontrada ou sem acesso",
+        };
       }
     }
 

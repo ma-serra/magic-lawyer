@@ -14,6 +14,49 @@ export type AuditLogParams = {
   userAgent?: string | null;
 };
 
+function isForeignKeyViolation(error: unknown): boolean {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2003"
+  ) {
+    return true;
+  }
+
+  const maybeError = error as { code?: unknown; message?: unknown } | null;
+
+  if (maybeError?.code === "P2003") {
+    return true;
+  }
+
+  if (
+    typeof maybeError?.message === "string" &&
+    maybeError.message.includes("Foreign key constraint violated")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+async function resolveAuditUsuarioId(
+  tenantId: string,
+  usuarioId?: string | null,
+): Promise<string | null> {
+  if (!usuarioId) {
+    return null;
+  }
+
+  const user = await prisma.usuario.findFirst({
+    where: {
+      id: usuarioId,
+      tenantId,
+    },
+    select: { id: true },
+  });
+
+  return user?.id ?? null;
+}
+
 export function toAuditJson(
   value: unknown,
 ): Prisma.InputJsonValue | null | undefined {
@@ -52,6 +95,8 @@ export async function logAudit({
   ip,
   userAgent,
 }: AuditLogParams) {
+  const safeUsuarioId = await resolveAuditUsuarioId(tenantId, usuarioId);
+
   const normalizedDados =
     dados === null ? Prisma.JsonNull : (dados as Prisma.InputJsonValue | undefined);
   const normalizedPrevious =
@@ -59,18 +104,36 @@ export async function logAudit({
       ? Prisma.JsonNull
       : (previousValues as Prisma.InputJsonValue | undefined);
 
-  return prisma.auditLog.create({
-    data: {
-      tenantId,
-      usuarioId: usuarioId ?? null,
-      acao,
-      entidade,
-      entidadeId: entidadeId ?? null,
-      dados: normalizedDados,
-      previousValues: normalizedPrevious,
-      changedFields: changedFields ?? [],
-      ip: ip ?? null,
-      userAgent: userAgent ?? null,
-    },
-  });
+  const baseData = {
+    tenantId,
+    acao,
+    entidade,
+    entidadeId: entidadeId ?? null,
+    dados: normalizedDados,
+    previousValues: normalizedPrevious,
+    changedFields: changedFields ?? [],
+    ip: ip ?? null,
+    userAgent: userAgent ?? null,
+  };
+
+  try {
+    return await prisma.auditLog.create({
+      data: {
+        ...baseData,
+        usuarioId: safeUsuarioId,
+      },
+    });
+  } catch (error) {
+    // Mantém o fluxo de negócio mesmo se houver inconsistência transitória de FK em usuarioId.
+    if (isForeignKeyViolation(error)) {
+      return prisma.auditLog.create({
+        data: {
+          ...baseData,
+          usuarioId: null,
+        },
+      });
+    }
+
+    throw error;
+  }
 }

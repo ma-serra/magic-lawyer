@@ -2,6 +2,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { Button } from "@heroui/button";
 import { Badge } from "@heroui/badge";
 import { Chip } from "@heroui/chip";
@@ -26,11 +27,19 @@ import { addToast } from "@heroui/toast";
 import { useDisclosure } from "@heroui/react";
 
 import { useRealtime } from "@/app/providers/realtime-provider";
+import { getStatusSincronizacaoMeusProcessos } from "@/app/actions/portal-advogado";
 import {
   useNotifications,
   type NotificationStatus,
   type NotificationItem,
 } from "@/app/hooks/use-notifications";
+import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
+import {
+  isPollingGloballyEnabled,
+  resolvePollingInterval,
+  subscribePollingControl,
+  tracePollingAttempt,
+} from "@/app/lib/realtime/polling-telemetry";
 import { BellIcon } from "@/components/icons";
 
 const statusCopy: Record<NotificationStatus, string> = {
@@ -74,9 +83,57 @@ export const NotificationCenter = () => {
     clearAll,
   } = useNotifications();
   const { subscribe } = useRealtime();
+  const [isPollingEnabled, setIsPollingEnabled] = useState(() =>
+    isPollingGloballyEnabled(),
+  );
+  const { data: portalSyncStatusResponse } = useSWR<
+    Awaited<ReturnType<typeof getStatusSincronizacaoMeusProcessos>>,
+    Error
+  >(
+    "notification-center-portal-sync-status",
+    () =>
+      tracePollingAttempt(
+        {
+          hookName: "NotificationCenter",
+          endpoint: "/portal-advogado/sync-status/latest",
+          source: "swr",
+          intervalMs: REALTIME_POLLING.PORTAL_SYNC_STATUS_POLLING_MS,
+        },
+        () => getStatusSincronizacaoMeusProcessos(),
+      ),
+    {
+      refreshInterval: (latestData) => {
+        const status = latestData?.status?.status;
+        const fastPoll =
+          status === "QUEUED" ||
+          status === "RUNNING" ||
+          status === "WAITING_CAPTCHA";
+
+        return resolvePollingInterval({
+          isConnected: false,
+          enabled: isPollingEnabled,
+          fallbackMs: fastPoll
+            ? REALTIME_POLLING.PORTAL_SYNC_STATUS_POLLING_MS
+            : 60 * 1000,
+          minimumMs: fastPoll
+            ? REALTIME_POLLING.PORTAL_SYNC_STATUS_POLLING_MS
+            : 60 * 1000,
+        });
+      },
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    },
+  );
 
   // Hook para notificações de desenvolvimento (só em DEV)
   const totalUnreadCount = unreadCount;
+  const portalSyncStatus = portalSyncStatusResponse?.status;
+  const isPortalSyncRunning =
+    portalSyncStatus?.status === "QUEUED" ||
+    portalSyncStatus?.status === "RUNNING";
+  const isPortalSyncWaitingCaptcha =
+    portalSyncStatus?.status === "WAITING_CAPTCHA";
+  const hasPortalSyncAttention = isPortalSyncRunning || isPortalSyncWaitingCaptcha;
 
   const resolveReferenceLink = (item: NotificationItem): string | null => {
     if (!item.referenciaTipo || !item.referenciaId) {
@@ -136,6 +193,10 @@ export const NotificationCenter = () => {
 
     return unsubscribe;
   }, [subscribe, mutateNotifications]);
+
+  useEffect(() => {
+    return subscribePollingControl(setIsPollingEnabled);
+  }, []);
 
   const detailPayload = useMemo(() => {
     if (
@@ -234,6 +295,13 @@ export const NotificationCenter = () => {
           onPress={disclosure.onOpen}
         >
           {unreadBadge}
+          {hasPortalSyncAttention ? (
+            <span
+              className={`absolute -bottom-0.5 -left-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-background ${
+                isPortalSyncWaitingCaptcha ? "bg-warning" : "bg-primary"
+              } ${isPortalSyncRunning ? "animate-pulse" : ""}`}
+            />
+          ) : null}
           <BellIcon className="h-5 w-5" />
         </Button>
       </Tooltip>
@@ -262,14 +330,63 @@ export const NotificationCenter = () => {
                     Notificações
                   </h2>
                 </div>
-                <Chip className="text-xs" color="primary" variant="flat">
-                  {isValidating
-                    ? "Atualizando"
-                    : `${totalUnreadCount} não lida(s)`}
-                </Chip>
+                <div className="flex items-center gap-2">
+                  {hasPortalSyncAttention ? (
+                    <Chip
+                      className="text-xs"
+                      color={isPortalSyncWaitingCaptcha ? "warning" : "primary"}
+                      startContent={
+                        isPortalSyncRunning ? <Spinner color="primary" size="sm" /> : null
+                      }
+                      variant="flat"
+                    >
+                      {isPortalSyncWaitingCaptcha
+                        ? "Captcha pendente"
+                        : "Sync em andamento"}
+                    </Chip>
+                  ) : null}
+                  <Chip className="text-xs" color="primary" variant="flat">
+                    {isValidating
+                      ? "Atualizando"
+                      : `${totalUnreadCount} não lida(s)`}
+                  </Chip>
+                </div>
               </DrawerHeader>
 
               <DrawerBody className="px-0 pb-0">
+                {hasPortalSyncAttention ? (
+                  <div className="mx-6 mb-4 rounded-2xl border border-primary/30 bg-primary/5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-white">
+                          {isPortalSyncWaitingCaptcha
+                            ? "Sincronização pausada aguardando captcha"
+                            : "Sincronização de processos em andamento"}
+                        </p>
+                        <p className="text-xs text-default-400">
+                          {isPortalSyncWaitingCaptcha
+                            ? "Abra o Portal do Advogado para validar o captcha e retomar o processamento."
+                            : `Capturados: ${portalSyncStatus?.syncedCount ?? 0} · Criados: ${portalSyncStatus?.createdCount ?? 0} · Atualizados: ${portalSyncStatus?.updatedCount ?? 0}`}
+                        </p>
+                      </div>
+                      {isPortalSyncRunning ? <Spinner color="primary" size="sm" /> : null}
+                    </div>
+                    <div className="mt-3">
+                      <Button
+                        color={isPortalSyncWaitingCaptcha ? "warning" : "primary"}
+                        size="sm"
+                        variant="flat"
+                        onPress={() => {
+                          disclosure.onClose();
+                          router.push("/portal-advogado");
+                        }}
+                      >
+                        Abrir Portal do Advogado
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {isLoading && !hasNotifications ? (
                   <div className="flex h-48 items-center justify-center">
                     <Spinner color="primary" label="Carregando notificações" />

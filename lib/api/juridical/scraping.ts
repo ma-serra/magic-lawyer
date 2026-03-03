@@ -429,26 +429,82 @@ async function fetchEsajBinary(url: string, init: RequestInit & { cookieHeader?:
     headers.Cookie = init.cookieHeader;
   }
 
+  const doFetch = async (agent: https.Agent) => {
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      agent,
+    });
+
+    // node-fetch v2
+    const buffer = await (response as any).buffer?.();
+    if (buffer && Buffer.isBuffer(buffer)) {
+      return buffer as Buffer;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  };
+
+  const tryCurl = async () => {
+    return fetchEsajBinaryViaCurl(url, headers, init);
+  };
+
   if (ESAJ_FORCE_CURL) {
     try {
-      return await fetchEsajBinaryViaCurl(url, headers, init);
+      return await tryCurl();
     } catch (error) {
       logger.warn({ error, url }, "[Scraping ESAJ] Curl binário falhou, tentando fetch padrão");
     }
   }
 
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    agent: buildEsajAgent(),
-  });
-  // node-fetch v2
-  const buffer = await (response as any).buffer?.();
-  if (buffer && Buffer.isBuffer(buffer)) {
-    return buffer as Buffer;
+  try {
+    return await doFetch(buildEsajAgent());
+  } catch (error) {
+    if (!shouldRetryWithLegacyTls(error)) {
+      try {
+        logger.warn({ error, url }, "[Scraping ESAJ] Fetch binário falhou, tentando curl");
+        return await tryCurl();
+      } catch {
+        throw error;
+      }
+    }
+
+    logger.warn({ error, url }, "[Scraping ESAJ] TLS legado requerido para binário, tentando novamente");
+
+    const legacyAttempts: https.AgentOptions[] = [
+      {
+        minVersion: "TLSv1" as SecureVersion,
+        maxVersion: "TLSv1.2" as SecureVersion,
+        secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT,
+      },
+      {
+        minVersion: "TLSv1" as SecureVersion,
+        maxVersion: "TLSv1" as SecureVersion,
+        secureOptions:
+          constants.SSL_OP_LEGACY_SERVER_CONNECT |
+          constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION,
+        ciphers: "DEFAULT@SECLEVEL=0",
+        honorCipherOrder: true,
+      },
+    ];
+
+    let lastError: unknown = error;
+    for (const attempt of legacyAttempts) {
+      try {
+        return await doFetch(buildEsajAgent(attempt));
+      } catch (legacyError) {
+        lastError = legacyError;
+      }
+    }
+
+    try {
+      logger.warn({ url }, "[Scraping ESAJ] Fallback binário para curl devido a erro TLS");
+      return await tryCurl();
+    } catch (curlError) {
+      throw lastError ?? curlError;
+    }
   }
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
 }
 
 async function initEsajSession(baseUrl: string): Promise<EsajSession> {

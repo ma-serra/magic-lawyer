@@ -34,13 +34,7 @@ export default async function CausasPage() {
   }
 
   const hasCausasPermission = await checkPermission("causas", "visualizar");
-
-  // Compatibilidade com fluxo legado de processos/equipe.
-  const hasProcessosPermission = await checkPermission("processos", "visualizar");
-  const hasEquipePermission = await checkPermission("equipe", "editar");
-
-  const hasPermission =
-    hasCausasPermission || hasProcessosPermission || hasEquipePermission;
+  const hasPermission = hasCausasPermission;
 
   if (
     user.role !== UserRole.ADMIN &&

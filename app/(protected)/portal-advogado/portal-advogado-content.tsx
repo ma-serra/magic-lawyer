@@ -1,11 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  Card, CardBody, CardHeader, Button, Chip, Spinner, Input, Select, SelectItem } from "@heroui/react";
+  Card,
+  CardBody,
+  Button,
+  Chip,
+  Spinner,
+  Input,
+  Select,
+  SelectItem,
+} from "@heroui/react";
 import {
   Building2,
   Calendar,
+  CalendarClock,
   FileText,
   Link as LinkIcon,
   Info,
@@ -16,6 +26,10 @@ import {
   Clock3,
   CircleDashed,
   AlertTriangle,
+  FolderOpen,
+  UserX,
+  Siren,
+  Activity,
 } from "lucide-react";
 import useSWR from "swr";
 import { addToast } from "@heroui/toast";
@@ -24,6 +38,10 @@ import { UFSelector } from "./uf-selector";
 
 import {
   getStatusSincronizacaoMeusProcessos,
+  getPainelOperacionalPortalAdvogado,
+  getProcessosSincronizadosPortalAdvogado,
+  getRecursosOficiaisPortalAdvogado,
+  gerarNovoCaptchaSincronizacaoMeusProcessos,
   getTribunaisSincronizacaoPortalAdvogado,
   getTribunaisPorUF,
   getUFsDisponiveis,
@@ -37,8 +55,14 @@ import {
   subscribePollingControl,
   tracePollingAttempt,
 } from "@/app/lib/realtime/polling-telemetry";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 
 export function PortalAdvogadoContent() {
+  const router = useRouter();
   const [ufSelecionada, setUfSelecionada] = useState<string | undefined>();
   const [syncTribunalSigla, setSyncTribunalSigla] = useState("TJSP");
   const [syncOab, setSyncOab] = useState("");
@@ -47,6 +71,7 @@ export function PortalAdvogadoContent() {
   const [syncId, setSyncId] = useState<string | undefined>();
   const [isStartingSync, setIsStartingSync] = useState(false);
   const [isResolvingCaptcha, setIsResolvingCaptcha] = useState(false);
+  const [isRefreshingCaptcha, setIsRefreshingCaptcha] = useState(false);
   const [isPollingEnabled, setIsPollingEnabled] = useState(() =>
     isPollingGloballyEnabled(),
   );
@@ -137,6 +162,75 @@ export function PortalAdvogadoContent() {
   const isSyncRunning =
     syncStatus?.status === "QUEUED" || syncStatus?.status === "RUNNING";
   const isWaitingCaptcha = syncStatus?.status === "WAITING_CAPTCHA";
+  const activeRadarTribunalSigla = syncStatus?.tribunalSigla || syncTribunalSigla;
+
+  const {
+    data: processosSincronizadosResponse,
+    mutate: refreshProcessosSincronizados,
+    isLoading: isLoadingProcessosSincronizados,
+  } = useSWR<
+    Awaited<ReturnType<typeof getProcessosSincronizadosPortalAdvogado>>,
+    Error
+  >(
+    syncStatus?.syncId
+      ? `portal-advogado-sync-processos:${syncStatus.syncId}`
+      : null,
+    async () =>
+      getProcessosSincronizadosPortalAdvogado({
+        syncId: syncStatus?.syncId,
+        limit: 24,
+      }),
+    {
+      refreshInterval: () =>
+        isSyncRunning
+          ? resolvePollingInterval({
+              isConnected: false,
+              enabled: isPollingEnabled,
+              fallbackMs: REALTIME_POLLING.PORTAL_SYNC_STATUS_POLLING_MS,
+              minimumMs: REALTIME_POLLING.PORTAL_SYNC_STATUS_POLLING_MS,
+            })
+          : 0,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    },
+  );
+
+  const { data: recursosOficiaisResponse, isLoading: isLoadingRecursosOficiais } =
+    useSWR<Awaited<ReturnType<typeof getRecursosOficiaisPortalAdvogado>>, Error>(
+      `portal-advogado-recursos-oficiais:${activeRadarTribunalSigla || "TJSP"}`,
+      async () =>
+        getRecursosOficiaisPortalAdvogado({
+          tribunalSigla: activeRadarTribunalSigla || "TJSP",
+        }),
+      {
+        revalidateOnFocus: false,
+      },
+    );
+
+  const {
+    data: painelOperacionalResponse,
+    mutate: refreshPainelOperacional,
+    isLoading: isLoadingPainelOperacional,
+  } = useSWR<Awaited<ReturnType<typeof getPainelOperacionalPortalAdvogado>>, Error>(
+    "portal-advogado-painel-operacional",
+    () => getPainelOperacionalPortalAdvogado({ limit: 8 }),
+    {
+      refreshInterval: resolvePollingInterval({
+        isConnected: false,
+        enabled: isPollingEnabled,
+        fallbackMs: 60 * 1000,
+        minimumMs: 60 * 1000,
+      }),
+      revalidateOnFocus: false,
+    },
+  );
+
+  useEffect(() => {
+    if (syncStatus?.status === "COMPLETED") {
+      void refreshProcessosSincronizados();
+      void refreshPainelOperacional();
+    }
+  }, [syncStatus?.status, refreshPainelOperacional, refreshProcessosSincronizados]);
 
   const syncStatusMeta = useMemo(() => {
     if (!syncStatus) return null;
@@ -278,26 +372,504 @@ export function PortalAdvogadoContent() {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex items-center gap-2 pb-3">
-          <RefreshCw className="w-5 h-5 text-primary" />
-          <h2 className="text-xl font-semibold">Trazer meus processos</h2>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          <p className="text-sm text-default-500">
-            Sincronize seus processos por OAB em segundo plano. Se o tribunal
-            exigir captcha, você valida aqui e a execução continua no worker.
-          </p>
+  const gerarNovoCaptcha = async () => {
+    if (!syncStatus?.syncId) {
+      addToast({
+        title: "Sincronização ausente",
+        description: "Inicie uma sincronização para gerar um novo captcha.",
+        color: "warning",
+      });
+      return;
+    }
 
+    setIsRefreshingCaptcha(true);
+
+    try {
+      const response = await gerarNovoCaptchaSincronizacaoMeusProcessos({
+        syncId: syncStatus.syncId,
+      });
+
+      if (!response.success) {
+        addToast({
+          title: "Falha ao gerar captcha",
+          description: response.error || "Não foi possível gerar novo desafio.",
+          color: "danger",
+        });
+        await refreshSyncStatus();
+        return;
+      }
+
+      setCaptchaText("");
+      addToast({
+        title: "Novo captcha solicitado",
+        description: "Aguarde alguns segundos para o novo desafio aparecer.",
+        color: "success",
+      });
+      await refreshSyncStatus();
+    } catch (error) {
+      addToast({
+        title: "Erro interno",
+        description: "Falha ao gerar novo captcha.",
+        color: "danger",
+      });
+    } finally {
+      setIsRefreshingCaptcha(false);
+    }
+  };
+
+  const resumoSync = useMemo(
+    () => ({
+      capturados: syncStatus?.syncedCount ?? 0,
+      criados: syncStatus?.createdCount ?? 0,
+      atualizados: syncStatus?.updatedCount ?? 0,
+      tribunaisDisponiveis: syncTribunais.length,
+    }),
+    [syncStatus, syncTribunais.length],
+  );
+
+  const processosSincronizados = useMemo(
+    () =>
+      processosSincronizadosResponse?.success
+        ? processosSincronizadosResponse.processos
+        : [],
+    [processosSincronizadosResponse],
+  );
+
+  const recursosOficiais = useMemo(
+    () =>
+      recursosOficiaisResponse?.success ? recursosOficiaisResponse.recursos : [],
+    [recursosOficiaisResponse],
+  );
+
+  const calendarioRecursos = useMemo(
+    () => recursosOficiais.filter((item) => item.categoria === "calendario"),
+    [recursosOficiais],
+  );
+  const comunicadosRecursos = useMemo(
+    () => recursosOficiais.filter((item) => item.categoria === "comunicados"),
+    [recursosOficiais],
+  );
+  const linksRecursos = useMemo(
+    () => recursosOficiais.filter((item) => item.categoria === "links"),
+    [recursosOficiais],
+  );
+  const painelOperacional = useMemo(
+    () => (painelOperacionalResponse?.success ? painelOperacionalResponse : null),
+    [painelOperacionalResponse],
+  );
+
+  const getProcessoStatusLabel = (status?: string | null) => {
+    if (!status) return "Sem status";
+
+    switch (status) {
+      case "RASCUNHO":
+        return "Rascunho";
+      case "EM_ANDAMENTO":
+        return "Em andamento";
+      case "SUSPENSO":
+        return "Suspenso";
+      case "ARQUIVADO":
+        return "Arquivado";
+      case "ENCERRADO":
+        return "Encerrado";
+      default:
+        return status.replace(/_/g, " ").toLowerCase();
+    }
+  };
+
+  const getMovimentacaoPrioridadeColor = (prioridade?: string | null) => {
+    switch (prioridade) {
+      case "CRITICA":
+        return "danger" as const;
+      case "ALTA":
+        return "warning" as const;
+      case "MEDIA":
+        return "primary" as const;
+      default:
+        return "default" as const;
+    }
+  };
+
+  return (
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 py-8 px-3 sm:px-6">
+      <PeoplePageHeader
+        actions={
+          isSyncRunning || isWaitingCaptcha ? (
+            <Chip
+              color={isWaitingCaptcha ? "warning" : "primary"}
+              startContent={
+                isSyncRunning ? (
+                  <Spinner color="primary" size="sm" />
+                ) : (
+                  <ShieldAlert className="h-4 w-4" />
+                )
+              }
+              variant="flat"
+            >
+              {isWaitingCaptcha
+                ? "Sincronização pausada por captcha"
+                : "Sincronização em andamento no background"}
+            </Chip>
+          ) : undefined
+        }
+        description="Operação de captura de processos por OAB, monitoramento da sincronização e acesso rápido aos portais dos tribunais."
+        tag="Atividade juridica"
+        title="Portal do Advogado"
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Última sincronização"
+          icon={<RefreshCw className="h-4 w-4" />}
+          label="Processos capturados"
+          tone="primary"
+          value={resumoSync.capturados}
+        />
+        <PeopleMetricCard
+          helper="Incluídos no sistema"
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Novos processos"
+          tone="success"
+          value={resumoSync.criados}
+        />
+        <PeopleMetricCard
+          helper="Dados já existentes"
+          icon={<Clock3 className="h-4 w-4" />}
+          label="Processos atualizados"
+          tone="secondary"
+          value={resumoSync.atualizados}
+        />
+        <PeopleMetricCard
+          helper="Disponíveis para consulta"
+          icon={<Building2 className="h-4 w-4" />}
+          label="Tribunais de sync"
+          tone="warning"
+          value={resumoSync.tribunaisDisponiveis}
+        />
+      </div>
+
+      <PeoplePanel
+        description="Visão operacional para agir no mesmo dia: prazos, audiências e intimações."
+        title="Prioridades do Dia"
+      >
+        {isLoadingPainelOperacional ? (
+          <div className="flex items-center gap-2 text-sm text-default-500">
+            <Spinner size="sm" />
+            Carregando prioridades...
+          </div>
+        ) : painelOperacional ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <PeopleMetricCard
+                helper="Abertos e vencidos"
+                icon={<Siren className="h-4 w-4" />}
+                label="Prazos vencidos"
+                tone={painelOperacional.prioridade.prazosVencidos > 0 ? "danger" : "success"}
+                value={painelOperacional.prioridade.prazosVencidos}
+              />
+              <PeopleMetricCard
+                helper="Janela de 7 dias"
+                icon={<CalendarClock className="h-4 w-4" />}
+                label="Prazos próximos"
+                tone={painelOperacional.prioridade.prazos7Dias > 0 ? "warning" : "default"}
+                value={painelOperacional.prioridade.prazos7Dias}
+              />
+              <PeopleMetricCard
+                helper="AGENDADO/CONFIRMADO"
+                icon={<Calendar className="h-4 w-4" />}
+                label="Audiências da semana"
+                tone="primary"
+                value={painelOperacional.prioridade.audienciasSemana}
+              />
+              <PeopleMetricCard
+                helper="Últimas 24h"
+                icon={<AlertTriangle className="h-4 w-4" />}
+                label="Intimações novas"
+                tone={painelOperacional.prioridade.intimacoesNovas24h > 0 ? "warning" : "default"}
+                value={painelOperacional.prioridade.intimacoesNovas24h}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <Card className="border border-white/10 bg-background/55">
+                <CardBody className="space-y-3 p-4">
+                  <p className="text-sm font-semibold text-white">Próximos prazos</p>
+                  {painelOperacional.listas.proximosPrazos.length > 0 ? (
+                    <div className="space-y-2">
+                      {painelOperacional.listas.proximosPrazos.map((item) => (
+                        <button
+                          key={item.id}
+                          className="w-full rounded-lg border border-white/10 bg-background/40 p-3 text-left transition hover:border-primary/40 hover:bg-background/70"
+                          type="button"
+                          onClick={() => router.push(`/processos/${item.processo.id}`)}
+                        >
+                          <p className="text-sm font-medium text-white">
+                            {item.processo.numero}
+                          </p>
+                          <p className="text-xs text-default-400">{item.titulo}</p>
+                          <p className="mt-1 text-xs text-warning-600">
+                            Vence em {new Date(item.dataVencimento).toLocaleString("pt-BR")}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-default-500">
+                      Sem prazos próximos no seu escopo.
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+
+              <Card className="border border-white/10 bg-background/55">
+                <CardBody className="space-y-3 p-4">
+                  <p className="text-sm font-semibold text-white">Audiências da semana</p>
+                  {painelOperacional.listas.audienciasSemana.length > 0 ? (
+                    <div className="space-y-2">
+                      {painelOperacional.listas.audienciasSemana.map((item) => (
+                        <button
+                          key={item.id}
+                          className="w-full rounded-lg border border-white/10 bg-background/40 p-3 text-left transition hover:border-primary/40 hover:bg-background/70"
+                          disabled={!item.processo}
+                          type="button"
+                          onClick={() =>
+                            item.processo
+                              ? router.push(`/processos/${item.processo.id}`)
+                              : undefined
+                          }
+                        >
+                          <p className="text-sm font-medium text-white">{item.titulo}</p>
+                          <p className="text-xs text-default-400">
+                            {item.processo?.numero || "Sem processo vinculado"}
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <Chip size="sm" variant="flat">
+                              {new Date(item.dataInicio).toLocaleString("pt-BR")}
+                            </Chip>
+                            <Chip color="primary" size="sm" variant="flat">
+                              {item.status}
+                            </Chip>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-default-500">
+                      Nenhuma audiência agendada para os próximos 7 dias.
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-default-500">
+            Não foi possível carregar as prioridades agora.
+          </p>
+        )}
+      </PeoplePanel>
+
+      <PeoplePanel
+        description="Movimentações que exigem atenção imediata."
+        title="Feed Crítico"
+      >
+        {isLoadingPainelOperacional ? (
+          <div className="flex items-center gap-2 text-sm text-default-500">
+            <Spinner size="sm" />
+            Carregando feed crítico...
+          </div>
+        ) : painelOperacional && painelOperacional.listas.feedCritico.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {painelOperacional.listas.feedCritico.map((item) => (
+              <Card key={item.id} className="border border-white/10 bg-background/55">
+                <CardBody className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{item.titulo}</p>
+                      <p className="text-xs text-default-400">{item.processo.numero}</p>
+                    </div>
+                    <Chip
+                      color={getMovimentacaoPrioridadeColor(item.prioridade)}
+                      size="sm"
+                      variant="flat"
+                    >
+                      {item.prioridade}
+                    </Chip>
+                  </div>
+                  {item.descricao ? (
+                    <p className="line-clamp-2 text-xs text-default-400">{item.descricao}</p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.tipo ? (
+                      <Chip size="sm" variant="flat">
+                        {item.tipo}
+                      </Chip>
+                    ) : null}
+                    <Chip color="primary" size="sm" variant="flat">
+                      {item.statusOperacional}
+                    </Chip>
+                    <Chip size="sm" variant="flat">
+                      {new Date(item.dataMovimentacao).toLocaleString("pt-BR")}
+                    </Chip>
+                  </div>
+                  <Button
+                    color="primary"
+                    size="sm"
+                    startContent={<Activity className="h-4 w-4" />}
+                    variant="flat"
+                    onPress={() => router.push(`/processos/${item.processo.id}`)}
+                  >
+                    Abrir processo
+                  </Button>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-default-500">
+            Sem itens críticos no momento.
+          </p>
+        )}
+      </PeoplePanel>
+
+      <PeoplePanel
+        description="Riscos de carteira para evitar perda de prazo e falta de dono."
+        title="Saúde da Carteira"
+      >
+        {isLoadingPainelOperacional ? (
+          <div className="flex items-center gap-2 text-sm text-default-500">
+            <Spinner size="sm" />
+            Carregando saúde da carteira...
+          </div>
+        ) : painelOperacional ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <PeopleMetricCard
+                helper="No seu escopo"
+                icon={<Building2 className="h-4 w-4" />}
+                label="Processos ativos"
+                tone="primary"
+                value={painelOperacional.saude.processosAtivos}
+              />
+              <PeopleMetricCard
+                helper="Sem movimentação >= 30 dias"
+                icon={<Clock3 className="h-4 w-4" />}
+                label="Inativos 30d"
+                tone={painelOperacional.saude.semMovimento30d > 0 ? "warning" : "success"}
+                value={painelOperacional.saude.semMovimento30d}
+              />
+              <PeopleMetricCard
+                helper="Sem advogado definido"
+                icon={<UserX className="h-4 w-4" />}
+                label="Sem responsável"
+                tone={painelOperacional.saude.semResponsavel > 0 ? "danger" : "success"}
+                value={painelOperacional.saude.semResponsavel}
+              />
+              <PeopleMetricCard
+                helper="Nunca receberam andamento"
+                icon={<Activity className="h-4 w-4" />}
+                label="Sem histórico"
+                tone={painelOperacional.saude.semMovimentacaoHistorica > 0 ? "warning" : "success"}
+                value={painelOperacional.saude.semMovimentacaoHistorica}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <Card className="border border-white/10 bg-background/55">
+                <CardBody className="space-y-3 p-4">
+                  <p className="text-sm font-semibold text-white">
+                    Processos sem movimentação recente
+                  </p>
+                  {painelOperacional.listas.processosSemMovimento30d.length > 0 ? (
+                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                      {painelOperacional.listas.processosSemMovimento30d.map((item) => (
+                        <button
+                          key={item.id}
+                          className="w-full rounded-lg border border-white/10 bg-background/40 p-3 text-left transition hover:border-primary/40 hover:bg-background/70"
+                          type="button"
+                          onClick={() => router.push(`/processos/${item.id}`)}
+                        >
+                          <p className="text-sm font-medium text-white">{item.numero}</p>
+                          <p className="text-xs text-default-400">
+                            {item.clienteNome} · {item.titulo || "Sem título"}
+                          </p>
+                          <p className="mt-1 text-xs text-warning-600">
+                            {typeof item.diasSemMovimento === "number"
+                              ? `${item.diasSemMovimento} dia(s) sem movimento`
+                              : "Sem movimentação registrada"}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-default-500">
+                      Nenhum processo inativo acima de 30 dias.
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+
+              <Card className="border border-white/10 bg-background/55">
+                <CardBody className="space-y-3 p-4">
+                  <p className="text-sm font-semibold text-white">
+                    Processos sem responsável
+                  </p>
+                  {painelOperacional.listas.processosSemResponsavel.length > 0 ? (
+                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                      {painelOperacional.listas.processosSemResponsavel.map((item) => (
+                        <button
+                          key={item.id}
+                          className="w-full rounded-lg border border-white/10 bg-background/40 p-3 text-left transition hover:border-primary/40 hover:bg-background/70"
+                          type="button"
+                          onClick={() => router.push(`/processos/${item.id}`)}
+                        >
+                          <p className="text-sm font-medium text-white">{item.numero}</p>
+                          <p className="text-xs text-default-400">
+                            {item.clienteNome} · {item.titulo || "Sem título"}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-default-500">
+                      Todos os processos ativos possuem responsável.
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-default-500">
+            Não foi possível carregar a saúde da carteira agora.
+          </p>
+        )}
+      </PeoplePanel>
+
+      <PeoplePanel
+        actions={
+          syncStatusMeta ? (
+            <Chip
+              color={syncStatusMeta.color}
+              startContent={syncStatusMeta.icon}
+              variant="flat"
+            >
+              {syncStatusMeta.label}
+            </Chip>
+          ) : undefined
+        }
+        description="Execute sincronização em background. Se houver captcha, valide aqui para continuar sem perder o processamento."
+        title="Trazer Meus Processos"
+      >
+        <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
             <Select
               isDisabled={isStartingSync || isResolvingCaptcha || isSyncRunning}
               label="Tribunal"
               placeholder="Selecione"
               selectedKeys={
-                syncTribunalSigla && syncTribunais.some((t) => t.sigla === syncTribunalSigla)
+                syncTribunalSigla &&
+                syncTribunais.some((t) => t.sigla === syncTribunalSigla)
                   ? [syncTribunalSigla]
                   : []
               }
@@ -307,7 +879,10 @@ export function PortalAdvogadoContent() {
               }}
             >
               {syncTribunais.map((tribunal) => (
-                <SelectItem key={tribunal.sigla} textValue={`${tribunal.sigla} · ${tribunal.nome}`}>
+                <SelectItem
+                  key={tribunal.sigla}
+                  textValue={`${tribunal.sigla} · ${tribunal.nome}`}
+                >
                   {tribunal.sigla} · {tribunal.nome}
                 </SelectItem>
               ))}
@@ -335,10 +910,11 @@ export function PortalAdvogadoContent() {
               color="primary"
               isDisabled={syncTribunais.length === 0 || !syncTribunalSigla}
               isLoading={isStartingSync}
+              size="sm"
               startContent={<RefreshCw className="h-4 w-4" />}
               onPress={iniciarSync}
             >
-              Trazer meus processos
+              Iniciar sincronização
             </Button>
             {(isLoadingSyncStatus || isLoadingSyncTribunais) && (
               <div className="flex items-center gap-2 text-sm text-default-500">
@@ -346,42 +922,48 @@ export function PortalAdvogadoContent() {
                 Carregando estado da sincronização...
               </div>
             )}
-            {syncStatusMeta && (
-              <Chip
-                color={syncStatusMeta.color}
-                startContent={syncStatusMeta.icon}
-                variant="flat"
-              >
-                {syncStatusMeta.label}
-              </Chip>
-            )}
           </div>
 
+          {isSyncRunning ? (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center gap-2 text-primary">
+                <Spinner color="primary" size="sm" />
+                <p className="text-sm font-semibold">
+                  Processamento em background ativo
+                </p>
+              </div>
+              <p className="mt-1 text-xs text-default-400">
+                A busca de processos continua em segundo plano. Você pode usar o
+                sistema normalmente e acompanhar o progresso por aqui.
+              </p>
+            </div>
+          ) : null}
+
           {syncStatus && (
-            <div className="rounded-lg border border-default-200 p-3 space-y-2">
+            <div className="rounded-xl border border-white/10 bg-background/50 p-3 sm:p-4 space-y-3">
               <p className="text-xs text-default-500">
                 Atualizado em{" "}
                 {new Date(syncStatus.updatedAt).toLocaleString("pt-BR")}
               </p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-md border border-default-200 p-2">
-                  <p className="text-[11px] uppercase text-default-500">
+                <div className="rounded-lg border border-white/10 bg-background/40 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-default-500">
                     Capturados
                   </p>
-                  <p className="text-lg font-semibold">
+                  <p className="text-lg font-semibold text-white">
                     {syncStatus.syncedCount ?? 0}
                   </p>
                 </div>
-                <div className="rounded-md border border-default-200 p-2">
-                  <p className="text-[11px] uppercase text-default-500">
+                <div className="rounded-lg border border-success/20 bg-success/5 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-success-700 dark:text-success-300">
                     Criados
                   </p>
                   <p className="text-lg font-semibold text-success">
                     {syncStatus.createdCount ?? 0}
                   </p>
                 </div>
-                <div className="rounded-md border border-default-200 p-2">
-                  <p className="text-[11px] uppercase text-default-500">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-primary-700 dark:text-primary-300">
                     Atualizados
                   </p>
                   <p className="text-lg font-semibold text-primary">
@@ -391,7 +973,7 @@ export function PortalAdvogadoContent() {
               </div>
 
               {syncStatus.error && (
-                <div className="rounded-md border border-danger/30 bg-danger/5 p-2 text-xs text-danger-700">
+                <div className="rounded-lg border border-danger/30 bg-danger/5 p-2 text-xs text-danger-700">
                   {syncStatus.error}
                 </div>
               )}
@@ -410,7 +992,7 @@ export function PortalAdvogadoContent() {
           )}
 
           {isWaitingCaptcha && syncStatus?.captchaId && (
-            <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-3">
+            <div className="rounded-xl border border-warning/40 bg-warning/5 p-3 space-y-3">
               <div className="flex items-center gap-2 text-warning-700">
                 <ShieldAlert className="h-4 w-4" />
                 <p className="text-sm font-semibold">
@@ -425,15 +1007,31 @@ export function PortalAdvogadoContent() {
                   src={syncStatus.captchaImage}
                 />
               ) : (
-                <p className="text-xs text-warning-700">
-                  O tribunal exigiu captcha, mas não retornou imagem.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-xs text-warning-700">
+                    O tribunal exigiu captcha, mas não retornou imagem. Gere um
+                    novo desafio.
+                  </p>
+                  <Button
+                    color="warning"
+                    isLoading={isRefreshingCaptcha}
+                    size="sm"
+                    variant="flat"
+                    onPress={gerarNovoCaptcha}
+                  >
+                    Gerar novo captcha
+                  </Button>
+                </div>
               )}
 
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   className="sm:flex-1"
-                  isDisabled={isResolvingCaptcha}
+                  isDisabled={
+                    isResolvingCaptcha ||
+                    isRefreshingCaptcha ||
+                    !syncStatus.captchaImage
+                  }
                   label="Código do captcha"
                   placeholder="Digite os caracteres"
                   value={captchaText}
@@ -442,7 +1040,9 @@ export function PortalAdvogadoContent() {
                 <Button
                   className="sm:self-end"
                   color="warning"
+                  isDisabled={!syncStatus.captchaImage || isRefreshingCaptcha}
                   isLoading={isResolvingCaptcha}
+                  size="sm"
                   onPress={resolverCaptcha}
                 >
                   Validar captcha
@@ -450,30 +1050,125 @@ export function PortalAdvogadoContent() {
               </div>
             </div>
           )}
-        </CardBody>
-      </Card>
+        </div>
+      </PeoplePanel>
 
-      {/* Seletor de UF */}
-      <Card>
-        <CardBody>
+      <PeoplePanel
+        description="Resultado real da sincronização mais recente. Clique para abrir o processo completo."
+        title="Processos Sincronizados"
+      >
+        <div className="space-y-4">
+          {!syncStatus?.syncId ? (
+            <div className="flex items-center justify-center rounded-xl border border-white/10 bg-background/50 py-8">
+              <div className="text-center">
+                <Info className="mx-auto mb-3 h-10 w-10 text-default-300" />
+                <p className="text-sm text-default-500">
+                  Inicie uma sincronização para visualizar os processos capturados.
+                </p>
+              </div>
+            </div>
+          ) : isLoadingProcessosSincronizados ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner size="lg" />
+            </div>
+          ) : processosSincronizados.length > 0 ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-white/10 bg-background/40 px-3 py-2 text-xs text-default-500">
+                {processosSincronizados.length} processo(s) encontrado(s) na
+                sincronização {processosSincronizadosResponse?.syncId?.slice(0, 8) ?? "--"}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {processosSincronizados.map((processo) => (
+                  <Card
+                    key={processo.id}
+                    className="border border-white/10 bg-background/55"
+                  >
+                    <CardBody className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-white">
+                            {processo.numero}
+                          </p>
+                          <p className="line-clamp-2 text-xs text-default-400">
+                            {processo.titulo || "Processo sem título cadastrado"}
+                          </p>
+                        </div>
+                        <Chip color="primary" size="sm" variant="flat">
+                          {getProcessoStatusLabel(processo.status)}
+                        </Chip>
+                      </div>
+
+                      {processo.origemExterna ? (
+                        <Chip color="warning" size="sm" variant="flat">
+                          Criado via sincronização externa
+                        </Chip>
+                      ) : null}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Chip size="sm" variant="flat">
+                          Cliente: {processo.cliente.nome}
+                        </Chip>
+                        {processo.tribunal?.sigla ? (
+                          <Chip color="secondary" size="sm" variant="flat">
+                            {processo.tribunal.sigla}
+                            {processo.tribunal.uf ? `/${processo.tribunal.uf}` : ""}
+                          </Chip>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-default-500">
+                          Atualizado em{" "}
+                          {new Date(processo.updatedAt).toLocaleString("pt-BR")}
+                        </p>
+                        <Button
+                          color="primary"
+                          size="sm"
+                          startContent={<FolderOpen className="h-4 w-4" />}
+                          variant="flat"
+                          onPress={() => router.push(`/processos/${processo.id}`)}
+                        >
+                          Abrir processo
+                        </Button>
+                      </div>
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center rounded-xl border border-warning/30 bg-warning/5 py-8">
+              <div className="space-y-2 text-center">
+                <AlertTriangle className="mx-auto h-10 w-10 text-warning" />
+                <p className="text-sm text-warning-700 dark:text-warning-300">
+                  A sincronização retornou números, mas nenhum processo foi
+                  localizado no cadastro do tenant.
+                </p>
+                <p className="text-xs text-default-500">
+                  Referências da sync:{" "}
+                  {processosSincronizadosResponse?.totalReferencias ?? 0}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        description="Escolha a UF para listar os portais oficiais disponíveis para consulta."
+        title="Tribunais por UF"
+      >
+        <div className="space-y-4">
           <UFSelector
             label="Filtrar por UF"
             ufs={ufOptions}
             value={ufSelecionada}
             onChange={(uf) => setUfSelecionada(uf)}
           />
-        </CardBody>
-      </Card>
 
-      {/* Links para Tribunais */}
-      <Card>
-        <CardHeader className="flex items-center gap-2 pb-3">
-          <Building2 className="w-5 h-5 text-primary" />
-          <h2 className="text-xl font-semibold">Links para Tribunais</h2>
-        </CardHeader>
-        <CardBody>
           {!ufSelecionada ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center rounded-xl border border-white/10 bg-background/50 py-8">
               <div className="text-center">
                 <Info className="w-12 h-12 text-default-300 mx-auto mb-4" />
                 <p className="text-default-500">
@@ -488,54 +1183,54 @@ export function PortalAdvogadoContent() {
           ) : tribunais && tribunais.length > 0 ? (
             <div className="space-y-3">
               {tribunais.map((tribunal) => (
-                <div
+                <Card
                   key={tribunal.id}
-                  className="flex items-center justify-between p-4 rounded-lg border border-default-200 hover:bg-default-50 transition-colors"
+                  className="border border-white/10 bg-background/55"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="font-semibold text-foreground">
-                        {tribunal.nome}
-                      </h3>
-                      {tribunal.sigla && (
-                        <Chip size="sm" variant="flat">
-                          {tribunal.sigla}
-                        </Chip>
-                      )}
-                      {tribunal.esfera && (
-                        <Chip color="secondary" size="sm" variant="flat">
-                          {tribunal.esfera}
-                        </Chip>
+                  <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-white">{tribunal.nome}</h3>
+                        {tribunal.sigla && (
+                          <Chip size="sm" variant="flat">
+                            {tribunal.sigla}
+                          </Chip>
+                        )}
+                        {tribunal.esfera && (
+                          <Chip color="secondary" size="sm" variant="flat">
+                            {tribunal.esfera}
+                          </Chip>
+                        )}
+                      </div>
+                      {tribunal.uf && (
+                        <p className="text-sm text-default-500">UF: {tribunal.uf}</p>
                       )}
                     </div>
-                    {tribunal.uf && (
-                      <p className="text-sm text-default-500">
-                        UF: {tribunal.uf}
-                      </p>
+
+                    {tribunal.siteUrl ? (
+                      <Button
+                        as="a"
+                        color="primary"
+                        endContent={<ExternalLink className="w-4 h-4" />}
+                        href={tribunal.siteUrl}
+                        rel="noopener noreferrer"
+                        size="sm"
+                        target="_blank"
+                        variant="flat"
+                      >
+                        Abrir portal
+                      </Button>
+                    ) : (
+                      <Chip color="default" size="sm" variant="flat">
+                        Sem portal
+                      </Chip>
                     )}
-                  </div>
-                  {tribunal.siteUrl ? (
-                    <Button
-                      as="a"
-                      endContent={<ExternalLink className="w-4 h-4" />}
-                      href={tribunal.siteUrl}
-                      rel="noopener noreferrer"
-                      size="sm"
-                      target="_blank"
-                      variant="flat"
-                    >
-                      Acessar
-                    </Button>
-                  ) : (
-                    <Chip color="default" size="sm" variant="flat">
-                      Sem portal
-                    </Chip>
-                  )}
-                </div>
+                  </CardBody>
+                </Card>
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center rounded-xl border border-white/10 bg-background/50 py-8">
               <div className="text-center">
                 <Info className="w-12 h-12 text-default-300 mx-auto mb-4" />
                 <p className="text-default-500">
@@ -544,82 +1239,132 @@ export function PortalAdvogadoContent() {
               </div>
             </div>
           )}
-        </CardBody>
-      </Card>
+        </div>
+      </PeoplePanel>
 
-      {/* Calendário de Recessos */}
-      <Card>
-        <CardHeader className="flex items-center gap-2 pb-3">
-          <Calendar className="w-5 h-5 text-warning" />
-          <h2 className="text-xl font-semibold">Calendário de Recessos</h2>
-        </CardHeader>
-        <CardBody>
-          <div className="flex items-center justify-center py-8">
-            <div className="text-center">
-              <Info className="w-12 h-12 text-default-300 mx-auto mb-4" />
-              <p className="text-default-500">
-                Em breve: calendário com recessos forenses por tribunal
-              </p>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Comunicados e Editais */}
-      <Card>
-        <CardHeader className="flex items-center gap-2 pb-3">
-          <FileText className="w-5 h-5 text-success" />
-          <h2 className="text-xl font-semibold">Comunicados e Editais</h2>
-        </CardHeader>
-        <CardBody>
-          <div className="flex items-center justify-center py-8">
-            <div className="text-center">
-              <Info className="w-12 h-12 text-default-300 mx-auto mb-4" />
-              <p className="text-default-500">
-                Em breve: comunicados importantes dos tribunais e editais
-              </p>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Links Úteis */}
-      <Card>
-        <CardHeader className="flex items-center gap-2 pb-3">
-          <LinkIcon className="w-5 h-5 text-secondary" />
-          <h2 className="text-xl font-semibold">Links Úteis</h2>
-        </CardHeader>
-        <CardBody>
-          <div className="space-y-3">
-            <a
-              className="flex items-center gap-3 p-3 rounded-lg border border-default-200 hover:bg-default-50 transition-colors"
-              href="https://www.cnj.jus.br/"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              <span className="text-primary font-medium">
-                Conselho Nacional de Justiça (CNJ)
-              </span>
-            </a>
-            <a
-              className="flex items-center gap-3 p-3 rounded-lg border border-default-200 hover:bg-default-50 transition-colors"
-              href="https://www.oab.org.br/"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              <span className="text-primary font-medium">OAB Nacional</span>
-            </a>
-            <a
-              className="flex items-center gap-3 p-3 rounded-lg border border-default-200 hover:bg-default-50 transition-colors"
-              href="https://pje.jf.jus.br/"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              <span className="text-primary font-medium">PJe</span>
-            </a>
-          </div>
-        </CardBody>
-      </Card>
-    </div>
+      <PeoplePanel
+        description="Fontes oficiais para consulta operacional no dia a dia do escritório."
+        title="Radar Jurídico"
+      >
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Card className="border border-white/10 bg-background/55">
+            <CardBody className="space-y-2 p-4">
+              <div className="flex items-center gap-2 text-warning-600">
+                <Calendar className="h-4 w-4" />
+                <p className="text-sm font-semibold">Calendário de Recessos</p>
+              </div>
+              {isLoadingRecursosOficiais ? (
+                <div className="flex items-center gap-2 text-xs text-default-500">
+                  <Spinner size="sm" />
+                  Carregando fontes oficiais...
+                </div>
+              ) : calendarioRecursos.length > 0 ? (
+                <div className="space-y-2">
+                  {calendarioRecursos.map((item) => (
+                    <a
+                      key={item.id}
+                      className="block rounded-lg border border-white/10 bg-background/40 px-3 py-2 text-sm text-primary hover:bg-background/70"
+                      href={item.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{item.titulo}</span>
+                        <Chip color="success" size="sm" variant="flat">
+                          Oficial
+                        </Chip>
+                      </div>
+                      <p className="mt-1 text-xs text-default-500">
+                        {item.descricao}
+                      </p>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-default-500">
+                  Sem fonte oficial configurada para o tribunal selecionado.
+                </p>
+              )}
+            </CardBody>
+          </Card>
+          <Card className="border border-white/10 bg-background/55">
+            <CardBody className="space-y-2 p-4">
+              <div className="flex items-center gap-2 text-success-600">
+                <FileText className="h-4 w-4" />
+                <p className="text-sm font-semibold">Comunicados e Editais</p>
+              </div>
+              {isLoadingRecursosOficiais ? (
+                <div className="flex items-center gap-2 text-xs text-default-500">
+                  <Spinner size="sm" />
+                  Carregando fontes oficiais...
+                </div>
+              ) : comunicadosRecursos.length > 0 ? (
+                <div className="space-y-2">
+                  {comunicadosRecursos.map((item) => (
+                    <a
+                      key={item.id}
+                      className="block rounded-lg border border-white/10 bg-background/40 px-3 py-2 text-sm text-primary hover:bg-background/70"
+                      href={item.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{item.titulo}</span>
+                        <Chip color="success" size="sm" variant="flat">
+                          Oficial
+                        </Chip>
+                      </div>
+                      <p className="mt-1 text-xs text-default-500">
+                        {item.descricao}
+                      </p>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-default-500">
+                  Sem fonte oficial configurada para o tribunal selecionado.
+                </p>
+              )}
+            </CardBody>
+          </Card>
+          <Card className="border border-white/10 bg-background/55">
+            <CardBody className="space-y-2 p-4">
+              <div className="flex items-center gap-2 text-secondary-600">
+                <LinkIcon className="h-4 w-4" />
+                <p className="text-sm font-semibold">Links Úteis</p>
+              </div>
+              {isLoadingRecursosOficiais ? (
+                <div className="flex items-center gap-2 text-xs text-default-500">
+                  <Spinner size="sm" />
+                  Carregando fontes oficiais...
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {linksRecursos.map((item) => (
+                    <a
+                      key={item.id}
+                      className="block rounded-lg border border-white/10 bg-background/40 px-3 py-2 text-sm text-primary hover:bg-background/70"
+                      href={item.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{item.titulo}</span>
+                        <Chip color="success" size="sm" variant="flat">
+                          Oficial
+                        </Chip>
+                      </div>
+                      <p className="mt-1 text-xs text-default-500">
+                        {item.descricao}
+                      </p>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </div>
+      </PeoplePanel>
+    </section>
   );
 }

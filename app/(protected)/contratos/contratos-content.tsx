@@ -574,7 +574,7 @@ export default function ContratosContent() {
           {contratos.map((contrato) => (
             <Card
               key={contrato.id}
-              className="border border-white/10 bg-background/70 backdrop-blur-sm"
+              className="ml-wave-surface border border-white/10 bg-background/70 backdrop-blur-sm"
             >
               <CardBody>
                 <div className="flex items-start justify-between">

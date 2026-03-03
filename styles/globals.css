@@ -153,3 +153,59 @@ body {
         animation: none;
     }
 }
+
+/* Efeito de onda para superfícies clicáveis (cards/listas) */
+.ml-wave-surface {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+}
+
+.ml-wave-surface::after {
+    content: "";
+    position: absolute;
+    top: var(--ml-wave-y, 50%);
+    left: var(--ml-wave-x, 50%);
+    width: 22rem;
+    height: 22rem;
+    pointer-events: none;
+    border-radius: 9999px;
+    background: radial-gradient(
+        circle,
+        rgba(96, 165, 250, 0.34) 0%,
+        rgba(96, 165, 250, 0.2) 24%,
+        rgba(96, 165, 250, 0.09) 42%,
+        transparent 70%
+    );
+    transform: translate(-50%, -50%) scale(0.01);
+    opacity: 0;
+}
+
+.ml-wave-surface:active::after,
+.ml-wave-surface[data-pressed="true"]::after {
+    animation: ml-wave-ripple 560ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes ml-wave-ripple {
+    0% {
+        transform: translate(-50%, -50%) scale(0.01);
+        opacity: 0.9;
+    }
+
+    80% {
+        transform: translate(-50%, -50%) scale(0.95);
+        opacity: 0.24;
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(1.18);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ml-wave-surface::after {
+        animation: none !important;
+        opacity: 0 !important;
+    }
+}

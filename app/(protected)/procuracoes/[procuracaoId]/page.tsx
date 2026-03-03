@@ -1249,7 +1249,7 @@ export default function ProcuracaoDetalhesPage() {
                   <Card
                     key={advogado.id}
                     aria-label={`Adicionar advogado ${advogado.label}`}
-                    className="cursor-pointer hover:bg-default-50 transition-colors"
+                    className="ml-wave-surface cursor-pointer hover:bg-default-50 transition-colors"
                     role="button"
                     tabIndex={0}
                     onClick={() => handleAdicionarAdvogado(advogado.id)}

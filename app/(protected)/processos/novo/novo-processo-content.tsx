@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Save,
   Scale,
+  Gavel,
   User,
   Building2,
   MapPin,
@@ -42,6 +43,7 @@ import {
 } from "@/generated/prisma";
 import { useClientesParaSelect } from "@/app/hooks/use-clientes";
 import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
+import { useJuizes } from "@/app/hooks/use-juizes";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 
@@ -68,11 +70,13 @@ export function NovoProcessoContent() {
     clienteId: clienteIdParam || "",
     segredoJustica: false,
     advogadoResponsavelId: "",
+    juizId: "",
   });
 
   // Buscar clientes para o select (apenas se não veio de um cliente)
   const { clientes, isLoading: isLoadingClientes } = useClientesParaSelect();
   const { advogados, isLoading: isLoadingAdvogados } = useAdvogadosParaSelect();
+  const { juizes: juizesDisponiveis, isLoading: isLoadingJuizes } = useJuizes();
   const { data: areasData, isLoading: isLoadingAreas } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
@@ -97,6 +101,10 @@ export function NovoProcessoContent() {
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
   );
+  const juizKeys = useMemo(
+    () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
+    [juizesDisponiveis],
+  );
   const selectedClienteKeys =
     formData.clienteId && clienteKeys.has(formData.clienteId)
       ? [formData.clienteId]
@@ -106,6 +114,8 @@ export function NovoProcessoContent() {
     advogadoKeys.has(formData.advogadoResponsavelId)
       ? [formData.advogadoResponsavelId]
       : [];
+  const selectedJuizKeys =
+    formData.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
   const selectedAreaKeys =
     formData.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
 
@@ -157,6 +167,12 @@ export function NovoProcessoContent() {
       return;
     }
 
+    if (!formData.juizId) {
+      toast.error("Selecione a autoridade do caso (juiz ou promotor)");
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -198,6 +214,7 @@ export function NovoProcessoContent() {
       if (formData.grau) payload.grau = formData.grau;
       if (formData.advogadoResponsavelId)
         payload.advogadoResponsavelId = formData.advogadoResponsavelId;
+      if (formData.juizId) payload.juizId = formData.juizId;
 
       const result = await createProcesso(payload);
 
@@ -317,6 +334,37 @@ export function NovoProcessoContent() {
             )}
 
             {/* Select de Advogado Responsável */}
+            <Select
+              isRequired
+              description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
+              isLoading={isLoadingJuizes}
+              label="Autoridade do Caso *"
+              placeholder="Selecione o juiz ou promotor responsável"
+              selectedKeys={selectedJuizKeys}
+              startContent={<Gavel className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  juizId: (Array.from(keys)[0] as string) || "",
+                }))
+              }
+            >
+              {(juizesDisponiveis || []).map((juiz) => (
+                <SelectItem key={juiz.id} textValue={juiz.nome}>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold">{juiz.nome}</span>
+                    <span className="text-[11px] text-primary/80">
+                      {juiz.tipoAutoridade === "PROMOTOR" ? "Promotor" : "Juiz"}
+                    </span>
+                    <span className="text-xs text-default-400">
+                      {[juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+                        "Sem vara/comarca informada"}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </Select>
+
             <Select
               description="Pessoa que lidera o caso e recebe a responsabilidade principal."
               isLoading={isLoadingAdvogados}

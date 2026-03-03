@@ -1282,8 +1282,8 @@ export function DocumentosContent({
                       exit={{ opacity: 0, y: -6 }}
                       className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                         isActive
-                          ? "border-primary/50 bg-primary/10"
-                          : "border-white/10 bg-background/60 hover:border-primary/30"
+                          ? "ml-wave-surface border-primary/50 bg-primary/10"
+                          : "ml-wave-surface border-white/10 bg-background/60 hover:border-primary/30"
                       }`}
                       onClick={(event) => {
                         event.preventDefault();
@@ -1326,8 +1326,8 @@ export function DocumentosContent({
                         exit={{ opacity: 0, y: -6 }}
                         className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                           isActive
-                            ? "border-primary/50 bg-primary/10"
-                            : "border-white/10 bg-background/60 hover:border-primary/30"
+                            ? "ml-wave-surface border-primary/50 bg-primary/10"
+                            : "ml-wave-surface border-white/10 bg-background/60 hover:border-primary/30"
                         }`}
                         onClick={(event) => {
                           event.preventDefault();
@@ -1639,7 +1639,7 @@ function FolderTree({ root, selectedPath, onSelectFolder }: FolderTreeProps) {
       <div key={node.id} className="ml-2 border-l border-slate-300 dark:border-slate-600 pl-3">
         {!isRoot && (
           <button
-            className={`mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-sm transition ${isActive ? "bg-primary/15 text-primary-100 border-2 border-primary/30" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent"}`}
+            className={`ml-wave-surface mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-sm transition ${isActive ? "bg-primary/15 text-primary-100 border-2 border-primary/30" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent"}`}
             onClick={() => onSelectFolder(node.relativeSegments)}
           >
             <span className="flex items-center gap-2">
@@ -1661,7 +1661,7 @@ function FolderTree({ root, selectedPath, onSelectFolder }: FolderTreeProps) {
   return (
     <div className="flex flex-col gap-2">
       <button
-        className={`flex items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition border-2 ${selectedPath.length === 0 ? "bg-primary/20 text-primary-100 border-primary/30" : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border-transparent"}`}
+        className={`ml-wave-surface flex items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition border-2 ${selectedPath.length === 0 ? "bg-primary/20 text-primary-100 border-primary/30" : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border-transparent"}`}
         onClick={() => onSelectFolder([])}
       >
         <span className="flex items-center gap-2">

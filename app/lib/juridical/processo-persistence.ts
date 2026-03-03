@@ -257,6 +257,24 @@ async function ensureAdvogadoClienteLink(
   });
 }
 
+const EXTERNAL_SYNC_TAG = "origem:sincronizacao_externa";
+
+function extractStringTags(tags: Prisma.JsonValue | null | undefined): string[] {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  return tags
+    .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+    .filter(Boolean);
+}
+
+function buildExternalSyncTags(tags: Prisma.JsonValue | null | undefined): string[] {
+  const uniqueTags = new Set(extractStringTags(tags));
+  uniqueTags.add(EXTERNAL_SYNC_TAG);
+  return Array.from(uniqueTags);
+}
+
 export async function upsertProcessoFromCapture(params: {
   tenantId: string;
   processo: ProcessoJuridico;
@@ -287,6 +305,7 @@ export async function upsertProcessoFromCapture(params: {
       status: true,
       clienteId: true,
       advogadoResponsavelId: true,
+      tags: true,
     },
   });
 
@@ -326,6 +345,7 @@ export async function upsertProcessoFromCapture(params: {
             : {}),
           ...(advogadoId ? { advogadoResponsavelId: advogadoId } : {}),
           ...(reatribuirCliente ? { clienteId: clienteAlvo.id } : {}),
+          tags: buildExternalSyncTags(existente.tags),
         },
       });
 
@@ -365,6 +385,7 @@ export async function upsertProcessoFromCapture(params: {
         tribunalId: tribunal.id,
         descricao: processo.assunto || null,
         advogadoResponsavelId: advogadoId || null,
+        tags: buildExternalSyncTags(null),
       },
       select: {
         id: true,

@@ -254,6 +254,22 @@ export function ProcessosContent({
     }
   };
 
+  const isProcessoOrigemSincronizacaoExterna = (processo: any) => {
+    if (processo?.origemSincronizacaoExterna === true) {
+      return true;
+    }
+
+    if (!Array.isArray(processo?.tags)) {
+      return false;
+    }
+
+    return processo.tags.some(
+      (tag: unknown) =>
+        typeof tag === "string" &&
+        tag.trim().toLowerCase() === "origem:sincronizacao_externa",
+    );
+  };
+
   // Extrair dados únicos para filtros
   const areasUnicas = useMemo(() => {
     if (!processos || !Array.isArray(processos)) return [];
@@ -1041,7 +1057,7 @@ export function ProcessosContent({
                         key={processo.id}
                         isPressable
                         as={Link}
-                        className="border border-default-200 hover:border-primary transition-all hover:shadow-lg cursor-pointer"
+                        className="ml-wave-surface border border-default-200 hover:border-primary transition-all hover:shadow-lg cursor-pointer"
                         href={`/processos/${processo.id}`}
                       >
                         <CardHeader className="flex flex-col items-start gap-2 pb-2">
@@ -1090,6 +1106,13 @@ export function ProcessosContent({
                               <p className="mt-1 text-xs text-default-500 line-clamp-2">
                                 {processo.titulo}
                               </p>
+                            )}
+                            {isProcessoOrigemSincronizacaoExterna(processo) && (
+                              <div className="mt-2">
+                                <Chip color="warning" size="sm" variant="flat">
+                                  Criado via sincronização
+                                </Chip>
+                              </div>
                             )}
                           </div>
                         </CardHeader>
@@ -1288,6 +1311,13 @@ export function ProcessosContent({
                                 <p className="mt-1 text-xs text-default-500 line-clamp-1">
                                   {processo.titulo}
                                 </p>
+                              ) : null}
+                              {isProcessoOrigemSincronizacaoExterna(processo) ? (
+                                <div className="mt-1">
+                                  <Chip color="warning" size="sm" variant="flat">
+                                    Criado via sincronização
+                                  </Chip>
+                                </div>
                               ) : null}
                               <p className="mt-1 text-xs text-default-400">
                                 {processo.area?.nome ?? "Área não informada"}

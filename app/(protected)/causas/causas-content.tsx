@@ -10,6 +10,7 @@ import {
   Divider,
   Input,
   Modal,
+  Snippet,
   ModalBody,
   ModalContent,
   ModalFooter,
@@ -32,7 +33,11 @@ import {
   type CausasListResult,
   type CausasListParams,
 } from "@/app/actions/causas";
-import { PeopleMetricCard, PeoplePageHeader, PeoplePanel } from "@/components/people-ui";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 import { toast } from "@/lib/toast";
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
@@ -112,6 +117,7 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
     descricao: "",
   });
   const [editingCausa, setEditingCausa] = useState<CausaDto | null>(null);
+  const [detailCausa, setDetailCausa] = useState<CausaDto | null>(null);
   const [editForm, setEditForm] = useState<FormState>({
     nome: "",
     codigoCnj: "",
@@ -120,7 +126,9 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncingOficiais, setIsSyncingOficiais] = useState(false);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState<Set<string>>(new Set());
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState<Set<string>>(
+    new Set(),
+  );
 
   const swrKey = useMemo(
     () => [
@@ -174,7 +182,10 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
       pageSize: paginated.pageSize ?? pageSize,
       totalPages:
         paginated.totalPages ??
-        Math.max(1, Math.ceil((paginated.total ?? causaItems.length) / pageSize)),
+        Math.max(
+          1,
+          Math.ceil((paginated.total ?? causaItems.length) / pageSize),
+        ),
       filtros: paginated.filtros,
     } satisfies CausasPagedResponse;
   }, [
@@ -187,17 +198,26 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
     pageSize,
   ]);
 
-  const { data, mutate, isLoading } = useSWR<CausasPagedResponse>(swrKey, fetcher, {
-    revalidateOnFocus: false,
-    keepPreviousData: true,
-  });
+  const { data, mutate, isLoading } = useSWR<CausasPagedResponse>(
+    swrKey,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
+  );
 
   const causas = useMemo<CausaDto[]>(() => data?.causas ?? [], [data]);
   const total = data?.total ?? causas.length;
   const totalPages = data?.totalPages ?? 1;
-  const totalAtivas = data?.filtros?.totalAtivas ?? causas.filter((item) => item.ativo).length;
-  const totalArquivadas = data?.filtros?.totalArquivadas ?? causas.filter((item) => !item.ativo).length;
-  const totalOficiais = data?.filtros?.totalOficiais ?? causas.filter((item) => item.isOficial).length;
+  const totalAtivas =
+    data?.filtros?.totalAtivas ?? causas.filter((item) => item.ativo).length;
+  const totalArquivadas =
+    data?.filtros?.totalArquivadas ??
+    causas.filter((item) => !item.ativo).length;
+  const totalOficiais =
+    data?.filtros?.totalOficiais ??
+    causas.filter((item) => item.isOficial).length;
 
   useEffect(() => {
     setPage(1);
@@ -222,12 +242,18 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
 
   const setFiltroStatus = (value: unknown) => {
     const nextStatus = getSingleSelectionKey(value) || "all";
-    setFiltros((prev) => ({ ...prev, status: nextStatus as CausaStatusFilter }));
+    setFiltros((prev) => ({
+      ...prev,
+      status: nextStatus as CausaStatusFilter,
+    }));
   };
 
   const setFiltroOrigem = (value: unknown) => {
     const nextOrigem = getSingleSelectionKey(value) || "all";
-    setFiltros((prev) => ({ ...prev, origem: nextOrigem as CausaOrigemFilter }));
+    setFiltros((prev) => ({
+      ...prev,
+      origem: nextOrigem as CausaOrigemFilter,
+    }));
   };
 
   const setFiltroOrdem = (value: unknown) => {
@@ -371,6 +397,22 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
     });
   }, []);
 
+  const openDetail = useCallback((causa: CausaDto) => {
+    setDetailCausa(causa);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailCausa(null);
+  }, []);
+
+  const blockMousePropagation = useCallback(
+    (event: { stopPropagation: () => void; preventDefault: () => void }) => {
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [],
+  );
+
   const closeEdit = useCallback(() => {
     setEditingCausa(null);
     setEditForm({
@@ -438,7 +480,27 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
       const result = await syncCausasOficiais();
 
       if (!result.success) {
-        toast.error(result.error || "Erro ao sincronizar causas oficiais");
+        const retryText =
+          typeof result.retryAfterSeconds === "number" &&
+          result.retryAfterSeconds > 0
+            ? ` Aguarde ${result.retryAfterSeconds}s e tente novamente.`
+            : "";
+        const extraLabel =
+          result.errorCode === "SYNC_ALREADY_RUNNING"
+            ? "A sincronização já está em andamento."
+            : result.errorCode === "SYNC_COOLDOWN_BLOCKED"
+              ? "Sincronizações estão em contenção para segurança."
+              : "";
+
+        toast.error(
+          [
+            result.error || "Erro ao sincronizar causas oficiais",
+            extraLabel,
+            retryText,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
 
         return;
       }
@@ -459,7 +521,10 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
   const renderResult = isLoading ? (
     <div className="space-y-3">
       {Array.from({ length: 3 }).map((_, index) => (
-        <Card key={`causa-skeleton-${index}`} className="border border-white/10 bg-background/60">
+        <Card
+          key={`causa-skeleton-${index}`}
+          className="border border-white/10 bg-background/60"
+        >
           <CardBody className="space-y-2 p-4">
             <Skeleton className="h-5 w-52 rounded-lg" isLoaded={false} />
             <Skeleton className="h-3 w-72 rounded-lg" isLoaded={false} />
@@ -471,58 +536,95 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
   ) : causas.length ? (
     <div className="space-y-3">
       {causas.map((causa) => (
-        <Card
+        <div
           key={causa.id}
-          className="border border-white/10 bg-background/60 transition-all duration-300 hover:border-primary/40 hover:bg-background/80"
+          role="button"
+          tabIndex={0}
+          onClick={() => openDetail(causa)}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openDetail(causa);
+            }
+          }}
+          className="cursor-pointer rounded-xl border border-white/10 bg-background/60 transition-all duration-300 hover:border-primary/40 hover:bg-background/80 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
-          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-base font-semibold text-foreground">{causa.nome}</h3>
-                {causa.isOficial ? (
-                  <Chip color="primary" size="sm" variant="flat">
-                    OFICIAL
+          <Card className="border-0 bg-transparent">
+            <CardBody className="flex cursor-pointer flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-base font-semibold text-foreground">
+                    {causa.nome}
+                  </h3>
+                  {causa.isOficial ? (
+                    <Chip color="primary" size="sm" variant="flat">
+                      OFICIAL
+                    </Chip>
+                  ) : null}
+                  <Chip
+                    color={causa.ativo ? "success" : "default"}
+                    size="sm"
+                    variant="flat"
+                  >
+                    {causa.ativo ? "Ativa" : "Arquivada"}
                   </Chip>
+                </div>
+                {causa.codigoCnj && (
+                  <div className="w-fit max-w-full">
+                    <Chip color="primary" size="sm" variant="flat">
+                      Código CNJ {causa.codigoCnj}
+                    </Chip>
+                  </div>
+                )}
+                {causa.descricao ? (
+                  <p className="line-clamp-2 text-sm text-default-500">
+                    {causa.descricao}
+                  </p>
                 ) : null}
-                <Chip
-                  color={causa.ativo ? "success" : "default"}
-                  size="sm"
-                  variant="flat"
-                >
-                  {causa.ativo ? "Ativa" : "Arquivada"}
-                </Chip>
+                <p className="text-[11px] text-default-400">
+                  {causaMetaRows(causa)}
+                </p>
+                <p className="text-[11px] text-default-400">
+                  Atualizada em{" "}
+                  {new Date(causa.updatedAt).toLocaleDateString("pt-BR")}
+                </p>
               </div>
-              {causa.codigoCnj && (
-                <p className="text-xs text-default-500">Código CNJ: {causa.codigoCnj}</p>
-              )}
-              {causa.descricao && (
-                <p className="text-xs text-default-500">{causa.descricao}</p>
-              )}
-              <p className="text-[11px] text-default-400">{causaMetaRows(causa)}</p>
-              <p className="text-[11px] text-default-400">
-                Atualizada em {new Date(causa.updatedAt).toLocaleDateString("pt-BR")}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                isDisabled={isUpdatingStatus.has(causa.id)}
-                isSelected={causa.ativo}
-                size="sm"
-                onValueChange={(value) => handleToggleAtiva(causa, value)}
-              >
-                Ativa
-              </Switch>
-              <Button
-                size="sm"
-                startContent={<Edit3 className="h-3.5 w-3.5" />}
-                variant="flat"
-                onPress={() => openEdit(causa)}
-              >
-                Editar
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
+              <div className="flex flex-shrink-0 flex-wrap justify-end gap-2 sm:flex-nowrap">
+                <Switch
+                  isDisabled={isUpdatingStatus.has(causa.id)}
+                  isSelected={causa.ativo}
+                  size="sm"
+                  className="cursor-default flex-shrink-0 whitespace-nowrap"
+                  onPointerDown={blockMousePropagation}
+                  onClick={blockMousePropagation}
+                  onKeyDown={(event) => {
+                    if (event.key === " " || event.key === "Enter") {
+                      blockMousePropagation(event);
+                    }
+                  }}
+                  onValueChange={(value) => handleToggleAtiva(causa, value)}
+                >
+                  Ativa
+                </Switch>
+                <Button
+                  size="sm"
+                  startContent={<Edit3 className="h-3.5 w-3.5" />}
+                  variant="flat"
+                  className="flex-shrink-0 whitespace-nowrap"
+                  onClick={blockMousePropagation}
+                  onPointerDown={blockMousePropagation}
+                  onKeyDown={blockMousePropagation}
+                  onPress={() => {
+                    openEdit(causa);
+                  }}
+                >
+                  Editar
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
       ))}
     </div>
   ) : (
@@ -551,7 +653,10 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
         title="Causas"
       />
 
-      <PeoplePanel title="Métricas do catálogo" description="Visão rápida da base ativa e arquivada">
+      <PeoplePanel
+        title="Métricas do catálogo"
+        description="Visão rápida da base ativa e arquivada"
+      >
         <div className="grid gap-3 sm:grid-cols-4">
           <PeopleMetricCard
             icon={<Filter className="h-4 w-4" />}
@@ -632,27 +737,23 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
             >
               Limpar
             </Button>
-              <Button
-                color="primary"
-                isLoading={isCreating}
-                onPress={handleCreate}
-              >
-                Salvar causa
-              </Button>
-            </div>
+            <Button
+              color="primary"
+              isLoading={isCreating}
+              onPress={handleCreate}
+            >
+              Salvar causa
+            </Button>
+          </div>
         </div>
       </PeoplePanel>
 
-    <PeoplePanel
-      title="Causas cadastradas"
-      description="A busca é parcial e já inclui nome, código CNJ e descrição."
+      <PeoplePanel
+        title="Causas cadastradas"
+        description="A busca é parcial e já inclui nome, código CNJ e descrição."
         actions={
           <>
-            <Button
-              size="sm"
-              variant="flat"
-              onPress={clearFilters}
-            >
+            <Button size="sm" variant="flat" onPress={clearFilters}>
               Limpar filtros
             </Button>
             {canSyncOficiais ? (
@@ -661,6 +762,7 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
                 size="sm"
                 isLoading={isSyncingOficiais}
                 variant="flat"
+                isDisabled={isSyncingOficiais}
                 onPress={handleSyncOficiais}
               >
                 Sincronizar oficiais
@@ -779,11 +881,15 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
           {() => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h3 className="text-lg font-semibold text-foreground">Editar causa</h3>
+                <h3 className="text-lg font-semibold text-foreground">
+                  Editar causa
+                </h3>
                 {editingCausa ? (
                   <p className="text-sm text-default-400">
                     Atualizado em{" "}
-                    {new Date(editingCausa.updatedAt).toLocaleDateString("pt-BR")}
+                    {new Date(editingCausa.updatedAt).toLocaleDateString(
+                      "pt-BR",
+                    )}
                   </p>
                 ) : null}
               </ModalHeader>
@@ -824,12 +930,112 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
                 <Button variant="light" onPress={closeEdit}>
                   Cancelar
                 </Button>
-                <Button color="primary" isLoading={isSaving} onPress={handleEditSave}>
+                <Button
+                  color="primary"
+                  isLoading={isSaving}
+                  onPress={handleEditSave}
+                >
                   Salvar alterações
                 </Button>
               </ModalFooter>
             </>
           )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={!!detailCausa}
+        size="2xl"
+        scrollBehavior="inside"
+        onOpenChange={closeDetail}
+      >
+        <ModalContent>
+          {() =>
+            detailCausa ? (
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {detailCausa.nome}
+                    </h3>
+                    {detailCausa.isOficial ? (
+                      <Chip color="primary" size="sm" variant="flat">
+                        OFICIAL
+                      </Chip>
+                    ) : null}
+                    <Chip
+                      color={detailCausa.ativo ? "success" : "default"}
+                      size="sm"
+                      variant="flat"
+                    >
+                      {detailCausa.ativo ? "Ativa" : "Arquivada"}
+                    </Chip>
+                  </div>
+                  <p className="text-sm text-default-400">
+                    Atualizada em{" "}
+                    {new Date(detailCausa.updatedAt).toLocaleDateString(
+                      "pt-BR",
+                    )}
+                  </p>
+                </ModalHeader>
+                <ModalBody className="space-y-4">
+                  {detailCausa.codigoCnj ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-default-500">
+                        Código CNJ
+                      </p>
+                      <Snippet
+                        codeString={detailCausa.codigoCnj}
+                        color="primary"
+                        variant="flat"
+                        hideSymbol
+                      >
+                        {`CNJ ${detailCausa.codigoCnj}`}
+                      </Snippet>
+                    </div>
+                  ) : null}
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-foreground">
+                      Descrição completa
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                      {detailCausa.descricao ||
+                        "Sem descrição cadastrada para esta causa."}
+                    </p>
+                  </div>
+                  <Divider className="border-white/10" />
+                  <div className="text-sm text-foreground/90">
+                    {causaMetaRows(detailCausa)}
+                  </div>
+                  <div className="text-xs text-foreground/70">
+                    Criada em{" "}
+                    {new Date(detailCausa.createdAt).toLocaleDateString(
+                      "pt-BR",
+                    )}{" "}
+                    · Atualizada em{" "}
+                    {new Date(detailCausa.updatedAt).toLocaleDateString(
+                      "pt-BR",
+                    )}
+                  </div>
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={closeDetail}>
+                    Fechar
+                  </Button>
+                  <Button
+                    color="primary"
+                    variant="flat"
+                    onPress={() => {
+                      closeDetail();
+                      openEdit(detailCausa);
+                    }}
+                  >
+                    Editar
+                  </Button>
+                </ModalFooter>
+              </>
+            ) : null
+          }
         </ModalContent>
       </Modal>
     </div>

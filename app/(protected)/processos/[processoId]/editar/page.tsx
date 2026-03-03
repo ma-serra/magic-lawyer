@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Save,
   Scale,
+  Gavel,
   User,
   Building2,
   MapPin,
@@ -31,6 +32,7 @@ import useSWR from "swr";
 
 import { title } from "@/components/primitives";
 import { useClientesParaSelect } from "@/app/hooks/use-clientes";
+import { useJuizes } from "@/app/hooks/use-juizes";
 import { useProcessoDetalhado } from "@/app/hooks/use-processos";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
 import {
@@ -54,6 +56,7 @@ export default function EditarProcessoPage() {
   const { processo, isLoading, isError, mutate } =
     useProcessoDetalhado(processoId);
   const { clientes, isLoading: isLoadingClientes } = useClientesParaSelect();
+  const { juizes: juizesDisponiveis, isLoading: isLoadingJuizes } = useJuizes();
   const { data: areasData, isLoading: isLoadingAreas } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
@@ -73,6 +76,10 @@ export default function EditarProcessoPage() {
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
   );
+  const juizKeys = useMemo(
+    () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
+    [juizesDisponiveis],
+  );
 
   const [formData, setFormData] = useState<ProcessoCreateInput | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -86,6 +93,8 @@ export default function EditarProcessoPage() {
       : [];
   const selectedAreaKeys =
     formData?.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const selectedJuizKeys =
+    formData?.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
 
   useEffect(() => {
     if (!processo || formData) return;
@@ -106,6 +115,7 @@ export default function EditarProcessoPage() {
       pastaCompartilhadaUrl: processo.pastaCompartilhadaUrl || "",
       clienteId: processo.cliente.id,
       segredoJustica: processo.segredoJustica,
+      juizId: processo.juiz?.id || "",
     };
 
     if (processo.valorCausa !== null && processo.valorCausa !== undefined) {
@@ -118,7 +128,6 @@ export default function EditarProcessoPage() {
       mapped.dataDistribuicao = new Date(processo.dataDistribuicao);
     if (processo.prazoPrincipal)
       mapped.prazoPrincipal = new Date(processo.prazoPrincipal);
-
     setFormData(mapped);
   }, [processo, formData]);
 
@@ -169,6 +178,12 @@ export default function EditarProcessoPage() {
       return;
     }
 
+    if (!formData.juizId) {
+      toast.error("Selecione o juiz do caso");
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -209,6 +224,7 @@ export default function EditarProcessoPage() {
       payload.dataDistribuicao = formData.dataDistribuicao ?? undefined;
       payload.prazoPrincipal = formData.prazoPrincipal ?? undefined;
       payload.areaId = formData.areaId;
+      payload.juizId = formData.juizId;
       payload.fase = formData.fase;
       payload.grau = formData.grau;
       if (
@@ -416,9 +432,41 @@ export default function EditarProcessoPage() {
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Select
-                description="Situação atual do processo no escritório."
-                label="Status"
+            <Select
+              description="Juiz responsável para rastrear padrão de decisões e produtividade."
+              isLoading={isLoadingJuizes}
+              isRequired
+              label="Juiz do Caso *"
+              placeholder="Selecione o juiz responsável pelo caso"
+              selectedKeys={selectedJuizKeys}
+              startContent={<Gavel className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) =>
+                setFormData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        juizId: (Array.from(keys)[0] as string) || "",
+                      }
+                    : prev,
+                )
+              }
+            >
+              {(juizesDisponiveis || []).map((juiz) => (
+                <SelectItem key={juiz.id} textValue={juiz.nome}>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold">{juiz.nome}</span>
+                    <span className="text-xs text-default-400">
+                      {[juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+                        "Sem vara/comarca informada"}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </Select>
+
+            <Select
+              description="Situação atual do processo no escritório."
+              label="Status"
                 placeholder="Selecione o status"
                 selectedKeys={formData.status ? [formData.status] : []}
                 onSelectionChange={(keys) =>
