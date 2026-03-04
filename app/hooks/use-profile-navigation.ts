@@ -298,6 +298,14 @@ export function useProfileNavigation() {
       (permissions.canViewAllProcesses || permissions.canManageOfficeSettings)
     ) {
       apoioJuridicoItems.push({
+        label: "INPI",
+        href: "/inpi",
+        icon: "Shield",
+        description: "Viabilidade de marca e colisões multi-tenant",
+        requiredModules: ["causas"],
+      });
+
+      apoioJuridicoItems.push({
         label: "Causas",
         href: "/causas",
         icon: "Scale",

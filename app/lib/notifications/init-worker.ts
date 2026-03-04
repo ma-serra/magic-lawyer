@@ -25,11 +25,15 @@ export async function initNotificationWorker(): Promise<void> {
     const { getPortalProcessSyncWorker } = await import(
       "@/app/lib/juridical/process-sync-worker"
     );
+    const { getInpiCatalogSyncWorker } = await import(
+      "@/app/lib/inpi/catalog-sync-worker"
+    );
 
     // Criar workers (singleton)
     // Ambos iniciam automaticamente quando criados.
     getNotificationWorker();
     getPortalProcessSyncWorker();
+    getInpiCatalogSyncWorker();
 
     // Marcar como inicializado
     workerInitialized = true;

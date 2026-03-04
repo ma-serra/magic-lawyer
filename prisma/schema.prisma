@@ -120,6 +120,10 @@ model Tenant {
   movimentacoes            MovimentacaoProcesso[]
   autosProcessuais         AutoProcessual[]
   causas                   Causa[]
+  inpiDossies              InpiDossie[]
+  inpiBuscaLogs            InpiBuscaLog[]
+  inpiDossieColisoes       InpiDossieColisao[]
+  inpiDossieSnapshots      InpiDossieSnapshot[]
   diligencias              Diligencia[]
   regimesPrazo             RegimePrazo[]
   peticoes                 Peticao[]
@@ -1175,6 +1179,116 @@ model ProcessoCausa {
   @@unique([processoId, causaId])
   @@index([tenantId, processoId])
   @@index([tenantId, causaId])
+  @@schema("magiclawyer")
+}
+
+model InpiCatalogMarca {
+  id              String              @id @default(cuid())
+  nome            String
+  nomeNormalizado String
+  classeNice      String?
+  titular         String?
+  processoNumero  String?
+  protocolo       String?
+  status          String              @default("DESCONHECIDO")
+  descricao       String?
+  fonte           String              @default("catalogo_base")
+  fingerprint     String              @unique
+  dadosRaw        Json?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  colisoes        InpiDossieColisao[]
+
+  @@index([nomeNormalizado])
+  @@index([classeNice])
+  @@index([status])
+  @@index([updatedAt])
+  @@schema("magiclawyer")
+}
+
+model InpiDossie {
+  id              String               @id @default(cuid())
+  tenantId        String
+  nomePretendido  String
+  nomeNormalizado String
+  classeNice      String?
+  segmento        String?
+  status          InpiDossieStatus     @default(EM_ANALISE)
+  riscoAtual      InpiRisco            @default(BAIXO)
+  observacoes     String?
+  resumoAnalise   String?
+  criadoPorId     String
+  responsavelId   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  colisoes        InpiDossieColisao[]
+  buscas          InpiBuscaLog[]
+  snapshots       InpiDossieSnapshot[]
+
+  @@unique([tenantId, nomeNormalizado, classeNice])
+  @@index([tenantId, status])
+  @@index([tenantId, riscoAtual])
+  @@index([tenantId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model InpiDossieSnapshot {
+  id            String           @id @default(cuid())
+  tenantId      String
+  dossieId      String
+  status        InpiDossieStatus
+  riscoAtual    InpiRisco
+  scoreMax      Int              @default(0)
+  colisoesCount Int              @default(0)
+  resumoAnalise String?
+  payload       Json?
+  createdAt     DateTime         @default(now())
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossie        InpiDossie       @relation(fields: [dossieId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dossieId, createdAt])
+  @@index([tenantId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model InpiDossieColisao {
+  id            String           @id @default(cuid())
+  tenantId      String
+  dossieId      String
+  marcaId       String
+  score         Int
+  nivelRisco    InpiRisco        @default(BAIXO)
+  justificativa String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossie        InpiDossie       @relation(fields: [dossieId], references: [id], onDelete: Cascade)
+  marca         InpiCatalogMarca @relation(fields: [marcaId], references: [id], onDelete: Cascade)
+
+  @@unique([dossieId, marcaId])
+  @@index([tenantId, nivelRisco])
+  @@index([tenantId, dossieId])
+  @@schema("magiclawyer")
+}
+
+model InpiBuscaLog {
+  id               String      @id @default(cuid())
+  tenantId         String
+  dossieId         String?
+  termo            String
+  termoNormalizado String
+  classeNice       String?
+  totalEncontrado  Int         @default(0)
+  fonte            String      @default("catalogo_global")
+  userId           String?
+  createdAt        DateTime    @default(now())
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dossie           InpiDossie? @relation(fields: [dossieId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, termoNormalizado])
+  @@index([tenantId, classeNice])
   @@schema("magiclawyer")
 }
 
@@ -2839,6 +2953,27 @@ enum TicketPriority {
   MEDIUM
   HIGH
   URGENT
+
+  @@schema("magiclawyer")
+}
+
+enum InpiDossieStatus {
+  EM_ANALISE
+  VIAVEL
+  RISCO_MODERADO
+  RISCO_ALTO
+  PROTOCOLADO
+  INDEFERIDO
+  DEFERIDO
+
+  @@schema("magiclawyer")
+}
+
+enum InpiRisco {
+  BAIXO
+  MEDIO
+  ALTO
+  CRITICO
 
   @@schema("magiclawyer")
 }

@@ -29,6 +29,7 @@ async function main() {
     const { testRedisConnection } = require(path.join(__dirname, "../app/lib/notifications/redis-config"));
     const { startNotificationWorker, stopNotificationWorker } = require(path.join(__dirname, "../app/lib/notifications/notification-worker"));
     const { startPortalProcessSyncWorker, stopPortalProcessSyncWorker } = require(path.join(__dirname, "../app/lib/juridical/process-sync-worker"));
+    const { startInpiCatalogSyncWorker, stopInpiCatalogSyncWorker } = require(path.join(__dirname, "../app/lib/inpi/catalog-sync-worker"));
 
     console.log("📡 Testando conexão Redis...");
     const redisConnected = await testRedisConnection();
@@ -43,12 +44,14 @@ async function main() {
     console.log("👷 Iniciando workers...");
     await startNotificationWorker();
     await startPortalProcessSyncWorker();
+    await startInpiCatalogSyncWorker();
 
     console.log("✅ Workers iniciados com sucesso!");
     console.log("📊 Monitoramento disponível em: /api/admin/notifications/worker");
 
     process.on("SIGINT", async () => {
       console.log("\n🛑 Parando worker...");
+      await stopInpiCatalogSyncWorker();
       await stopPortalProcessSyncWorker();
       await stopNotificationWorker();
       console.log("✅ Workers parados");

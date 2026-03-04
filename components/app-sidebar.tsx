@@ -584,6 +584,7 @@ const navIconMap: Record<string, ReactElement> = {
   Juízes: <ScaleIcon />,
   "Juízes Globais": <ScaleIcon />,
   Causas: <ScaleIcon />,
+  INPI: <ShieldIcon />,
   "Apoio Jurídico": <ScaleIcon />,
   "Portal do Advogado": (
     <svg

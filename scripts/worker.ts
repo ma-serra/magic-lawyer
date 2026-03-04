@@ -7,6 +7,7 @@
 
 import { getNotificationWorker } from "@/app/lib/notifications/notification-worker";
 import { getPortalProcessSyncWorker } from "@/app/lib/juridical/process-sync-worker";
+import { getInpiCatalogSyncWorker } from "@/app/lib/inpi/catalog-sync-worker";
 import { testRedisConnection } from "@/app/lib/notifications/redis-config";
 
 async function main() {
@@ -26,12 +27,14 @@ async function main() {
     console.log("👷 Iniciando workers...");
     const notificationWorker = getNotificationWorker();
     const processSyncWorker = getPortalProcessSyncWorker();
+    const inpiCatalogSyncWorker = getInpiCatalogSyncWorker();
 
     console.log("✅ Workers iniciados com sucesso!");
 
     // Graceful shutdown
     process.on("SIGINT", async () => {
       console.log("\n🛑 Parando worker...");
+      await inpiCatalogSyncWorker.stop();
       await processSyncWorker.stop();
       await notificationWorker.stop();
       console.log("✅ Workers parados");
@@ -40,6 +43,7 @@ async function main() {
 
     process.on("SIGTERM", async () => {
       console.log("\n🛑 Parando worker...");
+      await inpiCatalogSyncWorker.stop();
       await processSyncWorker.stop();
       await notificationWorker.stop();
       console.log("✅ Workers parados");

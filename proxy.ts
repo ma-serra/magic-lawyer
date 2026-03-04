@@ -264,6 +264,7 @@ export default withAuth(
       if (
         req.nextUrl.pathname.startsWith("/dashboard") ||
         req.nextUrl.pathname.startsWith("/processos") ||
+        req.nextUrl.pathname.startsWith("/inpi") ||
         req.nextUrl.pathname.startsWith("/documentos") ||
         req.nextUrl.pathname.startsWith("/financeiro") ||
         req.nextUrl.pathname.startsWith("/relatorios") ||
@@ -349,6 +350,7 @@ export default withAuth(
           "/processos",
           "/documentos",
           "/agenda",
+          "/inpi",
           "/financeiro",
           "/juizes",
           "/relatorios",
