@@ -152,9 +152,9 @@ export function useJuizFormData() {
 /**
  * Hook para buscar lista de juízes com filtros
  */
-export function useJuizes(filters: JuizFilters = {}) {
+export function useJuizes(filters: JuizFilters = {}, enabled = true) {
   const { data, error, isLoading, mutate } = useSWR<JuizSerializado[] | null>(
-    `juizes-${JSON.stringify(filters)}`,
+    enabled ? `juizes-${JSON.stringify(filters)}` : null,
     async () => {
       const result = await getJuizes(filters);
 

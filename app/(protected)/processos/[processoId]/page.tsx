@@ -41,6 +41,7 @@ import {
   Users,
   FileSignature,
   UploadCloud,
+  UserPlus,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -51,6 +52,7 @@ import {
   useDocumentosProcesso,
   useEventosProcesso,
 } from "@/app/hooks/use-processos";
+import { useJuizes, useJuizesCatalogoPorNome } from "@/app/hooks/use-juizes";
 import { usePermissionCheck } from "@/app/hooks/use-permission-check";
 import { useProcuracoesDisponiveis } from "@/app/hooks/use-clientes";
 import { title } from "@/components/primitives";
@@ -60,6 +62,9 @@ import {
   ProcessoPrazoStatus,
   ProcessoFase,
   ProcessoGrau,
+  JuizStatus,
+  JuizNivel,
+  JuizTipoAutoridade,
 } from "@/generated/prisma";
 import { DateUtils } from "@/app/lib/date-utils";
 import {
@@ -70,7 +75,9 @@ import {
   deleteProcessoPrazo,
   linkProcuracaoAoProcesso,
   unlinkProcuracaoDoProcesso,
+  updateProcesso,
 } from "@/app/actions/processos";
+import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
 import JuizModal from "@/components/juiz-modal";
 import { Select, SelectItem } from "@heroui/react";
@@ -370,6 +377,12 @@ export default function ProcessoDetalhesPage() {
     useDocumentosProcesso(processoId);
   const { eventos, isLoading: isLoadingEventos } =
     useEventosProcesso(processoId);
+  const { juizes: autoridadesVisiveis, isLoading: isLoadingAutoridades } =
+    useJuizes({
+      search: "",
+      status: JuizStatus.ATIVO,
+      tipoAutoridade: JuizTipoAutoridade.JUIZ,
+    }, !isCliente && !processo?.juiz);
   const { procuracoes: procuracoesDisponiveis } = useProcuracoesDisponiveis(
     processo?.cliente?.id ?? null,
   );
@@ -390,6 +403,16 @@ export default function ProcessoDetalhesPage() {
   const [isCreatingPrazo, setIsCreatingPrazo] = useState(false);
   const [isLinkingProcuracao, setIsLinkingProcuracao] = useState(false);
   const [isJuizModalOpen, setIsJuizModalOpen] = useState(false);
+  const [showSelectAutoridade, setShowSelectAutoridade] = useState(false);
+  const [showCreateAutoridade, setShowCreateAutoridade] = useState(false);
+  const [searchAutoridade, setSearchAutoridade] = useState("");
+  const [selectedAutoridadeId, setSelectedAutoridadeId] = useState("");
+  const [novoJuizNome, setNovoJuizNome] = useState("");
+  const [novoJuizVara, setNovoJuizVara] = useState("");
+  const [novoJuizComarca, setNovoJuizComarca] = useState("");
+  const [selectedCatalogoJuizId, setSelectedCatalogoJuizId] = useState("");
+  const [isAssigningAutoridade, setIsAssigningAutoridade] = useState(false);
+  const [isCreatingAutoridade, setIsCreatingAutoridade] = useState(false);
   const [documentoDescricao, setDocumentoDescricao] = useState("");
   const [documentoVisivelCliente, setDocumentoVisivelCliente] = useState(true);
   const [documentoFiles, setDocumentoFiles] = useState<File[]>([]);
@@ -400,6 +423,14 @@ export default function ProcessoDetalhesPage() {
   const { hasPermission: canUploadProcessoDocumentos } = usePermissionCheck(
     isCliente ? null : "documentos",
     isCliente ? null : "criar",
+    {
+      enabled: !isCliente,
+      enableEarlyAccess: true,
+    },
+  );
+  const { hasPermission: canEditProcessoAutoridade } = usePermissionCheck(
+    isCliente ? null : "processos",
+    isCliente ? null : "editar",
     {
       enabled: !isCliente,
       enableEarlyAccess: true,
@@ -445,6 +476,69 @@ export default function ProcessoDetalhesPage() {
       (proc: any) => !vinculoIds.includes(proc.id),
     );
   }, [procuracoesDisponiveis, vinculoIds]);
+
+  const autoridadesDisponiveis = useMemo(
+    () =>
+      autoridadesVisiveis.filter(
+        (autoridade) =>
+          autoridade.tipoAutoridade === JuizTipoAutoridade.JUIZ &&
+          autoridade.status === JuizStatus.ATIVO,
+      ),
+    [autoridadesVisiveis],
+  );
+
+  const autoridadesFiltradas = useMemo(() => {
+    const termo = searchAutoridade.trim().toLowerCase();
+
+    if (!termo) {
+      return autoridadesDisponiveis;
+    }
+
+    return autoridadesDisponiveis.filter((autoridade) => {
+      const nome = `${autoridade.nome} ${autoridade.nomeCompleto || ""}`
+        .toLowerCase();
+      const subtitulo = `${autoridade.vara || ""} ${autoridade.comarca || ""}`
+        .toLowerCase();
+
+      return nome.includes(termo) || subtitulo.includes(termo);
+    });
+  }, [autoridadesDisponiveis, searchAutoridade]);
+
+  const autoridadeIdSet = useMemo(
+    () => new Set(autoridadesFiltradas.map((autoridade) => autoridade.id)),
+    [autoridadesFiltradas],
+  );
+
+  const selectedAutoridadeKeys =
+    selectedAutoridadeId && autoridadeIdSet.has(selectedAutoridadeId)
+      ? [selectedAutoridadeId]
+      : [];
+
+  const {
+    opcoes: catalogoGlobalAutoridades,
+    isLoading: isLoadingCatalogoGlobal,
+  } = useJuizesCatalogoPorNome(
+    novoJuizNome,
+    !isCliente && showCreateAutoridade && novoJuizNome.trim().length >= 3,
+  );
+
+  const catalogoGlobalJuizes = useMemo(
+    () =>
+      catalogoGlobalAutoridades.filter(
+        (autoridade) =>
+          !autoridade.tipoAutoridade ||
+          autoridade.tipoAutoridade === JuizTipoAutoridade.JUIZ,
+      ),
+    [catalogoGlobalAutoridades],
+  );
+
+  const selectedCatalogoJuiz = useMemo(
+    () =>
+      catalogoGlobalJuizes.find(
+        (autoridade) => autoridade.id === selectedCatalogoJuizId,
+      ) ?? null,
+    [catalogoGlobalJuizes, selectedCatalogoJuizId],
+  );
 
   if (isLoading) {
     return (
@@ -703,6 +797,92 @@ export default function ProcessoDetalhesPage() {
       toast.error("Erro ao desvincular procuração");
     } finally {
       setProcuracaoActionId(null);
+    }
+  };
+
+  const handleVincularAutoridadeExistente = async () => {
+    if (!selectedAutoridadeId) {
+      toast.error("Selecione uma autoridade para vincular ao processo");
+
+      return;
+    }
+
+    setIsAssigningAutoridade(true);
+    try {
+      const result = await updateProcesso(processoId, {
+        juizId: selectedAutoridadeId,
+      });
+
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível vincular a autoridade");
+        return;
+      }
+
+      toast.success("Autoridade vinculada ao processo");
+      setSelectedAutoridadeId("");
+      setShowSelectAutoridade(false);
+      setShowCreateAutoridade(false);
+      setSearchAutoridade("");
+      handleRefresh();
+    } catch (error) {
+      toast.error("Erro ao vincular autoridade");
+    } finally {
+      setIsAssigningAutoridade(false);
+    }
+  };
+
+  const handleCriarAutoridadeERelacionar = async () => {
+    const nome = novoJuizNome.trim();
+
+    if (!nome) {
+      toast.error("Informe o nome da autoridade");
+
+      return;
+    }
+
+    setIsCreatingAutoridade(true);
+    try {
+      const result = await createJuizTenant({
+        nome,
+        juizBaseId: selectedCatalogoJuiz?.id,
+        tipoAutoridade:
+          selectedCatalogoJuiz?.tipoAutoridade ?? JuizTipoAutoridade.JUIZ,
+        status: JuizStatus.ATIVO,
+        nivel: JuizNivel.JUIZ_TITULAR,
+        especialidades: [],
+        vara: novoJuizVara.trim() || undefined,
+        comarca: novoJuizComarca.trim() || undefined,
+      });
+
+      if (!result.success || !result.juiz?.id) {
+        toast.error(result.error || "Não foi possível cadastrar a autoridade");
+        return;
+      }
+
+      const vinculo = await updateProcesso(processoId, {
+        juizId: result.juiz.id,
+      });
+
+      if (!vinculo.success) {
+        toast.error(
+          vinculo.error ||
+            "Autoridade criada, mas não foi possível vinculá-la ao processo",
+        );
+        return;
+      }
+
+      toast.success("Autoridade cadastrada e vinculada ao processo");
+      setNovoJuizNome("");
+      setNovoJuizVara("");
+      setNovoJuizComarca("");
+      setSelectedCatalogoJuizId("");
+      setShowCreateAutoridade(false);
+      setShowSelectAutoridade(false);
+      handleRefresh();
+    } catch (error) {
+      toast.error("Erro ao cadastrar autoridade");
+    } finally {
+      setIsCreatingAutoridade(false);
     }
   };
 
@@ -1130,14 +1310,13 @@ export default function ProcessoDetalhesPage() {
                   )}
                 </div>
 
-                {/* Informações do Juiz */}
-                {processo.juiz && (
-                  <div className="border-t border-default-200 pt-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
-                        <Gavel className="h-4 w-4" />
-                        Juiz Relator
-                      </h4>
+                <div className="border-t border-default-200 pt-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-default-700">
+                      <Gavel className="h-4 w-4" />
+                      Autoridade do caso
+                    </h4>
+                    {processo.juiz ? (
                       <Button
                         color="primary"
                         size="sm"
@@ -1145,9 +1324,16 @@ export default function ProcessoDetalhesPage() {
                         variant="bordered"
                         onPress={() => setIsJuizModalOpen(true)}
                       >
-                        Ver Mais Informações
+                        Ver mais informações
                       </Button>
-                    </div>
+                    ) : (
+                      <Chip color="warning" size="sm" variant="flat">
+                        Sem juiz cadastrado
+                      </Chip>
+                    )}
+                  </div>
+
+                  {processo.juiz ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <div>
                         <p className="text-xs font-semibold uppercase text-default-400">
@@ -1214,8 +1400,224 @@ export default function ProcessoDetalhesPage() {
                           </div>
                         )}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
+                        <p className="text-sm font-semibold text-warning-700">
+                          Este processo está sem juiz vinculado.
+                        </p>
+                        <p className="mt-1 text-xs text-warning-700/90">
+                          Processos criados por importação ou sincronização podem
+                          vir sem autoridade. Vincule uma existente ou cadastre
+                          uma nova para manter o histórico completo.
+                        </p>
+                      </div>
+
+                      {!isCliente && !canEditProcessoAutoridade && (
+                        <p className="text-xs text-default-500">
+                          Você não possui permissão para vincular autoridade neste
+                          processo.
+                        </p>
+                      )}
+
+                      {!isCliente && canEditProcessoAutoridade && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            color="primary"
+                            size="sm"
+                            startContent={<Users className="h-4 w-4" />}
+                            variant={
+                              showSelectAutoridade ? "solid" : "bordered"
+                            }
+                            onPress={() => {
+                              setShowSelectAutoridade((prev) => !prev);
+                              if (!showSelectAutoridade) {
+                                setShowCreateAutoridade(false);
+                              }
+                            }}
+                          >
+                            Selecionar juiz existente
+                          </Button>
+                          <Button
+                            color="secondary"
+                            size="sm"
+                            startContent={<UserPlus className="h-4 w-4" />}
+                            variant={showCreateAutoridade ? "solid" : "bordered"}
+                            onPress={() => {
+                              setShowCreateAutoridade((prev) => !prev);
+                              if (!showCreateAutoridade) {
+                                setShowSelectAutoridade(false);
+                              }
+                            }}
+                          >
+                            Cadastrar novo juiz
+                          </Button>
+                        </div>
+                      )}
+
+                      {!isCliente &&
+                        canEditProcessoAutoridade &&
+                        showSelectAutoridade && (
+                        <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
+                          <Input
+                            label="Buscar juiz do escritório"
+                            placeholder="Digite nome, vara ou comarca"
+                            value={searchAutoridade}
+                            onValueChange={setSearchAutoridade}
+                          />
+
+                          <Select
+                            aria-label="Selecionar juiz existente"
+                            isDisabled={
+                              isLoadingAutoridades ||
+                              autoridadesFiltradas.length === 0
+                            }
+                            label="Juízes disponíveis"
+                            placeholder="Selecione um juiz"
+                            selectedKeys={selectedAutoridadeKeys}
+                            onSelectionChange={(keys) => {
+                              const key = Array.from(keys)[0] as
+                                | string
+                                | undefined;
+
+                              setSelectedAutoridadeId(key ?? "");
+                            }}
+                          >
+                            {autoridadesFiltradas.map((autoridade) => (
+                              <SelectItem
+                                key={autoridade.id}
+                                textValue={`${autoridade.nome} ${autoridade.vara || ""} ${autoridade.comarca || ""}`.trim()}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">
+                                    {autoridade.nome}
+                                  </span>
+                                  <span className="text-xs text-default-500">
+                                    {autoridade.vara || "Vara não informada"}
+                                    {autoridade.comarca
+                                      ? ` · ${autoridade.comarca}`
+                                      : ""}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </Select>
+
+                          <div className="flex justify-end">
+                            <Button
+                              color="primary"
+                              isDisabled={!selectedAutoridadeId}
+                              isLoading={isAssigningAutoridade}
+                              size="sm"
+                              startContent={<Link2 className="h-4 w-4" />}
+                              onPress={handleVincularAutoridadeExistente}
+                            >
+                              Vincular ao processo
+                            </Button>
+                          </div>
+
+                          {!isLoadingAutoridades &&
+                            autoridadesFiltradas.length === 0 && (
+                              <p className="text-xs text-default-500">
+                                Nenhum juiz encontrado com esse filtro.
+                              </p>
+                            )}
+                        </div>
+                      )}
+
+                      {!isCliente &&
+                        canEditProcessoAutoridade &&
+                        showCreateAutoridade && (
+                        <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
+                          <Input
+                            isRequired
+                            label="Nome do juiz"
+                            placeholder="Ex: Robson Nonato"
+                            value={novoJuizNome}
+                            onValueChange={(value) => {
+                              setNovoJuizNome(value);
+                              setSelectedCatalogoJuizId("");
+                            }}
+                          />
+                          <Input
+                            label="Vara"
+                            placeholder="Ex: 1ª Vara Cível"
+                            value={novoJuizVara}
+                            onValueChange={setNovoJuizVara}
+                          />
+                          <Input
+                            label="Comarca"
+                            placeholder="Ex: Comarca de Salvador"
+                            value={novoJuizComarca}
+                            onValueChange={setNovoJuizComarca}
+                          />
+
+                          <div className="space-y-2 rounded-lg border border-default-200/70 bg-background/80 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-400">
+                              Catálogo global (3+ letras)
+                            </p>
+                            <p className="text-xs text-default-500">
+                              Apenas o nome é reaproveitado entre escritórios.
+                              Os seus dados de vara/comarca podem ser próprios do
+                              seu tenant.
+                            </p>
+                            {isLoadingCatalogoGlobal ? (
+                              <div className="py-2">
+                                <Spinner size="sm" />
+                              </div>
+                            ) : catalogoGlobalJuizes.length > 0 ? (
+                              <div className="grid gap-2">
+                                {catalogoGlobalJuizes.slice(0, 6).map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                                      selectedCatalogoJuizId === item.id
+                                        ? "border-primary bg-primary/10"
+                                        : "border-default-200 bg-background hover:border-primary/40"
+                                    }`}
+                                    onClick={() => {
+                                      setSelectedCatalogoJuizId(item.id);
+                                    }}
+                                  >
+                                    <p className="text-sm font-semibold text-default-800">
+                                      {item.nome}
+                                    </p>
+                                    <p className="text-xs text-default-500">
+                                      Identificação global por nome
+                                    </p>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : novoJuizNome.trim().length >= 3 ? (
+                              <p className="text-xs text-default-500">
+                                Nenhuma autoridade encontrada no catálogo global.
+                              </p>
+                            ) : (
+                              <p className="text-xs text-default-500">
+                                Digite pelo menos 3 letras para sugerir nomes já
+                                existentes.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex justify-end">
+                            <Button
+                              color="secondary"
+                              isDisabled={!novoJuizNome.trim()}
+                              isLoading={isCreatingAutoridade}
+                              size="sm"
+                              startContent={<Plus className="h-4 w-4" />}
+                              onPress={handleCriarAutoridadeERelacionar}
+                            >
+                              Cadastrar e vincular
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Informações do Tribunal */}
                 {(processo.tribunal ||

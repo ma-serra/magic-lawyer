@@ -93,6 +93,8 @@ model Tenant {
   updatedAt                DateTime                 @updatedAt
   superAdminId             String?
   acessosJuiz              AcessoJuiz[]
+  autoridadeContribuicoes  AutoridadeContribuicao[]
+  autoridadeUnlocks        AutoridadeTenantUnlock[]
   advogados                Advogado[]
   advogadoClientes         AdvogadoCliente[]
   analisesJuiz             AnaliseJuiz[]
@@ -320,79 +322,81 @@ model TenantEmailCredential {
 }
 
 model Usuario {
-  id                           String                 @id @default(cuid())
-  tenantId                     String
-  email                        String
-  passwordHash                 String?
-  role                         UserRole               @default(SECRETARIA)
-  firstName                    String?
-  lastName                     String?
-  phone                        String?
-  avatarUrl                    String?
-  active                       Boolean                @default(true)
-  sessionVersion               Int                    @default(1)
-  statusChangedAt              DateTime?
-  statusReason                 String?
-  cpf                          String?
-  rg                           String?
-  dataNascimento               DateTime?
-  observacoes                  String?
-  lastLoginAt                  DateTime?
-  createdById                  String?
+  id                               String                   @id @default(cuid())
+  tenantId                         String
+  email                            String
+  passwordHash                     String?
+  role                             UserRole                 @default(SECRETARIA)
+  firstName                        String?
+  lastName                         String?
+  phone                            String?
+  avatarUrl                        String?
+  active                           Boolean                  @default(true)
+  sessionVersion                   Int                      @default(1)
+  statusChangedAt                  DateTime?
+  statusReason                     String?
+  cpf                              String?
+  rg                               String?
+  dataNascimento                   DateTime?
+  observacoes                      String?
+  lastLoginAt                      DateTime?
+  createdById                      String?
   // Integração Google Calendar
-  googleCalendarConnected      Boolean                @default(false)
-  googleCalendarTokens         Json? // { access_token, refresh_token, expiry_date }
-  googleCalendarId             String? // ID do calendário principal do usuário
-  googleCalendarSyncEnabled    Boolean                @default(false)
-  createdAt                    DateTime               @default(now())
-  updatedAt                    DateTime               @updatedAt
-  createdBy                    Usuario?               @relation("UsuarioCriador", fields: [createdById], references: [id])
-  usuariosCriados              Usuario[]              @relation("UsuarioCriador")
-  acessosJuiz                  AcessoJuiz[]
-  advogado                     Advogado?
-  analisesJuizCriadas          AnaliseJuiz[]          @relation("AnaliseJuizCriador")
-  auditLogs                    AuditLog[]
-  clientes                     Cliente[]              @relation("UsuarioCliente")
-  contratosCriados             Contrato[]             @relation("ContratoCriador")
-  contratosResponsavel         Contrato[]             @relation("ContratoResponsavel")
-  documentos                   Documento[]            @relation("DocumentoUploader")
-  documentoVersoesEnviadas     DocumentoVersao[]      @relation("DocumentoVersaoUploader")
-  documentoVersoesAssinadas    DocumentoVersao[]      @relation("DocumentoVersaoAssinador")
-  documentoAssinaturasCriadas  DocumentoAssinatura[]
-  eventosCriados               Evento[]
-  favoritosJuiz                FavoritoJuiz[]
-  julgamentosCriados           Julgamento[]           @relation("JulgamentoCriador")
-  movimentacoesCriadas         MovimentacaoProcesso[] @relation("MovimentacaoCriador")
-  movimentacoesResponsavel     MovimentacaoProcesso[] @relation("MovimentacaoResponsavel")
-  notificacoesCriadas          Notificacao[]          @relation("NotificacaoCriador")
-  notificacoesRecebidas        NotificacaoUsuario[]
-  processoDocumentosCriados    ProcessoDocumento[]    @relation("ProcessoDocumentoCriador")
-  processoPrazosResponsavel    ProcessoPrazo[]        @relation("ProcessoPrazoResponsavel")
-  procuracoesCriadas           Procuracao[]           @relation("ProcuracaoCriador")
-  procuracaoAssinaturas        ProcuracaoAssinatura[]
-  tarefasCriadas               Tarefa[]               @relation("TarefasCriadas")
-  tarefas                      Tarefa[]               @relation("TarefasResponsaveis")
-  autosProcessuaisCriados      AutoProcessual[]       @relation("AutoProcessualCriador")
-  peticoesCriadas              Peticao[]              @relation("PeticaoCriador")
-  assinaturasPeticao           AssinaturaPeticao[]
-  diligenciasResponsavel       Diligencia[]           @relation("DiligenciaResponsavel")
-  diligenciasCriadas           Diligencia[]           @relation("DiligenciaCriador")
-  tenant                       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  enderecos                    Endereco[]
-  permissoes                   UsuarioPermissao[]
-  ticketAttachments            TicketAttachment[]     @relation("UserAttachments")
-  ticketMessages               TicketMessage[]        @relation("UserMessages")
-  tickets                      Ticket[]               @relation("UserTickets")
-  contratoParcelasResponsavel  ContratoParcela[]
-  documentosProcuracaoUploaded DocumentoProcuracao[]  @relation("DocumentoProcuracaoUploader")
-  tarefaComentarios            TarefaComentario[]
-  tarefaAtividades             TarefaAtividade[]
-  tarefasObservadas            TarefaWatcher[]
-  dadosBancarios               DadosBancarios[]
-  advogadoHistorico            AdvogadoHistorico[]
-  modelosProcuracaoVersoes     ModeloProcuracaoVersao[]
-  planoVersoesCriadas          PlanoVersao[]          @relation("PlanoVersaoCriador")
-  planoVersoesPublicadas       PlanoVersao[]          @relation("PlanoVersaoPublicador")
+  googleCalendarConnected          Boolean                  @default(false)
+  googleCalendarTokens             Json? // { access_token, refresh_token, expiry_date }
+  googleCalendarId                 String? // ID do calendário principal do usuário
+  googleCalendarSyncEnabled        Boolean                  @default(false)
+  createdAt                        DateTime                 @default(now())
+  updatedAt                        DateTime                 @updatedAt
+  createdBy                        Usuario?                 @relation("UsuarioCriador", fields: [createdById], references: [id])
+  usuariosCriados                  Usuario[]                @relation("UsuarioCriador")
+  acessosJuiz                      AcessoJuiz[]
+  autoridadeContribuicoesCriadas   AutoridadeContribuicao[] @relation("AutoridadeContribuicaoCriador")
+  autoridadeContribuicoesAprovadas AutoridadeContribuicao[] @relation("AutoridadeContribuicaoAprovador")
+  advogado                         Advogado?
+  analisesJuizCriadas              AnaliseJuiz[]            @relation("AnaliseJuizCriador")
+  auditLogs                        AuditLog[]
+  clientes                         Cliente[]                @relation("UsuarioCliente")
+  contratosCriados                 Contrato[]               @relation("ContratoCriador")
+  contratosResponsavel             Contrato[]               @relation("ContratoResponsavel")
+  documentos                       Documento[]              @relation("DocumentoUploader")
+  documentoVersoesEnviadas         DocumentoVersao[]        @relation("DocumentoVersaoUploader")
+  documentoVersoesAssinadas        DocumentoVersao[]        @relation("DocumentoVersaoAssinador")
+  documentoAssinaturasCriadas      DocumentoAssinatura[]
+  eventosCriados                   Evento[]
+  favoritosJuiz                    FavoritoJuiz[]
+  julgamentosCriados               Julgamento[]             @relation("JulgamentoCriador")
+  movimentacoesCriadas             MovimentacaoProcesso[]   @relation("MovimentacaoCriador")
+  movimentacoesResponsavel         MovimentacaoProcesso[]   @relation("MovimentacaoResponsavel")
+  notificacoesCriadas              Notificacao[]            @relation("NotificacaoCriador")
+  notificacoesRecebidas            NotificacaoUsuario[]
+  processoDocumentosCriados        ProcessoDocumento[]      @relation("ProcessoDocumentoCriador")
+  processoPrazosResponsavel        ProcessoPrazo[]          @relation("ProcessoPrazoResponsavel")
+  procuracoesCriadas               Procuracao[]             @relation("ProcuracaoCriador")
+  procuracaoAssinaturas            ProcuracaoAssinatura[]
+  tarefasCriadas                   Tarefa[]                 @relation("TarefasCriadas")
+  tarefas                          Tarefa[]                 @relation("TarefasResponsaveis")
+  autosProcessuaisCriados          AutoProcessual[]         @relation("AutoProcessualCriador")
+  peticoesCriadas                  Peticao[]                @relation("PeticaoCriador")
+  assinaturasPeticao               AssinaturaPeticao[]
+  diligenciasResponsavel           Diligencia[]             @relation("DiligenciaResponsavel")
+  diligenciasCriadas               Diligencia[]             @relation("DiligenciaCriador")
+  tenant                           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enderecos                        Endereco[]
+  permissoes                       UsuarioPermissao[]
+  ticketAttachments                TicketAttachment[]       @relation("UserAttachments")
+  ticketMessages                   TicketMessage[]          @relation("UserMessages")
+  tickets                          Ticket[]                 @relation("UserTickets")
+  contratoParcelasResponsavel      ContratoParcela[]
+  documentosProcuracaoUploaded     DocumentoProcuracao[]    @relation("DocumentoProcuracaoUploader")
+  tarefaComentarios                TarefaComentario[]
+  tarefaAtividades                 TarefaAtividade[]
+  tarefasObservadas                TarefaWatcher[]
+  dadosBancarios                   DadosBancarios[]
+  advogadoHistorico                AdvogadoHistorico[]
+  modelosProcuracaoVersoes         ModeloProcuracaoVersao[]
+  planoVersoesCriadas              PlanoVersao[]            @relation("PlanoVersaoCriador")
+  planoVersoesPublicadas           PlanoVersao[]            @relation("PlanoVersaoPublicador")
 
   // Sistema de Gestão de Equipe
   cargos                  UsuarioCargo[]
@@ -602,12 +606,12 @@ model AdvogadoCliente {
 }
 
 model Juiz {
-  id                String                  @id @default(cuid())
+  id                String                   @id @default(cuid())
   tribunalId        String?
-  tipoAutoridade    JuizTipoAutoridade      @default(JUIZ)
+  tipoAutoridade    JuizTipoAutoridade       @default(JUIZ)
   nome              String
   nomeCompleto      String?
-  cpf               String?                 @unique
+  cpf               String?                  @unique
   oab               String?
   email             String?
   telefone          String?
@@ -618,8 +622,8 @@ model Juiz {
   dataNascimento    DateTime?
   dataPosse         DateTime?
   dataAposentadoria DateTime?
-  status            JuizStatus              @default(ATIVO)
-  nivel             JuizNivel               @default(JUIZ_TITULAR)
+  status            JuizStatus               @default(ATIVO)
+  nivel             JuizNivel                @default(JUIZ_TITULAR)
   especialidades    EspecialidadeJuridica[]
   vara              String?
   comarca           String?
@@ -634,19 +638,22 @@ model Juiz {
   twitter           String?
   instagram         String?
   observacoes       String?
-  isPublico         Boolean                 @default(true)
-  isPremium         Boolean                 @default(false)
-  precoAcesso       Decimal?                @db.Decimal(10, 2)
+  isPublico         Boolean                  @default(true)
+  isPremium         Boolean                  @default(false)
+  precoAcesso       Decimal?                 @db.Decimal(10, 2)
   superAdminId      String?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
   acessos           AcessoJuiz[]
+  contribuicoes     AutoridadeContribuicao[]
+  consolidado       AutoridadeConsolidado?
+  tenantUnlocks     AutoridadeTenantUnlock[]
   analises          AnaliseJuiz[]
   favoritos         FavoritoJuiz[]
-  superAdmin        SuperAdmin?             @relation("SuperAdminJuiz", fields: [superAdminId], references: [id])
-  tribunal          Tribunal?               @relation(fields: [tribunalId], references: [id])
+  superAdmin        SuperAdmin?              @relation("SuperAdminJuiz", fields: [superAdminId], references: [id])
+  tribunal          Tribunal?                @relation(fields: [tribunalId], references: [id])
   julgamentos       Julgamento[]
-  pacotes           PacoteJuizItem[]        @relation("JuizPacote")
+  pacotes           PacoteJuizItem[]         @relation("JuizPacote")
   processos         Processo[]
 
   @@index([nome])
@@ -866,37 +873,37 @@ model ProcessoPrazo {
 }
 
 model Procuracao {
-  id                    String                 @id @default(cuid())
-  tenantId              String
-  clienteId             String
-  modeloId              String? // Referência ao modelo usado
-  modeloNomeSnapshot    String?
-  modeloCategoriaSnapshot String?
-  modeloConteudoSnapshot String?
-  modeloVersaoSnapshot  Int?
+  id                         String                 @id @default(cuid())
+  tenantId                   String
+  clienteId                  String
+  modeloId                   String? // Referência ao modelo usado
+  modeloNomeSnapshot         String?
+  modeloCategoriaSnapshot    String?
+  modeloConteudoSnapshot     String?
+  modeloVersaoSnapshot       Int?
   modeloAtualizadoEmSnapshot DateTime?
-  numero                String?
-  arquivoUrl            String?
-  observacoes           String?
-  emitidaEm             DateTime?
-  validaAte             DateTime?
-  revogadaEm            DateTime?
-  ativa                 Boolean                @default(true)
-  status                ProcuracaoStatus       @default(RASCUNHO)
-  assinadaPeloClienteEm DateTime?
-  emitidaPor            ProcuracaoEmitidaPor   @default(ESCRITORIO)
-  createdById           String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  cliente               Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  modelo                ModeloProcuracao?      @relation(fields: [modeloId], references: [id])
-  createdBy             Usuario?               @relation("ProcuracaoCriador", fields: [createdById], references: [id])
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  outorgados            ProcuracaoAdvogado[]
-  processos             ProcuracaoProcesso[]
-  assinaturas           ProcuracaoAssinatura[]
-  poderes               ProcuracaoPoder[]
-  documentos            DocumentoProcuracao[]
+  numero                     String?
+  arquivoUrl                 String?
+  observacoes                String?
+  emitidaEm                  DateTime?
+  validaAte                  DateTime?
+  revogadaEm                 DateTime?
+  ativa                      Boolean                @default(true)
+  status                     ProcuracaoStatus       @default(RASCUNHO)
+  assinadaPeloClienteEm      DateTime?
+  emitidaPor                 ProcuracaoEmitidaPor   @default(ESCRITORIO)
+  createdById                String?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  cliente                    Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  modelo                     ModeloProcuracao?      @relation(fields: [modeloId], references: [id])
+  createdBy                  Usuario?               @relation("ProcuracaoCriador", fields: [createdById], references: [id])
+  tenant                     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outorgados                 ProcuracaoAdvogado[]
+  processos                  ProcuracaoProcesso[]
+  assinaturas                ProcuracaoAssinatura[]
+  poderes                    ProcuracaoPoder[]
+  documentos                 DocumentoProcuracao[]
 
   @@index([tenantId, clienteId])
   @@index([tenantId, ativa])
@@ -2255,25 +2262,102 @@ model PacoteJuizItem {
 }
 
 model AssinaturaPacoteJuiz {
-  id                  String     @id @default(cuid())
+  id                  String                   @id @default(cuid())
   tenantId            String
   pacoteId            String
   status              String
-  dataInicio          DateTime   @default(now())
+  dataInicio          DateTime                 @default(now())
   dataFim             DateTime?
-  renovacaoAutomatica Boolean    @default(true)
-  precoPago           Decimal    @db.Decimal(10, 2)
+  renovacaoAutomatica Boolean                  @default(true)
+  precoPago           Decimal                  @db.Decimal(10, 2)
   formaPagamento      String?
   observacoes         String?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  pacote              PacoteJuiz @relation(fields: [pacoteId], references: [id], onDelete: Cascade)
-  tenant              Tenant     @relation("TenantAssinaturaPacote", fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  pacote              PacoteJuiz               @relation(fields: [pacoteId], references: [id], onDelete: Cascade)
+  tenant              Tenant                   @relation("TenantAssinaturaPacote", fields: [tenantId], references: [id], onDelete: Cascade)
+  autoridadeUnlocks   AutoridadeTenantUnlock[] @relation("AssinaturaPacoteAutoridadeUnlock")
 
   @@index([tenantId])
   @@index([pacoteId])
   @@index([status])
   @@map("AssinaturasPacoteJuiz")
+  @@schema("magiclawyer")
+}
+
+model AutoridadeContribuicao {
+  id            String                       @id @default(cuid())
+  tenantId      String
+  juizId        String
+  criadoPorId   String
+  aprovadoPorId String?
+  origem        AutoridadeOrigemContribuicao @default(MANUAL)
+  status        AutoridadeStatusContribuicao @default(PENDENTE)
+  campos        String[]
+  payload       Json
+  hashDedupe    String?
+  notaConfianca Decimal?                     @db.Decimal(5, 2)
+  observacoes   String?
+  criadoEm      DateTime                     @default(now())
+  aprovadoEm    DateTime?
+  atualizadoEm  DateTime                     @updatedAt
+  tenant        Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  juiz          Juiz                         @relation(fields: [juizId], references: [id], onDelete: Cascade)
+  criadoPor     Usuario                      @relation("AutoridadeContribuicaoCriador", fields: [criadoPorId], references: [id], onDelete: Cascade)
+  aprovadoPor   Usuario?                     @relation("AutoridadeContribuicaoAprovador", fields: [aprovadoPorId], references: [id])
+
+  @@unique([tenantId, juizId, hashDedupe])
+  @@index([tenantId, juizId, status])
+  @@index([juizId, criadoEm])
+  @@index([status, origem])
+  @@map("AutoridadeContribuicoes")
+  @@schema("magiclawyer")
+}
+
+model AutoridadeConsolidado {
+  id                        String                      @id @default(cuid())
+  juizId                    String                      @unique
+  status                    AutoridadeStatusConsolidado @default(EM_FORMACAO)
+  versao                    Int                         @default(1)
+  totalContribuicoes        Int                         @default(0)
+  totalTenantsContribuintes Int                         @default(0)
+  dadosBasicos              Json?
+  dadosEnriquecidos         Json?
+  camposConfianca           Json?
+  ultimaConsolidacaoEm      DateTime?
+  publicadoEm               DateTime?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
+  juiz                      Juiz                        @relation(fields: [juizId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([publicadoEm])
+  @@map("AutoridadeConsolidados")
+  @@schema("magiclawyer")
+}
+
+model AutoridadeTenantUnlock {
+  id                 String                 @id @default(cuid())
+  tenantId           String
+  juizId             String
+  assinaturaPacoteId String?
+  nivelAcesso        AutoridadeNivelAcesso  @default(IDENTIFICACAO)
+  origem             AutoridadeOrigemUnlock @default(PACOTE)
+  status             AutoridadeStatusUnlock @default(ATIVO)
+  dataInicio         DateTime               @default(now())
+  dataFim            DateTime?
+  observacoes        String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  juiz               Juiz                   @relation(fields: [juizId], references: [id], onDelete: Cascade)
+  assinaturaPacote   AssinaturaPacoteJuiz?  @relation("AssinaturaPacoteAutoridadeUnlock", fields: [assinaturaPacoteId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, juizId])
+  @@index([tenantId, status, nivelAcesso])
+  @@index([juizId, status])
+  @@index([assinaturaPacoteId])
+  @@map("AutoridadeTenantUnlocks")
   @@schema("magiclawyer")
 }
 
@@ -2874,6 +2958,56 @@ enum JuizTipoAutoridade {
   @@schema("magiclawyer")
 }
 
+enum AutoridadeOrigemContribuicao {
+  MANUAL
+  IMPORTACAO_EXCEL
+  SINCRONIZACAO_OAB
+  API_INTEGRACAO
+  CORRECAO_INTERNA
+
+  @@schema("magiclawyer")
+}
+
+enum AutoridadeStatusContribuicao {
+  PENDENTE
+  APROVADA
+  REJEITADA
+
+  @@schema("magiclawyer")
+}
+
+enum AutoridadeStatusConsolidado {
+  EM_FORMACAO
+  PUBLICADO
+  ARQUIVADO
+
+  @@schema("magiclawyer")
+}
+
+enum AutoridadeNivelAcesso {
+  IDENTIFICACAO
+  BASICO
+  COMPLETO
+
+  @@schema("magiclawyer")
+}
+
+enum AutoridadeOrigemUnlock {
+  PACOTE
+  COMPRA_AVULSA
+  CORTESIA
+
+  @@schema("magiclawyer")
+}
+
+enum AutoridadeStatusUnlock {
+  ATIVO
+  EXPIRADO
+  SUSPENSO
+
+  @@schema("magiclawyer")
+}
+
 enum StatusPacoteJuiz {
   ATIVO
   INATIVO
@@ -2924,7 +3058,7 @@ model ModeloProcuracao {
   deletedAt DateTime?
 
   // Relacionamentos
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   procuracoes Procuracao[]
   versoes     ModeloProcuracaoVersao[]
 
@@ -2934,17 +3068,17 @@ model ModeloProcuracao {
 }
 
 model ModeloProcuracaoVersao {
-  id         String   @id @default(cuid())
-  tenantId   String
-  modeloId   String
-  versao     Int
-  nome       String
-  descricao  String?
-  conteudo   String
-  categoria  String?
-  ativo      Boolean
+  id          String   @id @default(cuid())
+  tenantId    String
+  modeloId    String
+  versao      Int
+  nome        String
+  descricao   String?
+  conteudo    String
+  categoria   String?
+  ativo       Boolean
   criadoPorId String?
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   modelo    ModeloProcuracao @relation(fields: [modeloId], references: [id], onDelete: Cascade)

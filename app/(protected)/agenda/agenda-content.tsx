@@ -19,10 +19,7 @@ import { useSession } from "next-auth/react";
 import { toast } from "@/lib/toast";
 
 import { useEventos } from "@/app/hooks/use-eventos";
-import { useAllClientes } from "@/app/hooks/use-clientes";
-import { useAllProcessos } from "@/app/hooks/use-processos";
-import { useAdvogadosDisponiveis } from "@/app/hooks/use-advogados";
-import { title, subtitle } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import {
   deleteEvento,
   marcarEventoComoRealizado,
@@ -106,11 +103,6 @@ export default function AgendaPage() {
     useUserPermissions();
   const session = useSession();
   const userEmail = session?.data?.user?.email;
-
-  // Buscar dados para os filtros
-  const { clientes } = useAllClientes();
-  const { processos } = useAllProcessos();
-  const { advogados } = useAdvogadosDisponiveis();
 
   // Memoizar as datas para evitar re-criação a cada render
   const datasMemo = useMemo(() => {
@@ -314,15 +306,26 @@ export default function AgendaPage() {
   };
 
   // Verificar se há filtros ativos
-  const hasActiveFilters =
+  const hasActiveFilters = Boolean(
     filtroTipo ||
-    filtroStatus ||
-    filtroCliente ||
-    filtroProcesso ||
-    filtroAdvogado ||
-    filtroLocal ||
-    filtroTitulo ||
-    filtroDataRange;
+      filtroStatus ||
+      filtroCliente ||
+      filtroProcesso ||
+      filtroAdvogado ||
+      filtroLocal ||
+      filtroTitulo ||
+      filtroDataRange,
+  );
+  const activeFilterCount = [
+    filtroTipo,
+    filtroStatus,
+    filtroCliente,
+    filtroProcesso,
+    filtroAdvogado,
+    filtroLocal,
+    filtroTitulo,
+    filtroDataRange,
+  ].filter(Boolean).length;
 
   const handleConfirmarParticipacao = async (
     eventoId: string,
@@ -573,49 +576,80 @@ export default function AgendaPage() {
 
   return (
     <div className="p-3 space-y-4 sm:p-6 sm:space-y-6 min-w-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>Agenda</h1>
-          <p className={subtitle({ fullWidth: true })}>
-            Gerencie seus compromissos e eventos
-          </p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <ButtonGroup className="w-full sm:w-auto">
-            <Button
-              variant={viewMode === "calendar" ? "solid" : "bordered"}
-              onPress={() => setViewMode("calendar")}
-            >
-              Calendário
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "solid" : "bordered"}
-              onPress={() => setViewMode("list")}
-            >
-              Lista
-            </Button>
-          </ButtonGroup>
-
-          <div className="flex gap-2 w-full sm:w-auto">
-            {permissions.canCreateEvents && !isCliente && (
+      <PeoplePageHeader
+        description="Gerencie compromissos, audiências e lembretes com controle por período, responsável e integrações."
+        tag="Operacional"
+        title="Agenda"
+        actions={
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <ButtonGroup className="w-full sm:w-auto">
               <Button
-                className="flex-1 sm:flex-none"
-                color="primary"
-                startContent={<Plus className="w-4 h-4" />}
-                onPress={handleCreateEvento}
+                size="sm"
+                variant={viewMode === "calendar" ? "solid" : "bordered"}
+                onPress={() => setViewMode("calendar")}
               >
-                Novo Evento
+                Calendário
               </Button>
-            )}
-            <GoogleCalendarButton />
+              <Button
+                size="sm"
+                variant={viewMode === "list" ? "solid" : "bordered"}
+                onPress={() => setViewMode("list")}
+              >
+                Lista
+              </Button>
+            </ButtonGroup>
+
+            <div className="flex w-full gap-2 sm:w-auto">
+              {permissions.canCreateEvents && !isCliente ? (
+                <Button
+                  className="flex-1 sm:flex-none"
+                  color="primary"
+                  size="sm"
+                  startContent={<Plus className="w-4 h-4" />}
+                  onPress={handleCreateEvento}
+                >
+                  Novo Evento
+                </Button>
+              ) : null}
+              <GoogleCalendarButton />
+            </div>
           </div>
-        </div>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Compromissos para o dia atual"
+          icon={<Calendar className="h-4 w-4" />}
+          label="Eventos hoje"
+          tone="primary"
+          value={estatisticas.hoje}
+        />
+        <PeopleMetricCard
+          helper="Janela de 7 dias"
+          icon={<CalendarDays className="h-4 w-4" />}
+          label="Esta semana"
+          tone="warning"
+          value={estatisticas.semana}
+        />
+        <PeopleMetricCard
+          helper="Total no mês corrente"
+          icon={<Clock className="h-4 w-4" />}
+          label="Este mês"
+          tone="success"
+          value={estatisticas.mes}
+        />
+        <PeopleMetricCard
+          helper="Respostas registradas de convidados"
+          icon={<Users className="h-4 w-4" />}
+          label="Confirmações"
+          tone="secondary"
+          value={estatisticas.confirmacoes}
+        />
       </div>
 
       {/* Legenda de Confirmações */}
-      <Card>
+      <Card className="border border-divider/70 bg-content1/75 shadow-sm backdrop-blur-md">
         <CardBody className="py-3">
           <div className="flex items-center gap-2 mb-2">
             <Info className="w-4 h-4 text-primary" />
@@ -690,131 +724,34 @@ export default function AgendaPage() {
         </CardBody>
       </Card>
 
-      {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          whileHover={{ scale: 1.05, y: -5 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Card className="cursor-pointer">
-            <CardBody className="text-center">
-              <motion.div
-                key={estatisticas.hoje}
-                animate={{ scale: 1 }}
-                className="text-2xl font-bold text-primary"
-                initial={{ scale: 0 }}
-                transition={{ duration: 0.3, type: "spring", stiffness: 200 }}
-              >
-                {estatisticas.hoje}
-              </motion.div>
-              <div className="text-sm text-default-500">Eventos Hoje</div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          whileHover={{ scale: 1.05, y: -5 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Card className="cursor-pointer">
-            <CardBody className="text-center">
-              <motion.div
-                key={estatisticas.semana}
-                animate={{ scale: 1 }}
-                className="text-2xl font-bold text-warning"
-                initial={{ scale: 0 }}
-                transition={{ duration: 0.3, type: "spring", stiffness: 200 }}
-              >
-                {estatisticas.semana}
-              </motion.div>
-              <div className="text-sm text-default-500">Esta Semana</div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          whileHover={{ scale: 1.05, y: -5 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Card className="cursor-pointer">
-            <CardBody className="text-center">
-              <motion.div
-                key={estatisticas.mes}
-                animate={{ scale: 1 }}
-                className="text-2xl font-bold text-success"
-                initial={{ scale: 0 }}
-                transition={{ duration: 0.3, type: "spring", stiffness: 200 }}
-              >
-                {estatisticas.mes}
-              </motion.div>
-              <div className="text-sm text-default-500">Este Mês</div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          whileHover={{ scale: 1.05, y: -5 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Card className="cursor-pointer">
-            <CardBody className="text-center">
-              <motion.div
-                key={estatisticas.confirmacoes}
-                animate={{ scale: 1 }}
-                className="text-2xl font-bold text-secondary"
-                initial={{ scale: 0 }}
-                transition={{ duration: 0.3, type: "spring", stiffness: 200 }}
-              >
-                {estatisticas.confirmacoes}
-              </motion.div>
-              <div className="text-sm text-default-500">Confirmações</div>
-            </CardBody>
-          </Card>
-        </motion.div>
-      </div>
-
       {/* Status do Google Calendar */}
       <GoogleCalendarStatusCard />
 
       {/* Layout Principal */}
       <div className="space-y-6">
         {/* Filtros Avançados */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-primary" />
-              <h3 className="text-lg font-semibold">Filtros</h3>
-              {hasActiveFilters && (
-                <Chip color="primary" size="sm" variant="flat">
-                  {
-                    [
-                      filtroTipo,
-                      filtroStatus,
-                      filtroCliente,
-                      filtroProcesso,
-                      filtroAdvogado,
-                      filtroLocal,
-                      filtroTitulo,
-                      filtroDataRange,
-                    ].filter(Boolean).length
-                  }{" "}
-                  ativo(s)
-                </Chip>
-              )}
-            </div>
-            <div className="flex gap-2">
+        <Card className="border border-divider/70 bg-content1/75 shadow-sm backdrop-blur-md">
+          <CardHeader className="border-b border-divider/70 px-4 py-4 sm:px-6">
+            <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3 sm:items-center">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+                  <Filter className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground sm:text-lg">
+                    Filtros operacionais
+                  </h3>
+                  <p className="text-xs text-default-500 sm:text-sm">
+                    Refine por período, título, cliente, processo, responsável e origem.
+                  </p>
+                </div>
+                {hasActiveFilters ? (
+                  <Chip className="ml-1" color="primary" size="sm" variant="flat">
+                    {activeFilterCount} ativo(s)
+                  </Chip>
+                ) : null}
+              </div>
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
               <Button
                 isDisabled={!hasActiveFilters}
                 size="sm"
@@ -839,6 +776,7 @@ export default function AgendaPage() {
                 {showFilters ? "Ocultar" : "Mostrar"}
               </Button>
             </div>
+            </div>
           </CardHeader>
 
           <AnimatePresence>
@@ -849,7 +787,7 @@ export default function AgendaPage() {
                 initial={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <CardBody>
+                <CardBody className="p-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {/* Filtro por Período */}
                     <div className="space-y-2">

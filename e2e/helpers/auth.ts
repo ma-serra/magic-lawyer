@@ -1,5 +1,67 @@
 import { Page } from "@playwright/test";
 
+const DEFAULT_CREDENTIALS = {
+  ADMIN: {
+    email: "sandra@adv.br",
+    password: "Sandra@123",
+  },
+  ADVOGADO: {
+    email: "luciano.santos@adv.br",
+    password: "Luciano@123",
+  },
+  SECRETARIA: {
+    email: "souzacostaadv@hotmail.com",
+    password: "Funcionario@123",
+  },
+  FINANCEIRO: {
+    email: "financeiro@test.com",
+    password: "financeiro123",
+  },
+  CLIENTE: {
+    email: "magiclawyersaas@gmail.com",
+    password: "Robson123!",
+  },
+} as const;
+
+type Role = "ADMIN" | "ADVOGADO" | "SECRETARIA" | "FINANCEIRO" | "CLIENTE";
+
+async function fillLoginForm(
+  page: Page,
+  email: string,
+  password: string,
+): Promise<void> {
+  await page.fill('input[name="email"], input[type="email"]', email);
+  await page.fill('input[name="password"], input[type="password"]', password);
+
+  const tenantSlug = process.env.TEST_TENANT_SLUG;
+  if (tenantSlug) {
+    const slugField = page.locator(
+      'input[name="tenantSlug"], input[name="slug"], input[placeholder*="meu-escritorio"]',
+    );
+
+    if (await slugField.first().isVisible().catch(() => false)) {
+      await slugField.first().fill(tenantSlug);
+    }
+  }
+}
+
+async function clickLoginSubmit(page: Page): Promise<void> {
+  const submitByType = page.locator('button[type="submit"]').first();
+  const hasSubmitByType = await submitByType
+    .isVisible({ timeout: 3000 })
+    .catch(() => false);
+
+  if (hasSubmitByType) {
+    await submitByType.click();
+    return;
+  }
+
+  await page
+    .getByRole("button", { name: /Entrar no sistema|Entrar|Login/i })
+    .first()
+    .click();
+}
+
 /**
  * Helper para fazer login no sistema
  */
@@ -9,20 +71,36 @@ export async function loginAsUser(
   password: string,
 ): Promise<void> {
   await page.goto("/login");
+  await page.waitForLoadState("domcontentloaded");
 
-  // Preencher formulário de login
-  await page.fill('input[name="email"], input[type="email"]', email);
-  await page.fill('input[name="password"], input[type="password"]', password);
+  await fillLoginForm(page, email, password);
 
-  // Clicar em submit
-  await page.click(
-    'button[type="submit"], button:has-text("Entrar"), button:has-text("Login")',
-  );
+  await clickLoginSubmit(page);
 
-  // Aguardar redirecionamento (não deve estar mais em /login)
-  await page.waitForURL((url) => !url.pathname.includes("/login"), {
-    timeout: 10000,
-  });
+  try {
+    await page.waitForURL((url) => !url.pathname.includes("/login"), {
+      timeout: 20000,
+    });
+  } catch {
+    const bodyText = (
+      (await page.textContent("body").catch(() => "")) || ""
+    ).toLowerCase();
+    const loginErrorHint = [
+      "inválid",
+      "invalido",
+      "credencial",
+      "erro",
+      "acesso",
+      "primeiro acesso",
+    ].find((pattern) => bodyText.includes(pattern));
+
+    throw new Error(
+      `Falha no login E2E para ${email}. URL final: ${page.url()}.` +
+        (loginErrorHint ? ` Sinal detectado: ${loginErrorHint}.` : ""),
+    );
+  }
+
+  await page.waitForLoadState("domcontentloaded");
 }
 
 /**
@@ -30,8 +108,9 @@ export async function loginAsUser(
  * Assume que existe um usuário ADMIN com email e senha padrão
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
-  const adminEmail = process.env.TEST_ADMIN_EMAIL || "admin@test.com";
-  const adminPassword = process.env.TEST_ADMIN_PASSWORD || "admin123";
+  const adminEmail = process.env.TEST_ADMIN_EMAIL || DEFAULT_CREDENTIALS.ADMIN.email;
+  const adminPassword =
+    process.env.TEST_ADMIN_PASSWORD || DEFAULT_CREDENTIALS.ADMIN.password;
 
   await loginAsUser(page, adminEmail, adminPassword);
 }
@@ -41,22 +120,29 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  */
 export async function loginAsRole(
   page: Page,
-  role: "ADMIN" | "ADVOGADO" | "SECRETARIA" | "FINANCEIRO" | "CLIENTE",
+  role: Role,
 ): Promise<void> {
   const roleEmails: Record<string, string> = {
-    ADMIN: process.env.TEST_ADMIN_EMAIL || "admin@test.com",
-    ADVOGADO: process.env.TEST_ADVOGADO_EMAIL || "advogado@test.com",
-    SECRETARIA: process.env.TEST_SECRETARIA_EMAIL || "secretaria@test.com",
-    FINANCEIRO: process.env.TEST_FINANCEIRO_EMAIL || "financeiro@test.com",
-    CLIENTE: process.env.TEST_CLIENTE_EMAIL || "cliente@test.com",
+    ADMIN: process.env.TEST_ADMIN_EMAIL || DEFAULT_CREDENTIALS.ADMIN.email,
+    ADVOGADO:
+      process.env.TEST_ADVOGADO_EMAIL || DEFAULT_CREDENTIALS.ADVOGADO.email,
+    SECRETARIA:
+      process.env.TEST_SECRETARIA_EMAIL || DEFAULT_CREDENTIALS.SECRETARIA.email,
+    FINANCEIRO:
+      process.env.TEST_FINANCEIRO_EMAIL || DEFAULT_CREDENTIALS.FINANCEIRO.email,
+    CLIENTE: process.env.TEST_CLIENTE_EMAIL || DEFAULT_CREDENTIALS.CLIENTE.email,
   };
 
   const rolePasswords: Record<string, string> = {
-    ADMIN: process.env.TEST_ADMIN_PASSWORD || "admin123",
-    ADVOGADO: process.env.TEST_ADVOGADO_PASSWORD || "advogado123",
-    SECRETARIA: process.env.TEST_SECRETARIA_PASSWORD || "secretaria123",
-    FINANCEIRO: process.env.TEST_FINANCEIRO_PASSWORD || "financeiro123",
-    CLIENTE: process.env.TEST_CLIENTE_PASSWORD || "cliente123",
+    ADMIN: process.env.TEST_ADMIN_PASSWORD || DEFAULT_CREDENTIALS.ADMIN.password,
+    ADVOGADO:
+      process.env.TEST_ADVOGADO_PASSWORD || DEFAULT_CREDENTIALS.ADVOGADO.password,
+    SECRETARIA:
+      process.env.TEST_SECRETARIA_PASSWORD || DEFAULT_CREDENTIALS.SECRETARIA.password,
+    FINANCEIRO:
+      process.env.TEST_FINANCEIRO_PASSWORD || DEFAULT_CREDENTIALS.FINANCEIRO.password,
+    CLIENTE:
+      process.env.TEST_CLIENTE_PASSWORD || DEFAULT_CREDENTIALS.CLIENTE.password,
   };
 
   await loginAsUser(page, roleEmails[role], rolePasswords[role]);

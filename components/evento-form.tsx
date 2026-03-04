@@ -420,7 +420,9 @@ export default function EventoForm({
                     placeholder="Selecione o tipo"
                     selectedKeys={formData.tipo ? [formData.tipo] : []}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
+                      const selectedKey = Array.from(keys)[0] as string | undefined;
+
+                      if (!selectedKey) return;
 
                       setFormData({
                         ...formData,
@@ -439,7 +441,9 @@ export default function EventoForm({
                     placeholder="Selecione o status"
                     selectedKeys={formData.status ? [formData.status] : []}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
+                      const selectedKey = Array.from(keys)[0] as string | undefined;
+
+                      if (!selectedKey) return;
 
                       setFormData({
                         ...formData,
@@ -520,11 +524,11 @@ export default function EventoForm({
                     placeholder="Selecione um cliente"
                     selectedKeys={selectedClienteKeys}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
+                      const selectedKey = Array.from(keys)[0] as string | undefined;
 
                       setFormData({
                         ...formData,
-                        clienteId: selectedKey,
+                        clienteId: selectedKey ?? null,
                         processoId: null, // Limpar processo quando cliente muda
                       });
                     }}
@@ -545,9 +549,9 @@ export default function EventoForm({
                     }
                     selectedKeys={selectedProcessoKeys}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
+                      const selectedKey = Array.from(keys)[0] as string | undefined;
 
-                      setFormData({ ...formData, processoId: selectedKey });
+                      setFormData({ ...formData, processoId: selectedKey ?? null });
                     }}
                   >
                     {processosFiltrados.map((processo) => (
@@ -563,11 +567,11 @@ export default function EventoForm({
                     placeholder="Selecione um advogado"
                     selectedKeys={selectedAdvogadoKeys}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
+                      const selectedKey = Array.from(keys)[0] as string | undefined;
 
                       setFormData({
                         ...formData,
-                        advogadoResponsavelId: selectedKey,
+                        advogadoResponsavelId: selectedKey ?? null,
                       });
                     }}
                   >
@@ -642,7 +646,9 @@ export default function EventoForm({
                     <AlertCircle className="w-4 h-4 text-warning" />
                   }
                   onSelectionChange={(keys) => {
-                    const selectedKey = Array.from(keys)[0] as string;
+                    const selectedKey = Array.from(keys)[0] as string | undefined;
+
+                    if (!selectedKey) return;
 
                     setFormData({
                       ...formData,

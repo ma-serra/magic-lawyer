@@ -1,9 +1,16 @@
 "use server";
 
+import { createHash } from "node:crypto";
+
 import { getSession } from "@/app/lib/auth";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import logger from "@/lib/logger";
 import {
+  AutoridadeNivelAcesso,
+  AutoridadeOrigemContribuicao,
+  AutoridadeOrigemUnlock,
+  AutoridadeStatusContribuicao,
+  AutoridadeStatusUnlock,
   Prisma,
   JuizStatus,
   JuizNivel,
@@ -238,6 +245,9 @@ export interface JuizFormOptions {
 export interface JuizCatalogoOpcao {
   id: string;
   nome: string;
+  tipoAutoridade?: JuizTipoAutoridade;
+  vara?: string | null;
+  comarca?: string | null;
 }
 
 const TENANT_JUDGE_ACCESS_TYPE = "TENANT_ACCESS";
@@ -449,9 +459,31 @@ async function logProcessoAutoridadeBatchAudit(params: {
 }
 
 function buildJuizAccessWhere(tenantId: string): Prisma.JuizWhereInput {
+  const now = new Date();
+
   return {
     OR: [
-      { isPublico: true },
+      {
+        processos: {
+          some: {
+            tenantId,
+          },
+        },
+      },
+      {
+        julgamentos: {
+          some: {
+            tenantId,
+          },
+        },
+      },
+      {
+        analises: {
+          some: {
+            tenantId,
+          },
+        },
+      },
       {
         favoritos: {
           some: {
@@ -463,6 +495,16 @@ function buildJuizAccessWhere(tenantId: string): Prisma.JuizWhereInput {
         acessos: {
           some: {
             tenantId,
+            tipoAcesso: TENANT_JUDGE_ACCESS_TYPE,
+          },
+        },
+      },
+      {
+        tenantUnlocks: {
+          some: {
+            tenantId,
+            status: AutoridadeStatusUnlock.ATIVO,
+            OR: [{ dataFim: null }, { dataFim: { gt: now } }],
           },
         },
       },
@@ -916,6 +958,87 @@ async function upsertTenantJudgeProfile(
   });
 }
 
+async function ensureTenantAutoridadeUnlock(
+  tenantId: string,
+  juizId: string,
+  db: DbClient = prisma,
+) {
+  await db.autoridadeTenantUnlock.upsert({
+    where: {
+      tenantId_juizId: {
+        tenantId,
+        juizId,
+      },
+    },
+    update: {
+      status: AutoridadeStatusUnlock.ATIVO,
+      dataFim: null,
+    },
+    create: {
+      tenantId,
+      juizId,
+      nivelAcesso: AutoridadeNivelAcesso.IDENTIFICACAO,
+      origem: AutoridadeOrigemUnlock.CORTESIA,
+      status: AutoridadeStatusUnlock.ATIVO,
+    },
+  });
+}
+
+async function registerTenantJudgeContribution(
+  tenantId: string,
+  juizId: string,
+  usuarioId: string,
+  data: Partial<JuizFormData>,
+  db: DbClient = prisma,
+) {
+  const payload = buildTenantOverlayFromData(data);
+  const campos = Object.entries(payload)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key)
+    .sort();
+
+  if (!campos.length) {
+    return;
+  }
+
+  const hashDedupe = createHash("sha256")
+    .update(JSON.stringify({ tenantId, juizId, campos, payload }))
+    .digest("hex");
+
+  await db.autoridadeContribuicao.upsert({
+    where: {
+      tenantId_juizId_hashDedupe: {
+        tenantId,
+        juizId,
+        hashDedupe,
+      },
+    },
+    update: {
+      status: AutoridadeStatusContribuicao.APROVADA,
+      payload,
+      campos,
+      aprovadoPorId: usuarioId,
+      aprovadoEm: new Date(),
+      observacoes:
+        "Contribuição consolidada automaticamente a partir de edição operacional do tenant.",
+    },
+    create: {
+      tenantId,
+      juizId,
+      criadoPorId: usuarioId,
+      aprovadoPorId: usuarioId,
+      origem: AutoridadeOrigemContribuicao.MANUAL,
+      status: AutoridadeStatusContribuicao.APROVADA,
+      campos,
+      payload,
+      hashDedupe,
+      aprovadoEm: new Date(),
+      observacoes:
+        "Contribuição gerada automaticamente a partir de cadastro/edição de autoridade pelo tenant.",
+    },
+  });
+}
+
 function normalizeJudgeName(name: string) {
   return name
     .normalize("NFD")
@@ -942,6 +1065,7 @@ export async function getJuizFormData(): Promise<{
     }
 
     const user = session.user as any;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
 
     // Buscar tribunais
     const tribunais = await prisma.tribunal.findMany({
@@ -1033,6 +1157,7 @@ export async function getJuizes(filters: JuizFilters = {}): Promise<{
     }
 
     const user = session.user as any;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
 
     if (!canManageJudgeByRole(user.role)) {
       const canView = await hasJudgePermission("visualizar");
@@ -1230,6 +1355,7 @@ export async function buscarJuizesCatalogoPorNome(
     }
 
     const user = session.user as any;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
 
     if (!canManageJudgeByRole(user.role)) {
       const canCreate = await hasJudgePermission("criar");
@@ -1258,6 +1384,9 @@ export async function buscarJuizesCatalogoPorNome(
         id: true,
         nome: true,
         nomeCompleto: true,
+        tipoAutoridade: true,
+        vara: true,
+        comarca: true,
       },
       orderBy: [{ nome: "asc" }, { createdAt: "asc" }],
       take: 80,
@@ -1268,7 +1397,15 @@ export async function buscarJuizesCatalogoPorNome(
     for (const candidato of candidatos) {
       const key = normalizeJudgeName(candidato.nome);
       if (!uniqueByName.has(key)) {
-        uniqueByName.set(key, { id: candidato.id, nome: candidato.nome });
+        uniqueByName.set(key, {
+          id: candidato.id,
+          nome: candidato.nome,
+          tipoAutoridade: isSuperAdmin
+            ? candidato.tipoAutoridade
+            : undefined,
+          vara: isSuperAdmin ? candidato.vara : undefined,
+          comarca: isSuperAdmin ? candidato.comarca : undefined,
+        });
       }
 
       if (uniqueByName.size >= 10) {
@@ -2459,6 +2596,18 @@ export async function createJuizTenant(data: {
           },
           tx,
         );
+        await ensureTenantAutoridadeUnlock(tenantId, juiz.id, tx);
+        await registerTenantJudgeContribution(
+          tenantId,
+          juiz.id,
+          user.id,
+          {
+            ...tenantJudgeData,
+            nome,
+            cpf: cpfDigits.length === 11 ? cpfDigits : tenantJudgeData.cpf,
+          },
+          tx,
+        );
 
         return juiz.id;
       });
@@ -2712,6 +2861,8 @@ export async function updateJuizTenant(
     await prisma.$transaction(async (tx) => {
       await ensureTenantJudgeAccess(tenantId, juizId, user.id, tx);
       await upsertTenantJudgeProfile(tenantId, juizId, user.id, data, tx);
+      await ensureTenantAutoridadeUnlock(tenantId, juizId, tx);
+      await registerTenantJudgeContribution(tenantId, juizId, user.id, data, tx);
     });
 
     const tenantProfile = await prisma.acessoJuiz.findFirst({
