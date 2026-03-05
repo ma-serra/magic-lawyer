@@ -109,6 +109,7 @@ model Tenant {
   documentoAssinaturas     DocumentoAssinatura[]
   eventos                  Evento[]
   eventoParticipantes      EventoParticipante[]
+  agendaDisponibilidades   AgendaDisponibilidade[]
   faturas                  Fatura[]
   favoritosJuiz            FavoritoJuiz[]
   julgamentos              Julgamento[]
@@ -368,6 +369,7 @@ model Usuario {
   documentoVersoesAssinadas        DocumentoVersao[]        @relation("DocumentoVersaoAssinador")
   documentoAssinaturasCriadas      DocumentoAssinatura[]
   eventosCriados                   Evento[]
+  agendaDisponibilidades           AgendaDisponibilidade[]
   favoritosJuiz                    FavoritoJuiz[]
   julgamentosCriados               Julgamento[]             @relation("JulgamentoCriador")
   movimentacoesCriadas             MovimentacaoProcesso[]   @relation("MovimentacaoCriador")
@@ -513,6 +515,7 @@ model Advogado {
   historico            AdvogadoHistorico[]
   documentoAssinaturas DocumentoAssinatura[]
   eventos              Evento[]
+  agendaDisponibilidades AgendaDisponibilidade[]
   pagamentoComissoes   PagamentoComissao[]
   processos            Processo[]            @relation("ProcessoAdvogadoResponsavel")
   procuracoes          ProcuracaoAdvogado[]
@@ -2146,6 +2149,30 @@ model AuditLog {
   @@index([tenantId, entidade, entidadeId])
   @@map("audit_logs")
   @@schema("audit")
+}
+
+model AgendaDisponibilidade {
+  id              String   @id @default(cuid())
+  tenantId        String
+  usuarioId       String
+  advogadoId      String?
+  diaSemana       Int
+  ativo           Boolean  @default(true)
+  horaInicio      String   @default("08:00")
+  horaFim         String   @default("18:00")
+  intervaloInicio String?
+  intervaloFim    String?
+  observacoes     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  advogado        Advogado? @relation(fields: [advogadoId], references: [id], onDelete: SetNull)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario         Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, usuarioId, diaSemana])
+  @@index([tenantId, usuarioId])
+  @@index([tenantId, advogadoId])
+  @@schema("magiclawyer")
 }
 
 model Evento {

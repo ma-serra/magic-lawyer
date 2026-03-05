@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Calendar, Plus, Clock, MapPin, Users, Edit, Trash2, CheckCircle, MoreVertical, Check, X, HelpCircle, AlertCircle, Info, Filter, Search, CalendarDays, User, Building, Scale, FileText, MapPin as LocationIcon, XCircle, RotateCcw, } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Card, CardBody, CardHeader, Button, ButtonGroup, Chip, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Tooltip, Input, Select, SelectItem } from "@heroui/react";
+  Card, CardBody, CardHeader, Button, ButtonGroup, Chip, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Tooltip, Input, Select, SelectItem, Pagination } from "@heroui/react";
 import { Calendar as CalendarComponent } from "@heroui/react";
 import {
   today,
@@ -18,7 +18,7 @@ import { useLocale } from "@react-aria/i18n";
 import { useSession } from "next-auth/react";
 import { toast } from "@/lib/toast";
 
-import { useEventos } from "@/app/hooks/use-eventos";
+import { useEventos, useEventoFormData } from "@/app/hooks/use-eventos";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import {
   deleteEvento,
@@ -26,6 +26,10 @@ import {
   getEventoById,
   confirmarParticipacaoEvento,
 } from "@/app/actions/eventos";
+import {
+  salvarMinhaDisponibilidadeAgenda,
+  type AgendaDisponibilidadeView,
+} from "@/app/actions/agenda-disponibilidade";
 import EventoForm from "@/components/evento-form";
 import GoogleCalendarButton from "@/components/google-calendar-button";
 import GoogleCalendarStatusCard from "@/components/google-calendar-status";
@@ -33,6 +37,7 @@ import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { DateUtils } from "@/app/lib/date-utils";
 import { Evento, EventoConfirmacaoStatus } from "@/generated/prisma";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { useAgendaDisponibilidade } from "@/app/hooks/use-agenda-disponibilidade";
 
 type ViewMode = "calendar" | "list";
 
@@ -97,49 +102,28 @@ export default function AgendaPage() {
   const [selectedDateForEvent, setSelectedDateForEvent] = useState<Date | null>(
     null,
   );
+  const [dayPage, setDayPage] = useState(1);
+  const [dayPageSize, setDayPageSize] = useState(8);
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState(12);
+  const [disponibilidadeDraft, setDisponibilidadeDraft] = useState<
+    AgendaDisponibilidadeView[]
+  >([]);
+  const [savingDisponibilidade, setSavingDisponibilidade] = useState(false);
 
   const locale = useLocale();
   const { permissions, isCliente, isAdvogado, isSecretaria, isAdmin } =
     useUserPermissions();
   const session = useSession();
   const userEmail = session?.data?.user?.email;
+  const { formData: eventoFormData } = useEventoFormData();
+  const {
+    disponibilidade,
+    fromDefault: disponibilidadePadrao,
+    mutate: mutateDisponibilidade,
+  } = useAgendaDisponibilidade(!isCliente);
 
-  // Memoizar as datas para evitar re-criação a cada render
-  const datasMemo = useMemo(() => {
-    const agora = new Date();
-    const inicioHoje = new Date(
-      agora.getFullYear(),
-      agora.getMonth(),
-      agora.getDate(),
-    );
-    const fimHoje = new Date(
-      agora.getFullYear(),
-      agora.getMonth(),
-      agora.getDate(),
-      23,
-      59,
-      59,
-      999,
-    );
-
-    const inicioSemana = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const fimSemana = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
-    const fimMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0);
-
-    return {
-      inicioHoje,
-      fimHoje,
-      inicioSemana,
-      fimSemana,
-      inicioMes,
-      fimMes,
-    };
-  }, []); // Apenas uma vez
-
-  // Filtros principais
-  const filtrosPrincipais = useMemo(
+  const filtrosBase = useMemo(
     () => ({
       tipo: filtroTipo || undefined,
       status: filtroStatus || undefined,
@@ -148,12 +132,6 @@ export default function AgendaPage() {
       advogadoId: filtroAdvogado || undefined,
       local: filtroLocal || undefined,
       titulo: filtroTitulo || undefined,
-      dataInicio: filtroDataRange?.start
-        ? new Date(filtroDataRange.start.toString())
-        : undefined,
-      dataFim: filtroDataRange?.end
-        ? new Date(filtroDataRange.end.toString())
-        : undefined,
     }),
     [
       filtroTipo,
@@ -163,50 +141,156 @@ export default function AgendaPage() {
       filtroAdvogado,
       filtroLocal,
       filtroTitulo,
-      filtroDataRange,
     ],
   );
 
-  // Apenas UMA chamada para buscar todos os eventos
-  const { eventos, isLoading, error, mutate } = useEventos(filtrosPrincipais);
+  const selectedDateDayjs = useMemo(
+    () => DateUtils.fromCalendarDate(selectedDate),
+    [selectedDate],
+  );
+  const filtrosDia = useMemo(
+    () => ({
+      ...filtrosBase,
+      dataInicio: selectedDateDayjs.startOf("day").toDate(),
+      dataFim: selectedDateDayjs.endOf("day").toDate(),
+    }),
+    [filtrosBase, selectedDateDayjs],
+  );
+  const filtrosLista = useMemo(
+    () => ({
+      ...filtrosBase,
+      dataInicio: filtroDataRange?.start
+        ? new Date(filtroDataRange.start.toString())
+        : undefined,
+      dataFim: filtroDataRange?.end
+        ? new Date(filtroDataRange.end.toString())
+        : undefined,
+    }),
+    [filtrosBase, filtroDataRange],
+  );
 
-  // Calcular estatísticas a partir dos eventos já carregados
-  const estatisticas = useMemo(() => {
-    if (!eventos) return { hoje: 0, semana: 0, mes: 0, confirmacoes: 0 };
+  const {
+    eventos: eventosDia,
+    meta: diaMeta,
+    isLoading: isLoadingDia,
+    error: errorDia,
+    mutate: mutateDia,
+  } = useEventos(filtrosDia, {
+    page: dayPage,
+    pageSize: dayPageSize,
+    enabled: viewMode === "calendar",
+  });
+  const {
+    eventos: eventosLista,
+    meta: listaMeta,
+    isLoading: isLoadingLista,
+    error: errorLista,
+    mutate: mutateLista,
+  } = useEventos(filtrosLista, {
+    page: listPage,
+    pageSize: listPageSize,
+    enabled: viewMode === "list",
+  });
 
-    const agora = new Date();
-    const hoje = eventos.filter((evento) => {
-      const dataEvento = new Date(evento.dataInicio);
+  const isLoading = viewMode === "calendar" ? isLoadingDia : isLoadingLista;
+  const error = (viewMode === "calendar" ? errorDia : errorLista) as
+    | string
+    | null;
+  const mutate = () =>
+    Promise.all([mutateDia(), mutateLista()]).then(() => undefined);
 
-      return (
-        dataEvento >= datasMemo.inicioHoje && dataEvento <= datasMemo.fimHoje
-      );
-    }).length;
+  useEffect(() => {
+    setListPage(1);
+  }, [
+    filtroTipo,
+    filtroStatus,
+    filtroCliente,
+    filtroProcesso,
+    filtroAdvogado,
+    filtroLocal,
+    filtroTitulo,
+    filtroDataRange,
+    listPageSize,
+  ]);
 
-    const semana = eventos.filter((evento) => {
-      const dataEvento = new Date(evento.dataInicio);
+  useEffect(() => {
+    setDayPage(1);
+  }, [
+    selectedDate,
+    dayPageSize,
+    filtroGoogle,
+    filtroTipo,
+    filtroStatus,
+    filtroCliente,
+    filtroProcesso,
+    filtroAdvogado,
+    filtroLocal,
+    filtroTitulo,
+  ]);
 
-      return (
-        dataEvento >= datasMemo.inicioSemana &&
-        dataEvento <= datasMemo.fimSemana
-      );
-    }).length;
+  useEffect(() => {
+    if (disponibilidade.length > 0) {
+      setDisponibilidadeDraft(disponibilidade);
+    }
+  }, [disponibilidade]);
 
-    const mes = eventos.filter((evento) => {
-      const dataEvento = new Date(evento.dataInicio);
+  useEffect(() => {
+    if (viewMode === "calendar") {
+      setDayPage(1);
+    } else {
+      setListPage(1);
+    }
+  }, [viewMode]);
 
-      return (
-        dataEvento >= datasMemo.inicioMes && dataEvento <= datasMemo.fimMes
-      );
-    }).length;
+  const applyGoogleFilter = (eventosEntrada: EventoComConfirmacoes[]) => {
+    if (filtroGoogle === "google") {
+      return eventosEntrada.filter((evento) => !!evento.googleEventId);
+    }
+    if (filtroGoogle === "local") {
+      return eventosEntrada.filter((evento) => !evento.googleEventId);
+    }
+    return eventosEntrada;
+  };
 
-    const confirmacoes = eventos.reduce(
+  const eventosFiltrados = applyGoogleFilter(eventosDia || []);
+  const eventosListaFiltrados = applyGoogleFilter(eventosLista || []);
+
+  const confirmacoesVisiveis = useMemo(() => {
+    const eventosBase = viewMode === "calendar" ? eventosFiltrados : eventosListaFiltrados;
+    return eventosBase.reduce(
       (total, evento) => total + (evento.confirmacoes?.length || 0),
       0,
     );
+  }, [eventosFiltrados, eventosListaFiltrados, viewMode]);
 
-    return { hoje, semana, mes, confirmacoes };
-  }, [eventos, datasMemo]);
+  const clientesFiltro = useMemo(
+    () => eventoFormData?.clientes || [],
+    [eventoFormData?.clientes],
+  );
+  const processosFiltro = useMemo(() => {
+    const todosProcessos = eventoFormData?.processos || [];
+    if (!filtroCliente) {
+      return todosProcessos;
+    }
+
+    return todosProcessos.filter((processo) => processo.clienteId === filtroCliente);
+  }, [eventoFormData?.processos, filtroCliente]);
+  const advogadosFiltro = useMemo(
+    () => eventoFormData?.advogados || [],
+    [eventoFormData?.advogados],
+  );
+  const clienteKeySet = useMemo(
+    () => new Set(clientesFiltro.map((cliente) => cliente.id)),
+    [clientesFiltro],
+  );
+  const processoKeySet = useMemo(
+    () => new Set(processosFiltro.map((processo) => processo.id)),
+    [processosFiltro],
+  );
+  const advogadoKeySet = useMemo(
+    () => new Set(advogadosFiltro.map((advogado) => advogado.id)),
+    [advogadosFiltro],
+  );
 
   const handleCreateEvento = () => {
     setEventoEditando(null);
@@ -293,6 +377,53 @@ export default function AgendaPage() {
     setEventoEditando(null);
   };
 
+  const updateDisponibilidadeField = (
+    diaSemana: number,
+    field: keyof AgendaDisponibilidadeView,
+    value: string | boolean | null,
+  ) => {
+    setDisponibilidadeDraft((prev) =>
+      prev.map((item) =>
+        item.diaSemana === diaSemana ? { ...item, [field]: value } : item,
+      ),
+    );
+  };
+
+  const handleSalvarDisponibilidade = async () => {
+    if (isCliente || disponibilidadeDraft.length === 0) {
+      return;
+    }
+
+    setSavingDisponibilidade(true);
+    try {
+      const result = await salvarMinhaDisponibilidadeAgenda(
+        disponibilidadeDraft.map((item) => ({
+          diaSemana: item.diaSemana,
+          ativo: item.ativo,
+          horaInicio: item.horaInicio,
+          horaFim: item.horaFim,
+          intervaloInicio: item.intervaloInicio,
+          intervaloFim: item.intervaloFim,
+          observacoes: item.observacoes,
+        })),
+      );
+
+      if (!result.success) {
+        toast.error(
+          "error" in result ? result.error : "Falha ao salvar disponibilidade.",
+        );
+        return;
+      }
+
+      toast.success("Disponibilidade da agenda salva com sucesso.");
+      await mutateDisponibilidade();
+    } catch (error) {
+      toast.error("Erro interno ao salvar disponibilidade.");
+    } finally {
+      setSavingDisponibilidade(false);
+    }
+  };
+
   // Função para limpar todos os filtros
   const clearAllFilters = () => {
     setFiltroTipo("");
@@ -349,66 +480,6 @@ export default function AgendaPage() {
       toast.error("Erro interno do servidor");
     }
   };
-
-  // Função para aplicar todos os filtros
-  const aplicarFiltros = (eventos: EventoComConfirmacoes[]) => {
-    return eventos.filter((evento) => {
-      // Filtro por tipo
-      if (filtroTipo && evento.tipo !== filtroTipo) return false;
-
-      // Filtro por status
-      if (filtroStatus && evento.status !== filtroStatus) return false;
-
-      // Filtro por cliente
-      if (filtroCliente && evento.clienteId !== filtroCliente) return false;
-
-      // Filtro por processo
-      if (filtroProcesso && evento.processoId !== filtroProcesso) return false;
-
-      // Filtro por advogado
-      if (filtroAdvogado && evento.advogadoResponsavelId !== filtroAdvogado)
-        return false;
-
-      // Filtro por local
-      if (
-        filtroLocal &&
-        evento.local &&
-        !evento.local.toLowerCase().includes(filtroLocal.toLowerCase())
-      )
-        return false;
-
-      // Filtro por título
-      if (
-        filtroTitulo &&
-        !evento.titulo.toLowerCase().includes(filtroTitulo.toLowerCase())
-      )
-        return false;
-
-      // Filtro por Google Calendar
-      if (filtroGoogle === "google" && !evento.googleEventId) return false;
-      if (filtroGoogle === "local" && evento.googleEventId) return false;
-
-      // Filtro por data range
-      if (filtroDataRange && filtroDataRange.start && filtroDataRange.end) {
-        const dataEvento = new Date(evento.dataInicio);
-        const dataInicio = new Date(filtroDataRange.start);
-        const dataFim = new Date(filtroDataRange.end);
-
-        if (dataEvento < dataInicio || dataEvento > dataFim) return false;
-      }
-
-      return true;
-    });
-  };
-
-  const eventosFiltrados = (eventos || []).filter((evento) => {
-    const dataEvento = DateUtils.parse(evento.dataInicio as any);
-    const dataSelecionada = DateUtils.fromCalendarDate(selectedDate);
-
-    return dataEvento && DateUtils.isSameDay(dataEvento, dataSelecionada);
-  });
-
-  const eventosListaFiltrados = aplicarFiltros(eventos || []);
 
   const formatarHora = (data: string) => {
     return DateUtils.formatTime(data);
@@ -582,8 +653,9 @@ export default function AgendaPage() {
         title="Agenda"
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <ButtonGroup className="w-full sm:w-auto">
+            <ButtonGroup className="h-8 w-full sm:w-auto">
               <Button
+                className="h-8 min-h-8"
                 size="sm"
                 variant={viewMode === "calendar" ? "solid" : "bordered"}
                 onPress={() => setViewMode("calendar")}
@@ -591,6 +663,7 @@ export default function AgendaPage() {
                 Calendário
               </Button>
               <Button
+                className="h-8 min-h-8"
                 size="sm"
                 variant={viewMode === "list" ? "solid" : "bordered"}
                 onPress={() => setViewMode("list")}
@@ -599,10 +672,10 @@ export default function AgendaPage() {
               </Button>
             </ButtonGroup>
 
-            <div className="flex w-full gap-2 sm:w-auto">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
               {permissions.canCreateEvents && !isCliente ? (
                 <Button
-                  className="flex-1 sm:flex-none"
+                  className="h-8 min-h-8 flex-1 sm:flex-none"
                   color="primary"
                   size="sm"
                   startContent={<Plus className="w-4 h-4" />}
@@ -619,32 +692,32 @@ export default function AgendaPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <PeopleMetricCard
-          helper="Compromissos para o dia atual"
+          helper="Compromissos no dia selecionado"
           icon={<Calendar className="h-4 w-4" />}
-          label="Eventos hoje"
+          label="Dia selecionado"
           tone="primary"
-          value={estatisticas.hoje}
+          value={diaMeta.total}
         />
         <PeopleMetricCard
-          helper="Janela de 7 dias"
+          helper="Eventos encontrados no modo lista com os filtros atuais"
           icon={<CalendarDays className="h-4 w-4" />}
-          label="Esta semana"
+          label="Total filtrado"
           tone="warning"
-          value={estatisticas.semana}
+          value={listaMeta.total}
         />
         <PeopleMetricCard
-          helper="Total no mês corrente"
+          helper="Navegação paginada para manter performance em bases grandes"
           icon={<Clock className="h-4 w-4" />}
-          label="Este mês"
+          label="Página da lista"
           tone="success"
-          value={estatisticas.mes}
+          value={`${listaMeta.page}/${listaMeta.totalPages}`}
         />
         <PeopleMetricCard
-          helper="Respostas registradas de convidados"
+          helper="Respostas de participantes nos itens visíveis"
           icon={<Users className="h-4 w-4" />}
-          label="Confirmações"
+          label="Confirmações visíveis"
           tone="secondary"
-          value={estatisticas.confirmacoes}
+          value={confirmacoesVisiveis}
         />
       </div>
 
@@ -726,6 +799,134 @@ export default function AgendaPage() {
 
       {/* Status do Google Calendar */}
       <GoogleCalendarStatusCard />
+
+      {!isCliente ? (
+        <Card className="border border-divider/70 bg-content1/75 shadow-sm backdrop-blur-md">
+          <CardHeader className="border-b border-divider/70 px-4 py-4 sm:px-6">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-foreground sm:text-lg">
+                  Minha disponibilidade
+                </h3>
+                <p className="text-xs text-default-500 sm:text-sm">
+                  Defina sua jornada semanal. A criação/edição de eventos bloqueia horários fora desta regra.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {disponibilidadePadrao ? (
+                  <Chip color="warning" size="sm" variant="flat">
+                    Padrão inicial
+                  </Chip>
+                ) : (
+                  <Chip color="success" size="sm" variant="flat">
+                    Configuração salva
+                  </Chip>
+                )}
+                <Button
+                  color="primary"
+                  isDisabled={disponibilidadeDraft.length === 0}
+                  isLoading={savingDisponibilidade}
+                  size="sm"
+                  onPress={handleSalvarDisponibilidade}
+                >
+                  Salvar disponibilidade
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="p-4 sm:p-6">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              {disponibilidadeDraft.map((dia) => (
+                <div
+                  key={dia.diaSemana}
+                  className="rounded-xl border border-divider/70 bg-content2/40 p-3"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <Chip
+                      color={dia.ativo ? "success" : "default"}
+                      size="sm"
+                      variant={dia.ativo ? "flat" : "bordered"}
+                    >
+                      {dia.nomeDia}
+                    </Chip>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() =>
+                        updateDisponibilidadeField(
+                          dia.diaSemana,
+                          "ativo",
+                          !dia.ativo,
+                        )
+                      }
+                    >
+                      {dia.ativo ? "Ativo" : "Inativo"}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      isDisabled={!dia.ativo}
+                      label="Início"
+                      size="sm"
+                      type="time"
+                      value={dia.horaInicio}
+                      onChange={(event) =>
+                        updateDisponibilidadeField(
+                          dia.diaSemana,
+                          "horaInicio",
+                          event.target.value,
+                        )
+                      }
+                    />
+                    <Input
+                      isDisabled={!dia.ativo}
+                      label="Fim"
+                      size="sm"
+                      type="time"
+                      value={dia.horaFim}
+                      onChange={(event) =>
+                        updateDisponibilidadeField(
+                          dia.diaSemana,
+                          "horaFim",
+                          event.target.value,
+                        )
+                      }
+                    />
+                    <Input
+                      isDisabled={!dia.ativo}
+                      label="Intervalo início"
+                      size="sm"
+                      type="time"
+                      value={dia.intervaloInicio || ""}
+                      onChange={(event) =>
+                        updateDisponibilidadeField(
+                          dia.diaSemana,
+                          "intervaloInicio",
+                          event.target.value || null,
+                        )
+                      }
+                    />
+                    <Input
+                      isDisabled={!dia.ativo}
+                      label="Intervalo fim"
+                      size="sm"
+                      type="time"
+                      value={dia.intervaloFim || ""}
+                      onChange={(event) =>
+                        updateDisponibilidadeField(
+                          dia.diaSemana,
+                          "intervaloFim",
+                          event.target.value || null,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Layout Principal */}
       <div className="space-y-6">
@@ -840,54 +1041,29 @@ export default function AgendaPage() {
                       </label>
                       <Select
                         placeholder="Selecione um cliente"
-                        selectedKeys={(() => {
-                          const clientesComEventos =
-                            eventos
-                              ?.filter((e) => e.clienteId)
-                              .map((e) => e.clienteId) || [];
-                          const clienteKeySet = new Set(clientesComEventos);
-
-                          return filtroCliente &&
-                            clienteKeySet.has(filtroCliente)
+                        selectedKeys={
+                          filtroCliente && clienteKeySet.has(filtroCliente)
                             ? [filtroCliente]
-                            : [];
-                        })()}
+                            : []
+                        }
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) =>
-                          setFiltroCliente(
-                            (Array.from(keys)[0] as string) || "",
-                          )
-                        }
+                        onSelectionChange={(keys) => {
+                          const nextCliente = (Array.from(keys)[0] as string) || "";
+                          setFiltroCliente(nextCliente);
+                          setFiltroProcesso("");
+                        }}
                       >
-                        <SelectItem key="" textValue="Todos os clientes">
-                          Todos os clientes
-                        </SelectItem>
-                        {(() => {
-                          // Filtrar apenas clientes que têm eventos
-                          const clientesComEventos =
-                            eventos
-                              ?.filter((e) => e.clienteId && e.cliente)
-                              .map((e) => e.cliente) || [];
-                          const clientesUnicos = clientesComEventos.filter(
-                            (cliente, index, self) =>
-                              cliente &&
-                              index ===
-                                self.findIndex((c) => c && c.id === cliente.id),
-                          );
-
-                          return clientesUnicos.map(
-                            (cliente) =>
-                              cliente && (
-                                <SelectItem
-                                  key={cliente.id}
-                                  textValue={cliente.nome}
-                                >
-                                  {cliente.nome}
-                                </SelectItem>
-                              ),
-                          ) as any;
-                        })()}
+                        <>
+                          <SelectItem key="" textValue="Todos os clientes">
+                            Todos os clientes
+                          </SelectItem>
+                          {clientesFiltro.map((cliente) => (
+                            <SelectItem key={cliente.id} textValue={cliente.nome}>
+                              {cliente.nome}
+                            </SelectItem>
+                          ))}
+                        </>
                       </Select>
                     </div>
 
@@ -902,57 +1078,32 @@ export default function AgendaPage() {
                       </label>
                       <Select
                         placeholder="Selecione um processo"
-                        selectedKeys={(() => {
-                          const processosComEventos =
-                            eventos
-                              ?.filter((e) => e.processoId)
-                              .map((e) => e.processoId) || [];
-                          const processoKeySet = new Set(processosComEventos);
-
-                          return filtroProcesso &&
-                            processoKeySet.has(filtroProcesso)
+                        selectedKeys={
+                          filtroProcesso && processoKeySet.has(filtroProcesso)
                             ? [filtroProcesso]
-                            : [];
-                        })()}
+                            : []
+                        }
                         size="sm"
                         variant="bordered"
                         onSelectionChange={(keys) =>
-                          setFiltroProcesso(
-                            (Array.from(keys)[0] as string) || "",
-                          )
+                          setFiltroProcesso((Array.from(keys)[0] as string) || "")
                         }
                       >
-                        <SelectItem key="" textValue="Todos os processos">
-                          Todos os processos
-                        </SelectItem>
-                        {(() => {
-                          // Filtrar apenas processos que têm eventos
-                          const processosComEventos =
-                            eventos
-                              ?.filter((e) => e.processoId && e.processo)
-                              .map((e) => e.processo) || [];
-                          const processosUnicos = processosComEventos.filter(
-                            (processo, index, self) =>
-                              processo &&
-                              index ===
-                                self.findIndex(
-                                  (p) => p && p.id === processo.id,
-                                ),
-                          );
-
-                          return processosUnicos.map(
-                            (processo) =>
-                              processo && (
-                                <SelectItem
-                                  key={processo.id}
-                                  textValue={`${processo.numero} - ${processo.titulo || "Sem título"}`}
-                                >
-                                  {processo.numero} -{" "}
-                                  {processo.titulo || "Sem título"}
-                                </SelectItem>
-                              ),
-                          ) as any;
-                        })()}
+                        <>
+                          <SelectItem key="" textValue="Todos os processos">
+                            Todos os processos
+                          </SelectItem>
+                          {processosFiltro.map((processo) => (
+                            <SelectItem
+                              key={processo.id}
+                              textValue={`${processo.numero} - ${
+                                processo.titulo || "Sem título"
+                              }`}
+                            >
+                              {processo.numero} - {processo.titulo || "Sem título"}
+                            </SelectItem>
+                          ))}
+                        </>
                       </Select>
                     </div>
 
@@ -968,65 +1119,34 @@ export default function AgendaPage() {
                         </label>
                         <Select
                           placeholder="Selecione um advogado"
-                          selectedKeys={(() => {
-                            const advogadosComEventos =
-                              eventos
-                                ?.filter((e) => e.advogadoResponsavelId)
-                                .map((e) => e.advogadoResponsavelId) || [];
-                            const advogadoKeySet = new Set(advogadosComEventos);
-
-                            return filtroAdvogado &&
-                              advogadoKeySet.has(filtroAdvogado)
+                          selectedKeys={
+                            filtroAdvogado && advogadoKeySet.has(filtroAdvogado)
                               ? [filtroAdvogado]
-                              : [];
-                          })()}
+                              : []
+                          }
                           size="sm"
                           variant="bordered"
                           onSelectionChange={(keys) =>
-                            setFiltroAdvogado(
-                              (Array.from(keys)[0] as string) || "",
-                            )
+                            setFiltroAdvogado((Array.from(keys)[0] as string) || "")
                           }
                         >
-                          <SelectItem key="" textValue="Todos os advogados">
-                            Todos os advogados
-                          </SelectItem>
-                          {(() => {
-                            // Filtrar apenas advogados que têm eventos
-                            const advogadosComEventos =
-                              eventos
-                                ?.filter(
-                                  (e) =>
-                                    e.advogadoResponsavelId &&
-                                    e.advogadoResponsavel,
-                                )
-                                .map((e) => e.advogadoResponsavel) || [];
-                            const advogadosUnicos = advogadosComEventos.filter(
-                              (advogado, index, self) =>
-                                advogado &&
-                                index ===
-                                  self.findIndex(
-                                    (a) => a && a.id === advogado.id,
-                                  ),
-                            );
+                          <>
+                            <SelectItem key="" textValue="Todos os advogados">
+                              Todos os advogados
+                            </SelectItem>
+                            {advogadosFiltro.map((advogado: any) => {
+                              const nomeCompleto =
+                                `${advogado.usuario.firstName || ""} ${
+                                  advogado.usuario.lastName || ""
+                                }`.trim() || advogado.usuario.email;
 
-                            return advogadosUnicos.map(
-                              (advogado: any) =>
-                                advogado &&
-                                (() => {
-                                  const nomeCompleto = `${advogado.usuario.firstName} ${advogado.usuario.lastName}`;
-
-                                  return (
-                                    <SelectItem
-                                      key={advogado.id}
-                                      textValue={nomeCompleto}
-                                    >
-                                      {nomeCompleto}
-                                    </SelectItem>
-                                  );
-                                })(),
-                            ) as any;
-                          })()}
+                              return (
+                                <SelectItem key={advogado.id} textValue={nomeCompleto}>
+                                  {nomeCompleto}
+                                </SelectItem>
+                              );
+                            })}
+                          </>
                         </Select>
                       </div>
                     )}
@@ -1428,6 +1548,45 @@ export default function AgendaPage() {
                       </AnimatePresence>
                     </div>
                   )}
+                  <div className="mt-4 flex flex-col gap-3 border-t border-divider/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-xs text-default-500">
+                      <span>
+                        {diaMeta.total} evento(s) no dia selecionado
+                      </span>
+                      <Select
+                        aria-label="Por página (dia)"
+                        className="w-24"
+                        selectedKeys={[String(dayPageSize)]}
+                        size="sm"
+                        variant="bordered"
+                        onSelectionChange={(keys) => {
+                          const nextSize = Number(Array.from(keys)[0] as string);
+                          if (!Number.isNaN(nextSize)) {
+                            setDayPageSize(nextSize);
+                          }
+                        }}
+                      >
+                        <SelectItem key="4" textValue="4">
+                          4
+                        </SelectItem>
+                        <SelectItem key="8" textValue="8">
+                          8
+                        </SelectItem>
+                        <SelectItem key="12" textValue="12">
+                          12
+                        </SelectItem>
+                        <SelectItem key="20" textValue="20">
+                          20
+                        </SelectItem>
+                      </Select>
+                    </div>
+                    <Pagination
+                      isCompact
+                      page={diaMeta.page}
+                      total={diaMeta.totalPages}
+                      onChange={setDayPage}
+                    />
+                  </div>
                 </CardBody>
               </Card>
             </motion.div>
@@ -1630,6 +1789,43 @@ export default function AgendaPage() {
                     </AnimatePresence>
                   </div>
                 )}
+                <div className="mt-4 flex flex-col gap-3 border-t border-divider/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2 text-xs text-default-500">
+                    <span>Total no filtro: {listaMeta.total}</span>
+                    <Select
+                      aria-label="Por página (lista)"
+                      className="w-24"
+                      selectedKeys={[String(listPageSize)]}
+                      size="sm"
+                      variant="bordered"
+                      onSelectionChange={(keys) => {
+                        const nextSize = Number(Array.from(keys)[0] as string);
+                        if (!Number.isNaN(nextSize)) {
+                          setListPageSize(nextSize);
+                        }
+                      }}
+                    >
+                      <SelectItem key="8" textValue="8">
+                        8
+                      </SelectItem>
+                      <SelectItem key="12" textValue="12">
+                        12
+                      </SelectItem>
+                      <SelectItem key="20" textValue="20">
+                        20
+                      </SelectItem>
+                      <SelectItem key="30" textValue="30">
+                        30
+                      </SelectItem>
+                    </Select>
+                  </div>
+                  <Pagination
+                    isCompact
+                    page={listaMeta.page}
+                    total={listaMeta.totalPages}
+                    onChange={setListPage}
+                  />
+                </div>
               </CardBody>
             </Card>
           </motion.div>

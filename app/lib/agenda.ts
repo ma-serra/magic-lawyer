@@ -7,6 +7,7 @@ import logger from "@/lib/logger";
 
 // Interface para criar evento
 export interface CreateEventoData {
+  tenantId: string;
   titulo: string;
   descricao?: string;
   tipo: "AUDIENCIA" | "REUNIAO" | "CONSULTA" | "PRAZO" | "LEMBRETE" | "OUTRO";
@@ -39,7 +40,7 @@ export const createEvento = async (data: CreateEventoData) => {
   try {
     const evento = await prisma.evento.create({
       data: {
-        tenantId: data.criadoPorId, // Assumindo que o tenantId vem do usuário logado
+        tenantId: data.tenantId,
         titulo: data.titulo,
         descricao: data.descricao,
         tipo: data.tipo,

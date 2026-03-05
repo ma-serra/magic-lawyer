@@ -21,8 +21,9 @@ export default function GoogleCalendarButton() {
     <>
       {/* Botão do Google Calendar */}
       <Button
-        className="w-full sm:w-auto"
+        className="h-8 min-h-8 w-full sm:w-auto"
         color="secondary"
+        size="sm"
         startContent={<GoogleIcon className="w-4 h-4" />}
         variant="bordered"
         onPress={() => setIsOpen(true)}

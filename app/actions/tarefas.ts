@@ -32,6 +32,8 @@ export interface TarefaUpdatePayload {
   dataLimite?: string | null;
   dataInicio?: string | null;
   lembreteEm?: string | null;
+  processoId?: string | null;
+  clienteId?: string | null;
   responsavelId?: string | null;
   categoriaId?: string | null;
   boardId?: string | null;
@@ -42,6 +44,89 @@ export interface TarefaUpdatePayload {
   arquivada?: boolean;
 }
 
+async function resolveBoardAndColumnIds(params: {
+  tenantId: string;
+  boardId?: string | null;
+  columnId?: string | null;
+}) {
+  let resolvedBoardId = params.boardId || null;
+  let resolvedColumnId = params.columnId || null;
+
+  if (resolvedColumnId) {
+    const coluna = await prisma.boardColumn.findFirst({
+      where: {
+        id: resolvedColumnId,
+        tenantId: params.tenantId,
+      },
+      select: {
+        id: true,
+        boardId: true,
+      },
+    });
+
+    if (!coluna) {
+      return { success: false, error: "Coluna não encontrada" } as const;
+    }
+
+    if (resolvedBoardId && coluna.boardId !== resolvedBoardId) {
+      return {
+        success: false,
+        error: "A coluna selecionada não pertence ao quadro informado",
+      } as const;
+    }
+
+    resolvedBoardId = coluna.boardId;
+  }
+
+  if (resolvedBoardId) {
+    const board = await prisma.board.findFirst({
+      where: {
+        id: resolvedBoardId,
+        tenantId: params.tenantId,
+      },
+      select: { id: true },
+    });
+
+    if (!board) {
+      return { success: false, error: "Quadro não encontrado" } as const;
+    }
+
+    if (!resolvedColumnId) {
+      const primeiraColuna = await prisma.boardColumn.findFirst({
+        where: {
+          boardId: resolvedBoardId,
+          tenantId: params.tenantId,
+          ativo: true,
+        },
+        orderBy: {
+          ordem: "asc",
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!primeiraColuna) {
+        return {
+          success: false,
+          error:
+            "O quadro selecionado não possui coluna ativa. Configure ao menos uma coluna para continuar.",
+        } as const;
+      }
+
+      resolvedColumnId = primeiraColuna.id;
+    }
+  } else {
+    resolvedColumnId = null;
+  }
+
+  return {
+    success: true,
+    boardId: resolvedBoardId,
+    columnId: resolvedColumnId,
+  } as const;
+}
+
 export async function listTarefas(params?: {
   status?: string;
   prioridade?: string;
@@ -49,6 +134,10 @@ export async function listTarefas(params?: {
   processoId?: string;
   clienteId?: string;
   categoriaId?: string;
+  boardId?: string;
+  incluirArquivadas?: boolean;
+  page?: number;
+  perPage?: number;
   atrasadas?: boolean;
   minhas?: boolean; // Apenas tarefas do usuário logado
 }) {
@@ -69,6 +158,10 @@ export async function listTarefas(params?: {
       tenantId: user.tenantId,
       deletedAt: null,
     };
+
+    if (!params?.incluirArquivadas) {
+      where.arquivada = false;
+    }
 
     // Filtros opcionais
     if (params?.status) {
@@ -95,6 +188,10 @@ export async function listTarefas(params?: {
       where.categoriaId = params.categoriaId;
     }
 
+    if (params?.boardId) {
+      where.boardId = params.boardId;
+    }
+
     // Apenas tarefas do usuário logado
     if (params?.minhas) {
       where.responsavelId = user.id;
@@ -110,49 +207,91 @@ export async function listTarefas(params?: {
       };
     }
 
-    const tarefas = await prisma.tarefa.findMany({
-      where,
-      include: {
-        categoria: true,
-        responsavel: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            avatarUrl: true,
-          },
-        },
-        criadoPor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        processo: {
-          select: {
-            id: true,
-            numero: true,
-            titulo: true,
-          },
-        },
-        cliente: {
-          select: {
-            id: true,
-            nome: true,
-          },
+    const page = params?.page && params.page > 0 ? params.page : 1;
+    const perPage = params?.perPage && params.perPage > 0 ? params.perPage : 0;
+    const shouldPaginate = perPage > 0;
+
+    const include = {
+      categoria: true,
+      responsavel: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatarUrl: true,
         },
       },
-      orderBy: [
-        { status: "asc" },
-        { prioridade: "desc" },
-        { dataLimite: "asc" },
-      ],
-    });
+      criadoPor: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      processo: {
+        select: {
+          id: true,
+          numero: true,
+          titulo: true,
+        },
+      },
+      cliente: {
+        select: {
+          id: true,
+          nome: true,
+        },
+      },
+    } as const;
+    const orderBy = [
+      { status: "asc" as const },
+      { prioridade: "desc" as const },
+      { dataLimite: "asc" as const },
+    ];
 
-    return { success: true, tarefas };
+    if (!shouldPaginate) {
+      const tarefas = await prisma.tarefa.findMany({
+        where,
+        include,
+        orderBy,
+      });
+
+      return {
+        success: true,
+        tarefas,
+        pagination: {
+          page: 1,
+          perPage: tarefas.length || 1,
+          total: tarefas.length,
+          totalPages: 1,
+        },
+      };
+    }
+
+    const [total, tarefas] = await prisma.$transaction([
+      prisma.tarefa.count({ where }),
+      prisma.tarefa.findMany({
+        where,
+        include,
+        orderBy,
+        skip: (page - 1) * perPage,
+        take: perPage,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+    return {
+      success: true,
+      tarefas,
+      pagination: {
+        page,
+        perPage,
+        total,
+        totalPages,
+      },
+    };
   } catch (error) {
     logger.error("Erro ao listar tarefas:", error);
 
@@ -211,6 +350,65 @@ export async function getTarefa(id: string) {
             telefone: true,
           },
         },
+        board: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+        column: {
+          select: {
+            id: true,
+            nome: true,
+            cor: true,
+          },
+        },
+        checklists: {
+          orderBy: {
+            ordem: "asc",
+          },
+        },
+        comentarios: {
+          include: {
+            usuario: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+        anexos: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+        atividades: {
+          include: {
+            usuario: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 30,
+        },
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
       },
     });
 
@@ -243,6 +441,21 @@ export async function createTarefa(data: TarefaCreatePayload) {
     // Validações
     if (!data.titulo?.trim()) {
       return { success: false, error: "Título é obrigatório" };
+    }
+
+    if (data.tarefaPaiId) {
+      const tarefaPai = await prisma.tarefa.findFirst({
+        where: {
+          id: data.tarefaPaiId,
+          tenantId: user.tenantId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!tarefaPai) {
+        return { success: false, error: "Tarefa pai não encontrada" };
+      }
     }
 
     // Verificar se processo existe (se fornecido)
@@ -301,6 +514,16 @@ export async function createTarefa(data: TarefaCreatePayload) {
       }
     }
 
+    const boardColumnResolution = await resolveBoardAndColumnIds({
+      tenantId: user.tenantId,
+      boardId: data.boardId,
+      columnId: data.columnId,
+    });
+
+    if (!boardColumnResolution.success) {
+      return { success: false, error: boardColumnResolution.error };
+    }
+
     const tarefa = await prisma.tarefa.create({
       data: {
         titulo: data.titulo.trim(),
@@ -314,8 +537,8 @@ export async function createTarefa(data: TarefaCreatePayload) {
         clienteId: data.clienteId,
         categoriaId: data.categoriaId,
         responsavelId: data.responsavelId,
-        boardId: data.boardId,
-        columnId: data.columnId,
+        boardId: boardColumnResolution.boardId,
+        columnId: boardColumnResolution.columnId,
         estimativaHoras: data.estimativaHoras,
         cor: data.cor,
         tarefaPaiId: data.tarefaPaiId,
@@ -383,7 +606,7 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
     }
 
     // Verificar se responsável existe (se fornecido)
-    if (data.responsavelId) {
+    if (data.responsavelId !== undefined && data.responsavelId !== null) {
       const responsavel = await prisma.usuario.findFirst({
         where: {
           id: data.responsavelId,
@@ -397,7 +620,7 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
     }
 
     // Verificar se categoria existe (se fornecida)
-    if (data.categoriaId) {
+    if (data.categoriaId !== undefined && data.categoriaId !== null) {
       const categoria = await prisma.categoriaTarefa.findFirst({
         where: {
           id: data.categoriaId,
@@ -410,9 +633,55 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
       }
     }
 
+    if (data.processoId !== undefined && data.processoId !== null) {
+      const processo = await prisma.processo.findFirst({
+        where: {
+          id: data.processoId,
+          tenantId: user.tenantId,
+        },
+      });
+
+      if (!processo) {
+        return { success: false, error: "Processo não encontrado" };
+      }
+    }
+
+    if (data.clienteId !== undefined && data.clienteId !== null) {
+      const cliente = await prisma.cliente.findFirst({
+        where: {
+          id: data.clienteId,
+          tenantId: user.tenantId,
+        },
+      });
+
+      if (!cliente) {
+        return { success: false, error: "Cliente não encontrado" };
+      }
+    }
+
+    const boardColumnResolution = await resolveBoardAndColumnIds({
+      tenantId: user.tenantId,
+      boardId:
+        data.boardId !== undefined ? data.boardId : tarefaExistente.boardId,
+      columnId:
+        data.columnId !== undefined ? data.columnId : tarefaExistente.columnId,
+    });
+
+    if (!boardColumnResolution.success) {
+      return { success: false, error: boardColumnResolution.error };
+    }
+
     const updateData: any = {};
 
-    if (data.titulo !== undefined) updateData.titulo = data.titulo.trim();
+    if (data.titulo !== undefined) {
+      const titulo = data.titulo.trim();
+
+      if (!titulo) {
+        return { success: false, error: "Título é obrigatório" };
+      }
+
+      updateData.titulo = titulo;
+    }
     if (data.descricao !== undefined)
       updateData.descricao = data.descricao?.trim();
     if (data.status !== undefined) updateData.status = data.status;
@@ -421,8 +690,10 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
       updateData.responsavelId = data.responsavelId;
     if (data.categoriaId !== undefined)
       updateData.categoriaId = data.categoriaId;
-    if (data.boardId !== undefined) updateData.boardId = data.boardId;
-    if (data.columnId !== undefined) updateData.columnId = data.columnId;
+    if (data.processoId !== undefined) updateData.processoId = data.processoId;
+    if (data.clienteId !== undefined) updateData.clienteId = data.clienteId;
+    updateData.boardId = boardColumnResolution.boardId;
+    updateData.columnId = boardColumnResolution.columnId;
     if (data.estimativaHoras !== undefined)
       updateData.estimativaHoras = data.estimativaHoras;
     if (data.horasGastas !== undefined)
@@ -612,7 +883,7 @@ export async function marcarTarefaConcluida(id: string) {
   }
 }
 
-export async function getDashboardTarefas() {
+export async function getDashboardTarefas(params?: { boardId?: string }) {
   try {
     const session = await getSession();
 
@@ -638,12 +909,21 @@ export async function getDashboardTarefas() {
 
     proximosDias.setDate(proximosDias.getDate() + 7);
 
+    const baseWhere: any = {
+      tenantId: user.tenantId,
+      arquivada: false,
+      deletedAt: null,
+    };
+
+    if (params?.boardId) {
+      baseWhere.boardId = params.boardId;
+    }
+
     // Tarefas do usuário logado
     const minhasTarefas = await prisma.tarefa.count({
       where: {
-        tenantId: user.tenantId,
+        ...baseWhere,
         responsavelId: user.id,
-        deletedAt: null,
         status: {
           notIn: ["CONCLUIDA", "CANCELADA"],
         },
@@ -653,8 +933,7 @@ export async function getDashboardTarefas() {
     // Tarefas atrasadas
     const atrasadas = await prisma.tarefa.count({
       where: {
-        tenantId: user.tenantId,
-        deletedAt: null,
+        ...baseWhere,
         status: {
           notIn: ["CONCLUIDA", "CANCELADA"],
         },
@@ -667,8 +946,7 @@ export async function getDashboardTarefas() {
     // Tarefas de hoje
     const hoje_count = await prisma.tarefa.count({
       where: {
-        tenantId: user.tenantId,
-        deletedAt: null,
+        ...baseWhere,
         status: {
           notIn: ["CONCLUIDA", "CANCELADA"],
         },
@@ -682,8 +960,7 @@ export async function getDashboardTarefas() {
     // Tarefas próximos 7 dias
     const proximosDias_count = await prisma.tarefa.count({
       where: {
-        tenantId: user.tenantId,
-        deletedAt: null,
+        ...baseWhere,
         status: {
           notIn: ["CONCLUIDA", "CANCELADA"],
         },
@@ -698,8 +975,7 @@ export async function getDashboardTarefas() {
     const porPrioridade = await prisma.tarefa.groupBy({
       by: ["prioridade"],
       where: {
-        tenantId: user.tenantId,
-        deletedAt: null,
+        ...baseWhere,
         status: {
           notIn: ["CONCLUIDA", "CANCELADA"],
         },
@@ -711,8 +987,7 @@ export async function getDashboardTarefas() {
     const porStatus = await prisma.tarefa.groupBy({
       by: ["status"],
       where: {
-        tenantId: user.tenantId,
-        deletedAt: null,
+        ...baseWhere,
       },
       _count: true,
     });
@@ -797,6 +1072,12 @@ export async function getTarefasPorBoard(
           select: {
             id: true,
             nome: true,
+          },
+        },
+        checklists: {
+          select: {
+            id: true,
+            concluida: true,
           },
         },
         _count: {
@@ -919,6 +1200,36 @@ export async function reordenarTarefas(
 
     if (!column) {
       return { success: false, error: "Coluna não encontrada" };
+    }
+
+    const tarefaIds = Array.from(
+      new Set(tarefaOrders.map((item) => item.id).filter(Boolean)),
+    );
+
+    if (tarefaIds.length === 0) {
+      return { success: true };
+    }
+
+    const tarefasValidas = await prisma.tarefa.findMany({
+      where: {
+        id: {
+          in: tarefaIds,
+        },
+        tenantId: user.tenantId,
+        columnId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (tarefasValidas.length !== tarefaIds.length) {
+      return {
+        success: false,
+        error:
+          "Não foi possível reordenar: uma ou mais tarefas não pertencem à coluna informada.",
+      };
     }
 
     // Atualizar ordem de cada tarefa

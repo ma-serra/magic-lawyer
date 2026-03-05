@@ -38,26 +38,6 @@ async function loginAsAdminForE2E(page: Page): Promise<void> {
   await page.goto("/login");
   await page.waitForLoadState("domcontentloaded");
 
-  const quickLoginButton = page.getByRole("button", { name: /^Logar$/i }).first();
-  const hasQuickLogin = await quickLoginButton.isVisible({ timeout: 10000 }).catch(
-    () => false,
-  );
-
-  if (hasQuickLogin) {
-    try {
-      await quickLoginButton.click();
-      await page.waitForURL((url) => !url.pathname.includes("/login"), {
-        timeout: 20000,
-      });
-      await page.waitForLoadState("networkidle");
-
-      return;
-    } catch {
-      await page.goto("/login");
-      await page.waitForLoadState("domcontentloaded");
-    }
-  }
-
   await page.fill('input[name="email"], input[type="email"]', ADMIN_EMAIL);
   await page.fill('input[name="password"], input[type="password"]', ADMIN_PASSWORD);
 
@@ -66,9 +46,8 @@ async function loginAsAdminForE2E(page: Page): Promise<void> {
     await slugField.fill("sandra");
   }
 
-  await page
-    .getByRole("button", { name: /Entrar no sistema/i })
-    .click();
+  const submitButton = page.getByRole("button", { name: /^Entrar no sistema$/i });
+  await submitButton.first().click();
 
   try {
     await page.waitForURL((url) => !url.pathname.includes("/login"), {

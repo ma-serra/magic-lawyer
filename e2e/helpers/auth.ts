@@ -46,6 +46,18 @@ async function fillLoginForm(
 }
 
 async function clickLoginSubmit(page: Page): Promise<void> {
+  const submitByLabel = page
+    .getByRole("button", { name: /^Entrar no sistema$/i })
+    .first();
+  const hasSubmitByLabel = await submitByLabel
+    .isVisible({ timeout: 3000 })
+    .catch(() => false);
+
+  if (hasSubmitByLabel) {
+    await submitByLabel.click();
+    return;
+  }
+
   const submitByType = page.locator('button[type="submit"]').first();
   const hasSubmitByType = await submitByType
     .isVisible({ timeout: 3000 })
@@ -56,10 +68,17 @@ async function clickLoginSubmit(page: Page): Promise<void> {
     return;
   }
 
-  await page
-    .getByRole("button", { name: /Entrar no sistema|Entrar|Login/i })
-    .first()
-    .click();
+  const submitByEntrar = page.getByRole("button", { name: /^Entrar$/i }).first();
+  const hasSubmitByEntrar = await submitByEntrar
+    .isVisible({ timeout: 2000 })
+    .catch(() => false);
+
+  if (hasSubmitByEntrar) {
+    await submitByEntrar.click();
+    return;
+  }
+
+  throw new Error("Não foi possível localizar o botão de submit do login.");
 }
 
 /**

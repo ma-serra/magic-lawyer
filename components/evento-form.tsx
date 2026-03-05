@@ -32,8 +32,8 @@ interface FormEventoData {
   status: EventoStatus;
   lembreteMinutos: number;
   observacoes: string;
-  recorrencia: string | null;
-  recorrenciaFim: string | null;
+  recorrencia: string;
+  recorrenciaFim: any;
   googleEventId: string | null;
   googleCalendarId: string | null;
 }
@@ -70,6 +70,14 @@ const lembretes = [
   { key: 1440, label: "1 dia antes" },
 ];
 
+const recorrencias = [
+  { key: "NENHUMA", label: "Sem recorrência" },
+  { key: "DIARIA", label: "Diária" },
+  { key: "SEMANAL", label: "Semanal" },
+  { key: "MENSAL", label: "Mensal" },
+  { key: "ANUAL", label: "Anual" },
+];
+
 export default function EventoForm({
   isOpen,
   onClose,
@@ -95,7 +103,7 @@ export default function EventoForm({
     status: EventoStatus.AGENDADO,
     lembreteMinutos: 30,
     observacoes: "",
-    recorrencia: null,
+    recorrencia: "NENHUMA",
     recorrenciaFim: null,
     googleEventId: null,
     googleCalendarId: null,
@@ -126,8 +134,10 @@ export default function EventoForm({
         status: evento.status || EventoStatus.AGENDADO,
         lembreteMinutos: evento.lembreteMinutos || 30,
         observacoes: evento.observacoes || "",
-        recorrencia: evento.recorrencia || null,
-        recorrenciaFim: evento.recorrenciaFim || null,
+        recorrencia: evento.recorrencia || "NENHUMA",
+        recorrenciaFim: evento.recorrenciaFim
+          ? parseAbsoluteToLocal(new Date(evento.recorrenciaFim).toISOString())
+          : null,
         googleEventId: evento.googleEventId || null,
         googleCalendarId: evento.googleCalendarId || null,
       };
@@ -157,7 +167,7 @@ export default function EventoForm({
       status: EventoStatus.AGENDADO,
       lembreteMinutos: 30,
       observacoes: "",
-      recorrencia: null,
+      recorrencia: "NENHUMA",
       recorrenciaFim: null,
       googleEventId: null,
       googleCalendarId: null,
@@ -248,6 +258,19 @@ export default function EventoForm({
       }
     }
 
+    if (formData.recorrencia !== "NENHUMA" && !evento) {
+      if (!formData.recorrenciaFim) {
+        newErrors.recorrenciaFim = "Informe até quando a recorrência deve ocorrer";
+      } else {
+        const inicio = formData.dataInicio?.toDate();
+        const recorrenciaFim = formData.recorrenciaFim.toDate();
+        if (inicio && recorrenciaFim <= inicio) {
+          newErrors.recorrenciaFim =
+            "A data final da recorrência deve ser posterior ao início";
+        }
+      }
+    }
+
     if (formData.descricao && formData.descricao.length > 1000) {
       newErrors.descricao = "Descrição deve ter no máximo 1000 caracteres";
     }
@@ -287,6 +310,11 @@ export default function EventoForm({
         dataFim: formData.dataFim
           ? formData.dataFim.toDate().toISOString()
           : "",
+        recorrencia: formData.recorrencia || "NENHUMA",
+        recorrenciaFim:
+          formData.recorrencia !== "NENHUMA" && formData.recorrenciaFim
+            ? formData.recorrenciaFim.toDate().toISOString()
+            : null,
       } as EventoFormData;
 
       let result;
@@ -497,6 +525,58 @@ export default function EventoForm({
                     }}
                   />
                 </div>
+
+                {!evento ? (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Select
+                      color="secondary"
+                      label="Recorrência"
+                      placeholder="Selecione a recorrência"
+                      selectedKeys={
+                        formData.recorrencia ? [formData.recorrencia] : ["NENHUMA"]
+                      }
+                      onSelectionChange={(keys) => {
+                        const selectedKey =
+                          (Array.from(keys)[0] as string | undefined) ||
+                          "NENHUMA";
+                        setFormData((prev) => ({
+                          ...prev,
+                          recorrencia: selectedKey,
+                          recorrenciaFim:
+                            selectedKey === "NENHUMA" ? null : prev.recorrenciaFim,
+                        }));
+                      }}
+                    >
+                      {recorrencias.map((item) => (
+                        <SelectItem key={item.key} textValue={item.label}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </Select>
+
+                    {formData.recorrencia !== "NENHUMA" ? (
+                      <DateInput
+                        color="secondary"
+                        errorMessage={errors.recorrenciaFim}
+                        granularity="day"
+                        isInvalid={!!errors.recorrenciaFim}
+                        label="Repetir até"
+                        dateValue={formData.recorrenciaFim}
+                        variant="bordered"
+                        onDateChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            recorrenciaFim: value,
+                          }))
+                        }
+                      />
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-default-300 p-3 text-xs text-default-500">
+                        Defina a recorrência para habilitar a data final das ocorrências.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
 
                 {/* Local */}
                 <Input

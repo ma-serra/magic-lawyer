@@ -370,23 +370,6 @@ export function useProfileNavigation() {
         icon: "CheckSquare",
         description: "Gestão de tarefas e atividades",
         section: "Operacional",
-        isAccordion: true,
-        children: [
-          {
-            label: "Kanban",
-            href: "/tarefas/kanban",
-            icon: "LayoutBoard",
-            description: "Visualização em quadros",
-            requiredModules: ["tarefas"],
-          },
-          {
-            label: "Lista",
-            href: "/tarefas",
-            icon: "List",
-            description: "Visualização em lista",
-            requiredModules: ["tarefas"],
-          },
-        ],
         requiredModules: ["tarefas"],
       });
     }

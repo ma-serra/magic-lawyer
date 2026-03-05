@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSession, signIn, useSession } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@heroui/button";
@@ -75,6 +75,10 @@ function LoginPageInner() {
     string | null
   >(null);
   const [checkedEmail, setCheckedEmail] = useState("");
+  const loginInFlightRef = useRef(false);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const tenantInputRef = useRef<HTMLInputElement | null>(null);
 
   const resolveRedirectTarget = useCallback(
     (role?: string | null) => {
@@ -154,6 +158,11 @@ function LoginPageInner() {
         return false;
       }
 
+      if (loginInFlightRef.current) {
+        return false;
+      }
+
+      loginInFlightRef.current = true;
       setLoading(true);
 
       const loginPromise = (async () => {
@@ -300,6 +309,7 @@ function LoginPageInner() {
 
         return false;
       } finally {
+        loginInFlightRef.current = false;
         setLoading(false);
       }
     },
@@ -491,13 +501,20 @@ function LoginPageInner() {
       });
   }, [isDevMode]);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = useCallback(async () => {
+    if (loading) {
+      return;
+    }
 
-    const sanitizedEmail = email.trim();
-    const sanitizedTenant = tenant.trim();
+    const currentEmail = emailInputRef.current?.value ?? email;
+    const currentTenant = tenantInputRef.current?.value ?? tenant;
+    const currentPassword = passwordInputRef.current?.value ?? password;
 
-    if (isFirstAccessEmail) {
+    const sanitizedEmail = currentEmail.trim();
+    const sanitizedTenant = currentTenant.trim();
+    const sanitizedPassword = currentPassword.trim();
+
+    if (isFirstAccessEmail && !sanitizedPassword) {
       if (!emailRegex.test(sanitizedEmail)) {
         addToast({
           title: "E-mail inválido",
@@ -537,10 +554,10 @@ function LoginPageInner() {
 
     await attemptLogin({
       email: sanitizedEmail,
-      password,
+      password: sanitizedPassword,
       tenantOverride: sanitizedTenant,
     });
-  };
+  }, [attemptLogin, email, emailRegex, isFirstAccessEmail, loading, password, tenant]);
 
   const handleDevQuickLogin = useCallback(
     async (option: { email: string; password: string; tenant?: string }) => {
@@ -564,9 +581,27 @@ function LoginPageInner() {
     [attemptLogin, loading]
   );
 
+  const handleSubmitOnEnter = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") {
+        return;
+      }
+      e.preventDefault();
+      void handleSubmit();
+    },
+    [handleSubmit],
+  );
+
   const handleEmailBlur = useCallback(async () => {
     const sanitizedEmail = email.trim().toLowerCase();
     const sanitizedTenant = tenant.trim();
+    const sanitizedPassword = password.trim();
+
+    // Se o usuário já informou senha, priorizamos o fluxo de login normal
+    // e evitamos uma chamada extra de server action no blur.
+    if (sanitizedPassword) {
+      return;
+    }
 
     if (!sanitizedEmail || !emailRegex.test(sanitizedEmail)) {
       setIsFirstAccessEmail(false);
@@ -602,7 +637,7 @@ function LoginPageInner() {
     } finally {
       setIsCheckingFirstAccess(false);
     }
-  }, [checkedEmail, email, emailRegex, tenant]);
+  }, [checkedEmail, email, emailRegex, password, tenant]);
 
   useEffect(() => {
     const sanitizedEmail = email.trim().toLowerCase();
@@ -766,11 +801,12 @@ function LoginPageInner() {
           </CardHeader>
           <Divider className="border-white/10" />
           <CardBody className="pt-6">
-            <form className="space-y-4" onSubmit={onSubmit}>
+            <div className="space-y-4">
               <Input
                 isRequired
                 className="mb-4"
                 label="E-mail"
+                ref={emailInputRef}
                 startContent={<span className="text-default-400 text-sm">📧</span>}
                 type="email"
                 value={email}
@@ -780,6 +816,7 @@ function LoginPageInner() {
                 onChange={(e) => {
                   setEmail(e.target.value);
                 }}
+                onKeyDown={handleSubmitOnEnter}
               />
               {isFirstAccessEmail ? (
                 <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-primary-300">
@@ -793,10 +830,12 @@ function LoginPageInner() {
                   isRequired
                   className="mb-4"
                   label="Senha"
+                  ref={passwordInputRef}
                   startContent={<span className="text-default-400 text-sm">🔒</span>}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={handleSubmitOnEnter}
                 />
               )}
               <Input
@@ -804,25 +843,31 @@ function LoginPageInner() {
                 description="Opcional. Se não souber, deixe vazio. Exemplo: meu-escritorio ou meuescritorio.com.br"
                 label="Escritório (slug/domínio)"
                 placeholder="meu-escritorio"
+                ref={tenantInputRef}
                 startContent={<span className="text-default-400 text-sm">🏢</span>}
                 value={tenant}
                 onChange={(e) => setTenant(e.target.value)}
+                onKeyDown={handleSubmitOnEnter}
               />
               <Button
                 fullWidth
                 color="primary"
-                isLoading={loading || isCheckingFirstAccess}
+                isDisabled={loading}
+                isLoading={loading}
                 size="lg"
-                startContent={loading || isCheckingFirstAccess ? null : <span>🚀</span>}
-                type="submit"
+                startContent={loading ? null : <span>🚀</span>}
+                type="button"
+                onClick={() => {
+                  void handleSubmit();
+                }}
               >
-                {loading || isCheckingFirstAccess
+                {loading
                   ? "Processando..."
                   : isFirstAccessEmail
                     ? "Enviar link de primeiro acesso"
                     : "Entrar no sistema"}
               </Button>
-            </form>
+            </div>
           </CardBody>
         </Card>
 

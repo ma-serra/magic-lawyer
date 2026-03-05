@@ -20,6 +20,9 @@ import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
 const AGENDA_MODULE = "agenda";
 const NO_ACCESS_ADVOGADO_ID = "__NO_ADVOGADO_ACCESS__";
 const NO_ACCESS_EVENT_ID = "__NO_AGENDA_ACCESS__";
+const EVENTOS_DEFAULT_PAGE_SIZE = 20;
+const EVENTOS_MAX_PAGE_SIZE = 100;
+const MAX_RECORRENCIA_OCORRENCIAS = 180;
 
 type AgendaPermissionAction = "visualizar" | "criar" | "editar" | "excluir";
 
@@ -39,6 +42,22 @@ interface AgendaSessionContext {
   userEmail: string | null;
   currentClienteId: string | null;
   accessibleAdvogadoIds: string[];
+}
+
+export interface EventoListMeta {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface EventoListResponse {
+  success: boolean;
+  data?: any[];
+  meta?: EventoListMeta;
+  error?: string;
 }
 
 type EventoRelationshipsValidationResult =
@@ -85,6 +104,40 @@ function normalizeParticipantes(participantes: string[] | null | undefined) {
   }
 
   return Array.from(unique.values());
+}
+
+function normalizePage(page?: number) {
+  if (!page || !Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return Math.floor(page);
+}
+
+function normalizePageSize(pageSize?: number) {
+  if (!pageSize || !Number.isFinite(pageSize) || pageSize < 1) {
+    return EVENTOS_DEFAULT_PAGE_SIZE;
+  }
+
+  return Math.min(EVENTOS_MAX_PAGE_SIZE, Math.floor(pageSize));
+}
+
+function buildEventoListMeta(
+  total: number,
+  page: number,
+  pageSize: number,
+): EventoListMeta {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  return {
+    total,
+    page: safePage,
+    pageSize,
+    totalPages,
+    hasNextPage: safePage < totalPages,
+    hasPreviousPage: safePage > 1,
+  };
 }
 
 // Tipo para criação de evento (sem campos auto-gerados)
@@ -135,6 +188,22 @@ function validateEvento(data: EventoFormData): {
       errors.push("Datas inválidas. Verifique os campos de início e fim");
     } else if (fim <= inicio) {
       errors.push("Data de fim deve ser posterior à data de início");
+    }
+  }
+
+  const recorrenciaAtual = (data.recorrencia || "NENHUMA") as EventoRecorrenciaTipo;
+  if (recorrenciaAtual !== "NENHUMA") {
+    if (!data.recorrenciaFim) {
+      errors.push("Informe a data final da recorrência");
+    } else {
+      const recorrenciaFimDate = new Date(data.recorrenciaFim);
+      const inicio = new Date(data.dataInicio);
+      if (
+        Number.isNaN(recorrenciaFimDate.getTime()) ||
+        recorrenciaFimDate <= inicio
+      ) {
+        errors.push("Data final da recorrência deve ser posterior ao início");
+      }
     }
   }
 
@@ -323,6 +392,256 @@ function isAllowedAdvogadoInScope(
   return context.accessibleAdvogadoIds.includes(advogadoId);
 }
 
+type EventoRecorrenciaTipo =
+  | "NENHUMA"
+  | "DIARIA"
+  | "SEMANAL"
+  | "MENSAL"
+  | "ANUAL";
+
+function advanceRecurrenceDate(base: Date, recorrencia: EventoRecorrenciaTipo) {
+  const next = new Date(base);
+
+  switch (recorrencia) {
+    case "DIARIA":
+      next.setDate(next.getDate() + 1);
+      break;
+    case "SEMANAL":
+      next.setDate(next.getDate() + 7);
+      break;
+    case "MENSAL":
+      next.setMonth(next.getMonth() + 1);
+      break;
+    case "ANUAL":
+      next.setFullYear(next.getFullYear() + 1);
+      break;
+    default:
+      break;
+  }
+
+  return next;
+}
+
+function buildRecurrenceOccurrences(params: {
+  dataInicio: Date;
+  dataFim: Date;
+  recorrencia?: EventoRecorrenciaTipo | null;
+  recorrenciaFim?: Date | null;
+}) {
+  const {
+    dataInicio,
+    dataFim,
+    recorrencia = "NENHUMA",
+    recorrenciaFim,
+  } = params;
+  const recorrenciaTipo: EventoRecorrenciaTipo = recorrencia ?? "NENHUMA";
+
+  const baseDurationMs = dataFim.getTime() - dataInicio.getTime();
+  const occurrences = [{ dataInicio, dataFim }];
+
+  if (recorrenciaTipo === "NENHUMA" || !recorrenciaFim) {
+    return occurrences;
+  }
+
+  let nextStart = advanceRecurrenceDate(dataInicio, recorrenciaTipo);
+  let guard = 0;
+
+  while (
+    nextStart.getTime() <= recorrenciaFim.getTime() &&
+    guard < MAX_RECORRENCIA_OCORRENCIAS
+  ) {
+    const nextEnd = new Date(nextStart.getTime() + baseDurationMs);
+    occurrences.push({
+      dataInicio: new Date(nextStart),
+      dataFim: nextEnd,
+    });
+    nextStart = advanceRecurrenceDate(nextStart, recorrenciaTipo);
+    guard += 1;
+  }
+
+  return occurrences;
+}
+
+async function findEventoConflitante(params: {
+  context: AgendaSessionContext;
+  dataInicio: Date;
+  dataFim: Date;
+  advogadoResponsavelId?: string | null;
+  excludeEventoId?: string;
+}) {
+  const { context, dataInicio, dataFim, advogadoResponsavelId, excludeEventoId } =
+    params;
+  const where: Prisma.EventoWhereInput = {
+    tenantId: context.tenantId,
+    status: {
+      not: "CANCELADO",
+    },
+    dataInicio: {
+      lt: dataFim,
+    },
+    dataFim: {
+      gt: dataInicio,
+    },
+  };
+
+  if (excludeEventoId) {
+    where.id = {
+      not: excludeEventoId,
+    };
+  }
+
+  if (advogadoResponsavelId) {
+    where.advogadoResponsavelId = advogadoResponsavelId;
+  } else {
+    where.criadoPorId = context.userId;
+  }
+
+  return prisma.evento.findFirst({
+    where,
+    select: {
+      id: true,
+      titulo: true,
+      dataInicio: true,
+      dataFim: true,
+    },
+    orderBy: {
+      dataInicio: "asc",
+    },
+  });
+}
+
+function parseTimeToMinutes(value: string | null | undefined) {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const [hoursText, minutesText] = value.split(":");
+  const hours = Number.parseInt(hoursText, 10);
+  const minutes = Number.parseInt(minutesText, 10);
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+async function validateEventoAgainstAvailability(params: {
+  context: AgendaSessionContext;
+  dataInicio: Date;
+  dataFim: Date;
+  advogadoResponsavelId?: string | null;
+}): Promise<{ valid: true } | { valid: false; error: string }> {
+  const { context, dataInicio, dataFim, advogadoResponsavelId } = params;
+  let targetUsuarioId = context.userId;
+
+  if (advogadoResponsavelId) {
+    const advogado = await prisma.advogado.findFirst({
+      where: {
+        id: advogadoResponsavelId,
+        tenantId: context.tenantId,
+      },
+      select: {
+        usuarioId: true,
+      },
+    });
+
+    if (!advogado) {
+      return {
+        valid: false,
+        error: "Advogado responsável não encontrado para validar disponibilidade.",
+      };
+    }
+
+    targetUsuarioId = advogado.usuarioId;
+  }
+
+  const diaSemana = dataInicio.getDay();
+  const disponibilidade = await prisma.agendaDisponibilidade.findFirst({
+    where: {
+      tenantId: context.tenantId,
+      usuarioId: targetUsuarioId,
+      diaSemana,
+    },
+    select: {
+      ativo: true,
+      horaInicio: true,
+      horaFim: true,
+      intervaloInicio: true,
+      intervaloFim: true,
+    },
+  });
+
+  // Se não há disponibilidade configurada para o dia, manter comportamento atual.
+  if (!disponibilidade) {
+    return { valid: true };
+  }
+
+  if (!disponibilidade.ativo) {
+    return {
+      valid: false,
+      error:
+        "Este dia está bloqueado na disponibilidade do responsável. Ajuste o horário ou a disponibilidade.",
+    };
+  }
+
+  const sameDay =
+    dataInicio.getFullYear() === dataFim.getFullYear() &&
+    dataInicio.getMonth() === dataFim.getMonth() &&
+    dataInicio.getDate() === dataFim.getDate();
+  if (!sameDay) {
+    return {
+      valid: false,
+      error:
+        "Eventos que atravessam mais de um dia não são permitidos com a disponibilidade ativa. Divida em eventos menores.",
+    };
+  }
+
+  const startMinutes = dataInicio.getHours() * 60 + dataInicio.getMinutes();
+  const endMinutes = dataFim.getHours() * 60 + dataFim.getMinutes();
+  const jornadaInicio = parseTimeToMinutes(disponibilidade.horaInicio);
+  const jornadaFim = parseTimeToMinutes(disponibilidade.horaFim);
+
+  if (jornadaInicio === null || jornadaFim === null) {
+    return {
+      valid: false,
+      error:
+        "Disponibilidade com horários inválidos. Revise a configuração de jornada.",
+    };
+  }
+
+  if (startMinutes < jornadaInicio || endMinutes > jornadaFim) {
+    return {
+      valid: false,
+      error:
+        "Evento fora da janela de disponibilidade do responsável. Ajuste início/fim dentro da jornada.",
+    };
+  }
+
+  const intervaloInicio = parseTimeToMinutes(disponibilidade.intervaloInicio);
+  const intervaloFim = parseTimeToMinutes(disponibilidade.intervaloFim);
+  if (intervaloInicio !== null && intervaloFim !== null) {
+    const intersectsInterval =
+      startMinutes < intervaloFim && endMinutes > intervaloInicio;
+    if (intersectsInterval) {
+      return {
+        valid: false,
+        error:
+          "Evento colide com o intervalo bloqueado da agenda do responsável.",
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 function getEventoFormDataFromEvento(evento: Evento): EventoFormData {
   return {
     titulo: evento.titulo,
@@ -478,7 +797,11 @@ export async function getEventos(filters?: {
   advogadoId?: string;
   local?: string;
   titulo?: string;
-}) {
+},
+pagination?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<EventoListResponse> {
   try {
     const context = await requireAgendaContext("visualizar");
     const where: Prisma.EventoWhereInput = buildEventoScopeWhere(context);
@@ -515,9 +838,12 @@ export async function getEventos(filters?: {
         !context.isCliente &&
         !isAllowedAdvogadoInScope(context, filters.advogadoId)
       ) {
+        const page = normalizePage(pagination?.page);
+        const pageSize = normalizePageSize(pagination?.pageSize);
         return {
           success: true,
           data: [],
+          meta: buildEventoListMeta(0, page, pageSize),
         };
       }
       where.advogadoResponsavelId = filters.advogadoId;
@@ -537,60 +863,70 @@ export async function getEventos(filters?: {
       };
     }
 
-    const eventos = await prisma.evento.findMany({
-      where,
-      include: {
-        processo: {
-          select: {
-            id: true,
-            numero: true,
-            titulo: true,
+    const page = normalizePage(pagination?.page);
+    const pageSize = normalizePageSize(pagination?.pageSize);
+    const skip = (page - 1) * pageSize;
+    const [total, eventos] = await prisma.$transaction([
+      prisma.evento.count({ where }),
+      prisma.evento.findMany({
+        where,
+        include: {
+          processo: {
+            select: {
+              id: true,
+              numero: true,
+              titulo: true,
+            },
           },
-        },
-        cliente: {
-          select: {
-            id: true,
-            nome: true,
-            email: true,
+          cliente: {
+            select: {
+              id: true,
+              nome: true,
+              email: true,
+            },
           },
-        },
-        advogadoResponsavel: {
-          select: {
-            id: true,
-            usuario: {
-              select: {
-                firstName: true,
-                lastName: true,
-                email: true,
+          advogadoResponsavel: {
+            select: {
+              id: true,
+              usuario: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
-        },
-        criadoPor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+          criadoPor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          confirmacoes: {
+            select: {
+              id: true,
+              participanteEmail: true,
+              participanteNome: true,
+              status: true,
+              confirmadoEm: true,
+              observacoes: true,
+            },
           },
         },
-        confirmacoes: {
-          select: {
-            id: true,
-            participanteEmail: true,
-            participanteNome: true,
-            status: true,
-            confirmadoEm: true,
-            observacoes: true,
-          },
+        orderBy: {
+          dataInicio: "asc",
         },
-      },
-      orderBy: {
-        dataInicio: "asc",
-      },
-    });
+        skip,
+        take: pageSize,
+      }),
+    ]);
 
-    return { success: true, data: eventos };
+    const meta = buildEventoListMeta(total, page, pageSize);
+
+    return { success: true, data: eventos, meta };
   } catch (error) {
     logger.error("Erro ao buscar eventos:", error);
 
@@ -730,14 +1066,145 @@ export async function createEvento(formData: EventoFormData) {
       };
     }
 
-    const evento = await prisma.evento.create({
-      data: {
-        ...normalizedFormData,
-        clienteId: relationshipsValidation.inferredClienteId,
+    const dataInicioEvento = new Date(normalizedFormData.dataInicio);
+    const dataFimEvento = new Date(normalizedFormData.dataFim);
+    const disponibilidadeValidation = await validateEventoAgainstAvailability({
+      context,
+      dataInicio: dataInicioEvento,
+      dataFim: dataFimEvento,
+      advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+    });
+
+    if (!disponibilidadeValidation.valid) {
+      return {
+        success: false,
+        error: disponibilidadeValidation.error,
+      };
+    }
+
+    const conflito = await findEventoConflitante({
+      context,
+      dataInicio: dataInicioEvento,
+      dataFim: dataFimEvento,
+      advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+    });
+
+    if (conflito) {
+      return {
+        success: false,
+        error: `Conflito de agenda com "${conflito.titulo}" (${new Date(
+          conflito.dataInicio,
+        ).toLocaleString("pt-BR")} - ${new Date(conflito.dataFim).toLocaleString(
+          "pt-BR",
+        )}).`,
+      };
+    }
+
+    const recorrenciaTipo = (normalizedFormData.recorrencia ||
+      "NENHUMA") as EventoRecorrenciaTipo;
+    const recorrenciaFimDate = normalizedFormData.recorrenciaFim
+      ? new Date(normalizedFormData.recorrenciaFim)
+      : null;
+    const occurrences = buildRecurrenceOccurrences({
+      dataInicio: dataInicioEvento,
+      dataFim: dataFimEvento,
+      recorrencia: recorrenciaTipo,
+      recorrenciaFim: recorrenciaFimDate,
+    });
+
+    for (let index = 1; index < occurrences.length; index += 1) {
+      const occurrence = occurrences[index];
+      const availabilityForOccurrence = await validateEventoAgainstAvailability({
+        context,
+        dataInicio: occurrence.dataInicio,
+        dataFim: occurrence.dataFim,
+        advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+      });
+
+      if (!availabilityForOccurrence.valid) {
+        return {
+          success: false,
+          error: `${availabilityForOccurrence.error} (ocorrência em ${occurrence.dataInicio.toLocaleString(
+            "pt-BR",
+          )})`,
+        };
+      }
+
+      const conflitoOcorrencia = await findEventoConflitante({
+        context,
+        dataInicio: occurrence.dataInicio,
+        dataFim: occurrence.dataFim,
+        advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+      });
+
+      if (conflitoOcorrencia) {
+        return {
+          success: false,
+          error: `Conflito de agenda em recorrência com "${
+            conflitoOcorrencia.titulo
+          }" (${new Date(conflitoOcorrencia.dataInicio).toLocaleString(
+            "pt-BR",
+          )} - ${new Date(conflitoOcorrencia.dataFim).toLocaleString(
+            "pt-BR",
+          )}).`,
+        };
+      }
+    }
+
+    const createdEventIds = await prisma.$transaction(async (tx) => {
+      const createdIds: string[] = [];
+
+      for (const occurrence of occurrences) {
+        const created = await tx.evento.create({
+          data: {
+            tenantId: context.tenantId,
+            criadoPorId: context.userId,
+            titulo: normalizedFormData.titulo,
+            descricao: normalizedFormData.descricao,
+            tipo: normalizedFormData.tipo,
+            status: normalizedFormData.status,
+            dataInicio: occurrence.dataInicio,
+            dataFim: occurrence.dataFim,
+            local: normalizedFormData.local,
+            participantes: normalizedParticipantes,
+            processoId: normalizedFormData.processoId,
+            clienteId: relationshipsValidation.inferredClienteId,
+            advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+            recorrencia: recorrenciaTipo,
+            recorrenciaFim: recorrenciaTipo === "NENHUMA" ? null : recorrenciaFimDate,
+            googleEventId: normalizedFormData.googleEventId,
+            googleCalendarId: normalizedFormData.googleCalendarId,
+            lembreteMinutos: normalizedFormData.lembreteMinutos,
+            observacoes: normalizedFormData.observacoes,
+          },
+          select: {
+            id: true,
+          },
+        });
+        createdIds.push(created.id);
+      }
+
+      if (normalizedParticipantes.length > 0) {
+        for (const eventoId of createdIds) {
+          await tx.eventoParticipante.createMany({
+            data: normalizedParticipantes.map((email) => ({
+              tenantId: context.tenantId,
+              eventoId,
+              participanteEmail: email,
+              status: "PENDENTE" as EventoConfirmacaoStatus,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return createdIds;
+    });
+
+    const eventoPrincipal = await prisma.evento.findFirst({
+      where: {
+        id: createdEventIds[0],
         tenantId: context.tenantId,
-        criadoPorId: context.userId,
-        dataInicio: new Date(normalizedFormData.dataInicio),
-        dataFim: new Date(normalizedFormData.dataFim),
       },
       include: {
         processo: {
@@ -787,19 +1254,14 @@ export async function createEvento(formData: EventoFormData) {
       },
     });
 
-    // Criar registros de confirmação para os participantes
+    if (!eventoPrincipal) {
+      return {
+        success: false,
+        error: "Evento principal não encontrado após criação.",
+      };
+    }
+
     if (normalizedParticipantes.length > 0) {
-      const confirmacoesData = normalizedParticipantes.map((email) => ({
-        tenantId: context.tenantId,
-        eventoId: evento.id,
-        participanteEmail: email,
-        status: "PENDENTE" as EventoConfirmacaoStatus,
-      }));
-
-      await prisma.eventoParticipante.createMany({
-        data: confirmacoesData,
-      });
-
       // Criar notificações para os participantes usando sistema híbrido
       const { publishNotification } = await import(
         "@/app/actions/notifications-hybrid"
@@ -809,26 +1271,33 @@ export async function createEvento(formData: EventoFormData) {
         await publishNotification({
           type: "evento.created",
           title: "Novo Evento - Confirmação Necessária",
-          message: `Você foi convidado para o evento "${evento.titulo}" em ${new Date(evento.dataInicio).toLocaleDateString("pt-BR")} às ${new Date(evento.dataInicio).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Por favor, confirme sua participação.`,
+          message: `Você foi convidado para o evento "${eventoPrincipal.titulo}" em ${new Date(
+            eventoPrincipal.dataInicio,
+          ).toLocaleDateString("pt-BR")} às ${new Date(
+            eventoPrincipal.dataInicio,
+          ).toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}. Por favor, confirme sua participação.`,
           urgency: "MEDIUM",
           channels: ["REALTIME"],
           payload: {
-            eventoId: evento.id,
+            eventoId: eventoPrincipal.id,
             participanteEmail: email,
             tipoConfirmacao: "INVITE",
-            eventoTitulo: evento.titulo,
-            eventoData: evento.dataInicio,
-            eventoLocal: evento.local,
+            eventoTitulo: eventoPrincipal.titulo,
+            eventoData: eventoPrincipal.dataInicio,
+            eventoLocal: eventoPrincipal.local,
           },
           referenciaTipo: "evento",
-          referenciaId: evento.id,
+          referenciaId: eventoPrincipal.id,
         });
       }
     }
 
     // Sincronizar com Google Calendar se estiver habilitado
     try {
-      await syncEventoWithGoogle(evento.id);
+      await syncEventoWithGoogle(eventoPrincipal.id);
     } catch (error) {
       logger.warn("Erro ao sincronizar evento com Google Calendar:", error);
       // Não falhar a criação do evento por causa da sincronização
@@ -836,7 +1305,11 @@ export async function createEvento(formData: EventoFormData) {
 
     revalidatePath("/agenda");
 
-    return { success: true, data: evento };
+    return {
+      success: true,
+      data: eventoPrincipal,
+      recorrenciasCriadas: Math.max(0, createdEventIds.length - 1),
+    };
   } catch (error) {
     logger.error("Erro ao criar evento:", error);
 
@@ -949,6 +1422,41 @@ export async function updateEvento(
       };
     }
 
+    const dataInicioDepois = new Date(mergedFormData.dataInicio);
+    const dataFimDepois = new Date(mergedFormData.dataFim);
+    const disponibilidadeValidation = await validateEventoAgainstAvailability({
+      context,
+      dataInicio: dataInicioDepois,
+      dataFim: dataFimDepois,
+      advogadoResponsavelId: mergedFormData.advogadoResponsavelId,
+    });
+
+    if (!disponibilidadeValidation.valid) {
+      return {
+        success: false,
+        error: disponibilidadeValidation.error,
+      };
+    }
+
+    const conflito = await findEventoConflitante({
+      context,
+      dataInicio: dataInicioDepois,
+      dataFim: dataFimDepois,
+      advogadoResponsavelId: mergedFormData.advogadoResponsavelId,
+      excludeEventoId: id,
+    });
+
+    if (conflito) {
+      return {
+        success: false,
+        error: `Conflito de agenda com "${conflito.titulo}" (${new Date(
+          conflito.dataInicio,
+        ).toLocaleString("pt-BR")} - ${new Date(conflito.dataFim).toLocaleString(
+          "pt-BR",
+        )}).`,
+      };
+    }
+
     const updateData: Prisma.EventoUncheckedUpdateInput = {};
 
     if (normalizedPatch.titulo !== undefined) {
@@ -993,14 +1501,6 @@ export async function updateEvento(
 
     if (normalizedPatch.participantes !== undefined) {
       updateData.participantes = mergedFormData.participantes;
-    }
-
-    if (normalizedPatch.recorrencia !== undefined) {
-      updateData.recorrencia = normalizedPatch.recorrencia;
-    }
-
-    if (normalizedPatch.recorrenciaFim !== undefined) {
-      updateData.recorrenciaFim = normalizedPatch.recorrenciaFim;
     }
 
     if (normalizedPatch.googleEventId !== undefined) {
@@ -1060,8 +1560,6 @@ export async function updateEvento(
       }
     }
 
-    const dataInicioDepois = new Date(mergedFormData.dataInicio);
-    const dataFimDepois = new Date(mergedFormData.dataFim);
     const localDepois = mergedFormData.local || null;
     const mudancasCriticas =
       eventoExistente.dataInicio.getTime() !== dataInicioDepois.getTime() ||

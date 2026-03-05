@@ -1,6 +1,5 @@
-import { Metadata } from "next";
-
-import KanbanView from "./kanban-view";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Kanban - Tarefas",
@@ -9,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function KanbanPage() {
-  return <KanbanView />;
+  redirect("/tarefas?view=kanban");
 }

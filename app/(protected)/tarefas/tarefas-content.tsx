@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Chip } from "@heroui/chip";
 
 import {
   Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, } from "@heroui/modal";
-import { Skeleton, Select, SelectItem } from "@heroui/react";
+import { Pagination, Skeleton, Select, SelectItem } from "@heroui/react";
 import {
   Plus,
   CheckCircle2,
@@ -22,6 +22,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Kanban,
+  Filter,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import dayjs from "dayjs";
@@ -41,8 +42,9 @@ import {
 import { listCategoriasTarefa } from "@/app/actions/categorias-tarefa";
 import { getAllProcessos } from "@/app/actions/processos";
 import { searchClientes } from "@/app/actions/clientes";
-import { title } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import { DateInput } from "@/components/ui/date-input";
+import { TarefaDetailModal } from "@/app/(protected)/tarefas/kanban/components/tarefa-detail-modal";
 
 // Configurar dayjs
 dayjs.extend(isSameOrBefore);
@@ -127,11 +129,21 @@ const prioridadeConfig = {
   },
 };
 
-export default function TarefasContent() {
+interface TarefasContentProps {
+  embedded?: boolean;
+  selectedBoardId?: string;
+}
+
+export default function TarefasContent({
+  embedded = false,
+  selectedBoardId,
+}: TarefasContentProps) {
   const [filtroStatus, setFiltroStatus] = useState<string>("");
   const [filtroPrioridade, setFiltroPrioridade] = useState<string>("");
   const [filtroMinhas, setFiltroMinhas] = useState(false);
   const [filtroAtrasadas, setFiltroAtrasadas] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(12);
   const [tarefaSelecionada, setTarefaSelecionada] = useState<TarefaDto | null>(
     null,
   );
@@ -149,12 +161,20 @@ export default function TarefasContent() {
     columnId: "",
   });
   const [salvando, setSalvando] = useState(false);
+  const [tarefaParaExcluir, setTarefaParaExcluir] = useState<TarefaDto | null>(
+    null,
+  );
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const {
     isOpen: isViewOpen,
     onOpen: onViewOpen,
     onClose: onViewClose,
+  } = useDisclosure();
+  const {
+    isOpen: isDeleteOpen,
+    onOpen: onDeleteOpen,
+    onClose: onDeleteClose,
   } = useDisclosure();
 
   const filtrosParams = useMemo(() => {
@@ -164,9 +184,24 @@ export default function TarefasContent() {
     if (filtroPrioridade) params.prioridade = filtroPrioridade;
     if (filtroMinhas) params.minhas = true;
     if (filtroAtrasadas) params.atrasadas = true;
+    if (selectedBoardId) params.boardId = selectedBoardId;
+    params.page = currentPage;
+    params.perPage = rowsPerPage;
 
     return params;
-  }, [filtroStatus, filtroPrioridade, filtroMinhas, filtroAtrasadas]);
+  }, [
+    filtroStatus,
+    filtroPrioridade,
+    filtroMinhas,
+    filtroAtrasadas,
+    selectedBoardId,
+    currentPage,
+    rowsPerPage,
+  ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtroStatus, filtroPrioridade, filtroMinhas, filtroAtrasadas, selectedBoardId, rowsPerPage]);
 
   const {
     data: tarefasData,
@@ -176,8 +211,8 @@ export default function TarefasContent() {
   } = useSWR(["tarefas", filtrosParams], () => listTarefas(filtrosParams));
 
   const { data: dashboardData, mutate: mutateDashboard } = useSWR(
-    "tarefas-dashboard",
-    () => getDashboardTarefas(),
+    ["tarefas-dashboard", selectedBoardId || "all"],
+    () => getDashboardTarefas({ boardId: selectedBoardId }),
   );
 
   const { data: categoriasData } = useSWR("categorias-tarefa-ativas", () =>
@@ -207,8 +242,15 @@ export default function TarefasContent() {
     },
   );
 
-  const tarefas = useMemo(
-    () => (tarefasData?.success ? tarefasData.tarefas : []),
+  const tarefas = useMemo<any[]>(
+    () =>
+      tarefasData?.success && Array.isArray(tarefasData.tarefas)
+        ? tarefasData.tarefas
+        : [],
+    [tarefasData],
+  );
+  const pagination = useMemo(
+    () => (tarefasData?.success ? tarefasData.pagination : null),
     [tarefasData],
   );
 
@@ -231,9 +273,20 @@ export default function TarefasContent() {
     () => (dashboardData?.success ? dashboardData.dashboard : null),
     [dashboardData],
   );
+  const totalTarefas = pagination?.total ?? tarefas.length;
+  const totalPages = Math.max(1, pagination?.totalPages ?? 1);
 
-  const boards = useMemo(
-    () => (boardsData?.success ? boardsData.boards : []),
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const boards = useMemo<any[]>(
+    () =>
+      boardsData?.success && Array.isArray(boardsData.boards)
+        ? boardsData.boards
+        : [],
     [boardsData],
   );
 
@@ -241,6 +294,93 @@ export default function TarefasContent() {
     () => (colunasData?.success ? colunasData.columns : []),
     [colunasData],
   );
+  const selectedBoardName = useMemo(
+    () => boards.find((board: any) => board.id === selectedBoardId)?.nome || "",
+    [boards, selectedBoardId],
+  );
+
+  const boardKeySet = useMemo(
+    () => new Set((boards || []).map((board: any) => board.id)),
+    [boards],
+  );
+  const processosDisponiveis = useMemo(() => {
+    if (!formData.clienteId) {
+      return processos || [];
+    }
+
+    return (processos || []).filter((processo: any) => {
+      const processoClienteId = processo?.cliente?.id || processo?.clienteId;
+
+      return processoClienteId === formData.clienteId;
+    });
+  }, [formData.clienteId, processos]);
+  const categoriaKeySet = useMemo(
+    () => new Set((categorias || []).map((categoria: any) => categoria.id)),
+    [categorias],
+  );
+  const processoKeySet = useMemo(
+    () =>
+      new Set(
+        (processosDisponiveis || []).map((processo: any) => processo.id),
+      ),
+    [processosDisponiveis],
+  );
+  const clienteKeySet = useMemo(
+    () => new Set((clientes || []).map((cliente: any) => cliente.id)),
+    [clientes],
+  );
+  const colunaKeySet = useMemo(
+    () => new Set((colunas || []).map((coluna: any) => coluna.id)),
+    [colunas],
+  );
+  const selectedCategoriaKeys = useMemo(
+    () =>
+      formData.categoriaId && categoriaKeySet.has(formData.categoriaId)
+        ? [formData.categoriaId]
+        : [],
+    [categoriaKeySet, formData.categoriaId],
+  );
+  const selectedProcessoKeys = useMemo(
+    () =>
+      formData.processoId && processoKeySet.has(formData.processoId)
+        ? [formData.processoId]
+        : [],
+    [formData.processoId, processoKeySet],
+  );
+  const selectedClienteKeys = useMemo(
+    () =>
+      formData.clienteId && clienteKeySet.has(formData.clienteId)
+        ? [formData.clienteId]
+        : [],
+    [clienteKeySet, formData.clienteId],
+  );
+  const selectedBoardKeys = useMemo(
+    () =>
+      formData.boardId && boardKeySet.has(formData.boardId)
+        ? [formData.boardId]
+        : [],
+    [formData.boardId, boardKeySet],
+  );
+  const selectedColunaKeys = useMemo(
+    () =>
+      formData.columnId && colunaKeySet.has(formData.columnId)
+        ? [formData.columnId]
+        : [],
+    [formData.columnId, colunaKeySet],
+  );
+
+  useEffect(() => {
+    if (!formData.processoId) {
+      return;
+    }
+
+    if (!processoKeySet.has(formData.processoId)) {
+      setFormData((prev) => ({
+        ...prev,
+        processoId: "",
+      }));
+    }
+  }, [formData.processoId, processoKeySet]);
 
   const handleOpenNova = useCallback(() => {
     setTarefaSelecionada(null);
@@ -254,11 +394,12 @@ export default function TarefasContent() {
       responsavelId: "",
       processoId: "",
       clienteId: "",
-      boardId: boards && boards.length > 0 ? boards[0].id : "",
+      boardId:
+        selectedBoardId || (boards && boards.length > 0 ? boards[0].id : ""),
       columnId: "",
     });
     onOpen();
-  }, [onOpen, boards]);
+  }, [onOpen, boards, selectedBoardId]);
 
   const handleOpenEditar = useCallback(
     (tarefa: TarefaDto) => {
@@ -284,6 +425,34 @@ export default function TarefasContent() {
     },
     [onOpen],
   );
+  const handleSelectMouseFallback = useCallback((event: any) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    const trigger = target.closest("button[data-slot='trigger']") as
+      | HTMLButtonElement
+      | null;
+
+    if (!trigger) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      if (trigger.getAttribute("aria-expanded") === "true") {
+        return;
+      }
+
+      trigger.focus();
+      trigger.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+        }),
+      );
+    });
+  }, []);
 
   const handleSalvar = useCallback(async () => {
     if (!formData.titulo.trim()) {
@@ -351,23 +520,38 @@ export default function TarefasContent() {
     [mutateTarefas, mutateDashboard],
   );
 
-  const handleExcluir = useCallback(
-    async (id: string) => {
-      if (!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
-
-      const result = await deleteTarefa(id);
-
-      if (result.success) {
-        toast.success("Tarefa excluída com sucesso!");
-        mutateTarefas();
-        mutateDashboard();
-        onViewClose();
-      } else {
-        toast.error(result.error || "Erro ao excluir tarefa");
-      }
+  const handleSolicitarExclusao = useCallback(
+    (tarefa: TarefaDto) => {
+      setTarefaParaExcluir(tarefa);
+      onDeleteOpen();
     },
-    [mutateTarefas, mutateDashboard, onViewClose],
+    [onDeleteOpen],
   );
+
+  const handleConfirmarExclusao = useCallback(async () => {
+    if (!tarefaParaExcluir?.id) {
+      return;
+    }
+
+    const result = await deleteTarefa(tarefaParaExcluir.id);
+
+    if (result.success) {
+      toast.success("Tarefa excluída com sucesso!");
+      mutateTarefas();
+      mutateDashboard();
+      onDeleteClose();
+      onViewClose();
+      setTarefaParaExcluir(null);
+    } else {
+      toast.error(result.error || "Erro ao excluir tarefa");
+    }
+  }, [
+    mutateDashboard,
+    mutateTarefas,
+    onDeleteClose,
+    onViewClose,
+    tarefaParaExcluir,
+  ]);
 
   const getDataLimiteInfo = useCallback((dataLimite: string | null) => {
     if (!dataLimite) return null;
@@ -379,7 +563,7 @@ export default function TarefasContent() {
     if (data.isBefore(hoje)) {
       return {
         text: "Atrasada",
-        color: "danger" as const,
+        colorClass: "text-danger",
         icon: AlertCircle,
       };
     }
@@ -387,7 +571,7 @@ export default function TarefasContent() {
     if (data.isSame(hoje, "day")) {
       return {
         text: "Hoje",
-        color: "warning" as const,
+        colorClass: "text-warning",
         icon: Calendar,
       };
     }
@@ -395,14 +579,14 @@ export default function TarefasContent() {
     if (data.isSame(amanha, "day")) {
       return {
         text: "Amanhã",
-        color: "primary" as const,
+        colorClass: "text-primary",
         icon: Calendar,
       };
     }
 
     return {
       text: data.format("DD/MM/YYYY"),
-      color: "default" as const,
+      colorClass: "text-default-500",
       icon: Calendar,
     };
   }, []);
@@ -417,109 +601,115 @@ export default function TarefasContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>Tarefas</h1>
-          <p className="mt-2 text-sm text-default-500">
-            Gerencie suas tarefas e atividades
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            as="a"
-            color="secondary"
-            href="/tarefas/kanban"
-            startContent={<Kanban className="h-4 w-4" />}
-            variant="flat"
-          >
-            Ver Kanban
-          </Button>
+      {!embedded ? (
+        <PeoplePageHeader
+          tag="Operacional"
+          title="Tarefas em Lista"
+          description={
+            selectedBoardId && selectedBoardName
+              ? `Gestão operacional da lista "${selectedBoardName}".`
+              : "Gerencie prioridades, prazos e execução diária da equipe."
+          }
+          actions={
+            <>
+              <Button
+                as="a"
+                color="secondary"
+                href="/tarefas?view=kanban"
+                size="sm"
+                startContent={<Kanban className="h-4 w-4" />}
+                variant="flat"
+              >
+                Ver Kanban
+              </Button>
+              <Button
+                color="primary"
+                size="sm"
+                startContent={<Plus className="h-4 w-4" />}
+                onPress={handleOpenNova}
+              >
+                Nova Tarefa
+              </Button>
+            </>
+          }
+        />
+      ) : (
+        <div className="flex justify-end">
           <Button
             color="primary"
+            size="sm"
             startContent={<Plus className="h-4 w-4" />}
             onPress={handleOpenNova}
           >
             Nova Tarefa
           </Button>
         </div>
-      </header>
+      )}
 
       {/* Dashboard Cards */}
       {dashboard && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-linear-to-br from-primary/10 to-primary/5">
-            <CardBody className="text-center py-6">
-              <div className="flex justify-center mb-2">
-                <div className="p-3 bg-primary/20 rounded-full">
-                  <Target className="text-primary" size={24} />
-                </div>
-              </div>
-              <p className="text-sm font-medium text-default-600 mb-1">
-                Minhas Tarefas
-              </p>
-              <p className="text-4xl font-bold text-primary">
-                {dashboard.minhasTarefas}
-              </p>
-            </CardBody>
-          </Card>
-          <Card className="bg-linear-to-br from-danger/10 to-danger/5">
-            <CardBody className="text-center py-6">
-              <div className="flex justify-center mb-2">
-                <div className="p-3 bg-danger/20 rounded-full">
-                  <AlertTriangle className="text-danger" size={24} />
-                </div>
-              </div>
-              <p className="text-sm font-medium text-default-600 mb-1">
-                Atrasadas
-              </p>
-              <p className="text-4xl font-bold text-danger">
-                {dashboard.atrasadas}
-              </p>
-            </CardBody>
-          </Card>
-          <Card className="bg-linear-to-br from-warning/10 to-warning/5">
-            <CardBody className="text-center py-6">
-              <div className="flex justify-center mb-2">
-                <div className="p-3 bg-warning/20 rounded-full">
-                  <Calendar className="text-warning" size={24} />
-                </div>
-              </div>
-              <p className="text-sm font-medium text-default-600 mb-1">Hoje</p>
-              <p className="text-4xl font-bold text-warning">
-                {dashboard.hoje}
-              </p>
-            </CardBody>
-          </Card>
-          <Card className="bg-linear-to-br from-success/10 to-success/5">
-            <CardBody className="text-center py-6">
-              <div className="flex justify-center mb-2">
-                <div className="p-3 bg-success/20 rounded-full">
-                  <TrendingUp className="text-success" size={24} />
-                </div>
-              </div>
-              <p className="text-sm font-medium text-default-600 mb-1">
-                Próximos 7 dias
-              </p>
-              <p className="text-4xl font-bold text-success">
-                {dashboard.proximosDias}
-              </p>
-            </CardBody>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <PeopleMetricCard
+            helper="Sob sua responsabilidade"
+            icon={<Target className="h-4 w-4" />}
+            label="Minhas tarefas"
+            tone="primary"
+            value={dashboard.minhasTarefas}
+          />
+          <PeopleMetricCard
+            helper="Exigem ação imediata"
+            icon={<AlertTriangle className="h-4 w-4" />}
+            label="Atrasadas"
+            tone="danger"
+            value={dashboard.atrasadas}
+          />
+          <PeopleMetricCard
+            helper="Entregas com vencimento hoje"
+            icon={<Calendar className="h-4 w-4" />}
+            label="Hoje"
+            tone="warning"
+            value={dashboard.hoje}
+          />
+          <PeopleMetricCard
+            helper="Janela operacional da semana"
+            icon={<TrendingUp className="h-4 w-4" />}
+            label="Próximos 7 dias"
+            tone="success"
+            value={dashboard.proximosDias}
+          />
         </div>
       )}
 
       {/* Filtros */}
-      <Card className="border-2 border-default-100">
-        <CardBody>
+      <Card className="border border-divider/70 bg-content1/75 shadow-sm backdrop-blur-md">
+        <CardHeader className="border-b border-divider/70 px-4 py-4 sm:px-6">
+          <div className="flex w-full items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+              <Filter className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground sm:text-lg">
+                Filtros operacionais
+              </h3>
+              <p className="text-xs text-default-500 sm:text-sm">
+                Refine tarefas por status, prioridade e responsabilidade.
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardBody className="p-4 sm:p-6">
           <div className="flex flex-wrap gap-3 items-end">
             <Select
-              className="max-w-[200px]"
+              className="w-full sm:max-w-[200px]"
               label="📊 Status"
               placeholder="Todos os status"
               selectedKeys={filtroStatus ? [filtroStatus] : []}
               size="sm"
-              onChange={(e) => setFiltroStatus(e.target.value)}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0];
+
+                setFiltroStatus(typeof value === "string" ? value : "");
+              }}
             >
               {Object.entries(statusConfig).map(([key, config]) => (
                 <SelectItem key={key} textValue={config.label}>{config.label}</SelectItem>
@@ -527,12 +717,16 @@ export default function TarefasContent() {
             </Select>
 
             <Select
-              className="max-w-[200px]"
+              className="w-full sm:max-w-[200px]"
               label="🎯 Prioridade"
               placeholder="Todas prioridades"
               selectedKeys={filtroPrioridade ? [filtroPrioridade] : []}
               size="sm"
-              onChange={(e) => setFiltroPrioridade(e.target.value)}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0];
+
+                setFiltroPrioridade(typeof value === "string" ? value : "");
+              }}
             >
               {Object.entries(prioridadeConfig).map(([key, config]) => (
                 <SelectItem key={key} textValue={config.label}>{config.label}</SelectItem>
@@ -574,7 +768,11 @@ export default function TarefasContent() {
         ) : !tarefas || tarefas.length === 0 ? (
           <Card>
             <CardBody className="text-center py-12">
-              <p className="text-default-400">Nenhuma tarefa encontrada</p>
+              <p className="text-default-400">
+                {selectedBoardId
+                  ? "Nenhuma tarefa nesta lista de trabalho"
+                  : "Nenhuma tarefa encontrada"}
+              </p>
             </CardBody>
           </Card>
         ) : (
@@ -666,7 +864,7 @@ export default function TarefasContent() {
                           {dataInfo && (
                             <div className="flex items-center gap-1">
                               <dataInfo.icon size={14} />
-                              <span className={`text-${dataInfo.color}`}>
+                              <span className={dataInfo.colorClass}>
                                 {dataInfo.text}
                               </span>
                             </div>
@@ -708,9 +906,51 @@ export default function TarefasContent() {
         )}
       </div>
 
+      {!tarefasLoading && totalTarefas > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-divider/70 bg-content1/75 px-4 py-3 shadow-sm">
+          <p className="text-xs text-default-500 sm:text-sm">
+            Total: <span className="font-semibold text-foreground">{totalTarefas}</span>{" "}
+            tarefa(s)
+          </p>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Select
+              aria-label="Quantidade por página"
+              className="w-32"
+              label="Por página"
+              selectedKeys={[String(rowsPerPage)]}
+              size="sm"
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0];
+
+                if (typeof value === "string") {
+                  setRowsPerPage(Number(value));
+                }
+              }}
+            >
+              {[8, 12, 20, 40].map((size) => (
+                <SelectItem key={String(size)} textValue={`${size}`}>
+                  {size}
+                </SelectItem>
+              ))}
+            </Select>
+            <Pagination
+              isCompact
+              showControls
+              classNames={{
+                item: "text-default-500",
+              }}
+              page={currentPage}
+              total={totalPages}
+              onChange={setCurrentPage}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Modal Criar/Editar */}
       <Modal
         isOpen={isOpen}
+        isDismissable={false}
         scrollBehavior="inside"
         size="2xl"
         onClose={onClose}
@@ -745,13 +985,20 @@ export default function TarefasContent() {
                 <Select
                   isRequired
                   label="Prioridade"
+                  onMouseDownCapture={handleSelectMouseFallback}
                   selectedKeys={[formData.prioridade]}
-                  onChange={(e) =>
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0];
+
+                    if (typeof value !== "string") {
+                      return;
+                    }
+
                     setFormData({
                       ...formData,
-                      prioridade: e.target.value as any,
-                    })
-                  }
+                      prioridade: value as any,
+                    });
+                  }}
                 >
                   {Object.entries(prioridadeConfig).map(([key, config]) => (
                     <SelectItem key={key} textValue={config.label}>{config.label}</SelectItem>
@@ -760,13 +1007,17 @@ export default function TarefasContent() {
 
                 <Select
                   label="Categoria"
+                  onMouseDownCapture={handleSelectMouseFallback}
                   placeholder="Selecione uma categoria"
-                  selectedKeys={
-                    formData.categoriaId ? [formData.categoriaId] : []
-                  }
-                  onChange={(e) =>
-                    setFormData({ ...formData, categoriaId: e.target.value })
-                  }
+                  selectedKeys={selectedCategoriaKeys}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0];
+
+                    setFormData({
+                      ...formData,
+                      categoriaId: typeof value === "string" ? value : "",
+                    });
+                  }}
                 >
                   {(categorias || []).map((cat: any) => (
                     <SelectItem key={cat.id} textValue={cat.nome}>{cat.nome}</SelectItem>
@@ -799,33 +1050,78 @@ export default function TarefasContent() {
               </div>
 
               <Select
-                label="Processo"
-                placeholder="Vincular a um processo (opcional)"
-                selectedKeys={formData.processoId ? [formData.processoId] : []}
-                onChange={(e) =>
-                  setFormData({ ...formData, processoId: e.target.value })
-                }
+                label="Cliente"
+                onMouseDownCapture={handleSelectMouseFallback}
+                placeholder="Vincular a um cliente (opcional)"
+                selectedKeys={selectedClienteKeys}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0];
+                  const nextClienteId =
+                    typeof value === "string" ? value : "";
+                  const processoPertenceAoClienteSelecionado =
+                    !nextClienteId ||
+                    !formData.processoId ||
+                    (processos || []).some((processo: any) => {
+                      const processoClienteId =
+                        processo?.cliente?.id || processo?.clienteId;
+
+                      return (
+                        processo.id === formData.processoId &&
+                        processoClienteId === nextClienteId
+                      );
+                    });
+
+                  setFormData({
+                    ...formData,
+                    clienteId: nextClienteId,
+                    processoId: processoPertenceAoClienteSelecionado
+                      ? formData.processoId
+                      : "",
+                  });
+                }}
               >
-                {(processos || []).map((proc: any) => (
+                {(clientes || []).map((cli: any) => (
+                  <SelectItem key={cli.id} textValue={cli.nome}>{cli.nome}</SelectItem>
+                ))}
+              </Select>
+
+              <Select
+                isDisabled={!formData.clienteId}
+                label="Processo"
+                onMouseDownCapture={handleSelectMouseFallback}
+                placeholder={
+                  formData.clienteId
+                    ? "Vincular a um processo do cliente (opcional)"
+                    : "Selecione primeiro o cliente"
+                }
+                selectedKeys={selectedProcessoKeys}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0];
+                  const processoIdSelecionado =
+                    typeof value === "string" ? value : "";
+                  const processoSelecionado = (processosDisponiveis || []).find(
+                    (processo: any) => processo.id === processoIdSelecionado,
+                  );
+                  const processoSelecionadoAny = processoSelecionado as any;
+
+                  setFormData({
+                    ...formData,
+                    processoId: processoIdSelecionado,
+                    clienteId:
+                      formData.clienteId ||
+                      processoSelecionadoAny?.cliente?.id ||
+                      processoSelecionadoAny?.clienteId ||
+                      "",
+                  });
+                }}
+              >
+                {(processosDisponiveis || []).map((proc: any) => (
                   <SelectItem
                     key={proc.id}
                     textValue={`${proc.numero} - ${proc.titulo || "Sem título"}`}
                   >
                     {proc.numero} - {proc.titulo || "Sem título"}
                   </SelectItem>
-                ))}
-              </Select>
-
-              <Select
-                label="Cliente"
-                placeholder="Vincular a um cliente (opcional)"
-                selectedKeys={formData.clienteId ? [formData.clienteId] : []}
-                onChange={(e) =>
-                  setFormData({ ...formData, clienteId: e.target.value })
-                }
-              >
-                {(clientes || []).map((cli: any) => (
-                  <SelectItem key={cli.id} textValue={cli.nome}>{cli.nome}</SelectItem>
                 ))}
               </Select>
 
@@ -836,15 +1132,18 @@ export default function TarefasContent() {
                 <div className="grid grid-cols-2 gap-4">
                   <Select
                     label="Board"
+                    onMouseDownCapture={handleSelectMouseFallback}
                     placeholder="Selecionar quadro"
-                    selectedKeys={formData.boardId ? [formData.boardId] : []}
-                    onChange={(e) =>
+                    selectedKeys={selectedBoardKeys}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0];
+
                       setFormData({
                         ...formData,
-                        boardId: e.target.value,
+                        boardId: typeof value === "string" ? value : "",
                         columnId: "",
-                      })
-                    }
+                      });
+                    }}
                   >
                     {(boards || []).length > 0
                       ? (boards || []).map((b: any) => (
@@ -856,11 +1155,17 @@ export default function TarefasContent() {
                   <Select
                     isDisabled={!formData.boardId}
                     label="Coluna"
+                    onMouseDownCapture={handleSelectMouseFallback}
                     placeholder="Selecionar coluna"
-                    selectedKeys={formData.columnId ? [formData.columnId] : []}
-                    onChange={(e) =>
-                      setFormData({ ...formData, columnId: e.target.value })
-                    }
+                    selectedKeys={selectedColunaKeys}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0];
+
+                      setFormData({
+                        ...formData,
+                        columnId: typeof value === "string" ? value : "",
+                      });
+                    }}
                   >
                     {(colunas || []).length > 0
                       ? (colunas || []).map((col: any) => (
@@ -887,101 +1192,51 @@ export default function TarefasContent() {
         </ModalContent>
       </Modal>
 
-      {/* Modal Visualizar */}
-      <Modal isOpen={isViewOpen} size="2xl" onClose={onViewClose}>
+      {tarefaSelecionada && (
+        <TarefaDetailModal
+          isOpen={isViewOpen}
+          tarefa={tarefaSelecionada}
+          onClose={() => {
+            onViewClose();
+            setTarefaSelecionada(null);
+          }}
+          onEdit={(tarefa) => handleOpenEditar(tarefa as TarefaDto)}
+        />
+      )}
+
+      <Modal
+        isOpen={isDeleteOpen}
+        size="md"
+        onClose={() => {
+          setTarefaParaExcluir(null);
+          onDeleteClose();
+        }}
+      >
         <ModalContent>
-          {tarefaSelecionada && (
-            <>
-              <ModalHeader>{tarefaSelecionada.titulo}</ModalHeader>
-              <ModalBody>
-                <div className="space-y-4">
-                  {tarefaSelecionada.descricao && (
-                    <div>
-                      <p className="text-sm text-default-500 mb-1">Descrição</p>
-                      <p>{tarefaSelecionada.descricao}</p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-default-500 mb-1">Status</p>
-                      <Chip
-                        color={statusConfig[tarefaSelecionada.status].color}
-                      >
-                        {statusConfig[tarefaSelecionada.status].label}
-                      </Chip>
-                    </div>
-                    <div>
-                      <p className="text-sm text-default-500 mb-1">
-                        Prioridade
-                      </p>
-                      <Chip
-                        color={
-                          prioridadeConfig[tarefaSelecionada.prioridade].color
-                        }
-                      >
-                        {prioridadeConfig[tarefaSelecionada.prioridade].label}
-                      </Chip>
-                    </div>
-                  </div>
-
-                  {tarefaSelecionada.dataLimite && (
-                    <div>
-                      <p className="text-sm text-default-500 mb-1">
-                        Data Limite
-                      </p>
-                      <p>
-                        {dayjs(tarefaSelecionada.dataLimite).format(
-                          "DD/MM/YYYY HH:mm",
-                        )}
-                      </p>
-                    </div>
-                  )}
-
-                  {tarefaSelecionada.responsavel && (
-                    <div>
-                      <p className="text-sm text-default-500 mb-1">
-                        Responsável
-                      </p>
-                      <p>
-                        {tarefaSelecionada.responsavel.firstName}{" "}
-                        {tarefaSelecionada.responsavel.lastName}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  color="danger"
-                  variant="light"
-                  onPress={() => handleExcluir(tarefaSelecionada.id)}
-                >
-                  Excluir
-                </Button>
-                <Button
-                  variant="light"
-                  onPress={() => {
-                    onViewClose();
-                    handleOpenEditar(tarefaSelecionada);
-                  }}
-                >
-                  Editar
-                </Button>
-                {tarefaSelecionada.status !== "CONCLUIDA" && (
-                  <Button
-                    color="success"
-                    onPress={() => {
-                      handleMarcarConcluida(tarefaSelecionada);
-                      onViewClose();
-                    }}
-                  >
-                    Marcar como Concluída
-                  </Button>
-                )}
-              </ModalFooter>
-            </>
-          )}
+          <ModalHeader>Excluir tarefa</ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-default-600">
+              Tem certeza que deseja excluir a tarefa{" "}
+              <span className="font-semibold text-foreground">
+                {tarefaParaExcluir?.titulo || "selecionada"}
+              </span>
+              ? Esta ação remove a tarefa da operação ativa.
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="light"
+              onPress={() => {
+                setTarefaParaExcluir(null);
+                onDeleteClose();
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button color="danger" onPress={handleConfirmarExclusao}>
+              Excluir tarefa
+            </Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
     </div>

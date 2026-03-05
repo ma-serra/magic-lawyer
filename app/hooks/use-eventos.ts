@@ -4,6 +4,7 @@ import {
   getEventos,
   getEventoById,
   getEventoFormData,
+  type EventoListMeta,
 } from "@/app/actions/eventos";
 
 // Hook para buscar eventos
@@ -17,10 +18,20 @@ export function useEventos(filters?: {
   advogadoId?: string;
   local?: string;
   titulo?: string;
+},
+options?: {
+  page?: number;
+  pageSize?: number;
+  enabled?: boolean;
 }) {
+  const enabled = options?.enabled ?? true;
   const { data, error, isLoading, mutate } = useSWR(
-    ["eventos", filters],
-    () => getEventos(filters),
+    enabled ? ["eventos", filters, options?.page, options?.pageSize] : null,
+    () =>
+      getEventos(filters, {
+        page: options?.page,
+        pageSize: options?.pageSize,
+      }),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
@@ -28,8 +39,18 @@ export function useEventos(filters?: {
     },
   );
 
+  const defaultMeta: EventoListMeta = {
+    total: 0,
+    page: options?.page ?? 1,
+    pageSize: options?.pageSize ?? 20,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+
   return {
     eventos: data?.success ? data.data : [],
+    meta: data?.success && data.meta ? data.meta : defaultMeta,
     isLoading,
     error: error || (data?.success === false ? data.error : null),
     mutate,

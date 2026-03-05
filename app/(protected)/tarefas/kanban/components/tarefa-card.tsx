@@ -48,8 +48,11 @@ export function TarefaCard({ tarefa, onClick, isDragging }: TarefaCardProps) {
 
   const isAtrasada =
     tarefa.dataLimite && dayjs(tarefa.dataLimite).isBefore(dayjs());
-  const totalChecklists = tarefa._count?.checklists || 0;
-  const checklistsConcluidos = 0; // TODO: buscar do backend
+  const totalChecklists =
+    tarefa.checklists?.length ?? tarefa._count?.checklists ?? 0;
+  const checklistsConcluidos =
+    tarefa.checklists?.filter((checklist: any) => checklist.concluida).length ??
+    0;
   const totalComentarios = tarefa._count?.comentarios || 0;
   const totalAnexos = tarefa._count?.anexos || 0;
 

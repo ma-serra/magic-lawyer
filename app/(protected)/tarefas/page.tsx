@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import TarefasContent from "./tarefas-content";
+import TarefasWorkspace from "./tarefas-workspace";
 
 import { getSession } from "@/app/lib/auth";
 
@@ -25,5 +25,5 @@ export default async function TarefasPage() {
 
   // Admin e outros roles têm acesso
   // (tarefas não requerem permissão específica, apenas não ser cliente)
-  return <TarefasContent />;
+  return <TarefasWorkspace />;
 }

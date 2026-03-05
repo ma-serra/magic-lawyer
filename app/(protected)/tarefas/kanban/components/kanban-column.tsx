@@ -7,8 +7,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Plus, MoreVertical } from "lucide-react";
-import { toast } from "@/lib/toast";
+import { Plus } from "lucide-react";
 
 import { TarefaCard } from "./tarefa-card";
 
@@ -24,12 +23,14 @@ interface KanbanColumnProps {
   };
   tarefas: any[];
   onTarefaClick: (tarefa: any) => void;
+  onAddTask: (columnId: string) => void;
 }
 
 export function KanbanColumn({
   column,
   tarefas,
   onTarefaClick,
+  onAddTask,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
@@ -64,9 +65,6 @@ export function KanbanColumn({
                 {count}
                 {column.limite ? `/${column.limite}` : ""}
               </Chip>
-              <Button isIconOnly size="sm" variant="light">
-                <MoreVertical size={16} />
-              </Button>
             </div>
           </div>
         </div>
@@ -115,7 +113,7 @@ export function KanbanColumn({
               size="sm"
               startContent={<Plus size={16} />}
               variant="flat"
-              onPress={() => toast.info("Criar tarefa - Em implementação")}
+              onPress={() => onAddTask(column.id)}
             >
               Adicionar tarefa
             </Button>

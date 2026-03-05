@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import logger from "@/lib/logger";
 
 export interface BoardCreatePayload {
@@ -184,6 +185,26 @@ export async function createBoard(data: BoardCreatePayload) {
 
     logger.info(`Board criado: ${board.id} por usuário ${user.email}`);
 
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "board.create",
+        entidade: "Board",
+        entidadeId: board.id,
+        dados: toAuditJson({
+          id: board.id,
+          nome: board.nome,
+          descricao: board.descricao,
+          tipo: board.tipo,
+          visibilidade: board.visibilidade,
+          ativo: board.ativo,
+        }),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de criação de board", auditError);
+    }
+
     // Retornar com colunas
     const boardCompleto = await prisma.board.findUnique({
       where: { id: board.id },
@@ -226,7 +247,15 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
 
     const updateData: any = {};
 
-    if (data.nome !== undefined) updateData.nome = data.nome.trim();
+    if (data.nome !== undefined) {
+      const nome = data.nome.trim();
+
+      if (!nome) {
+        return { success: false, error: "Nome é obrigatório" };
+      }
+
+      updateData.nome = nome;
+    }
     if (data.descricao !== undefined)
       updateData.descricao = data.descricao?.trim();
     if (data.tipo !== undefined) updateData.tipo = data.tipo;
@@ -237,6 +266,19 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
       updateData.visibilidade = data.visibilidade;
     if (data.ordem !== undefined) updateData.ordem = data.ordem;
     if (data.ativo !== undefined) updateData.ativo = data.ativo;
+
+    if (Object.keys(updateData).length === 0) {
+      const boardAtual = await prisma.board.findUnique({
+        where: { id },
+        include: {
+          colunas: {
+            orderBy: { ordem: "asc" },
+          },
+        },
+      });
+
+      return { success: true, board: boardAtual };
+    }
 
     const board = await prisma.board.update({
       where: { id },
@@ -249,6 +291,44 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
     });
 
     logger.info(`Board atualizado: ${id} por usuário ${user.email}`);
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "board.update",
+        entidade: "Board",
+        entidadeId: id,
+        changedFields: Object.keys(updateData),
+        previousValues: toAuditJson({
+          nome: boardExistente.nome,
+          descricao: boardExistente.descricao,
+          tipo: boardExistente.tipo,
+          icone: boardExistente.icone,
+          cor: boardExistente.cor,
+          favorito: boardExistente.favorito,
+          visibilidade: boardExistente.visibilidade,
+          ordem: boardExistente.ordem,
+          ativo: boardExistente.ativo,
+        }),
+        dados: toAuditJson({
+          nome: board.nome,
+          descricao: board.descricao,
+          tipo: board.tipo,
+          icone: board.icone,
+          cor: board.cor,
+          favorito: board.favorito,
+          visibilidade: board.visibilidade,
+          ordem: board.ordem,
+          ativo: board.ativo,
+        }),
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de atualização de board",
+        auditError,
+      );
+    }
 
     return { success: true, board };
   } catch (error) {
@@ -310,6 +390,25 @@ export async function deleteBoard(id: string) {
     ]);
 
     logger.info(`Board deletado: ${id} por usuário ${user.email}`);
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "board.delete",
+        entidade: "Board",
+        entidadeId: id,
+        previousValues: toAuditJson({
+          nome: board.nome,
+          descricao: board.descricao,
+          tipo: board.tipo,
+          ativo: board.ativo,
+          tarefas: board._count.tarefas,
+        }),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de exclusão de board", auditError);
+    }
 
     return { success: true };
   } catch (error) {
@@ -376,6 +475,24 @@ export async function duplicateBoard(id: string, novoNome: string) {
     logger.info(
       `Board duplicado: ${id} → ${novoBoard.id} por usuário ${user.email}`,
     );
+
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "board.duplicate",
+        entidade: "Board",
+        entidadeId: novoBoard.id,
+        dados: toAuditJson({
+          origemBoardId: id,
+          novoBoardId: novoBoard.id,
+          nome: novoBoard.nome,
+          colunasDuplicadas: boardOriginal.colunas.length,
+        }),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de duplicação de board", auditError);
+    }
 
     // Retornar com colunas
     const boardCompleto = await prisma.board.findUnique({
@@ -478,6 +595,27 @@ export async function criarBoardPadrao() {
 
     logger.info(`Board padrão criado para tenant ${user.tenantId}`);
 
+    try {
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "board.create_default",
+        entidade: "Board",
+        entidadeId: board.id,
+        dados: toAuditJson({
+          id: board.id,
+          nome: board.nome,
+          tipo: board.tipo,
+          colunasCriadas: COLUNAS_DEFAULT.map((coluna) => coluna.nome),
+        }),
+      });
+    } catch (auditError) {
+      logger.warn(
+        "Falha ao registrar auditoria de criação de board padrão",
+        auditError,
+      );
+    }
+
     // Retornar com colunas
     const boardCompleto = await prisma.board.findUnique({
       where: { id: board.id },
@@ -493,5 +631,63 @@ export async function criarBoardPadrao() {
     logger.error("Erro ao criar board padrão:", error);
 
     return { success: false, error: "Erro ao criar board padrão" };
+  }
+}
+
+export async function getBoardHistorico(boardId: string, limit = 8) {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado" };
+    }
+
+    const user = session.user as any;
+
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const board = await prisma.board.findFirst({
+      where: {
+        id: boardId,
+        tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!board) {
+      return { success: false, error: "Lista de trabalho não encontrada" };
+    }
+
+    const historico = await prisma.auditLog.findMany({
+      where: {
+        tenantId: user.tenantId,
+        entidade: "Board",
+        entidadeId: boardId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: Math.max(1, Math.min(limit, 30)),
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return { success: true, historico };
+  } catch (error) {
+    logger.error("Erro ao carregar histórico da lista de trabalho:", error);
+
+    return { success: false, error: "Erro ao carregar histórico" };
   }
 }
