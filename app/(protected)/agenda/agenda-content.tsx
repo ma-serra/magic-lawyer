@@ -76,6 +76,7 @@ const statusConfirmacao = {
 };
 
 export default function AgendaPage() {
+  const [isHydrated, setIsHydrated] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [selectedDate, setSelectedDate] = useState(today(getLocalTimeZone()));
   const [isEventoFormOpen, setIsEventoFormOpen] = useState(false);
@@ -122,6 +123,13 @@ export default function AgendaPage() {
     fromDefault: disponibilidadePadrao,
     mutate: mutateDisponibilidade,
   } = useAgendaDisponibilidade(!isCliente);
+  const filtroOrigem = useMemo<"google" | "local" | undefined>(
+    () =>
+      filtroGoogle === "google" || filtroGoogle === "local"
+        ? filtroGoogle
+        : undefined,
+    [filtroGoogle],
+  );
 
   const filtrosBase = useMemo(
     () => ({
@@ -132,6 +140,7 @@ export default function AgendaPage() {
       advogadoId: filtroAdvogado || undefined,
       local: filtroLocal || undefined,
       titulo: filtroTitulo || undefined,
+      origem: filtroOrigem,
     }),
     [
       filtroTipo,
@@ -141,6 +150,7 @@ export default function AgendaPage() {
       filtroAdvogado,
       filtroLocal,
       filtroTitulo,
+      filtroOrigem,
     ],
   );
 
@@ -160,10 +170,10 @@ export default function AgendaPage() {
     () => ({
       ...filtrosBase,
       dataInicio: filtroDataRange?.start
-        ? new Date(filtroDataRange.start.toString())
+        ? DateUtils.fromCalendarDate(filtroDataRange.start).startOf("day").toDate()
         : undefined,
       dataFim: filtroDataRange?.end
-        ? new Date(filtroDataRange.end.toString())
+        ? DateUtils.fromCalendarDate(filtroDataRange.end).endOf("day").toDate()
         : undefined,
     }),
     [filtrosBase, filtroDataRange],
@@ -200,6 +210,10 @@ export default function AgendaPage() {
     Promise.all([mutateDia(), mutateLista()]).then(() => undefined);
 
   useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
     setListPage(1);
   }, [
     filtroTipo,
@@ -209,6 +223,7 @@ export default function AgendaPage() {
     filtroAdvogado,
     filtroLocal,
     filtroTitulo,
+    filtroGoogle,
     filtroDataRange,
     listPageSize,
   ]);
@@ -242,18 +257,16 @@ export default function AgendaPage() {
     }
   }, [viewMode]);
 
-  const applyGoogleFilter = (eventosEntrada: EventoComConfirmacoes[]) => {
-    if (filtroGoogle === "google") {
-      return eventosEntrada.filter((evento) => !!evento.googleEventId);
-    }
-    if (filtroGoogle === "local") {
-      return eventosEntrada.filter((evento) => !evento.googleEventId);
-    }
-    return eventosEntrada;
-  };
+  useEffect(() => {
+    setDayPage((prev) => Math.min(prev, diaMeta.totalPages));
+  }, [diaMeta.totalPages]);
 
-  const eventosFiltrados = applyGoogleFilter(eventosDia || []);
-  const eventosListaFiltrados = applyGoogleFilter(eventosLista || []);
+  useEffect(() => {
+    setListPage((prev) => Math.min(prev, listaMeta.totalPages));
+  }, [listaMeta.totalPages]);
+
+  const eventosFiltrados = (eventosDia || []) as EventoComConfirmacoes[];
+  const eventosListaFiltrados = (eventosLista || []) as EventoComConfirmacoes[];
 
   const confirmacoesVisiveis = useMemo(() => {
     const eventosBase = viewMode === "calendar" ? eventosFiltrados : eventosListaFiltrados;
@@ -433,6 +446,7 @@ export default function AgendaPage() {
     setFiltroAdvogado("");
     setFiltroLocal("");
     setFiltroTitulo("");
+    setFiltroGoogle("");
     setFiltroDataRange(null);
   };
 
@@ -445,6 +459,7 @@ export default function AgendaPage() {
       filtroAdvogado ||
       filtroLocal ||
       filtroTitulo ||
+      filtroGoogle ||
       filtroDataRange,
   );
   const activeFilterCount = [
@@ -455,6 +470,7 @@ export default function AgendaPage() {
     filtroAdvogado,
     filtroLocal,
     filtroTitulo,
+    filtroGoogle,
     filtroDataRange,
   ].filter(Boolean).length;
 
@@ -629,6 +645,18 @@ export default function AgendaPage() {
       </div>
     );
   };
+
+  if (!isHydrated) {
+    return (
+      <div className="p-6">
+        <Card className="border border-divider/70 bg-content1/75 shadow-sm backdrop-blur-md">
+          <CardBody className="flex items-center justify-center py-16">
+            <Spinner label="Carregando agenda..." size="lg" />
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -849,19 +877,38 @@ export default function AgendaPage() {
                     >
                       {dia.nomeDia}
                     </Chip>
-                    <Button
-                      size="sm"
-                      variant="light"
-                      onPress={() =>
-                        updateDisponibilidadeField(
-                          dia.diaSemana,
-                          "ativo",
-                          !dia.ativo,
-                        )
-                      }
-                    >
-                      {dia.ativo ? "Ativo" : "Inativo"}
-                    </Button>
+                    <ButtonGroup className="shadow-sm" size="sm">
+                      <Button
+                        aria-label={`Definir ${dia.nomeDia} como ativo`}
+                        color={dia.ativo ? "success" : "default"}
+                        startContent={<CheckCircle className="h-3.5 w-3.5" />}
+                        variant={dia.ativo ? "solid" : "bordered"}
+                        onPress={() =>
+                          updateDisponibilidadeField(
+                            dia.diaSemana,
+                            "ativo",
+                            true,
+                          )
+                        }
+                      >
+                        Ativo
+                      </Button>
+                      <Button
+                        aria-label={`Definir ${dia.nomeDia} como inativo`}
+                        color={!dia.ativo ? "danger" : "default"}
+                        startContent={<XCircle className="h-3.5 w-3.5" />}
+                        variant={!dia.ativo ? "solid" : "bordered"}
+                        onPress={() =>
+                          updateDisponibilidadeField(
+                            dia.diaSemana,
+                            "ativo",
+                            false,
+                          )
+                        }
+                      >
+                        Inativo
+                      </Button>
+                    </ButtonGroup>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
@@ -1033,13 +1080,15 @@ export default function AgendaPage() {
                     {/* Filtro por Cliente */}
                     <div className="space-y-2">
                       <label
+                        id="agenda-filtro-cliente-label"
                         className="text-sm font-medium flex items-center gap-2"
-                        htmlFor="cliente"
                       >
                         <User className="w-4 h-4" />
                         Cliente
                       </label>
                       <Select
+                        aria-label="Filtrar por cliente"
+                        aria-labelledby="agenda-filtro-cliente-label"
                         placeholder="Selecione um cliente"
                         selectedKeys={
                           filtroCliente && clienteKeySet.has(filtroCliente)
@@ -1070,13 +1119,15 @@ export default function AgendaPage() {
                     {/* Filtro por Processo */}
                     <div className="space-y-2">
                       <label
+                        id="agenda-filtro-processo-label"
                         className="text-sm font-medium flex items-center gap-2"
-                        htmlFor="filtro"
                       >
                         <Scale className="w-4 h-4" />
                         Processo
                       </label>
                       <Select
+                        aria-label="Filtrar por processo"
+                        aria-labelledby="agenda-filtro-processo-label"
                         placeholder="Selecione um processo"
                         selectedKeys={
                           filtroProcesso && processoKeySet.has(filtroProcesso)
@@ -1111,13 +1162,15 @@ export default function AgendaPage() {
                     {!isAdvogado && (
                       <div className="space-y-2">
                         <label
+                          id="agenda-filtro-advogado-label"
                           className="text-sm font-medium flex items-center gap-2"
-                          htmlFor="filtro"
                         >
                           <Building className="w-4 h-4" />
                           Advogado
                         </label>
                         <Select
+                          aria-label="Filtrar por advogado"
+                          aria-labelledby="agenda-filtro-advogado-label"
                           placeholder="Selecione um advogado"
                           selectedKeys={
                             filtroAdvogado && advogadoKeySet.has(filtroAdvogado)
@@ -1175,13 +1228,15 @@ export default function AgendaPage() {
                     {/* Filtro por Tipo */}
                     <div className="space-y-2">
                       <label
+                        id="agenda-filtro-tipo-label"
                         className="text-sm font-medium flex items-center gap-2"
-                        htmlFor="filtro"
                       >
                         <FileText className="w-4 h-4" />
                         Tipo
                       </label>
                       <Select
+                        aria-label="Filtrar por tipo de evento"
+                        aria-labelledby="agenda-filtro-tipo-label"
                         placeholder="Selecione um tipo"
                         selectedKeys={filtroTipo ? [filtroTipo] : []}
                         size="sm"
@@ -1206,13 +1261,15 @@ export default function AgendaPage() {
                     {/* Filtro por Status */}
                     <div className="space-y-2">
                       <label
+                        id="agenda-filtro-status-label"
                         className="text-sm font-medium flex items-center gap-2"
-                        htmlFor="filtro"
                       >
                         <CheckCircle className="w-4 h-4" />
                         Status
                       </label>
                       <Select
+                        aria-label="Filtrar por status do evento"
+                        aria-labelledby="agenda-filtro-status-label"
                         placeholder="Selecione um status"
                         selectedKeys={filtroStatus ? [filtroStatus] : []}
                         size="sm"
@@ -1237,13 +1294,15 @@ export default function AgendaPage() {
                     {/* Filtro por Google Calendar */}
                     <div className="space-y-2">
                       <label
+                        id="agenda-filtro-origem-label"
                         className="text-sm font-medium flex items-center gap-2"
-                        htmlFor="filtro"
                       >
                         <FaGoogle className="w-4 h-4" />
                         Origem
                       </label>
                       <Select
+                        aria-label="Filtrar por origem do evento"
+                        aria-labelledby="agenda-filtro-origem-label"
                         placeholder="Selecione a origem"
                         selectedKeys={filtroGoogle ? [filtroGoogle] : []}
                         size="sm"

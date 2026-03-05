@@ -14,11 +14,9 @@ import {
   CheckCircleIcon,
   ClockIcon,
   XCircleIcon,
-  FilterIcon,
   RefreshCwIcon,
   TrendingUpIcon,
   DollarSignIcon,
-  UsersIcon,
   FileTextIcon,
   CreditCardIcon,
   ArrowUpDownIcon,
@@ -44,7 +42,7 @@ import {
   deleteParcelaContrato,
   gerarParcelasAutomaticamente,
 } from "@/app/actions/parcelas-contrato";
-import { title, subtitle } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import { DadosBancariosParcela } from "@/components/dados-bancarios-parcela";
 // import { ComprovantePagamentoUpload } from "@/components/comprovante-pagamento-upload";
 import { ValidacaoContaPrincipal } from "@/components/validacao-conta-principal";
@@ -358,135 +356,77 @@ export default function ParcelasContratoPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>
-            Parcelas de Contrato
-          </h1>
-          <p className={subtitle({ fullWidth: true })}>
-            Gerencie as parcelas dos contratos
-          </p>
-        </div>
-        <Button
-          color="primary"
-          startContent={<PlusIcon size={20} />}
-          onPress={() => handleOpenModal()}
-        >
-          Nova Parcela
-        </Button>
-      </div>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Financeiro"
+        title="Parcelas de contrato"
+        description="Controle parcelamento, vencimentos, atraso e pagamentos com visão operacional completa."
+        actions={
+          <Button
+            color="primary"
+            radius="full"
+            startContent={<PlusIcon size={18} />}
+            onPress={() => handleOpenModal()}
+          >
+            Nova parcela
+          </Button>
+        }
+      />
 
       {/* Dashboard */}
       {loadingDashboard ? (
-        <div className="flex justify-center py-8">
-          <Spinner color="primary" size="lg" />
-        </div>
-      ) : (
-        <Card className="border border-white/10 bg-linear-to-br from-background/80 to-background/60 backdrop-blur-xl overflow-hidden">
-          <CardHeader className="relative pb-4">
-            <div className="absolute inset-0 bg-linear-to-r from-primary/10 via-secondary/5 to-primary/10 opacity-50" />
-            <div className="relative flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-linear-to-br from-primary/20 to-secondary/20 border border-primary/30">
-                <ReceiptIcon className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-white">
-                  Dashboard de Parcelas
-                </h2>
-                <p className="text-sm text-primary-300">
-                  Visão geral das parcelas de contratos
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardBody className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Total de Parcelas */}
-              <div className="group p-4 rounded-xl bg-linear-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 hover:border-blue-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-blue-500/20 group-hover:bg-blue-400/30 transition-colors">
-                    <ReceiptIcon className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">
-                    Total de Parcelas
-                  </h5>
-                </div>
-                <p className="text-2xl font-bold text-blue-400 mb-1">
-                  {dashboard?.totalParcelas || 0}
-                </p>
-                <p className="text-sm text-blue-300">
-                  Todas as parcelas cadastradas
-                </p>
-              </div>
-
-              {/* Pendentes */}
-              <div className="group p-4 rounded-xl bg-linear-to-br from-warning-500/10 to-warning-600/5 border border-warning-500/20 hover:border-warning-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-warning-500/20 group-hover:bg-warning-400/30 transition-colors">
-                    <ClockIcon className="w-5 h-5 text-warning-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Pendentes</h5>
-                </div>
-                <p className="text-2xl font-bold text-warning-400 mb-1">
-                  {dashboard?.parcelasPendentes || 0}
-                </p>
-                <p className="text-sm text-warning-300">Aguardando pagamento</p>
-              </div>
-
-              {/* Pagas */}
-              <div className="group p-4 rounded-xl bg-linear-to-br from-success-500/10 to-success-600/5 border border-success-500/20 hover:border-success-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-success-500/20 group-hover:bg-success-400/30 transition-colors">
-                    <CheckCircleIcon className="w-5 h-5 text-success-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Pagas</h5>
-                </div>
-                <p className="text-2xl font-bold text-success-400 mb-1">
-                  {dashboard?.parcelasPagas || 0}
-                </p>
-                <p className="text-sm text-success-300">Parcelas quitadas</p>
-              </div>
-
-              {/* Atrasadas */}
-              <div className="group p-4 rounded-xl bg-linear-to-br from-danger-500/10 to-danger-600/5 border border-danger-500/20 hover:border-danger-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-danger-500/20 group-hover:bg-danger-400/30 transition-colors">
-                    <AlertTriangleIcon className="w-5 h-5 text-danger-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Atrasadas</h5>
-                </div>
-                <p className="text-2xl font-bold text-danger-400 mb-1">
-                  {dashboard?.parcelasAtrasadas || 0}
-                </p>
-                <p className="text-sm text-danger-300">Parcelas vencidas</p>
-              </div>
-            </div>
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardBody className="flex items-center justify-center py-12">
+            <Spinner color="primary" size="lg" />
           </CardBody>
         </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <PeopleMetricCard
+            helper="Total no contexto atual"
+            icon={<ReceiptIcon className="h-4 w-4" />}
+            label="Total de parcelas"
+            tone="primary"
+            value={dashboard?.totalParcelas || 0}
+          />
+          <PeopleMetricCard
+            helper="Aguardando pagamento"
+            icon={<ClockIcon className="h-4 w-4" />}
+            label="Pendentes"
+            tone="warning"
+            value={dashboard?.parcelasPendentes || 0}
+          />
+          <PeopleMetricCard
+            helper="Quitadas com sucesso"
+            icon={<CheckCircleIcon className="h-4 w-4" />}
+            label="Pagas"
+            tone="success"
+            value={dashboard?.parcelasPagas || 0}
+          />
+          <PeopleMetricCard
+            helper="Exigem cobrança imediata"
+            icon={<AlertTriangleIcon className="h-4 w-4" />}
+            label="Atrasadas"
+            tone="danger"
+            value={dashboard?.parcelasAtrasadas || 0}
+          />
+        </div>
       )}
 
-      {/* Filtros Avançados */}
-      <Card className="border-default-200">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-2">
-              <div className="bg-linear-to-r from-blue-500 to-purple-600 p-2 rounded-lg">
-                <FilterIcon className="text-white" size={20} />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-default-700">
-                  Filtros Inteligentes
-                </h3>
-                <p className="text-sm text-default-500">
-                  Encontre exatamente o que você procura
-                </p>
-              </div>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="pb-0">
+          <div className="flex w-full flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Filtros operacionais
+              </h2>
+              <p className="text-sm text-default-500">
+                Localize rapidamente parcelas por processo, status, período e
+                forma de pagamento.
+              </p>
             </div>
             <Button
-              color="primary"
+              radius="full"
               size="sm"
               startContent={
                 filtrosAvancados ? (
@@ -495,21 +435,20 @@ export default function ParcelasContratoPage() {
                   <SettingsIcon size={16} />
                 )
               }
-              variant="flat"
+              variant="light"
               onPress={() => setFiltrosAvancados(!filtrosAvancados)}
             >
-              {filtrosAvancados ? "Simplificar" : "Avançado"}
+              {filtrosAvancados ? "Ocultar avançado" : "Mostrar avançado"}
             </Button>
           </div>
         </CardHeader>
-        <CardBody className="pt-0">
-          {/* Filtros Básicos */}
-          <div className="flex flex-wrap gap-4 items-end mb-4">
+        <CardBody className="pt-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Select
-              className="max-w-xs"
+              className="w-full"
               isLoading={loadingProcessos}
               label="Processo"
-              placeholder="Selecione um processo"
+              placeholder="Todos os processos"
               selectedKeys={filters.processoId ? [filters.processoId] : []}
               startContent={
                 <FileTextIcon className="text-default-400" size={16} />
@@ -517,7 +456,6 @@ export default function ParcelasContratoPage() {
               variant="bordered"
               onSelectionChange={(keys) => {
                 const processoId = Array.from(keys)[0] as string;
-
                 setFilters({ ...filters, processoId: processoId || undefined });
               }}
             >
@@ -528,7 +466,7 @@ export default function ParcelasContratoPage() {
                 >
                   <div className="flex flex-col">
                     <span className="font-medium">{processo.numero}</span>
-                    <span className="text-xs text-default-500 truncate max-w-[200px]">
+                    <span className="max-w-[220px] truncate text-xs text-default-500">
                       {processo.titulo}
                     </span>
                   </div>
@@ -537,7 +475,7 @@ export default function ParcelasContratoPage() {
             </Select>
 
             <Select
-              className="max-w-xs"
+              className="w-full"
               label="Status"
               placeholder="Todos os status"
               selectedKeys={filters.status ? [filters.status] : []}
@@ -547,7 +485,6 @@ export default function ParcelasContratoPage() {
               variant="bordered"
               onSelectionChange={(keys) => {
                 const status = Array.from(keys)[0] as ContratoParcelaStatus;
-
                 setFilters({ ...filters, status: status || undefined });
               }}
             >
@@ -561,229 +498,165 @@ export default function ParcelasContratoPage() {
               ))}
             </Select>
 
+            <div className="flex items-center rounded-xl border border-white/10 bg-background/40 px-3">
+              <Switch
+                isSelected={filters.apenasVencidas || false}
+                size="sm"
+                onValueChange={(value) =>
+                  setFilters({ ...filters, apenasVencidas: value })
+                }
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  <AlertTriangleIcon className="text-warning-500" size={14} />
+                  Apenas vencidas
+                </div>
+              </Switch>
+            </div>
+
             <Button
-              className="font-medium"
-              color="primary"
+              className="font-medium md:self-end"
+              radius="full"
               startContent={<RefreshCwIcon size={16} />}
               variant="flat"
               onPress={handleLimparFiltros}
             >
-              Limpar
+              Limpar filtros
             </Button>
           </div>
 
-          {/* Filtros Avançados */}
           <AnimatePresence>
             {filtrosAvancados && (
               <motion.div
                 animate={{ opacity: 1, height: "auto" }}
-                className="border-t border-default-200 pt-4 overflow-hidden"
+                className="mt-4 overflow-hidden border-t border-white/10 pt-4"
                 exit={{ opacity: 0, height: 0 }}
                 initial={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               >
                 <motion.div
                   animate={{ y: 0 }}
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                  className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
                   initial={{ y: -20 }}
                   transition={{ delay: 0.1, duration: 0.3 }}
                 >
-                  {/* Filtro de Valor */}
-                  <Card className="border-default-200">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-2">
-                        <DollarSignIcon className="text-green-600" size={14} />
-                        <span className="text-xs font-medium">
-                          Faixa de Valor
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardBody className="pt-0 space-y-2">
-                      <Input
-                        label="Valor mínimo"
-                        placeholder="Ex: 1000"
-                        size="sm"
-                        startContent={
-                          <DollarSignIcon
-                            className="text-default-400"
-                            size={12}
-                          />
-                        }
-                        type="number"
-                        value={filters.valorMinimo?.toString() || ""}
-                        variant="bordered"
-                        onChange={(e) =>
-                          setFilters({
-                            ...filters,
-                            valorMinimo: e.target.value
-                              ? Number(e.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                      <Input
-                        label="Valor máximo"
-                        placeholder="Ex: 5000"
-                        size="sm"
-                        startContent={
-                          <DollarSignIcon
-                            className="text-default-400"
-                            size={12}
-                          />
-                        }
-                        type="number"
-                        value={filters.valorMaximo?.toString() || ""}
-                        variant="bordered"
-                        onChange={(e) =>
-                          setFilters({
-                            ...filters,
-                            valorMaximo: e.target.value
-                              ? Number(e.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                    </CardBody>
-                  </Card>
+                  <Input
+                    label="Valor mínimo"
+                    placeholder="Ex: 1000"
+                    size="sm"
+                    startContent={
+                      <DollarSignIcon className="text-default-400" size={12} />
+                    }
+                    type="number"
+                    value={filters.valorMinimo?.toString() || ""}
+                    variant="bordered"
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        valorMinimo: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                  />
 
-                  {/* Filtro de Data */}
-                  <Card className="border-default-200">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-2">
-                        <CalendarDaysIcon className="text-blue-600" size={14} />
-                        <span className="text-xs font-medium">
-                          Data de Vencimento
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardBody className="pt-0">
-                      <DateRangeInput
-                        label="Período de vencimento"
-                        size="sm"
-                        startContent={
-                          <CalendarDaysIcon
-                            className="text-default-400"
-                            size={12}
-                          />
-                        }
-                        variant="bordered"
-                        onRangeChange={({ start, end }) => {
-                          if (start && end) {
-                            setFilters({
-                              ...filters,
-                              dataVencimentoInicio: new Date(`${start}T00:00:00`),
-                              dataVencimentoFim: new Date(`${end}T23:59:59`),
-                            });
-                          } else {
-                            setFilters({
-                              ...filters,
-                              dataVencimentoInicio: undefined,
-                              dataVencimentoFim: undefined,
-                            });
-                          }
-                        }}
-                      />
-                    </CardBody>
-                  </Card>
+                  <Input
+                    label="Valor máximo"
+                    placeholder="Ex: 5000"
+                    size="sm"
+                    startContent={
+                      <DollarSignIcon className="text-default-400" size={12} />
+                    }
+                    type="number"
+                    value={filters.valorMaximo?.toString() || ""}
+                    variant="bordered"
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        valorMaximo: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                  />
 
-                  {/* Filtro de Forma de Pagamento */}
-                  <Card className="border-default-200">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-2">
-                        <CreditCardIcon className="text-purple-600" size={14} />
-                        <span className="text-xs font-medium">
-                          Forma de Pagamento
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardBody className="pt-0">
-                      <Select
-                        label="Forma de pagamento"
-                        placeholder="Todas as formas"
-                        selectedKeys={
-                          filters.formaPagamento ? [filters.formaPagamento] : []
-                        }
-                        size="sm"
-                        startContent={
-                          <CreditCardIcon
-                            className="text-default-400"
-                            size={12}
-                          />
-                        }
-                        variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const forma = Array.from(keys)[0] as string;
-
-                          setFilters({
-                            ...filters,
-                            formaPagamento: forma || undefined,
-                          });
-                        }}
-                      >
-                        {formasPagamento.map((forma) => (
-                          <SelectItem key={forma.key} textValue={forma.label}>
-                            {forma.label}
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    </CardBody>
-                  </Card>
-
-                  {/* Filtros Especiais */}
-                  <div className="mt-4 flex flex-wrap gap-3 items-center col-span-full">
-                    <Switch
-                      isSelected={filters.apenasVencidas || false}
-                      size="sm"
-                      onValueChange={(value) =>
-                        setFilters({ ...filters, apenasVencidas: value })
+                  <DateRangeInput
+                    label="Período de vencimento"
+                    size="sm"
+                    startContent={
+                      <CalendarDaysIcon className="text-default-400" size={12} />
+                    }
+                    variant="bordered"
+                    onRangeChange={({ start, end }) => {
+                      if (start && end) {
+                        setFilters({
+                          ...filters,
+                          dataVencimentoInicio: new Date(`${start}T00:00:00`),
+                          dataVencimentoFim: new Date(`${end}T23:59:59`),
+                        });
+                      } else {
+                        setFilters({
+                          ...filters,
+                          dataVencimentoInicio: undefined,
+                          dataVencimentoFim: undefined,
+                        });
                       }
-                    >
-                      <div className="flex items-center gap-2">
-                        <AlertTriangleIcon
-                          className="text-orange-600"
-                          size={14}
-                        />
-                        <span className="text-xs">
-                          Apenas parcelas vencidas
-                        </span>
-                      </div>
-                    </Switch>
+                    }}
+                  />
 
-                    <Chip
-                      color="primary"
-                      size="sm"
-                      startContent={<HashIcon size={10} />}
-                      variant="flat"
-                    >
-                      <span className="text-xs">
-                        {parcelas.length} resultado
-                        {parcelas.length !== 1 ? "s" : ""}
-                      </span>
-                    </Chip>
-                  </div>
+                  <Select
+                    label="Forma de pagamento"
+                    placeholder="Todas as formas"
+                    selectedKeys={
+                      filters.formaPagamento ? [filters.formaPagamento] : []
+                    }
+                    size="sm"
+                    startContent={
+                      <CreditCardIcon className="text-default-400" size={12} />
+                    }
+                    variant="bordered"
+                    onSelectionChange={(keys) => {
+                      const forma = Array.from(keys)[0] as string;
+                      setFilters({
+                        ...filters,
+                        formaPagamento: forma || undefined,
+                      });
+                    }}
+                  >
+                    {formasPagamento.map((forma) => (
+                      <SelectItem key={forma.key} textValue={forma.label}>
+                        {forma.label}
+                      </SelectItem>
+                    ))}
+                  </Select>
                 </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
+
+          <div className="mt-4 flex items-center gap-2">
+            <Chip
+              color="primary"
+              size="sm"
+              startContent={<HashIcon size={10} />}
+              variant="flat"
+            >
+              {parcelas.length} resultado{parcelas.length !== 1 ? "s" : ""}
+            </Chip>
+          </div>
         </CardBody>
       </Card>
 
-      {/* Lista de Parcelas */}
-      <Card className="shadow-lg border-none">
-        <CardHeader className="border-b border-default-200">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-1.5 rounded-lg">
-                <ReceiptIcon className="text-blue-600" size={16} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-default-800">
-                  Lista de Parcelas
-                </h2>
-                <p className="text-xs text-default-600">
-                  Gerencie todas as parcelas dos contratos
-                </p>
-              </div>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="border-b border-white/10">
+          <div className="flex w-full flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Lista de parcelas
+              </h2>
+              <p className="text-sm text-default-500">
+                Gerencie todas as parcelas dos contratos com visão de status e
+                vencimento.
+              </p>
             </div>
             <Chip
               color="primary"
@@ -791,226 +664,153 @@ export default function ParcelasContratoPage() {
               startContent={<ReceiptIcon size={12} />}
               variant="flat"
             >
-              <span className="text-xs">{parcelas.length} parcelas</span>
+              {parcelas.length} parcela{parcelas.length !== 1 ? "s" : ""}
             </Chip>
           </div>
         </CardHeader>
-        <CardBody className="p-0">
+        <CardBody className="space-y-4 p-4 sm:p-5">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Spinner color="primary" size="lg" />
-              <p className="text-default-500 mt-4">Carregando parcelas...</p>
+              <p className="mt-4 text-default-500">Carregando parcelas...</p>
+            </div>
+          ) : parcelas.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-background/40 p-8 text-center">
+              <ReceiptIcon className="mx-auto mb-4 text-default-300" size={48} />
+              <h3 className="mb-2 text-lg font-semibold text-foreground">
+                Nenhuma parcela encontrada
+              </h3>
+              <p className="mx-auto mb-6 max-w-md text-sm text-default-500">
+                Crie a primeira parcela para iniciar o controle financeiro dos
+                contratos.
+              </p>
+              <Button
+                className="font-semibold"
+                color="primary"
+                radius="full"
+                startContent={<PlusIcon size={16} />}
+                onPress={() => handleOpenModal()}
+              >
+                Criar primeira parcela
+              </Button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {parcelas.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="bg-linear-to-br from-default-100 to-default-50 rounded-2xl p-8 border border-default-200">
-                    <ReceiptIcon
-                      className="mx-auto text-default-300 mb-4"
-                      size={48}
-                    />
-                    <h3 className="text-lg font-bold text-default-700 mb-2">
-                      Nenhuma parcela encontrada
-                    </h3>
-                    <p className="text-sm text-default-500 mb-6 max-w-md mx-auto">
-                      Comece criando sua primeira parcela para gerenciar os
-                      pagamentos dos contratos
-                    </p>
-                    <Button
-                      className="font-semibold"
-                      color="primary"
-                      size="md"
-                      startContent={<PlusIcon size={16} />}
-                      onPress={() => handleOpenModal()}
-                    >
-                      Criar Primeira Parcela
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {parcelas.map(
-                    (parcela: ParcelaComContrato, index: number) => (
-                      <Card
-                        key={parcela.id}
-                        className="border-none shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
-                      >
-                        <CardBody className="p-6">
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-                            {/* Cliente e Contrato */}
-                            <div className="lg:col-span-3">
-                              <div className="flex items-center gap-3">
-                                <div className="bg-linear-to-br from-primary-100 to-primary-200 p-2 rounded-xl">
-                                  <UsersIcon
-                                    className="text-primary-600"
-                                    size={16}
-                                  />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <h4 className="font-bold text-default-800 text-base truncate">
-                                    {parcela.contrato.cliente.nome}
-                                  </h4>
-                                  <p className="text-xs text-default-500 truncate">
-                                    {parcela.contrato.advogadoResponsavel
-                                      ?.usuario
-                                      ? `${parcela.contrato.advogadoResponsavel.usuario.firstName} ${parcela.contrato.advogadoResponsavel.usuario.lastName}`
-                                      : "Sem advogado responsável"}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
+            <div className="grid gap-3">
+              {parcelas.map((parcela: ParcelaComContrato) => (
+                <Card
+                  key={parcela.id}
+                  className="border border-white/10 bg-background/40 transition-colors hover:border-primary/40"
+                >
+                  <CardBody className="p-4 sm:p-5">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-center">
+                      <div className="lg:col-span-4">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {parcela.contrato.cliente.nome}
+                        </p>
+                        <p className="truncate text-xs text-default-500">
+                          {parcela.contrato.advogadoResponsavel?.usuario
+                            ? `${parcela.contrato.advogadoResponsavel.usuario.firstName} ${parcela.contrato.advogadoResponsavel.usuario.lastName}`
+                            : "Sem advogado responsável"}
+                        </p>
+                      </div>
 
-                            {/* Parcela */}
-                            <div className="lg:col-span-2">
-                              <div className="flex items-center gap-3">
-                                <div className="bg-linear-to-br from-secondary-100 to-secondary-200 p-1.5 rounded-lg">
-                                  <FileTextIcon
-                                    className="text-secondary-600"
-                                    size={14}
-                                  />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-semibold text-default-800 text-sm">
-                                    {parcela.titulo ||
-                                      `Parcela ${parcela.numeroParcela}`}
-                                  </p>
-                                  {parcela.descricao && (
-                                    <p className="text-xs text-default-500 truncate max-w-[200px]">
-                                      {parcela.descricao}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                      <div className="lg:col-span-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {parcela.titulo || `Parcela ${parcela.numeroParcela}`}
+                        </p>
+                        {parcela.descricao && (
+                          <p className="truncate text-xs text-default-500">
+                            {parcela.descricao}
+                          </p>
+                        )}
+                      </div>
 
-                            {/* Valor */}
-                            <div className="lg:col-span-2">
-                              <div className="flex items-center gap-3">
-                                <div className="bg-linear-to-br from-success-100 to-success-200 p-1.5 rounded-lg">
-                                  <DollarSignIcon
-                                    className="text-success-600"
-                                    size={14}
-                                  />
-                                </div>
-                                <div>
-                                  <p className="font-bold text-success-700 text-base">
-                                    {formatCurrency(Number(parcela.valor))}
-                                  </p>
-                                  <p className="text-xs text-success-600">
-                                    Valor da parcela
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
+                      <div className="lg:col-span-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {formatCurrency(Number(parcela.valor))}
+                        </p>
+                        <p className="text-xs text-default-500">Valor</p>
+                      </div>
 
-                            {/* Vencimento */}
-                            <div className="lg:col-span-2">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className={`p-2 rounded-lg ${isVencida(parcela.dataVencimento, parcela.status) ? "bg-linear-to-br from-danger-100 to-danger-200" : "bg-linear-to-br from-warning-100 to-warning-200"}`}
-                                >
-                                  <CalendarIcon
-                                    className={`${isVencida(parcela.dataVencimento, parcela.status) ? "text-danger-600" : "text-warning-600"}`}
-                                    size={16}
-                                  />
-                                </div>
-                                <div>
-                                  <p
-                                    className={`font-semibold ${isVencida(parcela.dataVencimento, parcela.status) ? "text-danger-600" : "text-default-800"}`}
-                                  >
-                                    {formatDate(parcela.dataVencimento)}
-                                  </p>
-                                  {isVencida(
-                                    parcela.dataVencimento,
-                                    parcela.status,
-                                  ) ? (
-                                    <p className="text-xs text-danger-500 font-medium">
-                                      Vencida
-                                    </p>
-                                  ) : (
-                                    <p className="text-xs text-warning-600">
-                                      Data limite
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                      <div className="lg:col-span-2">
+                        <p
+                          className={`text-sm font-semibold ${
+                            isVencida(parcela.dataVencimento, parcela.status)
+                              ? "text-danger-500"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {formatDate(parcela.dataVencimento)}
+                        </p>
+                        <p className="text-xs text-default-500">
+                          {isVencida(parcela.dataVencimento, parcela.status)
+                            ? "Vencida"
+                            : "Vencimento"}
+                        </p>
+                      </div>
 
-                            {/* Status */}
-                            <div className="lg:col-span-2">
-                              <Chip
-                                className="font-semibold text-sm"
-                                color={getStatusColor(parcela.status)}
-                                size="lg"
-                                startContent={getStatusIcon(parcela.status)}
-                                variant="flat"
+                      <div className="lg:col-span-2">
+                        <div className="flex items-center justify-between gap-2 lg:justify-end">
+                          <Chip
+                            color={getStatusColor(parcela.status)}
+                            size="sm"
+                            startContent={getStatusIcon(parcela.status)}
+                            variant="flat"
+                          >
+                            {
+                              statusList.find((s) => s.value === parcela.status)
+                                ?.label
+                            }
+                          </Chip>
+
+                          <Dropdown>
+                            <DropdownTrigger>
+                              <Button
+                                className="font-medium"
+                                size="sm"
+                                startContent={<ArrowUpDownIcon size={14} />}
+                                variant="light"
                               >
-                                {
-                                  statusList.find(
-                                    (s) => s.value === parcela.status,
-                                  )?.label
-                                }
-                              </Chip>
-                            </div>
-
-                            {/* Ações */}
-                            <div className="lg:col-span-1">
-                              <div className="flex justify-end">
-                                <Dropdown>
-                                  <DropdownTrigger>
-                                    <Button
-                                      className="font-semibold min-w-[100px]"
-                                      color="primary"
-                                      size="sm"
-                                      startContent={
-                                        <ArrowUpDownIcon size={16} />
-                                      }
-                                      variant="flat"
-                                    >
-                                      Ações
-                                    </Button>
-                                  </DropdownTrigger>
-                                  <DropdownMenu
-                                    aria-label="Ações da parcela"
-                                    variant="flat"
-                                  >
-                                    <DropdownItem
-                                      key="view"
-                                      className="text-default-700"
-                                      startContent={<EyeIcon size={16} />}
-                                      onPress={() => handleOpenModal(parcela)}
-                                    >
-                                      Ver Detalhes
-                                    </DropdownItem>
-                                    <DropdownItem
-                                      key="edit"
-                                      className="text-primary"
-                                      startContent={<PencilIcon size={16} />}
-                                      onPress={() => handleOpenModal(parcela)}
-                                    >
-                                      Editar
-                                    </DropdownItem>
-                                    <DropdownItem
-                                      key="delete"
-                                      className="text-danger"
-                                      color="danger"
-                                      startContent={<TrashIcon size={16} />}
-                                      onPress={() => handleDelete(parcela.id)}
-                                    >
-                                      Remover
-                                    </DropdownItem>
-                                  </DropdownMenu>
-                                </Dropdown>
-                              </div>
-                            </div>
-                          </div>
-                        </CardBody>
-                      </Card>
-                    ),
-                  )}
-                </div>
-              )}
+                                Ações
+                              </Button>
+                            </DropdownTrigger>
+                            <DropdownMenu
+                              aria-label="Ações da parcela"
+                              variant="flat"
+                            >
+                              <DropdownItem
+                                key="view"
+                                className="text-default-700"
+                                startContent={<EyeIcon size={16} />}
+                                onPress={() => handleOpenModal(parcela)}
+                              >
+                                Ver detalhes
+                              </DropdownItem>
+                              <DropdownItem
+                                key="edit"
+                                className="text-primary"
+                                startContent={<PencilIcon size={16} />}
+                                onPress={() => handleOpenModal(parcela)}
+                              >
+                                Editar
+                              </DropdownItem>
+                              <DropdownItem
+                                key="delete"
+                                className="text-danger"
+                                color="danger"
+                                startContent={<TrashIcon size={16} />}
+                                onPress={() => handleDelete(parcela.id)}
+                              >
+                                Remover
+                              </DropdownItem>
+                            </DropdownMenu>
+                          </Dropdown>
+                        </div>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+              ))}
             </div>
           )}
         </CardBody>
@@ -1535,6 +1335,6 @@ export default function ParcelasContratoPage() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+    </section>
   );
 }

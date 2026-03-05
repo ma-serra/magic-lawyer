@@ -797,6 +797,7 @@ export async function getEventos(filters?: {
   advogadoId?: string;
   local?: string;
   titulo?: string;
+  origem?: "google" | "local";
 },
 pagination?: {
   page?: number;
@@ -807,12 +808,34 @@ pagination?: {
     const where: Prisma.EventoWhereInput = buildEventoScopeWhere(context);
 
     if (filters?.dataInicio || filters?.dataFim) {
-      where.dataInicio = {} as Prisma.DateTimeFilter;
-      if (filters.dataInicio) {
-        (where.dataInicio as Prisma.DateTimeFilter).gte = filters.dataInicio;
-      }
+      // Filtra por sobreposição de intervalo para não ocultar eventos que
+      // iniciam antes do período e terminam dentro/depois dele.
+      const intervalClauses: Prisma.EventoWhereInput[] = [];
+
       if (filters.dataFim) {
-        (where.dataInicio as Prisma.DateTimeFilter).lte = filters.dataFim;
+        intervalClauses.push({
+          dataInicio: {
+            lte: filters.dataFim,
+          },
+        });
+      }
+
+      if (filters.dataInicio) {
+        intervalClauses.push({
+          dataFim: {
+            gte: filters.dataInicio,
+          },
+        });
+      }
+
+      if (intervalClauses.length > 0) {
+        const existingAnd = Array.isArray(where.AND)
+          ? where.AND
+          : where.AND
+            ? [where.AND]
+            : [];
+
+        where.AND = [...existingAnd, ...intervalClauses];
       }
     }
 
@@ -861,6 +884,14 @@ pagination?: {
         contains: filters.titulo,
         mode: "insensitive",
       };
+    }
+
+    if (filters?.origem === "google") {
+      where.googleEventId = {
+        not: null,
+      };
+    } else if (filters?.origem === "local") {
+      where.googleEventId = null;
     }
 
     const page = normalizePage(pagination?.page);
@@ -1262,36 +1293,43 @@ export async function createEvento(formData: EventoFormData) {
     }
 
     if (normalizedParticipantes.length > 0) {
-      // Criar notificações para os participantes usando sistema híbrido
-      const { publishNotification } = await import(
-        "@/app/actions/notifications-hybrid"
-      );
+      try {
+        // Falha de notificação não deve quebrar criação do evento.
+        const { publishNotification } = await import(
+          "@/app/actions/notifications-hybrid"
+        );
 
-      for (const email of normalizedParticipantes) {
-        await publishNotification({
-          type: "evento.created",
-          title: "Novo Evento - Confirmação Necessária",
-          message: `Você foi convidado para o evento "${eventoPrincipal.titulo}" em ${new Date(
-            eventoPrincipal.dataInicio,
-          ).toLocaleDateString("pt-BR")} às ${new Date(
-            eventoPrincipal.dataInicio,
-          ).toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}. Por favor, confirme sua participação.`,
-          urgency: "MEDIUM",
-          channels: ["REALTIME"],
-          payload: {
-            eventoId: eventoPrincipal.id,
-            participanteEmail: email,
-            tipoConfirmacao: "INVITE",
-            eventoTitulo: eventoPrincipal.titulo,
-            eventoData: eventoPrincipal.dataInicio,
-            eventoLocal: eventoPrincipal.local,
-          },
-          referenciaTipo: "evento",
-          referenciaId: eventoPrincipal.id,
-        });
+        for (const email of normalizedParticipantes) {
+          await publishNotification({
+            type: "evento.created",
+            title: "Novo Evento - Confirmação Necessária",
+            message: `Você foi convidado para o evento "${eventoPrincipal.titulo}" em ${new Date(
+              eventoPrincipal.dataInicio,
+            ).toLocaleDateString("pt-BR")} às ${new Date(
+              eventoPrincipal.dataInicio,
+            ).toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}. Por favor, confirme sua participação.`,
+            urgency: "MEDIUM",
+            channels: ["REALTIME"],
+            payload: {
+              eventoId: eventoPrincipal.id,
+              participanteEmail: email,
+              tipoConfirmacao: "INVITE",
+              eventoTitulo: eventoPrincipal.titulo,
+              eventoData: eventoPrincipal.dataInicio,
+              eventoLocal: eventoPrincipal.local,
+            },
+            referenciaTipo: "evento",
+            referenciaId: eventoPrincipal.id,
+          });
+        }
+      } catch (notificationError) {
+        logger.warn(
+          "Erro ao publicar notificações de criação de evento:",
+          notificationError,
+        );
       }
     }
 
@@ -1626,29 +1664,37 @@ export async function updateEvento(
           },
         });
 
-        const { publishNotification } = await import(
-          "@/app/actions/notifications-hybrid"
-        );
+        try {
+          // Falha de notificação não deve quebrar atualização do evento.
+          const { publishNotification } = await import(
+            "@/app/actions/notifications-hybrid"
+          );
 
-        for (const email of participantesDepois) {
-          await publishNotification({
-            type: "evento.updated",
-            title: "Evento Alterado - Nova Confirmação Necessária",
-            message: `O evento "${eventoExistente.titulo}" foi alterado. Por favor, confirme novamente sua participação.`,
-            urgency: "HIGH",
-            channels: ["REALTIME"],
-            payload: {
-              eventoId: evento.id,
-              participanteEmail: email,
-              tipoConfirmacao: "RE_CONFIRMACAO",
-              motivo: "Evento alterado",
-              eventoTitulo: eventoExistente.titulo,
-              eventoData: evento.dataInicio,
-              eventoLocal: evento.local,
-            },
-            referenciaTipo: "evento",
-            referenciaId: evento.id,
-          });
+          for (const email of participantesDepois) {
+            await publishNotification({
+              type: "evento.updated",
+              title: "Evento Alterado - Nova Confirmação Necessária",
+              message: `O evento "${eventoExistente.titulo}" foi alterado. Por favor, confirme novamente sua participação.`,
+              urgency: "HIGH",
+              channels: ["REALTIME"],
+              payload: {
+                eventoId: evento.id,
+                participanteEmail: email,
+                tipoConfirmacao: "RE_CONFIRMACAO",
+                motivo: "Evento alterado",
+                eventoTitulo: eventoExistente.titulo,
+                eventoData: evento.dataInicio,
+                eventoLocal: evento.local,
+              },
+              referenciaTipo: "evento",
+              referenciaId: evento.id,
+            });
+          }
+        } catch (notificationError) {
+          logger.warn(
+            "Erro ao publicar notificações de atualização de evento:",
+            notificationError,
+          );
         }
       }
     }
@@ -1865,28 +1911,35 @@ export async function confirmarParticipacaoEvento(
     );
 
     if (outrosParticipantes.length > 0) {
-      // Criar notificações para outros participantes usando sistema híbrido
-      const { publishNotification } = await import(
-        "@/app/actions/notifications-hybrid"
-      );
+      try {
+        // Falha de notificação não deve quebrar a confirmação de presença.
+        const { publishNotification } = await import(
+          "@/app/actions/notifications-hybrid"
+        );
 
-      for (const email of outrosParticipantes) {
-        await publishNotification({
-          type: "evento.confirmation_updated",
-          title: "Atualização de Confirmação",
-          message: `${participanteCanonical} ${statusLabel} o evento "${evento.titulo}".`,
-          urgency: "INFO",
-          channels: ["REALTIME"],
-          payload: {
-            eventoId,
-            participanteEmail: participanteCanonical,
-            status,
-            tipoConfirmacao: "RESPONSE",
-            destinatarioEmail: email,
-          },
-          referenciaTipo: "evento",
-          referenciaId: eventoId,
-        });
+        for (const email of outrosParticipantes) {
+          await publishNotification({
+            type: "evento.confirmation_updated",
+            title: "Atualização de Confirmação",
+            message: `${participanteCanonical} ${statusLabel} o evento "${evento.titulo}".`,
+            urgency: "INFO",
+            channels: ["REALTIME"],
+            payload: {
+              eventoId,
+              participanteEmail: participanteCanonical,
+              status,
+              tipoConfirmacao: "RESPONSE",
+              destinatarioEmail: email,
+            },
+            referenciaTipo: "evento",
+            referenciaId: eventoId,
+          });
+        }
+      } catch (notificationError) {
+        logger.warn(
+          "Erro ao publicar notificações de confirmação de evento:",
+          notificationError,
+        );
       }
     }
 

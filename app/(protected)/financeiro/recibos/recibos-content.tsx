@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Card, CardBody, CardHeader, Button, Divider, Skeleton, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Pagination, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Select, SelectItem } from "@heroui/react";
@@ -27,7 +29,7 @@ import "dayjs/locale/pt-br";
 import useSWR from "swr";
 import { toast } from "@/lib/toast";
 
-import { title, subtitle } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import {
   getRecibosPagos,
   gerarComprovanteHTML,
@@ -36,6 +38,7 @@ import {
   type Recibo,
 } from "@/app/actions/recibos";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { TENANT_PERMISSIONS } from "@/types";
 
 type DateValueLike = {
   toDate: () => Date;
@@ -47,6 +50,7 @@ type PeriodoRange = {
 };
 
 export default function RecibosPage() {
+  const { data: session } = useSession();
   const [filtros, setFiltros] = useState<FiltrosRecibos>({});
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [reciboSelecionado, setReciboSelecionado] = useState<Recibo | null>(
@@ -60,15 +64,15 @@ export default function RecibosPage() {
 
   const itensPorPagina = 10;
 
-  // Buscar recibos com SWR (carrega lote completo para filtrar localmente)
+  // Buscar recibos com paginação server-side
   const {
     data: recibosData,
     error,
     isLoading,
     mutate,
   } = useSWR(
-    ["recibos", filtros],
-    () => getRecibosPagos({ ...filtros, pagina: 1, itensPorPagina: 1000 }),
+    ["recibos", filtros, paginaAtual, itensPorPagina],
+    () => getRecibosPagos({ ...filtros, pagina: paginaAtual, itensPorPagina }),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
@@ -89,83 +93,31 @@ export default function RecibosPage() {
   const resumo = recibosData?.data?.resumo;
   const total = recibosData?.data?.total || 0;
   const totalPaginas = recibosData?.data?.totalPaginas || 0;
+  const canAccessBilling = useMemo(() => {
+    const role = (session?.user as any)?.role as string | undefined;
+    const permissions = ((session?.user as any)?.permissions ?? []) as string[];
 
-  const filteredRecibos = useMemo(() => {
-    if (!recibos.length) return [];
-
-    if (!periodo?.start && !periodo?.end) {
-      return recibos;
-    }
-
-    const startDate = periodo?.start
-      ? dayjs(periodo.start.toDate()).startOf("day")
-      : null;
-    const endDate = periodo?.end
-      ? dayjs(periodo.end.toDate()).endOf("day")
-      : null;
-
-    return recibos.filter((recibo) => {
-      const dataPagamento = recibo.dataPagamento
-        ? dayjs(recibo.dataPagamento)
-        : null;
-
-      if (!dataPagamento) return false;
-      if (startDate && dataPagamento.isBefore(startDate)) return false;
-      if (endDate && dataPagamento.isAfter(endDate)) return false;
-
-      return true;
-    });
-  }, [recibos, periodo]);
-
-  const totalFiltrado = filteredRecibos.length;
-  const totalPaginasFiltrado =
-    totalFiltrado > 0 ? Math.ceil(totalFiltrado / itensPorPagina) : 1;
-
-  const resumoFiltrado = useMemo(() => {
-    if (!filteredRecibos.length) {
-      return {
-        totalValor: 0,
-        totalRecibos: 0,
-        totalParcelas: 0,
-        totalFaturas: 0,
-      };
-    }
-
-    return filteredRecibos.reduce(
-      (acc, recibo) => {
-        acc.totalRecibos += 1;
-        acc.totalValor += Number(recibo.valor ?? 0);
-
-        if (recibo.tipo === "PARCELA") {
-          acc.totalParcelas += 1;
-        } else if (recibo.tipo === "FATURA") {
-          acc.totalFaturas += 1;
-        }
-
-        return acc;
-      },
-      {
-        totalValor: 0,
-        totalRecibos: 0,
-        totalParcelas: 0,
-        totalFaturas: 0,
-      },
+    return (
+      role === "SUPER_ADMIN" ||
+      permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings)
     );
-  }, [filteredRecibos]);
+  }, [session]);
 
-  const recibosPaginados = useMemo(() => {
-    if (!filteredRecibos.length) return [];
-
-    const inicio = (paginaAtual - 1) * itensPorPagina;
-
-    return filteredRecibos.slice(inicio, inicio + itensPorPagina);
-  }, [filteredRecibos, paginaAtual]);
+  const resumoExibicao = useMemo(
+    () => ({
+      totalValor: resumo?.totalValor ?? 0,
+      totalRecibos: total,
+      totalParcelas: resumo?.totalParcelas ?? total,
+      totalFaturas: resumo?.totalFaturas ?? 0,
+    }),
+    [resumo, total],
+  );
 
   useEffect(() => {
-    if (paginaAtual > totalPaginasFiltrado) {
-      setPaginaAtual(totalPaginasFiltrado);
+    if (totalPaginas > 0 && paginaAtual > totalPaginas) {
+      setPaginaAtual(totalPaginas);
     }
-  }, [paginaAtual, totalPaginasFiltrado]);
+  }, [paginaAtual, totalPaginas]);
 
   // Debug removido para produção
 
@@ -176,11 +128,18 @@ export default function RecibosPage() {
 
   const handlePeriodoChange = (value: PeriodoRange | null) => {
     setPeriodo(value);
-    setFiltros((prev) => {
-      const { dataInicio, dataFim, ...rest } = prev as FiltrosRecibos;
+    const dataInicio = value?.start
+      ? dayjs(value.start.toDate()).startOf("day").toISOString()
+      : undefined;
+    const dataFim = value?.end
+      ? dayjs(value.end.toDate()).endOf("day").toISOString()
+      : undefined;
 
-      return rest as FiltrosRecibos;
-    });
+    setFiltros((prev) => ({
+      ...prev,
+      dataInicio,
+      dataFim,
+    }));
     setPaginaAtual(1);
   };
 
@@ -191,14 +150,12 @@ export default function RecibosPage() {
   };
 
   // Verificar se há filtros ativos
-  const hasActiveFilters =
-    Object.values(filtros).some(
-      (value) => value !== undefined && value !== "",
-    ) || Boolean(periodo?.start || periodo?.end);
-  const filtrosAtivosCount =
-    Object.values(filtros).filter(
-      (value) => value !== undefined && value !== "",
-    ).length + (periodo?.start || periodo?.end ? 1 : 0);
+  const hasActiveFilters = Object.values(filtros).some(
+    (value) => value !== undefined && value !== "",
+  );
+  const filtrosAtivosCount = Object.values(filtros).filter(
+    (value) => value !== undefined && value !== "",
+  ).length;
 
   // Função para renderizar clientes
   const renderClientes = () => {
@@ -341,95 +298,84 @@ export default function RecibosPage() {
   };
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Comprovantes e recibos
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Financeiro"
+        title="Recibos"
+        description="Histórico consolidado de pagamentos confirmados das parcelas contratuais do escritório."
+      />
+      {canAccessBilling && (
+        <p className="-mt-4 text-[11px] text-default-500">
+          Deseja encontrar as faturas da assinatura da Magic Lawyer?{" "}
+          <Link
+            className="font-medium text-primary/90 underline-offset-2 transition hover:text-primary hover:underline"
+            href="/configuracoes/billing"
+          >
+            clique aqui
+          </Link>
+          .
         </p>
-        <h1 className={title({ size: "lg", color: "blue" })}>
-          Histórico de pagamentos confirmados
-        </h1>
-        <p className={subtitle({ fullWidth: true })}>
-          Visualize e baixe comprovantes de todas as parcelas e faturas pagas
-        </p>
-      </header>
+      )}
 
       {error && (
-        <div className="text-center">
-          <h2 className={title({ size: "md", color: "foreground" })}>
-            Erro ao carregar recibos
-          </h2>
-          <p className={subtitle({ fullWidth: true })}>
-            {error.message || "Ocorreu um erro inesperado"}
-          </p>
-          <Button className="mt-4" color="primary" onPress={() => mutate()}>
-            Tentar novamente
-          </Button>
-        </div>
+        <Card className="border border-danger/30 bg-danger/10">
+          <CardBody className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-base font-semibold text-danger">
+                Erro ao carregar recibos
+              </p>
+              <p className="text-sm text-danger/80">
+                {error.message || "Ocorreu um erro inesperado"}
+              </p>
+            </div>
+            <Button color="danger" variant="flat" onPress={() => mutate()}>
+              Tentar novamente
+            </Button>
+          </CardBody>
+        </Card>
       )}
 
       {/* Resumo */}
       {resumo && (
         <motion.div
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-4 gap-4"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
           initial={{ opacity: 0, y: 20 }}
         >
-          <Card className="border border-success/20 bg-success/5">
-            <CardBody className="flex flex-row items-center gap-3">
-              <div className="p-2 rounded-full bg-success/20">
-                <DollarSign className="w-5 h-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm text-success/80">Total Recebido</p>
-                <p className="text-lg font-semibold text-success">
-                  {formatarValor(resumoFiltrado.totalValor)}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="border border-primary/20 bg-primary/5">
-            <CardBody className="flex flex-row items-center gap-3">
-              <div className="p-2 rounded-full bg-primary/20">
-                <FileText className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-primary/80">Total Recibos</p>
-                <p className="text-lg font-semibold text-primary">
-                  {resumoFiltrado.totalRecibos}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="border border-warning/20 bg-warning/5">
-            <CardBody className="flex flex-row items-center gap-3">
-              <div className="p-2 rounded-full bg-warning/20">
-                <Receipt className="w-5 h-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-sm text-warning/80">Parcelas</p>
-                <p className="text-lg font-semibold text-warning">
-                  {resumoFiltrado.totalParcelas}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="border border-secondary/20 bg-secondary/5">
-            <CardBody className="flex flex-row items-center gap-3">
-              <div className="p-2 rounded-full bg-secondary/20">
-                <Building className="w-5 h-5 text-secondary" />
-              </div>
-              <div>
-                <p className="text-sm text-secondary/80">Faturas</p>
-                <p className="text-lg font-semibold text-secondary">
-                  {resumoFiltrado.totalFaturas}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
+          <PeopleMetricCard
+            helper="Somatório de pagamentos confirmados"
+            icon={<DollarSign className="h-4 w-4" />}
+            label="Total recebido"
+            tone="success"
+            value={formatarValor(resumoExibicao.totalValor)}
+          />
+          <PeopleMetricCard
+            helper="Comprovantes válidos no filtro"
+            icon={<FileText className="h-4 w-4" />}
+            label="Total de recibos"
+            tone="primary"
+            value={resumoExibicao.totalRecibos}
+          />
+          <PeopleMetricCard
+            helper="Recibos de parcelas"
+            icon={<Receipt className="h-4 w-4" />}
+            label="Parcelas"
+            tone="warning"
+            value={resumoExibicao.totalParcelas}
+          />
+          <PeopleMetricCard
+            helper="Média por recibo no filtro"
+            icon={<Building className="h-4 w-4" />}
+            label="Ticket médio"
+            tone="secondary"
+            value={
+              resumoExibicao.totalRecibos > 0
+                ? formatarValor(
+                    resumoExibicao.totalValor / resumoExibicao.totalRecibos,
+                  )
+                : formatarValor(0)
+            }
+          />
         </motion.div>
       )}
 
@@ -487,7 +433,7 @@ export default function RecibosPage() {
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               >
                 <CardBody>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {/* Filtro por Período */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium flex items-center gap-2">
@@ -495,7 +441,7 @@ export default function RecibosPage() {
                         Período
                       </label>
                       <DateRangeInput
-                        className="max-w-xs"
+                        className="w-full"
                         label="Selecione o período"
                         rangeValue={periodo as any}
                         size="sm"
@@ -524,35 +470,6 @@ export default function RecibosPage() {
                           handleFiltroChange("search", value)
                         }
                       />
-                    </div>
-
-                    {/* Filtro por Tipo */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        Tipo
-                      </label>
-                      <Select
-                        placeholder="Selecione um tipo"
-                        selectedKeys={filtros.tipo ? [filtros.tipo] : []}
-                        size="sm"
-                        variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0] as string;
-
-                          handleFiltroChange("tipo", selected || undefined);
-                        }}
-                      >
-                        <SelectItem key="" textValue="Todos os tipos">
-                          Todos os tipos
-                        </SelectItem>
-                        <SelectItem key="PARCELA" textValue="Parcelas">
-                          Parcelas
-                        </SelectItem>
-                        <SelectItem key="FATURA" textValue="Faturas">
-                          Faturas
-                        </SelectItem>
-                      </Select>
                     </div>
 
                     {/* Filtro por Status */}
@@ -698,7 +615,7 @@ export default function RecibosPage() {
                 <h3 className="text-lg font-semibold">Recibos Pagos</h3>
               </div>
               <Chip color="primary" variant="flat">
-                {totalFiltrado} registros
+                {total} registros
               </Chip>
             </div>
           </CardHeader>
@@ -710,7 +627,7 @@ export default function RecibosPage() {
                   <Skeleton key={i} className="h-16 w-full rounded-lg" />
                 ))}
               </div>
-            ) : filteredRecibos.length === 0 ? (
+            ) : recibos.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="w-16 h-16 mx-auto text-default-300 mb-4" />
                 <h3 className="text-lg font-semibold text-default-500 mb-2">
@@ -734,7 +651,7 @@ export default function RecibosPage() {
                     <TableColumn>AÇÕES</TableColumn>
                   </TableHeader>
                   <TableBody>
-                    {recibosPaginados.map((recibo) => (
+                    {recibos.map((recibo) => (
                       <TableRow key={recibo.id}>
                         <TableCell>
                           <div className="space-y-1">
@@ -745,11 +662,7 @@ export default function RecibosPage() {
                               {recibo.titulo}
                             </p>
                             <Chip
-                              color={
-                                recibo.tipo === "PARCELA"
-                                  ? "primary"
-                                  : "secondary"
-                              }
+                              color="primary"
                               size="sm"
                               variant="flat"
                             >
@@ -872,13 +785,13 @@ export default function RecibosPage() {
                   </TableBody>
                 </Table>
 
-                {totalPaginasFiltrado > 1 && (
+                {totalPaginas > 1 && (
                   <div className="flex justify-center mt-6">
                     <Pagination
                       showControls
                       showShadow
                       page={paginaAtual}
-                      total={totalPaginasFiltrado}
+                      total={totalPaginas}
                       onChange={setPaginaAtual}
                     />
                   </div>

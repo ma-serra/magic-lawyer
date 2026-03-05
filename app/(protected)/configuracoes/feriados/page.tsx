@@ -177,7 +177,13 @@ export default function FeriadosPage() {
     toast.dismiss();
 
     if (result.success) {
-      toast.success(`${result.data.total} feriados importados com sucesso!`);
+      const created = result.data?.created ?? result.data?.total ?? 0;
+      const updated = result.data?.updated ?? 0;
+      const ignored = result.data?.ignored ?? 0;
+
+      toast.success(
+        `Sincronização concluída: ${created} novo(s), ${updated} atualizado(s), ${ignored} já existente(s).`,
+      );
       mutateFeriados();
       mutateDashboard();
     } else {

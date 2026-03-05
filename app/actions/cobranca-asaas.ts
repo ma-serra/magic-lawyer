@@ -513,6 +513,7 @@ export async function gerarPixDinamico(data: {
     }
 
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     return {
       success: true,
@@ -697,6 +698,7 @@ export async function gerarBoletoAsaas(data: {
     }
 
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     return {
       success: true,
@@ -845,6 +847,7 @@ export async function gerarCobrancaCartao(data: {
     });
 
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     return {
       success: true,
@@ -977,6 +980,7 @@ export async function conciliarPagamento(paymentId: string) {
     });
 
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     return {
       success: true,

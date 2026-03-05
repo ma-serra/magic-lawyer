@@ -1,6 +1,6 @@
 {
   "name": "magic-lawyer",
-  "version": "beta-1.0.1",
+  "version": "beta-1.0.2",
   "private": true,
   "scripts": {
     "dev": "pkill -f 'next dev' || true && cross-env PORT=9192 next dev --turbopack",
@@ -23,6 +23,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
+    "prisma:seed:recebimentos": "node prisma/seed.js --with-recebimentos",
     "redis:start": "redis-server --daemonize yes",
     "redis:stop": "redis-cli shutdown || true",
     "redis:check": "redis-cli ping",

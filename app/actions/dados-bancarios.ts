@@ -25,76 +25,299 @@ async function getUserId(): Promise<string> {
   return session.user.id;
 }
 
+type DadosBancariosAccessContext = {
+  tenantId: string;
+  userId: string;
+  role: string;
+  canViewGlobal: boolean;
+  canManageGlobal: boolean;
+  accessibleClienteIds: string[];
+};
+
+async function getDadosBancariosAccessContext(): Promise<DadosBancariosAccessContext> {
+  const session = await getSession();
+
+  if (!session?.user?.tenantId || !session.user.id) {
+    throw new Error("Sessão inválida para operar dados bancários");
+  }
+
+  const tenantId = session.user.tenantId;
+  const userId = session.user.id;
+  const role = String((session.user as any)?.role || "");
+  const canViewGlobal =
+    role === "ADMIN" || role === "SUPER_ADMIN" || role === "FINANCEIRO";
+  const canManageGlobal = canViewGlobal;
+  let accessibleClienteIds: string[] = [];
+
+  if (role === "ADVOGADO") {
+    const advogado = await prisma.advogado.findFirst({
+      where: {
+        tenantId,
+        usuarioId: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (advogado) {
+      const vinculacoes = await prisma.advogadoCliente.findMany({
+        where: {
+          tenantId,
+          advogadoId: advogado.id,
+        },
+        select: {
+          clienteId: true,
+        },
+      });
+
+      accessibleClienteIds = vinculacoes.map((item) => item.clienteId);
+    }
+  } else if (role === "CLIENTE") {
+    const clientes = await prisma.cliente.findMany({
+      where: {
+        tenantId,
+        usuarioId: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    accessibleClienteIds = clientes.map((item) => item.id);
+  }
+
+  return {
+    tenantId,
+    userId,
+    role,
+    canViewGlobal,
+    canManageGlobal,
+    accessibleClienteIds,
+  };
+}
+
+function canAccessDadosBancariosRecord(
+  context: DadosBancariosAccessContext,
+  record: { usuarioId?: string | null; clienteId?: string | null },
+) {
+  if (context.canViewGlobal) {
+    return true;
+  }
+
+  if (record.usuarioId && record.usuarioId === context.userId) {
+    return true;
+  }
+
+  if (record.clienteId && context.accessibleClienteIds.includes(record.clienteId)) {
+    return true;
+  }
+
+  return false;
+}
+
 // ============================================
 // LISTAR DADOS BANCÁRIOS
 // ============================================
 
 export async function listDadosBancarios(filters?: {
+  search?: string;
+  bancoCodigo?: string;
+  tipoConta?: "PESSOA_FISICA" | "PESSOA_JURIDICA";
+  tipoContaBancaria?: "CORRENTE" | "POUPANCA" | "SALARIO" | "INVESTIMENTO";
+  advogadoId?: string;
   usuarioId?: string;
   clienteId?: string;
   ativo?: boolean;
   principal?: boolean;
+  onlyMine?: boolean;
+  page?: number;
+  pageSize?: number;
 }) {
   try {
-    const tenantId = await getTenantId();
+    const context = await getDadosBancariosAccessContext();
+    const page = Math.max(1, Number(filters?.page || 1));
+    const pageSize = Math.max(1, Math.min(100, Number(filters?.pageSize || 20)));
+    const skip = (page - 1) * pageSize;
+    const andConditions: any[] = [];
 
-    const where: any = {
-      tenantId,
-      deletedAt: null,
-    };
-
-    if (filters?.usuarioId) {
-      where.usuarioId = filters.usuarioId;
+    if (!context.canViewGlobal) {
+      if (context.accessibleClienteIds.length > 0) {
+        andConditions.push({
+          OR: [
+            { usuarioId: context.userId },
+            { clienteId: { in: context.accessibleClienteIds } },
+          ],
+        });
+      } else {
+        andConditions.push({ usuarioId: context.userId });
+      }
     }
 
-    if (filters?.clienteId) {
-      where.clienteId = filters.clienteId;
+    if (filters?.search?.trim()) {
+      const term = filters.search.trim();
+
+      andConditions.push({
+        OR: [
+          { titularNome: { contains: term, mode: "insensitive" } },
+          { titularDocumento: { contains: term, mode: "insensitive" } },
+          { chavePix: { contains: term, mode: "insensitive" } },
+          { agencia: { contains: term, mode: "insensitive" } },
+          { conta: { contains: term, mode: "insensitive" } },
+          { usuario: { firstName: { contains: term, mode: "insensitive" } } },
+          { usuario: { lastName: { contains: term, mode: "insensitive" } } },
+          { usuario: { email: { contains: term, mode: "insensitive" } } },
+          { cliente: { nome: { contains: term, mode: "insensitive" } } },
+          { banco: { nome: { contains: term, mode: "insensitive" } } },
+        ],
+      });
+    }
+
+    if (filters?.bancoCodigo) {
+      andConditions.push({ bancoCodigo: filters.bancoCodigo });
+    }
+
+    if (filters?.tipoConta) {
+      andConditions.push({ tipoConta: filters.tipoConta });
+    }
+
+    if (filters?.tipoContaBancaria) {
+      andConditions.push({ tipoContaBancaria: filters.tipoContaBancaria });
     }
 
     if (filters?.ativo !== undefined) {
-      where.ativo = filters.ativo;
+      andConditions.push({ ativo: filters.ativo });
     }
 
     if (filters?.principal !== undefined) {
-      where.principal = filters.principal;
+      andConditions.push({ principal: filters.principal });
     }
 
-    const dadosBancarios = await prisma.dadosBancarios.findMany({
-      where,
-      include: {
-        usuario: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+    if (context.canViewGlobal && filters?.onlyMine) {
+      andConditions.push({ usuarioId: context.userId });
+    }
+
+    if (filters?.usuarioId) {
+      if (context.canViewGlobal || filters.usuarioId === context.userId) {
+        andConditions.push({ usuarioId: filters.usuarioId });
+      }
+    }
+
+    if (filters?.clienteId) {
+      if (
+        context.canViewGlobal ||
+        context.accessibleClienteIds.includes(filters.clienteId)
+      ) {
+        andConditions.push({ clienteId: filters.clienteId });
+      }
+    }
+
+    if (filters?.advogadoId) {
+      const advogado = await prisma.advogado.findFirst({
+        where: {
+          id: filters.advogadoId,
+          tenantId: context.tenantId,
+        },
+        select: {
+          usuarioId: true,
+          clientes: {
+            select: {
+              clienteId: true,
+            },
           },
         },
-        cliente: {
-          select: {
-            id: true,
-            nome: true,
-            email: true,
-            documento: true,
+      });
+
+      if (advogado) {
+        const clienteIds = advogado.clientes.map((item) => item.clienteId);
+        const subFilters: any[] = [{ usuarioId: advogado.usuarioId }];
+
+        if (clienteIds.length > 0) {
+          subFilters.push({ clienteId: { in: clienteIds } });
+        }
+
+        andConditions.push({ OR: subFilters });
+      }
+    }
+
+    const where: any = {
+      tenantId: context.tenantId,
+      deletedAt: null,
+    };
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    const [dadosBancarios, total, ativos, principais, comPix] =
+      await Promise.all([
+        prisma.dadosBancarios.findMany({
+          where,
+          include: {
+            usuario: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+            cliente: {
+              select: {
+                id: true,
+                nome: true,
+                email: true,
+                documento: true,
+              },
+            },
+            banco: {
+              select: {
+                codigo: true,
+                nome: true,
+              },
+            },
           },
-        },
-        banco: {
-          select: {
-            codigo: true,
-            nome: true,
+          orderBy: [
+            { principal: "desc" },
+            { ativo: "desc" },
+            { createdAt: "desc" },
+          ],
+          skip,
+          take: pageSize,
+        }),
+        prisma.dadosBancarios.count({ where }),
+        prisma.dadosBancarios.count({ where: { ...where, ativo: true } }),
+        prisma.dadosBancarios.count({ where: { ...where, principal: true } }),
+        prisma.dadosBancarios.count({
+          where: {
+            ...where,
+            chavePix: { not: null },
           },
-        },
-      },
-      orderBy: [
-        { principal: "desc" },
-        { ativo: "desc" },
-        { createdAt: "desc" },
-      ],
-    });
+        }),
+      ]);
 
     return {
       success: true,
       data: dadosBancarios,
+      meta: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        resumo: {
+          total,
+          ativos,
+          principais,
+          comPix,
+        },
+      },
+      permissions: {
+        role: context.role,
+        canViewGlobal: context.canViewGlobal,
+        canManageGlobal: context.canManageGlobal,
+      },
     };
   } catch (error) {
     console.error("Erro ao listar dados bancários:", error);
@@ -103,6 +326,136 @@ export async function listDadosBancarios(filters?: {
       success: false,
       error: "Erro ao listar dados bancários",
       data: [],
+      meta: {
+        total: 0,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+      },
+      permissions: {
+        role: "",
+        canViewGlobal: false,
+        canManageGlobal: false,
+      },
+    };
+  }
+}
+
+export async function getDadosBancariosFilterOptions() {
+  try {
+    const context = await getDadosBancariosAccessContext();
+
+    const [bancos, clientes, advogados, colaboradores] = await Promise.all([
+      prisma.banco.findMany({
+        where: { ativo: true },
+        select: {
+          codigo: true,
+          nome: true,
+        },
+        orderBy: { nome: "asc" },
+      }),
+      context.canViewGlobal
+        ? prisma.cliente.findMany({
+            where: {
+              tenantId: context.tenantId,
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              nome: true,
+              documento: true,
+            },
+            orderBy: { nome: "asc" },
+          })
+        : context.accessibleClienteIds.length > 0
+          ? prisma.cliente.findMany({
+              where: {
+                tenantId: context.tenantId,
+                id: { in: context.accessibleClienteIds },
+                deletedAt: null,
+              },
+              select: {
+                id: true,
+                nome: true,
+                documento: true,
+              },
+              orderBy: { nome: "asc" },
+            })
+          : [],
+      context.canViewGlobal
+        ? prisma.advogado.findMany({
+            where: { tenantId: context.tenantId },
+            select: {
+              id: true,
+              usuarioId: true,
+              usuario: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: {
+              usuario: {
+                firstName: "asc",
+              },
+            },
+          })
+        : [],
+      context.canManageGlobal
+        ? prisma.usuario.findMany({
+            where: {
+              tenantId: context.tenantId,
+              active: true,
+              role: {
+                not: "CLIENTE",
+              },
+            },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+            orderBy: { firstName: "asc" },
+          })
+        : [],
+    ]);
+
+    return {
+      success: true,
+      data: {
+        bancos,
+        clientes,
+        advogados,
+        colaboradores,
+        permissions: {
+          role: context.role,
+          canViewGlobal: context.canViewGlobal,
+          canManageGlobal: context.canManageGlobal,
+          userId: context.userId,
+        },
+      },
+    };
+  } catch (error) {
+    console.error("Erro ao buscar opções de filtros bancários:", error);
+    return {
+      success: false,
+      error: "Erro ao carregar opções da tela",
+      data: {
+        bancos: [],
+        clientes: [],
+        advogados: [],
+        colaboradores: [],
+        permissions: {
+          role: "",
+          canViewGlobal: false,
+          canManageGlobal: false,
+          userId: "",
+        },
+      },
     };
   }
 }
@@ -113,12 +466,12 @@ export async function listDadosBancarios(filters?: {
 
 export async function getDadosBancarios(id: string) {
   try {
-    const tenantId = await getTenantId();
+    const context = await getDadosBancariosAccessContext();
 
     const dadosBancarios = await prisma.dadosBancarios.findFirst({
       where: {
         id,
-        tenantId,
+        tenantId: context.tenantId,
         deletedAt: null,
       },
       include: {
@@ -153,6 +506,13 @@ export async function getDadosBancarios(id: string) {
       return {
         success: false,
         error: "Dados bancários não encontrados",
+      };
+    }
+
+    if (!canAccessDadosBancariosRecord(context, dadosBancarios)) {
+      return {
+        success: false,
+        error: "Você não tem permissão para acessar estes dados bancários",
       };
     }
 
@@ -197,19 +557,89 @@ export async function createDadosBancarios(data: {
   observacoes?: string;
 }) {
   try {
-    const tenantId = await getTenantId();
-    const userId = await getUserId(); // ✅ ADICIONADO: Pegar o usuário logado
+    const context = await getDadosBancariosAccessContext();
+    let usuarioId = data.usuarioId;
+    let clienteId = data.clienteId;
 
-    // Permitir dados bancários do tenant (escritório) quando não há usuário/cliente específico
-    // A validação foi removida para permitir dados bancários do próprio escritório
+    if (usuarioId && clienteId) {
+      return {
+        success: false,
+        error: "Vincule a conta a usuário ou cliente, nunca aos dois ao mesmo tempo",
+      };
+    }
+
+    if (!context.canManageGlobal) {
+      if (context.role === "ADVOGADO" || context.role === "CLIENTE") {
+        if (usuarioId && usuarioId !== context.userId) {
+          return {
+            success: false,
+            error: "Você só pode cadastrar conta bancária em seu próprio usuário",
+          };
+        }
+
+        if (clienteId && !context.accessibleClienteIds.includes(clienteId)) {
+          return {
+            success: false,
+            error: "Cliente fora do seu escopo de acesso",
+          };
+        }
+      } else {
+        if (clienteId || (usuarioId && usuarioId !== context.userId)) {
+          return {
+            success: false,
+            error:
+              "Você não tem permissão para cadastrar conta bancária para outros usuários ou clientes",
+          };
+        }
+      }
+    }
+
+    if (!usuarioId && !clienteId) {
+      usuarioId = context.userId;
+    }
+
+    if (clienteId) {
+      const clienteValido = await prisma.cliente.findFirst({
+        where: {
+          id: clienteId,
+          tenantId: context.tenantId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!clienteValido) {
+        return {
+          success: false,
+          error: "Cliente inválido para este tenant",
+        };
+      }
+    }
+
+    if (usuarioId) {
+      const usuarioValido = await prisma.usuario.findFirst({
+        where: {
+          id: usuarioId,
+          tenantId: context.tenantId,
+        },
+        select: { id: true },
+      });
+
+      if (!usuarioValido) {
+        return {
+          success: false,
+          error: "Usuário inválido para este tenant",
+        };
+      }
+    }
 
     // Se marcado como principal, desmarcar outros
     if (data.principal) {
       await prisma.dadosBancarios.updateMany({
         where: {
-          tenantId,
-          usuarioId: data.usuarioId || userId, // ✅ CORRIGIDO: Usar userId se não especificado
-          clienteId: data.clienteId || null,
+          tenantId: context.tenantId,
+          usuarioId: usuarioId || null,
+          clienteId: clienteId || null,
           principal: true,
         },
         data: {
@@ -220,9 +650,9 @@ export async function createDadosBancarios(data: {
 
     const dadosBancarios = await prisma.dadosBancarios.create({
       data: {
-        tenantId,
-        usuarioId: data.usuarioId || userId, // ✅ CORRIGIDO: Usar userId se não especificado
-        clienteId: data.clienteId,
+        tenantId: context.tenantId,
+        usuarioId,
+        clienteId,
         tipoConta: data.tipoConta,
         bancoCodigo: data.bancoCodigo,
         agencia: data.agencia,
@@ -266,6 +696,7 @@ export async function createDadosBancarios(data: {
     });
 
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
     revalidatePath("/usuario/perfil");
 
     return {
@@ -290,6 +721,8 @@ export async function createDadosBancarios(data: {
 export async function updateDadosBancarios(
   id: string,
   data: {
+    usuarioId?: string;
+    clienteId?: string;
     tipoConta?: "PESSOA_FISICA" | "PESSOA_JURIDICA";
     bancoCodigo?: string;
     agencia?: string;
@@ -312,13 +745,13 @@ export async function updateDadosBancarios(
   },
 ) {
   try {
-    const tenantId = await getTenantId();
+    const context = await getDadosBancariosAccessContext();
 
     // Verificar se os dados bancários existem
     const dadosExistente = await prisma.dadosBancarios.findFirst({
       where: {
         id,
-        tenantId,
+        tenantId: context.tenantId,
         deletedAt: null,
       },
     });
@@ -330,13 +763,61 @@ export async function updateDadosBancarios(
       };
     }
 
+    if (!canAccessDadosBancariosRecord(context, dadosExistente)) {
+      return {
+        success: false,
+        error: "Você não tem permissão para editar estes dados bancários",
+      };
+    }
+
+    const nextUsuarioId =
+      data.usuarioId !== undefined ? data.usuarioId || null : dadosExistente.usuarioId;
+    const nextClienteId =
+      data.clienteId !== undefined ? data.clienteId || null : dadosExistente.clienteId;
+
+    if (nextUsuarioId && nextClienteId) {
+      return {
+        success: false,
+        error: "A conta não pode ficar vinculada a usuário e cliente ao mesmo tempo",
+      };
+    }
+
+    if (
+      !context.canManageGlobal &&
+      (nextUsuarioId !== dadosExistente.usuarioId ||
+        nextClienteId !== dadosExistente.clienteId)
+    ) {
+      return {
+        success: false,
+        error: "Você não tem permissão para alterar o vínculo desta conta",
+      };
+    }
+
+    if (
+      context.canManageGlobal &&
+      nextClienteId &&
+      !(await prisma.cliente.findFirst({
+        where: {
+          id: nextClienteId,
+          tenantId: context.tenantId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      }))
+    ) {
+      return {
+        success: false,
+        error: "Cliente inválido para este tenant",
+      };
+    }
+
     // Se marcado como principal, desmarcar outros
     if (data.principal) {
       await prisma.dadosBancarios.updateMany({
         where: {
-          tenantId,
-          usuarioId: dadosExistente.usuarioId,
-          clienteId: dadosExistente.clienteId,
+          tenantId: context.tenantId,
+          usuarioId: nextUsuarioId,
+          clienteId: nextClienteId,
           principal: true,
           id: { not: id },
         },
@@ -349,6 +830,8 @@ export async function updateDadosBancarios(
     const dadosBancarios = await prisma.dadosBancarios.update({
       where: { id },
       data: {
+        usuarioId: nextUsuarioId,
+        clienteId: nextClienteId,
         tipoConta: data.tipoConta,
         bancoCodigo: data.bancoCodigo,
         agencia: data.agencia,
@@ -393,6 +876,7 @@ export async function updateDadosBancarios(
     });
 
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
     revalidatePath("/usuario/perfil");
 
     return {
@@ -416,13 +900,13 @@ export async function updateDadosBancarios(
 
 export async function deleteDadosBancarios(id: string) {
   try {
-    const tenantId = await getTenantId();
+    const context = await getDadosBancariosAccessContext();
 
     // Verificar se os dados bancários existem
     const dadosBancarios = await prisma.dadosBancarios.findFirst({
       where: {
         id,
-        tenantId,
+        tenantId: context.tenantId,
         deletedAt: null,
       },
     });
@@ -431,6 +915,13 @@ export async function deleteDadosBancarios(id: string) {
       return {
         success: false,
         error: "Dados bancários não encontrados",
+      };
+    }
+
+    if (!canAccessDadosBancariosRecord(context, dadosBancarios)) {
+      return {
+        success: false,
+        error: "Você não tem permissão para remover estes dados bancários",
       };
     }
 
@@ -444,6 +935,7 @@ export async function deleteDadosBancarios(id: string) {
     });
 
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
     revalidatePath("/usuario/perfil");
 
     return {
@@ -466,14 +958,34 @@ export async function deleteDadosBancarios(id: string) {
 
 export async function getDadosBancariosAtivos() {
   try {
-    const tenantId = await getTenantId();
+    const context = await getDadosBancariosAccessContext();
+    const andConditions: any[] = [];
+
+    if (!context.canViewGlobal) {
+      if (context.accessibleClienteIds.length > 0) {
+        andConditions.push({
+          OR: [
+            { usuarioId: context.userId },
+            { clienteId: { in: context.accessibleClienteIds } },
+          ],
+        });
+      } else {
+        andConditions.push({ usuarioId: context.userId });
+      }
+    }
+
+    const where: any = {
+      tenantId: context.tenantId,
+      ativo: true,
+      deletedAt: null,
+    };
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
 
     const dadosBancarios = await prisma.dadosBancarios.findMany({
-      where: {
-        tenantId,
-        ativo: true,
-        deletedAt: null,
-      },
+      where,
       orderBy: [{ principal: "desc" }, { createdAt: "desc" }],
       select: {
         id: true,

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-
 import AgendaContent from "./agenda-content";
 
 import { getSession } from "@/app/lib/auth";

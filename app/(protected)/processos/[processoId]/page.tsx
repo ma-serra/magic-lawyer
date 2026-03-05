@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition, ReactNode } from "react";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  ReactNode,
+  useEffect,
+} from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import useSWR from "swr";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
@@ -79,6 +87,8 @@ import {
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
+import { listRegimesPrazo } from "@/app/actions/regimes-prazo";
+import { getUsuariosParaSelect } from "@/app/actions/usuarios";
 import JuizModal from "@/components/juiz-modal";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
@@ -106,6 +116,38 @@ const prazoFormInitial = {
   dataVencimento: "",
   descricao: "",
   fundamentoLegal: "",
+  regimePrazoId: "",
+  responsavelId: "",
+};
+
+interface RegimePrazoOption {
+  id: string;
+  nome: string;
+  tipo: string;
+  tenantId: string | null;
+}
+
+interface ResponsavelOption {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  role: string;
+}
+
+type RegimePrazoSelectItem = {
+  id: string;
+  nome: string;
+  tipo?: string;
+  isNone?: boolean;
+};
+
+type ResponsavelPrazoSelectItem = {
+  id: string;
+  label: string;
+  email?: string;
+  role?: string;
+  isNone?: boolean;
 };
 
 const MAX_PROCESSO_DOCUMENTOS_UPLOAD = 10;
@@ -154,6 +196,14 @@ const PROCESSO_ALLOWED_UPLOAD_EXTENSIONS = [
   ...Array.from(AUDIO_EXTENSIONS),
   ...Array.from(VIDEO_EXTENSIONS),
 ];
+const PROCESSO_TAB_KEYS = new Set([
+  "informacoes",
+  "partes",
+  "prazos",
+  "documentos",
+  "eventos",
+  "procuracoes",
+]);
 
 function getFileExtension(fileName: string): string {
   const extension = fileName.split(".").pop()?.trim().toLowerCase();
@@ -369,6 +419,7 @@ const getPrazoStatusLabel = (status: ProcessoPrazoStatus) => {
 export default function ProcessoDetalhesPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const processoId = params.processoId as string;
 
   const { processo, isCliente, isLoading, isError, mutate } =
@@ -386,10 +437,50 @@ export default function ProcessoDetalhesPage() {
   const { procuracoes: procuracoesDisponiveis } = useProcuracoesDisponiveis(
     processo?.cliente?.id ?? null,
   );
+  const { data: regimesPrazo = [], isLoading: isLoadingRegimesPrazo } = useSWR(
+    isCliente ? null : "processo-prazos-regimes",
+    async (): Promise<RegimePrazoOption[]> => {
+      const result = await listRegimesPrazo();
+
+      if (!result.success) {
+        return [];
+      }
+
+      return (result.regimes || []).map((regime) => ({
+        id: regime.id,
+        nome: regime.nome,
+        tipo: regime.tipo,
+        tenantId: regime.tenantId ?? null,
+      }));
+    },
+  );
+  const {
+    data: responsaveisPrazo = [],
+    isLoading: isLoadingResponsaveisPrazo,
+  } = useSWR(
+    isCliente ? null : "processo-prazos-responsaveis",
+    async (): Promise<ResponsavelOption[]> => {
+      const result = await getUsuariosParaSelect();
+
+      if (!result.success) {
+        return [];
+      }
+
+      return (result.usuarios || []) as ResponsavelOption[];
+    },
+  );
 
   const polos = useMemo(() => Object.values(ProcessoPolo), []);
   const fases = useMemo(() => Object.values(ProcessoFase), []);
   const graus = useMemo(() => Object.values(ProcessoGrau), []);
+  const regimePrazoIdSet = useMemo(
+    () => new Set(regimesPrazo.map((regime) => regime.id)),
+    [regimesPrazo],
+  );
+  const responsavelPrazoIdSet = useMemo(
+    () => new Set(responsaveisPrazo.map((responsavel) => responsavel.id)),
+    [responsaveisPrazo],
+  );
 
   const [parteForm, setParteForm] = useState(parteFormInitial);
   const [prazoForm, setPrazoForm] = useState(prazoFormInitial);
@@ -513,6 +604,47 @@ export default function ProcessoDetalhesPage() {
     selectedAutoridadeId && autoridadeIdSet.has(selectedAutoridadeId)
       ? [selectedAutoridadeId]
       : [];
+  const regimePrazoItems = useMemo<RegimePrazoSelectItem[]>(
+    () => [
+      { id: "__none__", nome: "Sem regime", isNone: true },
+      ...regimesPrazo.map((regime) => ({
+        id: regime.id,
+        nome: regime.nome,
+        tipo: regime.tipo,
+      })),
+    ],
+    [regimesPrazo],
+  );
+  const responsavelPrazoItems = useMemo<ResponsavelPrazoSelectItem[]>(
+    () => [
+      {
+        id: "__none__",
+        label: "Sem responsável definido",
+        isNone: true,
+      },
+      ...responsaveisPrazo.map((responsavel) => {
+        const nome =
+          `${responsavel.firstName || ""} ${responsavel.lastName || ""}`.trim();
+
+        return {
+          id: responsavel.id,
+          label: nome || responsavel.email,
+          email: responsavel.email,
+          role: responsavel.role,
+        };
+      }),
+    ],
+    [responsaveisPrazo],
+  );
+  const selectedPrazoRegimeKeys =
+    prazoForm.regimePrazoId && regimePrazoIdSet.has(prazoForm.regimePrazoId)
+      ? [prazoForm.regimePrazoId]
+      : [];
+  const selectedPrazoResponsavelKeys =
+    prazoForm.responsavelId &&
+    responsavelPrazoIdSet.has(prazoForm.responsavelId)
+      ? [prazoForm.responsavelId]
+      : [];
 
   const {
     opcoes: catalogoGlobalAutoridades,
@@ -539,6 +671,18 @@ export default function ProcessoDetalhesPage() {
       ) ?? null,
     [catalogoGlobalJuizes, selectedCatalogoJuizId],
   );
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get("tab");
+
+    if (!tabFromUrl || !PROCESSO_TAB_KEYS.has(tabFromUrl)) {
+      return;
+    }
+
+    if (tabFromUrl !== abaAtual) {
+      setAbaAtual(tabFromUrl);
+    }
+  }, [searchParams, abaAtual]);
 
   if (isLoading) {
     return (
@@ -695,10 +839,12 @@ export default function ProcessoDetalhesPage() {
         dataVencimento: prazoForm.dataVencimento,
         descricao: prazoForm.descricao.trim() || undefined,
         fundamentoLegal: prazoForm.fundamentoLegal.trim() || undefined,
+        regimePrazoId: prazoForm.regimePrazoId || null,
+        responsavelId: prazoForm.responsavelId || null,
       });
 
       if (result.success) {
-        toast.success("Prazo criado");
+        toast.success("Prazo criado e notificação enviada");
         setPrazoForm(prazoFormInitial);
         handleRefresh();
       } else {
@@ -1985,6 +2131,12 @@ export default function ProcessoDetalhesPage() {
                                   {prazo.responsavel.lastName}
                                 </p>
                               )}
+                              {prazo.regimePrazo && (
+                                <p className="text-xs text-default-500">
+                                  <strong>Regime:</strong>{" "}
+                                  {prazo.regimePrazo.nome}
+                                </p>
+                              )}
                             </div>
                             {!isCliente && (
                               <div className="flex gap-2">
@@ -2079,6 +2231,84 @@ export default function ProcessoDetalhesPage() {
                     }
                   />
 
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Select
+                      items={regimePrazoItems}
+                      isLoading={isLoadingRegimesPrazo}
+                      label="Regime de prazo"
+                      placeholder="Selecione um regime"
+                      selectedKeys={selectedPrazoRegimeKeys}
+                      onSelectionChange={(keys) => {
+                        const [value] = Array.from(keys) as string[];
+                        setPrazoForm((prev) => ({
+                          ...prev,
+                          regimePrazoId:
+                            value && value !== "__none__" ? value : "",
+                        }));
+                      }}
+                    >
+                      {(item) => (
+                        <SelectItem
+                          key={item.id}
+                          textValue={
+                            item.isNone
+                              ? item.nome
+                              : `${item.nome} (${item.tipo || ""})`
+                          }
+                        >
+                          {item.isNone ? (
+                            item.nome
+                          ) : (
+                            <>
+                              {item.nome}{" "}
+                              <span className="text-xs text-default-400">
+                                ({item.tipo})
+                              </span>
+                            </>
+                          )}
+                        </SelectItem>
+                      )}
+                    </Select>
+
+                    <Select
+                      items={responsavelPrazoItems}
+                      isLoading={isLoadingResponsaveisPrazo}
+                      label="Responsável"
+                      placeholder="Selecione o responsável"
+                      selectedKeys={selectedPrazoResponsavelKeys}
+                      onSelectionChange={(keys) => {
+                        const [value] = Array.from(keys) as string[];
+                        setPrazoForm((prev) => ({
+                          ...prev,
+                          responsavelId:
+                            value && value !== "__none__" ? value : "",
+                        }));
+                      }}
+                    >
+                      {(item) => (
+                        <SelectItem
+                          key={item.id}
+                          textValue={
+                            item.isNone
+                              ? item.label
+                              : `${item.label} (${item.role || ""})`
+                          }
+                        >
+                          {item.isNone ? (
+                            item.label
+                          ) : (
+                            <div className="flex flex-col">
+                              <span>{item.label}</span>
+                              <span className="text-xs text-default-400">
+                                {item.email} • {item.role}
+                              </span>
+                            </div>
+                          )}
+                        </SelectItem>
+                      )}
+                    </Select>
+                  </div>
+
                   <Textarea
                     label="Descrição"
                     minRows={2}
@@ -2099,6 +2329,11 @@ export default function ProcessoDetalhesPage() {
                       }))
                     }
                   />
+
+                  <p className="text-xs text-default-500">
+                    Ao salvar, o responsável selecionado e o advogado
+                    responsável do processo recebem notificação automática.
+                  </p>
 
                   <div className="flex justify-end">
                     <Button

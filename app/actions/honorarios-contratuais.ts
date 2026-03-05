@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
+import { checkPermission } from "@/app/actions/equipe";
 
 async function getTenantId(): Promise<string> {
   const session = await getSession();
@@ -25,16 +26,43 @@ async function getUserId(): Promise<string> {
   return session.user.id;
 }
 
+async function ensureFinancePermission(
+  action: "visualizar" | "criar" | "editar" | "excluir",
+) {
+  const session = await getSession();
+  const role = String((session?.user as any)?.role || "");
+
+  if (role === "ADMIN" || role === "SUPER_ADMIN") {
+    return { allowed: true };
+  }
+
+  const allowed = await checkPermission("financeiro", action);
+
+  return { allowed };
+}
+
 // ============================================
 // LISTAR HONORÁRIOS CONTRATUAIS
 // ============================================
 
 export async function listHonorariosContratuais(filters?: {
   contratoId?: string;
+  contratoIds?: string[];
   tipo?: "FIXO" | "SUCESSO" | "HIBRIDO";
   ativo?: boolean;
+  apenasMeusContratos?: boolean;
 }) {
   try {
+    const viewPermission = await ensureFinancePermission("visualizar");
+
+    if (!viewPermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para visualizar honorários",
+        data: [],
+      };
+    }
+
     const tenantId = await getTenantId();
     const userId = await getUserId();
     const session = await getSession();
@@ -45,12 +73,34 @@ export async function listHonorariosContratuais(filters?: {
       tenantId,
     };
 
-    if (filters?.contratoId) {
+    if (filters?.contratoIds?.length) {
+      where.contratoId = {
+        in: filters.contratoIds,
+      };
+    } else if (filters?.contratoId) {
       where.contratoId = filters.contratoId;
     }
 
     if (filters?.tipo) {
       where.tipo = filters.tipo;
+    }
+
+    if (filters?.apenasMeusContratos) {
+      const advogadoId = (session?.user as any)?.advogadoId as
+        | string
+        | undefined;
+
+      if (!advogadoId) {
+        return {
+          success: true,
+          data: [],
+        };
+      }
+
+      where.contrato = {
+        ...(where.contrato ?? {}),
+        advogadoResponsavelId: advogadoId,
+      };
     }
 
     // FILTRO DE PRIVACIDADE E ACESSO:
@@ -138,6 +188,15 @@ export async function listHonorariosContratuais(filters?: {
 
 export async function getHonorarioContratual(id: string) {
   try {
+    const viewPermission = await ensureFinancePermission("visualizar");
+
+    if (!viewPermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para visualizar honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
 
     const honorario = await prisma.contratoHonorario.findFirst({
@@ -211,6 +270,15 @@ export async function createHonorarioContratual(data: {
   visibilidade?: "PRIVADO" | "PUBLICO";
 }) {
   try {
+    const createPermission = await ensureFinancePermission("criar");
+
+    if (!createPermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para criar honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
     const userId = await getUserId();
 
@@ -338,6 +406,7 @@ export async function createHonorarioContratual(data: {
 
     revalidatePath("/contratos");
     revalidatePath("/honorarios");
+    revalidatePath("/financeiro/honorarios");
 
     // Converter Decimal para number e serializar
     const convertedData = convertAllDecimalFields(honorario);
@@ -375,6 +444,15 @@ export async function updateHonorarioContratual(
   },
 ) {
   try {
+    const updatePermission = await ensureFinancePermission("editar");
+
+    if (!updatePermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para editar honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
 
     // Verificar se o honorário existe e pertence ao tenant
@@ -431,17 +509,23 @@ export async function updateHonorarioContratual(
       };
     }
 
-    if (
-      (tipo === "SUCESSO" &&
-        !data.percentualSucesso &&
-        !honorarioExistente.percentualSucesso) ||
-      (!data.valorMinimoSucesso && !honorarioExistente.valorMinimoSucesso)
-    ) {
-      return {
-        success: false,
-        error:
-          "Percentual de sucesso e valor mínimo são obrigatórios para honorários por sucesso",
-      };
+    if (tipo === "SUCESSO") {
+      const percentual =
+        data.percentualSucesso !== undefined
+          ? data.percentualSucesso
+          : Number(honorarioExistente.percentualSucesso || 0);
+      const valorMinimo =
+        data.valorMinimoSucesso !== undefined
+          ? data.valorMinimoSucesso
+          : Number(honorarioExistente.valorMinimoSucesso || 0);
+
+      if (!percentual || !valorMinimo) {
+        return {
+          success: false,
+          error:
+            "Percentual de sucesso e valor mínimo são obrigatórios para honorários por sucesso",
+        };
+      }
     }
 
     if (
@@ -513,6 +597,7 @@ export async function updateHonorarioContratual(
 
     revalidatePath("/contratos");
     revalidatePath("/honorarios");
+    revalidatePath("/financeiro/honorarios");
 
     // Converter Decimal para number e serializar
     const convertedData = convertAllDecimalFields(honorario);
@@ -539,6 +624,15 @@ export async function updateHonorarioContratual(
 
 export async function deleteHonorarioContratual(id: string) {
   try {
+    const deletePermission = await ensureFinancePermission("excluir");
+
+    if (!deletePermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para remover honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
 
     // Verificar se o honorário existe e pertence ao tenant
@@ -556,14 +650,13 @@ export async function deleteHonorarioContratual(id: string) {
       };
     }
 
-    // Soft delete
-    await prisma.contratoHonorario.update({
+    await prisma.contratoHonorario.delete({
       where: { id },
-      data: {},
     });
 
     revalidatePath("/contratos");
     revalidatePath("/honorarios");
+    revalidatePath("/financeiro/honorarios");
 
     return {
       success: true,
@@ -618,6 +711,15 @@ export async function calcularValorHonorario(
   valorBase?: number,
 ) {
   try {
+    const viewPermission = await ensureFinancePermission("visualizar");
+
+    if (!viewPermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para visualizar honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
 
     const honorario = await prisma.contratoHonorario.findFirst({
@@ -704,6 +806,15 @@ export async function calcularValorHonorario(
 
 export async function getDadosPagamentoHonorario(honorarioId: string) {
   try {
+    const viewPermission = await ensureFinancePermission("visualizar");
+
+    if (!viewPermission.allowed) {
+      return {
+        success: false,
+        error: "Você não tem permissão para visualizar honorários",
+      };
+    }
+
     const tenantId = await getTenantId();
 
     const honorario = await prisma.contratoHonorario.findFirst({

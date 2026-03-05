@@ -46,8 +46,7 @@ export default async function RegimesPrazoPage() {
     }
 
     return <RegimesPrazoContent />;
-  } catch (error) {
-    console.error("Erro ao verificar permissões para /regimes-prazo:", error);
+  } catch {
     redirect("/dashboard");
   }
 }

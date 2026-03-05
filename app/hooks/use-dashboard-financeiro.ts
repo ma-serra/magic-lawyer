@@ -7,9 +7,11 @@ import {
   getDadosBancariosAtivos,
   getAdvogadosAtivos,
   getClientesAtivos,
+  getVisoesFinanceiras,
   type MetricasFinanceiras,
   type GraficoParcelas,
   type HonorariosPorAdvogado,
+  type VisoesFinanceiras,
   type FiltrosDashboard,
 } from "@/app/actions/dashboard-financeiro";
 
@@ -80,7 +82,7 @@ export function useHonorariosPorAdvogado(filtros?: FiltrosDashboard) {
 
 export function useDadosBancariosAtivos() {
   const { data, error, isLoading, mutate } = useSWR(
-    "dados-bancarios-ativos",
+    "dashboard-financeiro-dados-bancarios-ativos",
     getDadosBancariosAtivos,
     {
       revalidateOnFocus: false,
@@ -135,6 +137,25 @@ export function useClientesAtivos() {
   };
 }
 
+export function useVisoesFinanceiras(filtros?: FiltrosDashboard) {
+  const { data, error, isLoading, mutate } = useSWR<VisoesFinanceiras>(
+    ["visoes-financeiras", filtros],
+    () => getVisoesFinanceiras(filtros),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 0,
+    },
+  );
+
+  return {
+    visoes: data || { porResponsavel: [], porCliente: [], porProcesso: [] },
+    isLoading,
+    error,
+    mutate,
+  };
+}
+
 // ============================================
 // HOOK COMPOSTO PARA DASHBOARD COMPLETO
 // ============================================
@@ -146,6 +167,7 @@ export function useDashboardFinanceiro(filtros?: FiltrosDashboard) {
   const dadosBancarios = useDadosBancariosAtivos();
   const advogados = useAdvogadosAtivos();
   const clientes = useClientesAtivos();
+  const visoesFinanceiras = useVisoesFinanceiras(filtros);
 
   const isLoading =
     metricas.isLoading ||
@@ -153,7 +175,8 @@ export function useDashboardFinanceiro(filtros?: FiltrosDashboard) {
     honorarios.isLoading ||
     dadosBancarios.isLoading ||
     advogados.isLoading ||
-    clientes.isLoading;
+    clientes.isLoading ||
+    visoesFinanceiras.isLoading;
 
   const error =
     metricas.error ||
@@ -161,7 +184,8 @@ export function useDashboardFinanceiro(filtros?: FiltrosDashboard) {
     honorarios.error ||
     dadosBancarios.error ||
     advogados.error ||
-    clientes.error;
+    clientes.error ||
+    visoesFinanceiras.error;
 
   const mutate = () => {
     metricas.mutate();
@@ -170,6 +194,7 @@ export function useDashboardFinanceiro(filtros?: FiltrosDashboard) {
     dadosBancarios.mutate();
     advogados.mutate();
     clientes.mutate();
+    visoesFinanceiras.mutate();
   };
 
   return {
@@ -182,6 +207,7 @@ export function useDashboardFinanceiro(filtros?: FiltrosDashboard) {
       : [],
     advogados: Array.isArray(advogados.advogados) ? advogados.advogados : [],
     clientes: Array.isArray(clientes.clientes) ? clientes.clientes : [],
+    visoesFinanceiras: visoesFinanceiras.visoes,
 
     // Estados
     isLoading,

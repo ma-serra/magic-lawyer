@@ -405,7 +405,7 @@ export function useProfileNavigation() {
     if (permissions.canViewFinancialData || isFinanceiro) {
       items.push({
         label: "Financeiro",
-        href: "/dashboard/financeiro",
+        href: "/financeiro/dashboard",
         icon: "DollarSign",
         description: isCliente
           ? "Minhas faturas"
@@ -413,26 +413,19 @@ export function useProfileNavigation() {
             ? "Minhas comissões"
             : "Gestão financeira",
         isAccordion: true,
-        compactChildrenCount: 2,
+        compactChildrenCount: 5,
         section: "Operacional",
         children: [
           {
             label: "Dashboard",
-            href: "/dashboard/financeiro",
+            href: "/financeiro/dashboard",
             icon: "BarChart3",
             description: "Visão geral financeira",
             requiredModules: ["financeiro"],
           },
           {
-            label: "Faturas",
-            href: "/financeiro",
-            icon: "Receipt",
-            description: "Gestão de faturas",
-            requiredModules: ["financeiro"],
-          },
-          {
             label: "Parcelas",
-            href: "/parcelas",
+            href: "/financeiro/parcelas",
             icon: "Receipt",
             description: "Parcelas de contrato",
             requiredModules: ["parcelas"],
@@ -446,10 +439,17 @@ export function useProfileNavigation() {
           },
           {
             label: "Honorários",
-            href: "/honorarios",
+            href: "/financeiro/honorarios",
             icon: "DollarSign",
             description: "Honorários contratuais",
             requiredModules: ["honorarios"],
+          },
+          {
+            label: "Dados bancários",
+            href: "/financeiro/dados-bancarios",
+            icon: "CreditCard",
+            description: "Contas bancárias de usuários e clientes",
+            requiredModules: ["financeiro"],
           },
         ],
         requiredModules: ["financeiro"],
@@ -489,11 +489,11 @@ export function useProfileNavigation() {
             requiredModules: ["configuracoes"],
           },
           {
-            label: "Dados Bancários",
-            href: "/dados-bancarios",
-            icon: "CreditCard",
-            description: "Dados bancários de usuários e clientes",
-            requiredModules: ["dados-bancarios"],
+            label: "Billing da assinatura",
+            href: "/configuracoes/billing",
+            icon: "Landmark",
+            description: "Faturas e status da assinatura do escritório",
+            requiredModules: ["configuracoes"],
           },
         ],
         requiredModules: ["configuracoes"],
@@ -533,7 +533,7 @@ export function useProfileNavigation() {
     if (isCliente || permissions.canViewFinancialData) {
       items.push({
         label: "Financeiro",
-        href: "/financeiro",
+        href: "/financeiro/dashboard",
         icon: "Wallet",
         description: "Central financeiro",
         requiredModules: ["financeiro"],

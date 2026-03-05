@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   Card, CardBody, CardHeader, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Divider, Spinner, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Textarea, Select, SelectItem } from "@heroui/react";
 import {
@@ -12,6 +13,8 @@ import {
   DollarSignIcon,
   FilterIcon,
   CreditCardIcon,
+  BriefcaseIcon,
+  UserIcon,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 
@@ -28,7 +31,7 @@ import {
   calcularValorHonorario,
 } from "@/app/actions/honorarios-contratuais";
 import { DadosBancariosHonorario } from "@/components/dados-bancarios-honorario";
-import { title, subtitle } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import {
   ContratoHonorario,
   ContratoHonorarioTipo,
@@ -77,9 +80,18 @@ export default function HonorariosContratuaisPage() {
     string | null
   >(null);
   const [filters, setFilters] = useState<{
-    contratoId?: string;
+    contratoIds?: string[];
     tipo?: ContratoHonorarioTipo;
+    apenasMeusContratos?: boolean;
   }>({});
+  const { data: session } = useSession();
+  const currentRole = (session?.user as any)?.role as string | undefined;
+  const currentAdvogadoId = (session?.user as any)?.advogadoId as
+    | string
+    | undefined;
+  const isAdmin =
+    currentRole === "ADMIN" || currentRole === "SUPER_ADMIN";
+  const canFilterMeusContratos = Boolean(currentAdvogadoId);
 
   // Formulário
   const [formData, setFormData] = useState<HonorarioFormData>({
@@ -99,6 +111,30 @@ export default function HonorariosContratuaisPage() {
   const { contratos, isLoading: loadingContratos } = useContratosComParcelas();
   const { dadosBancarios, isLoading: loadingDadosBancarios } =
     useDadosBancariosAtivos();
+
+  const contratosList = useMemo(() => contratos ?? [], [contratos]);
+  const contratosPorEscopo = useMemo(() => {
+    if (!filters.apenasMeusContratos || !currentAdvogadoId) {
+      return contratosList;
+    }
+
+    return contratosList.filter(
+      (contrato) => contrato.advogadoResponsavelId === currentAdvogadoId,
+    );
+  }, [contratosList, filters.apenasMeusContratos, currentAdvogadoId]);
+
+  const contratosPorEscopoKeySet = useMemo(
+    () => new Set(contratosPorEscopo.map((contrato) => contrato.id)),
+    [contratosPorEscopo],
+  );
+
+  const selectedContratoFilterKeys = useMemo(
+    () =>
+      (filters.contratoIds ?? []).filter((id) =>
+        contratosPorEscopoKeySet.has(id),
+      ),
+    [filters.contratoIds, contratosPorEscopoKeySet],
+  );
 
   const contaOptions = useMemo(() => {
     const dadosOptions =
@@ -335,42 +371,151 @@ export default function HonorariosContratuaisPage() {
     }
   };
 
+  const resumoFinanceiro = useMemo(() => {
+    const total = (honorarios as HonorarioComContrato[]).reduce(
+      (acc: number, item: HonorarioComContrato) => {
+      const valorFixo = Number(item.valorFixo || 0);
+      const valorMinimoSucesso = Number(item.valorMinimoSucesso || 0);
+
+      if (item.tipo === "FIXO") {
+        return acc + valorFixo;
+      }
+      if (item.tipo === "SUCESSO") {
+        return acc + valorMinimoSucesso;
+      }
+
+      return acc + valorFixo + valorMinimoSucesso;
+    },
+      0,
+    );
+
+    const fixos = (honorarios as HonorarioComContrato[]).filter(
+      (item: HonorarioComContrato) => item.tipo === "FIXO",
+    ).length;
+    const sucesso = (honorarios as HonorarioComContrato[]).filter(
+      (item: HonorarioComContrato) => item.tipo === "SUCESSO",
+    ).length;
+    const hibridos = (honorarios as HonorarioComContrato[]).filter(
+      (item: HonorarioComContrato) => item.tipo === "HIBRIDO",
+    ).length;
+
+    return {
+      total,
+      fixos,
+      sucesso,
+      hibridos,
+    };
+  }, [honorarios]);
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>
-            Honorários Contratuais
-          </h1>
-          <p className={subtitle({ fullWidth: true })}>
-            Gerencie os honorários dos contratos
-          </p>
-        </div>
-        <Button
-          color="primary"
-          startContent={<PlusIcon size={20} />}
-          onPress={() => handleOpenModal()}
-        >
-          Novo Honorário
-        </Button>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Financeiro"
+        title="Honorários contratuais"
+        description="Estruture honorários fixos, por sucesso e híbridos com controle de cobrança e vínculo de conta bancária."
+        actions={
+          <Button
+            color="primary"
+            radius="full"
+            startContent={<PlusIcon size={18} />}
+            onPress={() => handleOpenModal()}
+          >
+            Novo honorário
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Carteira total de honorários"
+          icon={<DollarSignIcon className="h-4 w-4" />}
+          label="Total estimado"
+          tone="primary"
+          value={formatCurrency(resumoFinanceiro.total)}
+        />
+        <PeopleMetricCard
+          helper="Modelo recorrente"
+          icon={<CalculatorIcon className="h-4 w-4" />}
+          label="Fixos"
+          tone="success"
+          value={resumoFinanceiro.fixos}
+        />
+        <PeopleMetricCard
+          helper="Dependem de resultado"
+          icon={<CreditCardIcon className="h-4 w-4" />}
+          label="Sucesso"
+          tone="warning"
+          value={resumoFinanceiro.sucesso}
+        />
+        <PeopleMetricCard
+          helper="Misto fixo + êxito"
+          icon={<FilterIcon className="h-4 w-4" />}
+          label="Híbridos"
+          tone="secondary"
+          value={resumoFinanceiro.hibridos}
+        />
       </div>
 
       {/* Filtros */}
-      <Card>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
         <CardBody>
-          <div className="flex gap-4 items-end">
-            <Input
-              className="max-w-xs"
-              label="ID do Contrato"
-              placeholder="Filtrar por contrato"
-              value={filters.contratoId || ""}
-              onChange={(e) =>
-                setFilters({ ...filters, contratoId: e.target.value })
-              }
-            />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Select
-              className="max-w-xs"
+              className="w-full md:col-span-2 xl:col-span-2"
+              isLoading={loadingContratos}
+              items={contratosPorEscopo}
+              label="Contratos"
+              placeholder={
+                isAdmin
+                  ? "Selecione contratos do escritório"
+                  : "Selecione contratos do seu escopo"
+              }
+              selectedKeys={selectedContratoFilterKeys}
+              selectionMode="multiple"
+              startContent={<BriefcaseIcon size={16} />}
+              variant="bordered"
+              onSelectionChange={(keys) => {
+                const contratoIds = Array.from(keys)
+                  .map((value) => String(value))
+                  .filter((id) => contratosPorEscopoKeySet.has(id));
+
+                setFilters({
+                  ...filters,
+                  contratoIds: contratoIds.length ? contratoIds : undefined,
+                });
+              }}
+            >
+              {(contrato) => {
+                const isMeuContrato =
+                  Boolean(currentAdvogadoId) &&
+                  contrato.advogadoResponsavelId === currentAdvogadoId;
+
+                return (
+                  <SelectItem key={contrato.id} textValue={contrato.titulo}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {contrato.titulo}
+                        </p>
+                        <p className="truncate text-xs text-default-500">
+                          {contrato.cliente?.nome || "Cliente não informado"}
+                        </p>
+                      </div>
+                      <Chip
+                        color={isMeuContrato ? "primary" : "default"}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {isMeuContrato ? "Meu" : "Escritório"}
+                      </Chip>
+                    </div>
+                  </SelectItem>
+                );
+              }}
+            </Select>
+
+            <Select
+              className="w-full"
               label="Tipo de Honorário"
               placeholder="Todos os tipos"
               selectedKeys={filters.tipo ? [filters.tipo] : []}
@@ -390,20 +535,52 @@ export default function HonorariosContratuaisPage() {
               ))}
             </Select>
             <Button
+              className="w-full md:self-end"
+              color={filters.apenasMeusContratos ? "primary" : "default"}
+              isDisabled={!canFilterMeusContratos}
+              radius="full"
+              startContent={<UserIcon size={16} />}
+              variant={filters.apenasMeusContratos ? "flat" : "bordered"}
+              onPress={() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  apenasMeusContratos: !prev.apenasMeusContratos,
+                  contratoIds: undefined,
+                }))
+              }
+            >
+              {filters.apenasMeusContratos
+                ? "Mostrando só meus contratos"
+                : "Mostrar apenas meus contratos"}
+            </Button>
+            <Button
+              className="w-full md:self-end"
+              radius="full"
               startContent={<FilterIcon size={16} />}
               variant="light"
-              onPress={() => setFilters({})}
+              onPress={() =>
+                setFilters({
+                  tipo: undefined,
+                  contratoIds: undefined,
+                  apenasMeusContratos: false,
+                })
+              }
             >
               Limpar Filtros
             </Button>
           </div>
+          <p className="mt-3 text-xs text-default-500">
+            {isAdmin
+              ? "Admin vê todos os contratos do escritório. Itens marcados como “Meu” são os que estão sob sua responsabilidade."
+              : "Você visualiza apenas contratos dentro do seu escopo de acesso."}
+          </p>
         </CardBody>
       </Card>
 
       {/* Lista de Honorários */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold">Lista de Honorários</h2>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="border-b border-white/10">
+          <h2 className="text-lg font-semibold text-white">Lista de Honorários</h2>
         </CardHeader>
         <CardBody>
           {isLoading ? (
@@ -437,7 +614,7 @@ export default function HonorariosContratuaisPage() {
                         <p className="font-medium">
                           {honorario.contrato.cliente.nome}
                         </p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-default-400">
                           {honorario.contrato.cliente.email || "Sem email"}
                         </p>
                       </div>
@@ -449,7 +626,7 @@ export default function HonorariosContratuaisPage() {
                             ? `${honorario.contrato.advogadoResponsavel.usuario.firstName} ${honorario.contrato.advogadoResponsavel.usuario.lastName}`
                             : "Sem advogado responsável"}
                         </p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-default-400">
                           {honorario.contrato.advogadoResponsavel?.usuario
                             ?.email || "Sem email"}
                         </p>
@@ -467,7 +644,7 @@ export default function HonorariosContratuaisPage() {
                             <p className="font-medium">
                               {Number(honorario.percentualSucesso || 0)}%
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-default-400">
                               Mín:{" "}
                               {formatCurrency(
                                 Number(honorario.valorMinimoSucesso || 0),
@@ -480,7 +657,7 @@ export default function HonorariosContratuaisPage() {
                             <p className="font-medium">
                               {formatCurrency(Number(honorario.valorFixo || 0))}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-default-400">
                               + {Number(honorario.percentualSucesso || 0)}%
                             </p>
                           </div>
@@ -549,10 +726,10 @@ export default function HonorariosContratuaisPage() {
           {honorarios.length === 0 && !isLoading && (
             <div className="text-center py-8">
               <DollarSignIcon
-                className="mx-auto text-gray-400 mb-4"
+                className="mx-auto mb-4 text-default-400"
                 size={48}
               />
-              <p className="text-gray-500">Nenhum honorário encontrado</p>
+              <p className="text-default-400">Nenhum honorário encontrado</p>
               <Button
                 className="mt-2"
                 color="primary"
@@ -883,6 +1060,6 @@ export default function HonorariosContratuaisPage() {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+    </section>
   );
 }

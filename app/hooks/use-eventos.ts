@@ -18,6 +18,7 @@ export function useEventos(filters?: {
   advogadoId?: string;
   local?: string;
   titulo?: string;
+  origem?: "google" | "local";
 },
 options?: {
   page?: number;

@@ -853,25 +853,40 @@ export class NotificationService {
         message:
           "Processo {numero} mudou de {oldStatusLabel} para {newStatusLabel}",
       },
+      "prazo.created": {
+        title: "Novo prazo registrado",
+        message:
+          'Prazo "{titulo}" foi criado no processo {processoNumero} (vencimento: {dataVencimento})',
+      },
+      "prazo.updated": {
+        title: "Prazo atualizado",
+        message:
+          'Prazo "{titulo}" do processo {processoNumero} foi atualizado',
+      },
       "prazo.expiring_7d": {
         title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {numero} vence em 7 dias",
+        message: "Prazo do processo {processoNumero} vence em 7 dias",
       },
       "prazo.expiring": {
         title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {numero} está próximo do vencimento",
+        message:
+          "Prazo do processo {processoNumero} está próximo do vencimento",
       },
       "prazo.expiring_3d": {
         title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {numero} vence em 3 dias",
+        message: "Prazo do processo {processoNumero} vence em 3 dias",
       },
       "prazo.expiring_1d": {
         title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {numero} vence em 1 dia",
+        message: "Prazo do processo {processoNumero} vence em 1 dia",
+      },
+      "prazo.expiring_2h": {
+        title: "Prazo vence em breve",
+        message: "Prazo do processo {processoNumero} vence em até 2 horas",
       },
       "prazo.expired": {
         title: "Prazo vencido",
-        message: "Prazo do processo {numero} venceu",
+        message: "Prazo do processo {processoNumero} venceu",
       },
       "cliente.created": {
         title: "Novo cliente cadastrado",

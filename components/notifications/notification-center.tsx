@@ -66,6 +66,24 @@ function formatDate(dateIso: string) {
   }).format(date);
 }
 
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asPayloadRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
 export const NotificationCenter = () => {
   const disclosure = useDisclosure();
   const detailDisclosure = useDisclosure();
@@ -136,25 +154,85 @@ export const NotificationCenter = () => {
   const hasPortalSyncAttention = isPortalSyncRunning || isPortalSyncWaitingCaptcha;
 
   const resolveReferenceLink = (item: NotificationItem): string | null => {
-    if (!item.referenciaTipo || !item.referenciaId) {
-      return null;
+    const payload = asPayloadRecord(item.dados);
+    const normalizedReferenceType = (item.referenciaTipo || "")
+      .toLowerCase()
+      .trim();
+    const normalizedEventType = (item.tipo || "").toLowerCase().trim();
+    const referenciaId = asNonEmptyString(item.referenciaId);
+    const processoId =
+      asNonEmptyString(payload.processoId) ||
+      (normalizedReferenceType === "processo" ? referenciaId : null);
+    const clienteId =
+      asNonEmptyString(payload.clienteId) ||
+      (normalizedReferenceType === "cliente" ? referenciaId : null);
+    const prazoId =
+      asNonEmptyString(payload.prazoId) ||
+      (normalizedReferenceType === "prazo" ? referenciaId : null);
+    const processoHref = processoId ? `/processos/${processoId}` : null;
+
+    if (normalizedReferenceType === "cliente" && clienteId) {
+      return `/clientes/${clienteId}`;
     }
 
-    const tipo = item.referenciaTipo.toLowerCase().trim();
+    if (normalizedReferenceType === "documento") {
+      if (processoHref) {
+        return `${processoHref}?tab=documentos`;
+      }
 
-    switch (tipo) {
-      case "documento":
-        return "/documentos";
-      case "evento":
-        return "/agenda";
-      case "pagamento":
-        return "/financeiro/recibos";
-      case "cliente":
-        return "/clientes";
-      case "processo":
-      default:
-        return `/processos/${item.referenciaId}`;
+      return "/documentos";
     }
+
+    if (
+      normalizedReferenceType === "prazo" ||
+      normalizedEventType.startsWith("prazo.")
+    ) {
+      if (!processoHref) {
+        return "/processos";
+      }
+
+      return prazoId
+        ? `${processoHref}?tab=prazos&prazoId=${encodeURIComponent(prazoId)}`
+        : `${processoHref}?tab=prazos`;
+    }
+
+    if (
+      normalizedReferenceType === "andamento" ||
+      normalizedReferenceType === "movimentacao" ||
+      normalizedEventType.startsWith("andamento.") ||
+      normalizedEventType.startsWith("movimentacao.")
+    ) {
+      return processoHref ? `${processoHref}?tab=eventos` : "/andamentos";
+    }
+
+    if (
+      normalizedReferenceType === "evento" ||
+      normalizedEventType.startsWith("evento.")
+    ) {
+      return processoHref ? `${processoHref}?tab=eventos` : "/agenda";
+    }
+
+    if (
+      normalizedReferenceType === "pagamento" ||
+      normalizedEventType.startsWith("pagamento.")
+    ) {
+      return "/financeiro/recibos";
+    }
+
+    if (normalizedReferenceType === "procuracao" && referenciaId) {
+      return `/procuracoes/${referenciaId}`;
+    }
+
+    if (
+      normalizedReferenceType === "processo" ||
+      normalizedEventType.startsWith("processo.")
+    ) {
+      if (processoHref) {
+        return processoHref;
+      }
+    }
+
+    return processoHref;
   };
 
   const handleOpenDetails = (item: NotificationItem) => {

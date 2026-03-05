@@ -121,63 +121,76 @@ export class DeadlineSchedulerService {
     for (const prazo of expiringPrazos) {
       // Verificar se já notificamos este prazo neste intervalo
       const notificationKey = `prazo:${prazo.id}:${eventType}`;
-      const lastNotification = await this.getLastNotificationTime(
-        prazo.tenantId,
-        prazo.processo.advogadoResponsavel?.usuario?.id || "",
-        notificationKey,
+
+      const targetUserIds = Array.from(
+        new Set(
+          [
+            prazo.responsavelId ?? null,
+            prazo.processo.advogadoResponsavel?.usuario?.id ?? null,
+          ].filter((value): value is string => Boolean(value)),
+        ),
       );
 
-      // Se já notificamos nas últimas 23 horas, pular (evitar duplicatas)
-      if (lastNotification) {
-        const hoursSinceLastNotification =
-          (now.getTime() - lastNotification.getTime()) / (60 * 60 * 1000);
-
-        if (hoursSinceLastNotification < 23) {
-          continue;
-        }
-      }
-
-      const responsavelUserId = prazo.processo.advogadoResponsavel?.usuario?.id;
-
-      if (!responsavelUserId) {
+      if (targetUserIds.length === 0) {
         console.warn(
           `[DeadlineScheduler] Prazo ${prazo.id} sem responsável, ignorando`,
         );
         continue;
       }
 
-      try {
-        const event = NotificationFactory.createEvent(
-          eventType,
+      for (const targetUserId of targetUserIds) {
+        const lastNotification = await this.getLastNotificationTime(
           prazo.tenantId,
-          responsavelUserId,
-          {
-            prazoId: prazo.id,
-            processoId: prazo.processo.id,
-            processoNumero: prazo.processo.numero,
-            titulo: prazo.titulo,
-            dataVencimento: prazo.dataVencimento.toISOString(),
-            diasRestantes: daysRemaining,
-          },
-        );
-
-        await NotificationService.publishNotification(event);
-
-        // Registrar que notificamos este prazo
-        await this.recordNotificationTime(
-          prazo.tenantId,
-          responsavelUserId,
+          targetUserId,
           notificationKey,
         );
 
-        console.log(
-          `[DeadlineScheduler] Notificação ${eventType} enviada para prazo ${prazo.id}`,
-        );
-      } catch (error) {
-        console.error(
-          `[DeadlineScheduler] Erro ao enviar notificação para prazo ${prazo.id}:`,
-          error,
-        );
+        // Se já notificamos nas últimas 23 horas, pular (evitar duplicatas)
+        if (lastNotification) {
+          const hoursSinceLastNotification =
+            (now.getTime() - lastNotification.getTime()) / (60 * 60 * 1000);
+
+          if (hoursSinceLastNotification < 23) {
+            continue;
+          }
+        }
+
+        try {
+          const event = NotificationFactory.createEvent(
+            eventType,
+            prazo.tenantId,
+            targetUserId,
+            {
+              prazoId: prazo.id,
+              processoId: prazo.processo.id,
+              processoNumero: prazo.processo.numero,
+              numero: prazo.processo.numero,
+              titulo: prazo.titulo,
+              dataVencimento: prazo.dataVencimento.toISOString(),
+              diasRestantes: daysRemaining,
+              referenciaTipo: "prazo",
+              referenciaId: prazo.id,
+            },
+          );
+
+          await NotificationService.publishNotification(event);
+
+          // Registrar que notificamos este prazo para o usuário alvo
+          await this.recordNotificationTime(
+            prazo.tenantId,
+            targetUserId,
+            notificationKey,
+          );
+
+          console.log(
+            `[DeadlineScheduler] Notificação ${eventType} enviada para prazo ${prazo.id} (usuário ${targetUserId})`,
+          );
+        } catch (error) {
+          console.error(
+            `[DeadlineScheduler] Erro ao enviar notificação para prazo ${prazo.id} (usuário ${targetUserId}):`,
+            error,
+          );
+        }
       }
     }
   }
@@ -222,67 +235,80 @@ export class DeadlineSchedulerService {
     );
 
     for (const prazo of expiredPrazos) {
-      const responsavelUserId = prazo.processo.advogadoResponsavel?.usuario?.id;
+      const targetUserIds = Array.from(
+        new Set(
+          [
+            prazo.responsavelId ?? null,
+            prazo.processo.advogadoResponsavel?.usuario?.id ?? null,
+          ].filter((value): value is string => Boolean(value)),
+        ),
+      );
 
-      if (!responsavelUserId) {
+      if (targetUserIds.length === 0) {
         continue;
       }
 
       // Verificar se já notificamos este prazo como vencido
       const notificationKey = `prazo:${prazo.id}:prazo.expired`;
-      const lastNotification = await this.getLastNotificationTime(
-        prazo.tenantId,
-        responsavelUserId,
-        notificationKey,
-      );
-
-      // Se já notificamos nas últimas 6 horas, pular
-      if (lastNotification) {
-        const hoursSinceLastNotification =
-          (now.getTime() - lastNotification.getTime()) / (60 * 60 * 1000);
-
-        if (hoursSinceLastNotification < 6) {
-          continue;
-        }
-      }
 
       const diasAtraso = Math.floor(
         (now.getTime() - prazo.dataVencimento.getTime()) /
           (24 * 60 * 60 * 1000),
       );
 
-      try {
-        const event = NotificationFactory.createEvent(
-          "prazo.expired",
+      for (const targetUserId of targetUserIds) {
+        const lastNotification = await this.getLastNotificationTime(
           prazo.tenantId,
-          responsavelUserId,
-          {
-            prazoId: prazo.id,
-            processoId: prazo.processo.id,
-            processoNumero: prazo.processo.numero,
-            titulo: prazo.titulo,
-            dataVencimento: prazo.dataVencimento.toISOString(),
-            diasAtraso,
-          },
-        );
-
-        await NotificationService.publishNotification(event);
-
-        // Registrar que notificamos este prazo
-        await this.recordNotificationTime(
-          prazo.tenantId,
-          responsavelUserId,
+          targetUserId,
           notificationKey,
         );
 
-        console.log(
-          `[DeadlineScheduler] Notificação de prazo expirado enviada para ${prazo.id}`,
-        );
-      } catch (error) {
-        console.error(
-          `[DeadlineScheduler] Erro ao enviar notificação de prazo expirado ${prazo.id}:`,
-          error,
-        );
+        // Se já notificamos nas últimas 6 horas, pular
+        if (lastNotification) {
+          const hoursSinceLastNotification =
+            (now.getTime() - lastNotification.getTime()) / (60 * 60 * 1000);
+
+          if (hoursSinceLastNotification < 6) {
+            continue;
+          }
+        }
+
+        try {
+          const event = NotificationFactory.createEvent(
+            "prazo.expired",
+            prazo.tenantId,
+            targetUserId,
+            {
+              prazoId: prazo.id,
+              processoId: prazo.processo.id,
+              processoNumero: prazo.processo.numero,
+              numero: prazo.processo.numero,
+              titulo: prazo.titulo,
+              dataVencimento: prazo.dataVencimento.toISOString(),
+              diasAtraso,
+              referenciaTipo: "prazo",
+              referenciaId: prazo.id,
+            },
+          );
+
+          await NotificationService.publishNotification(event);
+
+          // Registrar que notificamos este prazo para o usuário alvo
+          await this.recordNotificationTime(
+            prazo.tenantId,
+            targetUserId,
+            notificationKey,
+          );
+
+          console.log(
+            `[DeadlineScheduler] Notificação de prazo expirado enviada para ${prazo.id} (usuário ${targetUserId})`,
+          );
+        } catch (error) {
+          console.error(
+            `[DeadlineScheduler] Erro ao enviar notificação de prazo expirado ${prazo.id} (usuário ${targetUserId}):`,
+            error,
+          );
+        }
       }
     }
   }

@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
-import { TipoFeriado } from "@/generated/prisma";
+import { Prisma, TipoFeriado } from "@/generated/prisma";
+import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 
 // ============================================
 // TIPOS
@@ -68,42 +70,52 @@ export async function listFeriados(
   try {
     const tenantId = await getTenantId();
 
-    const where: any = {
-      OR: [{ tenantId: tenantId }, { tenantId: null }], // Feriados do tenant ou globais
-    };
+    const andConditions: Prisma.FeriadoWhereInput[] = [
+      {
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+    ];
 
     if (filters.tipo) {
-      where.tipo = filters.tipo;
+      andConditions.push({ tipo: filters.tipo });
     }
 
     if (filters.uf) {
-      where.uf = filters.uf;
+      andConditions.push({ uf: filters.uf });
     }
 
     if (filters.municipio) {
-      where.municipio = filters.municipio;
+      andConditions.push({ municipio: filters.municipio });
     }
 
     if (filters.tribunalId) {
-      where.tribunalId = filters.tribunalId;
+      andConditions.push({ tribunalId: filters.tribunalId });
     }
 
     if (filters.ano) {
       const startOfYear = new Date(filters.ano, 0, 1);
       const endOfYear = new Date(filters.ano, 11, 31, 23, 59, 59);
 
-      where.data = {
-        gte: startOfYear,
-        lte: endOfYear,
-      };
+      andConditions.push({
+        data: {
+          gte: startOfYear,
+          lte: endOfYear,
+        },
+      });
     }
 
     if (filters.searchTerm) {
-      where.OR = [
-        { nome: { contains: filters.searchTerm, mode: "insensitive" } },
-        { descricao: { contains: filters.searchTerm, mode: "insensitive" } },
-      ];
+      andConditions.push({
+        OR: [
+          { nome: { contains: filters.searchTerm, mode: "insensitive" } },
+          { descricao: { contains: filters.searchTerm, mode: "insensitive" } },
+        ],
+      });
     }
+
+    const where: Prisma.FeriadoWhereInput = {
+      AND: andConditions,
+    };
 
     const feriados = await prisma.feriado.findMany({
       where,
@@ -144,8 +156,13 @@ export async function getFeriado(
   feriadoId: string,
 ): Promise<ActionResponse<any>> {
   try {
-    const feriado = await prisma.feriado.findUnique({
-      where: { id: feriadoId },
+    const tenantId = await getTenantId();
+
+    const feriado = await prisma.feriado.findFirst({
+      where: {
+        id: feriadoId,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
       include: {
         tribunal: {
           select: {
@@ -237,8 +254,24 @@ export async function updateFeriado(
   input: FeriadoUpdateInput,
 ): Promise<ActionResponse<any>> {
   try {
+    const tenantId = await getTenantId();
+    const feriadoAtual = await prisma.feriado.findFirst({
+      where: {
+        id: feriadoId,
+        tenantId,
+      },
+      select: { id: true },
+    });
+
+    if (!feriadoAtual) {
+      return {
+        success: false,
+        error: "Feriado não encontrado para este escritório",
+      };
+    }
+
     const feriado = await prisma.feriado.update({
-      where: { id: feriadoId },
+      where: { id: feriadoAtual.id },
       data: {
         nome: input.nome,
         data: input.data,
@@ -284,8 +317,24 @@ export async function deleteFeriado(
   feriadoId: string,
 ): Promise<ActionResponse<null>> {
   try {
+    const tenantId = await getTenantId();
+    const feriadoAtual = await prisma.feriado.findFirst({
+      where: {
+        id: feriadoId,
+        tenantId,
+      },
+      select: { id: true },
+    });
+
+    if (!feriadoAtual) {
+      return {
+        success: false,
+        error: "Feriado não encontrado para este escritório",
+      };
+    }
+
     await prisma.feriado.delete({
-      where: { id: feriadoId },
+      where: { id: feriadoAtual.id },
     });
 
     revalidatePath("/configuracoes/feriados");
@@ -385,25 +434,39 @@ export async function isDiaFeriado(
   try {
     const tenantId = await getTenantId();
 
-    const where: any = {
-      OR: [{ tenantId: tenantId }, { tenantId: null }],
-      data: {
-        gte: new Date(data.getFullYear(), data.getMonth(), data.getDate()),
-        lt: new Date(data.getFullYear(), data.getMonth(), data.getDate() + 1),
+    const andConditions: Prisma.FeriadoWhereInput[] = [
+      {
+        OR: [{ tenantId }, { tenantId: null }],
       },
-    };
+      {
+        data: {
+          gte: new Date(data.getFullYear(), data.getMonth(), data.getDate()),
+          lt: new Date(data.getFullYear(), data.getMonth(), data.getDate() + 1),
+        },
+      },
+    ];
 
     if (uf) {
-      where.OR.push({ uf: uf }, { uf: null });
+      andConditions.push({
+        OR: [{ uf }, { uf: null }],
+      });
     }
 
     if (municipio) {
-      where.OR.push({ municipio: municipio }, { municipio: null });
+      andConditions.push({
+        OR: [{ municipio }, { municipio: null }],
+      });
     }
 
     if (tribunalId) {
-      where.OR.push({ tribunalId: tribunalId }, { tribunalId: null });
+      andConditions.push({
+        OR: [{ tribunalId }, { tribunalId: null }],
+      });
     }
+
+    const where: Prisma.FeriadoWhereInput = {
+      AND: andConditions,
+    };
 
     const feriado = await prisma.feriado.findFirst({ where });
 
@@ -425,40 +488,62 @@ export async function isDiaFeriado(
 // IMPORTAR FERIADOS NACIONAIS
 // ============================================
 
-const feriadosNacionais2025 = [
-  { nome: "Confraternização Universal", data: new Date(2025, 0, 1) },
-  { nome: "Carnaval", data: new Date(2025, 2, 4) },
-  { nome: "Sexta-feira Santa", data: new Date(2025, 3, 18) },
-  { nome: "Tiradentes", data: new Date(2025, 3, 21) },
-  { nome: "Dia do Trabalho", data: new Date(2025, 4, 1) },
-  { nome: "Corpus Christi", data: new Date(2025, 5, 19) },
-  { nome: "Independência do Brasil", data: new Date(2025, 8, 7) },
-  { nome: "Nossa Senhora Aparecida", data: new Date(2025, 9, 12) },
-  { nome: "Finados", data: new Date(2025, 10, 2) },
-  { nome: "Proclamação da República", data: new Date(2025, 10, 15) },
-  { nome: "Dia da Consciência Negra", data: new Date(2025, 10, 20) },
-  { nome: "Natal", data: new Date(2025, 11, 25) },
-];
-
 export async function importarFeriadosNacionais(
   ano: number,
 ): Promise<ActionResponse<any>> {
   try {
     const tenantId = await getTenantId();
+    const sourceResult = await fetchOfficialNationalHolidays(ano);
 
-    const feriadosDoAno = feriadosNacionais2025.map((f) => ({
-      ...f,
-      data: new Date(ano, f.data.getMonth(), f.data.getDate()),
-    }));
+    if (!sourceResult.success) {
+      const startOfYear = new Date(Date.UTC(ano, 0, 1));
+      const endOfYear = new Date(Date.UTC(ano, 11, 31, 23, 59, 59, 999));
+      const cachedCount = await prisma.feriado.count({
+        where: {
+          tenantId: tenantId,
+          tipo: "NACIONAL",
+          data: {
+            gte: startOfYear,
+            lte: endOfYear,
+          },
+        },
+      });
+
+      if (cachedCount > 0) {
+        return {
+          success: true,
+          data: {
+            total: 0,
+            created: 0,
+            updated: 0,
+            ignored: cachedCount,
+            source: sourceResult.source,
+            fallbackCache: true,
+            warning:
+              "Fonte oficial indisponível. Mantida a base de feriados já sincronizada.",
+            feriados: [],
+          },
+        };
+      }
+
+      return {
+        success: false,
+        error: sourceResult.error,
+      };
+    }
+
+    const feriadosDoAno = sourceResult.holidays;
 
     const feriadosCriados = [];
+    let feriadosAtualizados = 0;
+    let feriadosIgnorados = 0;
 
     for (const feriado of feriadosDoAno) {
       // Verificar se já existe
       const existe = await prisma.feriado.findFirst({
         where: {
           OR: [{ tenantId: tenantId }, { tenantId: null }],
-          data: feriado.data,
+          data: feriado.date,
           tipo: "NACIONAL",
         },
       });
@@ -467,24 +552,63 @@ export async function importarFeriadosNacionais(
         const criado = await prisma.feriado.create({
           data: {
             tenantId,
-            nome: feriado.nome,
-            data: feriado.data,
+            nome: feriado.name,
+            data: feriado.date,
             tipo: "NACIONAL",
-            recorrente: true,
-            descricao: "Feriado nacional importado automaticamente",
+            recorrente: false,
+            descricao: "Feriado nacional sincronizado da fonte oficial (BrasilAPI).",
           },
         });
 
         feriadosCriados.push(criado);
+      } else if (existe.tenantId === tenantId && existe.nome !== feriado.name) {
+        await prisma.feriado.update({
+          where: { id: existe.id },
+          data: {
+            nome: feriado.name,
+            descricao:
+              "Feriado nacional atualizado da fonte oficial (BrasilAPI).",
+          },
+        });
+        feriadosAtualizados += 1;
+      } else {
+        feriadosIgnorados += 1;
       }
     }
 
     revalidatePath("/configuracoes/feriados");
 
+    try {
+      const session = await getSession();
+      const user = session?.user as any;
+      if (tenantId) {
+        await logAudit({
+          tenantId,
+          usuarioId: user?.id ?? null,
+          acao: "FERIADO_NACIONAL_SYNC_EXECUTADO",
+          entidade: "Feriado",
+          dados: toAuditJson({
+            ano,
+            created: feriadosCriados.length,
+            updated: feriadosAtualizados,
+            ignored: feriadosIgnorados,
+            source: sourceResult.source,
+          }),
+          changedFields: ["created", "updated", "ignored"],
+        });
+      }
+    } catch (auditError) {
+      console.warn("Falha ao registrar auditoria de sincronização de feriados nacionais:", auditError);
+    }
+
     return {
       success: true,
       data: {
-        total: feriadosCriados.length,
+        total: feriadosCriados.length + feriadosAtualizados,
+        created: feriadosCriados.length,
+        updated: feriadosAtualizados,
+        ignored: feriadosIgnorados,
+        source: sourceResult.source,
         feriados: feriadosCriados,
       },
     };

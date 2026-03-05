@@ -56,6 +56,47 @@ export interface HonorariosPorAdvogado {
   visibilidade: HonorarioVisibilidade;
 }
 
+export interface CarteiraFinanceiraResponsavel {
+  responsavelId: string;
+  responsavelNome: string;
+  recebido: number;
+  pendente: number;
+  atrasado: number;
+  total: number;
+  contratos: number;
+  processos: number;
+}
+
+export interface CarteiraFinanceiraCliente {
+  clienteId: string;
+  clienteNome: string;
+  recebido: number;
+  pendente: number;
+  atrasado: number;
+  total: number;
+  contratos: number;
+  processos: number;
+}
+
+export interface CarteiraFinanceiraProcesso {
+  processoId: string;
+  processoNumero: string;
+  processoTitulo: string;
+  clienteNome: string;
+  responsavelNome: string;
+  recebido: number;
+  pendente: number;
+  atrasado: number;
+  total: number;
+  contratos: number;
+}
+
+export interface VisoesFinanceiras {
+  porResponsavel: CarteiraFinanceiraResponsavel[];
+  porCliente: CarteiraFinanceiraCliente[];
+  porProcesso: CarteiraFinanceiraProcesso[];
+}
+
 export interface FiltrosDashboard {
   dataInicio?: Date;
   dataFim?: Date;
@@ -116,17 +157,6 @@ async function buildWhereClause(
     deletedAt: null,
   };
 
-  // Filtros por data
-  if (filtros?.dataInicio || filtros?.dataFim) {
-    where.createdAt = {};
-    if (filtros.dataInicio) {
-      where.createdAt.gte = filtros.dataInicio;
-    }
-    if (filtros.dataFim) {
-      where.createdAt.lte = filtros.dataFim;
-    }
-  }
-
   // Filtros por advogado
   if (filtros?.advogadoId) {
     where.advogadoResponsavelId = filtros.advogadoId;
@@ -171,6 +201,32 @@ async function buildWhereClause(
   return where;
 }
 
+function buildParcelaDateFilter(filtros?: FiltrosDashboard) {
+  if (!filtros?.dataInicio && !filtros?.dataFim) {
+    return undefined;
+  }
+
+  const dataVencimento: { gte?: Date; lte?: Date } = {};
+
+  if (filtros.dataInicio) {
+    const inicio = new Date(filtros.dataInicio);
+
+    inicio.setHours(0, 0, 0, 0);
+    dataVencimento.gte = inicio;
+  }
+
+  if (filtros.dataFim) {
+    const fim = new Date(filtros.dataFim);
+
+    fim.setHours(23, 59, 59, 999);
+    dataVencimento.lte = fim;
+  }
+
+  return {
+    dataVencimento,
+  };
+}
+
 // ============================================
 // SERVER ACTIONS
 // ============================================
@@ -190,12 +246,14 @@ export async function getMetricasFinanceiras(
       filtros,
       session,
     );
+    const parcelaDateFilter = buildParcelaDateFilter(filtros);
 
     // Buscar parcelas com filtros
     const parcelas = await prisma.contratoParcela.findMany({
       where: {
         tenantId,
         contrato: whereContratos,
+        ...(parcelaDateFilter || {}),
         ...(filtros?.dadosBancariosId && {
           OR: [
             { dadosBancariosId: filtros.dadosBancariosId },
@@ -248,7 +306,13 @@ export async function getMetricasFinanceiras(
     const parcelasAtrasadas = parcelas.filter(
       (p) => p.status === ContratoParcelaStatus.ATRASADA,
     ).length;
-    const contratos = await prisma.contrato.count({ where: whereContratos });
+    const contratosSemFiltroTemporal = await prisma.contrato.count({
+      where: whereContratos,
+    });
+    const contratos =
+      filtros?.dataInicio || filtros?.dataFim
+        ? new Set(parcelas.map((parcela) => parcela.contratoId)).size
+        : contratosSemFiltroTemporal;
     const contratosAtivos = await prisma.contrato.count({
       where: { ...whereContratos, status: "ATIVO" },
     });
@@ -288,12 +352,14 @@ export async function getGraficoParcelas(
       filtros,
       session,
     );
+    const parcelaDateFilter = buildParcelaDateFilter(filtros);
 
     // Buscar parcelas agrupadas por mês
     const parcelas = await prisma.contratoParcela.findMany({
       where: {
         tenantId,
         contrato: whereContratos,
+        ...(parcelaDateFilter || {}),
         ...(filtros?.dadosBancariosId && {
           OR: [
             { dadosBancariosId: filtros.dadosBancariosId },
@@ -377,6 +443,7 @@ export async function getHonorariosPorAdvogado(
       filtros,
       session,
     );
+    const parcelaDateFilter = buildParcelaDateFilter(filtros);
 
     // Buscar honorários com controle de privacidade por role
     const honorarios = await prisma.contratoHonorario.findMany({
@@ -432,6 +499,11 @@ export async function getHonorariosPorAdvogado(
         contrato: {
           include: {
             parcelas: {
+              where: parcelaDateFilter?.dataVencimento
+                ? {
+                    ...parcelaDateFilter,
+                  }
+                : undefined,
               select: {
                 valor: true,
                 status: true,
@@ -650,5 +722,237 @@ export async function getClientesAtivos(): Promise<
     logger.error("Erro ao buscar clientes ativos:", error);
 
     return [];
+  }
+}
+
+export async function getVisoesFinanceiras(
+  filtros?: FiltrosDashboard,
+): Promise<VisoesFinanceiras> {
+  try {
+    const { tenantId, role, advogadoId, clienteId, session } =
+      await getSession();
+
+    const whereContratos = await buildWhereClause(
+      tenantId,
+      role,
+      advogadoId,
+      clienteId,
+      filtros,
+      session,
+    );
+    const parcelaDateFilter = buildParcelaDateFilter(filtros);
+
+    const contratos = await prisma.contrato.findMany({
+      where: whereContratos,
+      select: {
+        id: true,
+        clienteId: true,
+        advogadoResponsavelId: true,
+        processoId: true,
+        cliente: {
+          select: {
+            nome: true,
+          },
+        },
+        advogadoResponsavel: {
+          select: {
+            usuario: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        processo: {
+          select: {
+            numero: true,
+            titulo: true,
+          },
+        },
+      },
+    });
+
+    if (contratos.length === 0) {
+      return {
+        porResponsavel: [],
+        porCliente: [],
+        porProcesso: [],
+      };
+    }
+
+    const contratoIds = contratos.map((contrato) => contrato.id);
+
+    const parcelas = await prisma.contratoParcela.findMany({
+      where: {
+        tenantId,
+        contratoId: {
+          in: contratoIds,
+        },
+        ...(parcelaDateFilter || {}),
+        ...(filtros?.dadosBancariosId && {
+          OR: [
+            { dadosBancariosId: filtros.dadosBancariosId },
+            {
+              dadosBancariosId: null,
+              contrato: { dadosBancariosId: filtros.dadosBancariosId },
+            },
+          ],
+        }),
+      },
+      select: {
+        contratoId: true,
+        valor: true,
+        status: true,
+      },
+    });
+
+    const resumoContratoMap = new Map<
+      string,
+      { recebido: number; pendente: number; atrasado: number; total: number }
+    >();
+
+    for (const parcela of parcelas) {
+      const current = resumoContratoMap.get(parcela.contratoId) ?? {
+        recebido: 0,
+        pendente: 0,
+        atrasado: 0,
+        total: 0,
+      };
+
+      const valor = Number(parcela.valor);
+
+      current.total += valor;
+
+      if (parcela.status === ContratoParcelaStatus.PAGA) {
+        current.recebido += valor;
+      } else if (parcela.status === ContratoParcelaStatus.ATRASADA) {
+        current.atrasado += valor;
+      } else {
+        current.pendente += valor;
+      }
+
+      resumoContratoMap.set(parcela.contratoId, current);
+    }
+
+    const responsavelMap = new Map<
+      string,
+      CarteiraFinanceiraResponsavel & { _processosIds: Set<string> }
+    >();
+    const clienteMap = new Map<
+      string,
+      CarteiraFinanceiraCliente & { _processosIds: Set<string> }
+    >();
+    const processoMap = new Map<string, CarteiraFinanceiraProcesso>();
+
+    for (const contrato of contratos) {
+      const resumoContrato = resumoContratoMap.get(contrato.id) ?? {
+        recebido: 0,
+        pendente: 0,
+        atrasado: 0,
+        total: 0,
+      };
+
+      const processoKey = contrato.processoId ?? "sem-processo";
+      const processoNumero = contrato.processo?.numero ?? "Sem número";
+      const processoTitulo =
+        contrato.processo?.titulo ?? "Processo não vinculado";
+      const clienteNome = contrato.cliente?.nome ?? "Cliente não informado";
+      const responsavelNome = contrato.advogadoResponsavel
+        ? `${contrato.advogadoResponsavel.usuario?.firstName || ""} ${contrato.advogadoResponsavel.usuario?.lastName || ""}`.trim()
+        : "Sem responsável";
+
+      const responsavelKey = contrato.advogadoResponsavelId ?? "sem-responsavel";
+      const clienteKey = contrato.clienteId;
+
+      const responsavelAtual = responsavelMap.get(responsavelKey) ?? {
+        responsavelId: responsavelKey,
+        responsavelNome,
+        recebido: 0,
+        pendente: 0,
+        atrasado: 0,
+        total: 0,
+        contratos: 0,
+        processos: 0,
+        _processosIds: new Set<string>(),
+      };
+
+      responsavelAtual.recebido += resumoContrato.recebido;
+      responsavelAtual.pendente += resumoContrato.pendente;
+      responsavelAtual.atrasado += resumoContrato.atrasado;
+      responsavelAtual.total += resumoContrato.total;
+      responsavelAtual.contratos += 1;
+      if (contrato.processoId) {
+        responsavelAtual._processosIds.add(contrato.processoId);
+      }
+      responsavelAtual.processos = responsavelAtual._processosIds.size;
+      responsavelMap.set(responsavelKey, responsavelAtual);
+
+      const clienteAtual = clienteMap.get(clienteKey) ?? {
+        clienteId: clienteKey,
+        clienteNome,
+        recebido: 0,
+        pendente: 0,
+        atrasado: 0,
+        total: 0,
+        contratos: 0,
+        processos: 0,
+        _processosIds: new Set<string>(),
+      };
+
+      clienteAtual.recebido += resumoContrato.recebido;
+      clienteAtual.pendente += resumoContrato.pendente;
+      clienteAtual.atrasado += resumoContrato.atrasado;
+      clienteAtual.total += resumoContrato.total;
+      clienteAtual.contratos += 1;
+      if (contrato.processoId) {
+        clienteAtual._processosIds.add(contrato.processoId);
+      }
+      clienteAtual.processos = clienteAtual._processosIds.size;
+      clienteMap.set(clienteKey, clienteAtual);
+
+      const processoAtual = processoMap.get(processoKey) ?? {
+        processoId: processoKey,
+        processoNumero,
+        processoTitulo,
+        clienteNome,
+        responsavelNome,
+        recebido: 0,
+        pendente: 0,
+        atrasado: 0,
+        total: 0,
+        contratos: 0,
+      };
+
+      processoAtual.recebido += resumoContrato.recebido;
+      processoAtual.pendente += resumoContrato.pendente;
+      processoAtual.atrasado += resumoContrato.atrasado;
+      processoAtual.total += resumoContrato.total;
+      processoAtual.contratos += 1;
+      processoMap.set(processoKey, processoAtual);
+    }
+
+    const byTotalDesc = <T extends { total: number }>(a: T, b: T) =>
+      b.total - a.total;
+
+    return {
+      porResponsavel: Array.from(responsavelMap.values())
+        .map(({ _processosIds, ...item }) => item)
+        .sort(byTotalDesc)
+        .slice(0, 8),
+      porCliente: Array.from(clienteMap.values())
+        .map(({ _processosIds, ...item }) => item)
+        .sort(byTotalDesc)
+        .slice(0, 8),
+      porProcesso: Array.from(processoMap.values()).sort(byTotalDesc).slice(0, 8),
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar visões financeiras:", error);
+
+    return {
+      porResponsavel: [],
+      porCliente: [],
+      porProcesso: [],
+    };
   }
 }

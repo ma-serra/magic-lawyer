@@ -101,8 +101,12 @@ export class EmailChannel {
       case "prazo.expiring_7d":
       case "prazo.expiring_3d":
       case "prazo.expiring_1d":
+      case "prazo.expiring_2h":
+      case "prazo.expired":
+      case "prazo.created":
+      case "prazo.updated":
         return event.payload.processoId
-          ? `${normalizedBase}/processos/${event.payload.processoId}`
+          ? `${normalizedBase}/processos/${event.payload.processoId}?tab=prazos`
           : `${normalizedBase}/andamentos`;
 
       case "documento.uploaded":
@@ -146,6 +150,10 @@ export class EmailChannel {
       case "prazo.expiring_7d":
       case "prazo.expiring_3d":
       case "prazo.expiring_1d":
+      case "prazo.expiring_2h":
+      case "prazo.expired":
+      case "prazo.created":
+      case "prazo.updated":
         return "Ver Prazos";
 
       case "documento.uploaded":

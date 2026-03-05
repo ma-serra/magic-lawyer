@@ -92,6 +92,8 @@ export class HybridNotificationService {
       "processo.created": "SISTEMA",
       "processo.updated": "SISTEMA",
       "processo.status_changed": "SISTEMA",
+      "prazo.created": "PRAZO",
+      "prazo.updated": "PRAZO",
       "pagamento.paid": "FINANCEIRO",
       "evento.created": "OUTRO",
       "test.simple": "SISTEMA",
@@ -140,6 +142,16 @@ export class HybridNotificationService {
         return {
           titulo: "Prazo Próximo do Vencimento",
           mensagem: `Prazo "${payload.titulo || "sem título"}" vence em ${payload.diasRestantes || "poucos"} dias.`,
+        };
+      case "prazo.created":
+        return {
+          titulo: "Novo Prazo Registrado",
+          mensagem: `Prazo "${payload.titulo || "sem título"}" foi vinculado ao processo ${payload.processoNumero || "sem número"}.`,
+        };
+      case "prazo.updated":
+        return {
+          titulo: "Prazo Atualizado",
+          mensagem: `Prazo "${payload.titulo || "sem título"}" do processo ${payload.processoNumero || "sem número"} foi atualizado.`,
         };
 
       case "processo.created":

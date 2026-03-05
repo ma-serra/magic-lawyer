@@ -11,8 +11,10 @@ import {
 // Hook para listar honorários contratuais
 export function useHonorariosContratuais(filters?: {
   contratoId?: string;
+  contratoIds?: string[];
   tipo?: "FIXO" | "SUCESSO" | "HIBRIDO";
   ativo?: boolean;
+  apenasMeusContratos?: boolean;
 }) {
   const { data, error, isLoading, mutate } = useSWR(
     ["honorarios-contratuais", filters],

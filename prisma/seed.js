@@ -37,6 +37,7 @@ const { seedRecebimentos } = require("./seeds/seed-recebimentos");
 const { seedFuncionarios } = require("./seeds/funcionarios");
 
 const prisma = new PrismaClient();
+const shouldSeedRecebimentos = process.argv.includes("--with-recebimentos");
 
 const DEFAULT_TENANT_CARGOS = [
   {
@@ -395,11 +396,17 @@ async function main() {
     console.warn("⚠️ Dados bancários já criados:", error.message);
   }
 
-  // Seed de recebimentos (parcelas e faturas pagas)
-  try {
-    await seedRecebimentos(prisma, Prisma);
-  } catch (error) {
-    console.warn("⚠️ Recebimentos já criados:", error.message);
+  if (shouldSeedRecebimentos) {
+    // Seed opcional de recebimentos sintéticos (demo)
+    try {
+      await seedRecebimentos(prisma, Prisma);
+    } catch (error) {
+      console.warn("⚠️ Recebimentos já criados:", error.message);
+    }
+  } else {
+    console.log(
+      "⏭️ Seed de recebimentos sintéticos ignorado (use --with-recebimentos para habilitar).",
+    );
   }
 
   console.log("\n🚀 Aplicando otimizações enterprise...\n");

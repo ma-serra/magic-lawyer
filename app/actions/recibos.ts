@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/auth";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
+import { checkPermission } from "@/app/actions/equipe";
+import { Prisma } from "@/generated/prisma";
 
 // ============================================
 // Types
@@ -17,7 +19,7 @@ export interface FiltrosRecibos {
   processoId?: string;
   advogadoId?: string;
   status?: "PAGA" | "PENDENTE" | "ATRASADA" | "CANCELADA";
-  tipo?: "PARCELA" | "FATURA" | "TODOS";
+  tipo?: "PARCELA";
   formaPagamento?: string;
   search?: string;
   pagina?: number;
@@ -144,6 +146,189 @@ export interface RecibosResponse {
   error?: string;
 }
 
+type RecibosAccessContext = {
+  tenantId: string;
+  userId: string;
+  role: string;
+  canViewGlobal: boolean;
+  canViewRecibos: boolean;
+  advogadoId: string | null;
+  accessibleClienteIds: string[];
+};
+
+function getImpossibleFilter(): Prisma.ContratoParcelaWhereInput {
+  return {
+    id: "__nao_existe__",
+  };
+}
+
+async function getRecibosAccessContext(): Promise<RecibosAccessContext | null> {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.tenantId || !session.user.id) {
+    return null;
+  }
+
+  const role = String((session.user as { role?: string }).role || "");
+  const userId = session.user.id;
+  const tenantId = session.user.tenantId;
+
+  const canViewByPermission =
+    role === "ADMIN" ||
+    role === "SUPER_ADMIN" ||
+    (await checkPermission("financeiro", "visualizar"));
+
+  const canViewGlobal =
+    role === "ADMIN" ||
+    role === "SUPER_ADMIN" ||
+    role === "FINANCEIRO" ||
+    (canViewByPermission && role !== "ADVOGADO" && role !== "CLIENTE");
+
+  const canViewRecibos =
+    canViewByPermission || role === "ADVOGADO" || role === "CLIENTE";
+
+  let advogadoId: string | null = null;
+  let accessibleClienteIds: string[] = [];
+
+  if (role === "ADVOGADO") {
+    const advogado = await prisma.advogado.findFirst({
+      where: {
+        tenantId,
+        usuarioId: userId,
+      },
+      select: {
+        id: true,
+        clientes: {
+          select: {
+            clienteId: true,
+          },
+        },
+      },
+    });
+
+    advogadoId = advogado?.id ?? null;
+    accessibleClienteIds = advogado?.clientes.map((item) => item.clienteId) ?? [];
+  } else if (role === "CLIENTE") {
+    const clientes = await prisma.cliente.findMany({
+      where: {
+        tenantId,
+        usuarioId: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    accessibleClienteIds = clientes.map((item) => item.id);
+  }
+
+  return {
+    tenantId,
+    userId,
+    role,
+    canViewGlobal,
+    canViewRecibos,
+    advogadoId,
+    accessibleClienteIds,
+  };
+}
+
+function buildParcelaScopeFilter(
+  context: RecibosAccessContext,
+): Prisma.ContratoParcelaWhereInput | null {
+  if (context.canViewGlobal) {
+    return null;
+  }
+
+  if (context.role === "CLIENTE") {
+    if (context.accessibleClienteIds.length === 0) {
+      return getImpossibleFilter();
+    }
+
+    return {
+      contrato: {
+        clienteId: {
+          in: context.accessibleClienteIds,
+        },
+      },
+    };
+  }
+
+  if (context.role === "ADVOGADO") {
+    const orFilters: Prisma.ContratoParcelaWhereInput[] = [
+      {
+        responsavelUsuarioId: context.userId,
+      },
+    ];
+
+    if (context.advogadoId) {
+      orFilters.push({
+        contrato: {
+          advogadoResponsavelId: context.advogadoId,
+        },
+      });
+    }
+
+    if (context.accessibleClienteIds.length > 0) {
+      orFilters.push({
+        contrato: {
+          clienteId: {
+            in: context.accessibleClienteIds,
+          },
+        },
+      });
+    }
+
+    if (orFilters.length === 0) {
+      return getImpossibleFilter();
+    }
+
+    return {
+      OR: orFilters,
+    };
+  }
+
+  return {
+    responsavelUsuarioId: context.userId,
+  };
+}
+
+function canAccessContratoByContext(
+  context: RecibosAccessContext,
+  contrato: {
+    clienteId: string;
+    advogadoResponsavelId?: string | null;
+    responsavelUsuarioId?: string | null;
+  } | null,
+) {
+  if (context.canViewGlobal) {
+    return true;
+  }
+
+  if (!contrato) {
+    return false;
+  }
+
+  if (context.role === "CLIENTE") {
+    return context.accessibleClienteIds.includes(contrato.clienteId);
+  }
+
+  if (context.role === "ADVOGADO") {
+    if (contrato.responsavelUsuarioId === context.userId) {
+      return true;
+    }
+
+    if (context.advogadoId && contrato.advogadoResponsavelId === context.advogadoId) {
+      return true;
+    }
+
+    return context.accessibleClienteIds.includes(contrato.clienteId);
+  }
+
+  return contrato.responsavelUsuarioId === context.userId;
+}
+
 // ============================================
 // Server Actions
 // ============================================
@@ -151,92 +336,104 @@ export interface RecibosResponse {
 // Buscar dados para filtros
 export async function getDadosFiltrosRecibos() {
   try {
-    const session = await getServerSession(authOptions);
+    const context = await getRecibosAccessContext();
 
-    if (!session?.user?.tenantId) {
+    if (!context?.canViewRecibos) {
       return { success: false, error: "Não autorizado" };
     }
 
-    const tenantId = session.user.tenantId;
+    const baseWhere: Prisma.ContratoParcelaWhereInput = {
+      tenantId: context.tenantId,
+      status: "PAGA",
+      dataPagamento: { not: null },
+    };
 
-    // Buscar apenas clientes que têm recibos pagos
-    const clientes = await prisma.cliente.findMany({
-      where: {
-        tenantId,
-        contratos: {
-          some: {
-            OR: [
-              { parcelas: { some: { status: "PAGA" } } },
-              { faturas: { some: { status: "PAGA" } } },
-            ],
-          },
-        },
-      },
-      select: {
-        id: true,
-        nome: true,
-        documento: true,
-      },
-      orderBy: { nome: "asc" },
-    });
+    const scopeFilter = buildParcelaScopeFilter(context);
 
-    // Buscar apenas processos que têm recibos pagos
-    const processos = await prisma.processo.findMany({
-      where: {
-        tenantId,
-        contratos: {
-          some: {
-            OR: [
-              { parcelas: { some: { status: "PAGA" } } },
-              { faturas: { some: { status: "PAGA" } } },
-            ],
-          },
-        },
-      },
-      select: {
-        id: true,
-        numero: true,
-        titulo: true,
-      },
-      orderBy: { numero: "asc" },
-    });
+    const where: Prisma.ContratoParcelaWhereInput = scopeFilter
+      ? {
+          AND: [baseWhere, scopeFilter],
+        }
+      : baseWhere;
 
-    // Buscar apenas advogados que têm recibos pagos
-    const advogados = await prisma.advogado.findMany({
-      where: {
-        tenantId,
-        contratos: {
-          some: {
-            OR: [
-              { parcelas: { some: { status: "PAGA" } } },
-              { faturas: { some: { status: "PAGA" } } },
-            ],
-          },
-        },
-      },
+    const parcelas = await prisma.contratoParcela.findMany({
+      where,
       select: {
-        id: true,
-        usuario: {
+        contrato: {
           select: {
-            firstName: true,
-            lastName: true,
-            email: true,
+            cliente: {
+              select: {
+                id: true,
+                nome: true,
+                documento: true,
+              },
+            },
+            processo: {
+              select: {
+                id: true,
+                numero: true,
+                titulo: true,
+              },
+            },
+            advogadoResponsavel: {
+              select: {
+                id: true,
+                usuario: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
-      orderBy: { usuario: { firstName: "asc" } },
+      orderBy: {
+        dataPagamento: "desc",
+      },
     });
 
-    // Converter para arrays se necessário
-    const clientesArray = Array.isArray(clientes)
-      ? clientes
-      : Object.values(clientes);
-    const processosArray = Array.isArray(processos)
-      ? processos
-      : Object.values(processos);
-    const advogadosArray = Array.isArray(advogados)
-      ? advogados
-      : Object.values(advogados);
+    const clientesMap = new Map<string, { id: string; nome: string; documento: string | null }>();
+    const processosMap = new Map<string, { id: string; numero: string; titulo: string | null }>();
+    type AdvogadoFiltro = NonNullable<
+      (typeof parcelas)[number]["contrato"]["advogadoResponsavel"]
+    >;
+    const advogadosMap = new Map<string, AdvogadoFiltro>();
+
+    parcelas.forEach((parcela) => {
+      const cliente = parcela.contrato.cliente;
+
+      if (cliente && !clientesMap.has(cliente.id)) {
+        clientesMap.set(cliente.id, cliente);
+      }
+
+      const processo = parcela.contrato.processo;
+
+      if (processo && !processosMap.has(processo.id)) {
+        processosMap.set(processo.id, processo);
+      }
+
+      const advogado = parcela.contrato.advogadoResponsavel;
+
+      if (advogado && !advogadosMap.has(advogado.id)) {
+        advogadosMap.set(advogado.id, advogado);
+      }
+    });
+
+    const clientesArray = Array.from(clientesMap.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+    const processosArray = Array.from(processosMap.values()).sort((a, b) =>
+      a.numero.localeCompare(b.numero, "pt-BR"),
+    );
+    const advogadosArray = Array.from(advogadosMap.values()).sort((a, b) => {
+      const nomeA = `${a.usuario.firstName} ${a.usuario.lastName}`.trim();
+      const nomeB = `${b.usuario.firstName} ${b.usuario.lastName}`.trim();
+
+      return nomeA.localeCompare(nomeB, "pt-BR");
+    });
 
     return {
       success: true,
@@ -257,15 +454,11 @@ export async function getRecibosPagos(
   filtros: FiltrosRecibos = {},
 ): Promise<RecibosResponse> {
   try {
-    const session = await getServerSession(authOptions);
+    const context = await getRecibosAccessContext();
 
-    if (!session?.user?.tenantId) {
-      return { success: false, error: "Não autenticado" };
+    if (!context?.canViewRecibos) {
+      return { success: false, error: "Não autorizado" };
     }
-
-    console.log("🔍 Filtros recebidos:", filtros);
-
-    const { tenantId, role } = session.user;
 
     // Parâmetros de paginação
     const pagina = filtros.pagina || 1;
@@ -276,193 +469,202 @@ export async function getRecibosPagos(
     const dataInicio = filtros.dataInicio ? new Date(filtros.dataInicio) : null;
     const dataFim = filtros.dataFim ? new Date(filtros.dataFim) : null;
 
-    // Construir filtros base para parcelas
-    const whereBaseParcelas = {
-      tenantId,
-      ...(dataInicio &&
-        dataFim && {
-          dataPagamento: {
-            gte: dataInicio,
-            lte: dataFim,
-          },
-        }),
-    };
+    const andConditions: Prisma.ContratoParcelaWhereInput[] = [
+      {
+        tenantId: context.tenantId,
+      },
+      {
+        status: "PAGA",
+      },
+      {
+        dataPagamento: {
+          not: null,
+        },
+      },
+    ];
 
-    // Construir filtros base para faturas
-    const whereBaseFaturas = {
-      tenantId,
-      ...(dataInicio &&
-        dataFim && {
-          pagoEm: {
-            gte: dataInicio,
-            lte: dataFim,
-          },
-        }),
-    };
-
-    // Filtros específicos por role
-    let whereParcelas = { ...whereBaseParcelas };
-    let whereFaturas = { ...whereBaseFaturas };
-
-    // CLIENTE vê apenas seus próprios recibos
-    if (role === "CLIENTE") {
-      // Simplificar - remover filtros complexos por enquanto
-      whereParcelas = {
-        ...whereParcelas,
-        // Filtro básico por tenant apenas
-      };
-      whereFaturas = {
-        ...whereFaturas,
-        // Filtro básico por tenant apenas
-      };
+    if (filtros.status) {
+      andConditions.push({ status: filtros.status });
     }
 
-    // ADVOGADO vê apenas recibos dos seus clientes
-    if (role === "ADVOGADO") {
-      // Simplificar - remover filtros complexos por enquanto
-      whereParcelas = {
-        ...whereParcelas,
-        // Filtro básico por tenant apenas
-      };
-      whereFaturas = {
-        ...whereFaturas,
-        // Filtro básico por tenant apenas
-      };
+    if (dataInicio || dataFim) {
+      andConditions.push({
+        dataPagamento: {
+          ...(dataInicio ? { gte: dataInicio } : {}),
+          ...(dataFim ? { lte: dataFim } : {}),
+        },
+      });
     }
 
-    // Aplicar filtros adicionais - simplificado
-    // Remover filtros complexos por enquanto para evitar erros de tipo
+    if (filtros.formaPagamento) {
+      andConditions.push({
+        formaPagamento: filtros.formaPagamento,
+      });
+    }
 
-    // Buscar parcelas pagas
-    const parcelas =
-      filtros.tipo !== "FATURA"
-        ? await prisma.contratoParcela.findMany({
-            where: {
-              ...whereParcelas,
-              status: "PAGA",
-              dataPagamento: { not: null },
+    if (filtros.contratoId) {
+      andConditions.push({
+        contratoId: filtros.contratoId,
+      });
+    }
+
+    const contratoFilter: Prisma.ContratoWhereInput = {};
+
+    if (filtros.clienteId) {
+      contratoFilter.clienteId = filtros.clienteId;
+    }
+
+    if (filtros.processoId) {
+      contratoFilter.processoId = filtros.processoId;
+    }
+
+    if (filtros.advogadoId) {
+      contratoFilter.advogadoResponsavelId = filtros.advogadoId;
+    }
+
+    if (Object.keys(contratoFilter).length > 0) {
+      andConditions.push({
+        contrato: contratoFilter,
+      });
+    }
+
+    if (filtros.search?.trim()) {
+      const searchTerm = filtros.search.trim();
+
+      andConditions.push({
+        OR: [
+          { titulo: { contains: searchTerm, mode: "insensitive" } },
+          { descricao: { contains: searchTerm, mode: "insensitive" } },
+          {
+            contrato: {
+              cliente: {
+                nome: { contains: searchTerm, mode: "insensitive" },
+              },
             },
-            include: {
-              contrato: {
-                include: {
-                  cliente: {
-                    select: {
-                      id: true,
-                      nome: true,
-                      documento: true,
-                      email: true,
-                      telefone: true,
-                      celular: true,
-                    },
+          },
+          {
+            contrato: {
+              cliente: {
+                documento: { contains: searchTerm, mode: "insensitive" },
+              },
+            },
+          },
+          {
+            contrato: {
+              titulo: { contains: searchTerm, mode: "insensitive" },
+            },
+          },
+          {
+            contrato: {
+              processo: {
+                numero: { contains: searchTerm, mode: "insensitive" },
+              },
+            },
+          },
+          {
+            contrato: {
+              processo: {
+                numeroCnj: { contains: searchTerm, mode: "insensitive" },
+              },
+            },
+          },
+          { asaasPaymentId: { contains: searchTerm, mode: "insensitive" } },
+        ],
+      });
+    }
+
+    const scopeFilter = buildParcelaScopeFilter(context);
+
+    if (scopeFilter) {
+      andConditions.push(scopeFilter);
+    }
+
+    const whereParcelas: Prisma.ContratoParcelaWhereInput = {
+      AND: andConditions,
+    };
+
+    const [total, aggregate, statusGroup, formaPagamentoGroup, parcelas] =
+      await Promise.all([
+        prisma.contratoParcela.count({
+          where: whereParcelas,
+        }),
+        prisma.contratoParcela.aggregate({
+          where: whereParcelas,
+          _sum: {
+            valor: true,
+          },
+        }),
+        prisma.contratoParcela.groupBy({
+          by: ["status"],
+          where: whereParcelas,
+          _count: {
+            _all: true,
+          },
+        }),
+        prisma.contratoParcela.groupBy({
+          by: ["formaPagamento"],
+          where: {
+            AND: [whereParcelas, { formaPagamento: { not: null } }],
+          },
+          _count: {
+            _all: true,
+          },
+        }),
+        prisma.contratoParcela.findMany({
+          where: whereParcelas,
+          include: {
+            contrato: {
+              include: {
+                cliente: {
+                  select: {
+                    id: true,
+                    nome: true,
+                    documento: true,
+                    email: true,
+                    telefone: true,
+                    celular: true,
                   },
-                  tipo: {
-                    select: {
-                      nome: true,
-                    },
+                },
+                tipo: {
+                  select: {
+                    nome: true,
                   },
-                  processo: {
-                    select: {
-                      id: true,
-                      numero: true,
-                      numeroCnj: true,
-                      titulo: true,
-                      valorCausa: true,
-                      orgaoJulgador: true,
-                      vara: true,
-                      comarca: true,
-                    },
+                },
+                processo: {
+                  select: {
+                    id: true,
+                    numero: true,
+                    numeroCnj: true,
+                    titulo: true,
+                    valorCausa: true,
+                    orgaoJulgador: true,
+                    vara: true,
+                    comarca: true,
                   },
-                  advogadoResponsavel: {
-                    select: {
-                      id: true,
-                      usuario: {
-                        select: {
-                          id: true,
-                          firstName: true,
-                          lastName: true,
-                          email: true,
-                        },
+                },
+                advogadoResponsavel: {
+                  select: {
+                    id: true,
+                    usuario: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
                       },
                     },
                   },
                 },
               },
             },
-            orderBy: {
-              dataPagamento: "desc",
-            },
-          })
-        : [];
-
-    // Buscar faturas pagas
-    const faturas =
-      filtros.tipo !== "PARCELA"
-        ? await prisma.fatura.findMany({
-            where: {
-              ...whereFaturas,
-              status: "PAGA",
-              pagoEm: { not: null },
-            },
-            include: {
-              contrato: {
-                include: {
-                  cliente: {
-                    select: {
-                      id: true,
-                      nome: true,
-                      documento: true,
-                      email: true,
-                      telefone: true,
-                      celular: true,
-                    },
-                  },
-                  tipo: {
-                    select: {
-                      nome: true,
-                    },
-                  },
-                  processo: {
-                    select: {
-                      id: true,
-                      numero: true,
-                      numeroCnj: true,
-                      titulo: true,
-                      valorCausa: true,
-                      orgaoJulgador: true,
-                      vara: true,
-                      comarca: true,
-                    },
-                  },
-                  advogadoResponsavel: {
-                    select: {
-                      id: true,
-                      usuario: {
-                        select: {
-                          id: true,
-                          firstName: true,
-                          lastName: true,
-                          email: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-              subscription: {
-                include: {
-                  plano: {
-                    select: {
-                      nome: true,
-                    },
-                  },
-                },
-              },
-            },
-            orderBy: {
-              pagoEm: "desc",
-            },
-          })
-        : [];
+          },
+          orderBy: {
+            dataPagamento: "desc",
+          },
+          skip,
+          take: itensPorPagina,
+        }),
+      ]);
 
     // Converter para formato unificado
     const recibosParcelas: ReciboParcela[] = parcelas.map((parcela) => ({
@@ -513,115 +715,48 @@ export async function getRecibosPagos(
       updatedAt: parcela.updatedAt,
     }));
 
-    const recibosFaturas: ReciboFatura[] = faturas.map((fatura) => ({
-      id: fatura.id,
-      tipo: "FATURA" as const,
-      numero: fatura.numero || `FAT-${fatura.id.slice(-8)}`,
-      titulo: fatura.descricao || "Fatura",
-      descricao: fatura.descricao,
-      valor: Number(fatura.valor),
-      dataVencimento: fatura.vencimento,
-      dataPagamento: fatura.pagoEm,
-      status: fatura.status,
-      contrato: fatura.contrato
-        ? {
-            id: fatura.contrato.id,
-            numero: `CTR-${fatura.contrato.id.slice(-8)}`,
-            tipo: fatura.contrato.tipo?.nome || "Contrato",
-            cliente: fatura.contrato.cliente,
-            processo: null,
-            advogadoResponsavel: null,
-          }
-        : null,
-      subscription: fatura.subscription
-        ? {
-            id: fatura.subscription.id,
-            plano: fatura.subscription.plano || { nome: "Plano não informado" },
-          }
-        : null,
-      createdAt: fatura.createdAt,
-      updatedAt: fatura.updatedAt,
-    }));
+    const porStatus = statusGroup.reduce(
+      (acc, item) => {
+        acc[item.status] = item._count._all;
 
-    // Combinar e ordenar todos os recibos
-    const todosRecibos: Recibo[] = [...recibosParcelas, ...recibosFaturas].sort(
-      (a, b) => {
-        const dataA = a.dataPagamento || a.createdAt;
-        const dataB = b.dataPagamento || b.createdAt;
-
-        return dataB.getTime() - dataA.getTime();
+        return acc;
       },
+      {} as Record<string, number>,
     );
 
-    // Aplicar filtro de busca se fornecido
-    const recibosFiltrados = filtros.search
-      ? todosRecibos.filter((recibo) => {
-          const searchLower = filtros.search!.toLowerCase();
+    const porFormaPagamento = formaPagamentoGroup.reduce(
+      (acc, item) => {
+        if (item.formaPagamento) {
+          acc[item.formaPagamento] = item._count._all;
+        }
 
-          return (
-            recibo.numero.toLowerCase().includes(searchLower) ||
-            recibo.titulo.toLowerCase().includes(searchLower) ||
-            recibo.contrato?.cliente.nome.toLowerCase().includes(searchLower) ||
-            recibo.contrato?.numero.toLowerCase().includes(searchLower)
-          );
-        })
-      : todosRecibos;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     // Calcular resumo
     const resumo = {
-      totalValor: recibosFiltrados.reduce(
-        (sum, recibo) => sum + recibo.valor,
-        0,
-      ),
-      totalParcelas: recibosFiltrados.filter((r) => r.tipo === "PARCELA")
-        .length,
-      totalFaturas: recibosFiltrados.filter((r) => r.tipo === "FATURA").length,
-      porStatus: recibosFiltrados.reduce(
-        (acc, recibo) => {
-          acc[recibo.status] = (acc[recibo.status] || 0) + 1;
-
-          return acc;
-        },
-        {} as Record<string, number>,
-      ),
-      porFormaPagamento: recibosFiltrados.reduce(
-        (acc, recibo) => {
-          if (recibo.tipo === "PARCELA" && recibo.formaPagamento) {
-            acc[recibo.formaPagamento] = (acc[recibo.formaPagamento] || 0) + 1;
-          }
-
-          return acc;
-        },
-        {} as Record<string, number>,
-      ),
+      totalValor: Number(aggregate._sum.valor || 0),
+      totalParcelas: total,
+      totalFaturas: 0,
+      porStatus,
+      porFormaPagamento,
     };
 
     // Converter campos Decimal para number e serializar
-    const convertedRecibos = recibosFiltrados.map((recibo) =>
+    const convertedRecibos = recibosParcelas.map((recibo) =>
       convertAllDecimalFields(recibo),
     );
     const serializedRecibos = JSON.parse(JSON.stringify(convertedRecibos));
 
-    // Aplicar paginação
-    const recibosPaginados = serializedRecibos.slice(
-      skip,
-      skip + itensPorPagina,
-    );
-    const totalPaginas = Math.ceil(serializedRecibos.length / itensPorPagina);
-
-    console.log("🔍 Resultado final:", {
-      totalRecibos: serializedRecibos.length,
-      recibosPaginados: recibosPaginados.length,
-      totalPaginas,
-      pagina,
-      itensPorPagina,
-    });
+    const totalPaginas = total > 0 ? Math.ceil(total / itensPorPagina) : 1;
 
     return {
       success: true,
       data: {
-        recibos: recibosPaginados,
-        total: serializedRecibos.length,
+        recibos: serializedRecibos,
+        total,
         totalPaginas: totalPaginas,
         resumo,
       },
@@ -642,19 +777,17 @@ export async function getReciboDetalhes(
   error?: string;
 }> {
   try {
-    const session = await getServerSession(authOptions);
+    const context = await getRecibosAccessContext();
 
-    if (!session?.user?.tenantId) {
-      return { success: false, error: "Não autenticado" };
+    if (!context?.canViewRecibos) {
+      return { success: false, error: "Não autorizado" };
     }
-
-    const { tenantId, role } = session.user;
 
     if (tipo === "PARCELA") {
       const parcela = await prisma.contratoParcela.findFirst({
         where: {
           id: reciboId,
-          tenantId,
+          tenantId: context.tenantId,
           status: "PAGA",
           dataPagamento: { not: null },
         },
@@ -695,22 +828,14 @@ export async function getReciboDetalhes(
         return { success: false, error: "Recibo não encontrado" };
       }
 
-      // Verificar permissões
-      if (role === "CLIENTE") {
-        const isCliente = parcela.contrato.cliente.id === session.user.id;
-
-        if (!isCliente) {
-          return { success: false, error: "Acesso negado" };
-        }
-      }
-
-      if (role === "ADVOGADO") {
-        // Simplificar verificação de permissão
-        const isAdvogado = true; // TODO: Implementar verificação adequada
-
-        if (!isAdvogado) {
-          return { success: false, error: "Acesso negado" };
-        }
+      if (
+        !canAccessContratoByContext(context, {
+          clienteId: parcela.contrato.cliente.id,
+          advogadoResponsavelId: parcela.contrato.advogadoResponsavelId,
+          responsavelUsuarioId: parcela.contrato.responsavelUsuarioId,
+        })
+      ) {
+        return { success: false, error: "Acesso negado" };
       }
 
       const recibo: ReciboParcela = {
@@ -747,7 +872,7 @@ export async function getReciboDetalhes(
       const fatura = await prisma.fatura.findFirst({
         where: {
           id: reciboId,
-          tenantId,
+          tenantId: context.tenantId,
           status: "PAGA",
           pagoEm: { not: null },
         },
@@ -787,22 +912,19 @@ export async function getReciboDetalhes(
         return { success: false, error: "Recibo não encontrado" };
       }
 
-      // Verificar permissões
-      if (role === "CLIENTE" && fatura.contrato) {
-        const isCliente = fatura.contrato.cliente.id === session.user.id;
-
-        if (!isCliente) {
-          return { success: false, error: "Acesso negado" };
-        }
-      }
-
-      if (role === "ADVOGADO" && fatura.contrato) {
-        // Simplificar verificação de permissão
-        const isAdvogado = true; // TODO: Implementar verificação adequada
-
-        if (!isAdvogado) {
-          return { success: false, error: "Acesso negado" };
-        }
+      if (
+        !canAccessContratoByContext(
+          context,
+          fatura.contrato
+            ? {
+                clienteId: fatura.contrato.cliente.id,
+                advogadoResponsavelId: fatura.contrato.advogadoResponsavelId,
+                responsavelUsuarioId: fatura.contrato.responsavelUsuarioId,
+              }
+            : null,
+        )
+      ) {
+        return { success: false, error: "Acesso negado" };
       }
 
       const recibo: ReciboFatura = {

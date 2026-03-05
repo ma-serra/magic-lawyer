@@ -238,7 +238,7 @@ function buildQuickActions(
         actions.push({
           label: "Financeiro",
           description: "Cobranças, faturas e repasses",
-          href: "/financeiro",
+          href: "/financeiro/dashboard",
           tone: "warning",
           icon: "💰",
         });
@@ -326,7 +326,7 @@ function buildQuickActions(
         {
           label: "Faturas",
           description: "Emitir, enviar e registrar pagamentos",
-          href: "/financeiro",
+          href: "/financeiro/dashboard",
           tone: "primary",
           icon: "🧾",
         },
@@ -367,7 +367,7 @@ function buildQuickActions(
         actions.push({
           label: "Pagamentos",
           description: "Faturas e recibos",
-          href: "/financeiro",
+          href: "/financeiro/dashboard",
           tone: "warning",
           icon: "💳",
         });

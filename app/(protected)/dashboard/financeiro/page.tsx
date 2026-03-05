@@ -1,7 +1,5 @@
 import { redirect } from "next/navigation";
 
-import DashboardFinanceiroContent from "./dashboard-financeiro-content";
-
 import { getSession } from "@/app/lib/auth";
 import { checkPermission } from "@/app/actions/equipe";
 import { UserRole } from "@/generated/prisma";
@@ -22,7 +20,7 @@ export default async function DashboardFinanceiroPage() {
 
   // Admin sempre tem acesso
   if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-    return <DashboardFinanceiroContent />;
+    redirect("/financeiro/dashboard");
   }
 
   // Para outros roles, verificar permissão financeiro.visualizar
@@ -33,7 +31,7 @@ export default async function DashboardFinanceiroPage() {
       redirect("/dashboard");
     }
 
-    return <DashboardFinanceiroContent />;
+    redirect("/financeiro/dashboard");
   } catch (error) {
     console.error(
       "Erro ao verificar permissões para /dashboard/financeiro:",

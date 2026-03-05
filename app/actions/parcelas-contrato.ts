@@ -294,6 +294,7 @@ export async function createParcelaContrato(data: {
 
     revalidatePath("/contratos");
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     // Converter Decimal para number e serializar
     const converted = convertAllDecimalFields(parcela);
@@ -395,6 +396,7 @@ export async function updateParcelaContrato(
 
     revalidatePath("/contratos");
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     // Converter Decimal para number e serializar
     const converted = convertAllDecimalFields(parcela);
@@ -454,6 +456,7 @@ export async function deleteParcelaContrato(id: string) {
 
     revalidatePath("/contratos");
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     return {
       success: true,
@@ -548,6 +551,7 @@ export async function gerarParcelasAutomaticamente(
 
     revalidatePath("/contratos");
     revalidatePath("/parcelas");
+    revalidatePath("/financeiro/parcelas");
 
     // Converter Decimal para number e serializar
     const convertedData = parcelas.map((item) => convertAllDecimalFields(item));

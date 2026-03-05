@@ -168,6 +168,7 @@ export async function createBanco(data: BancoCreateInput) {
 
     revalidatePath("/admin/bancos");
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
 
     return {
       success: true,
@@ -195,6 +196,7 @@ export async function updateBanco(codigo: string, data: BancoUpdateInput) {
 
     revalidatePath("/admin/bancos");
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
 
     return {
       success: true,
@@ -235,6 +237,7 @@ export async function deleteBanco(codigo: string) {
 
     revalidatePath("/admin/bancos");
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
 
     return {
       success: true,
@@ -272,6 +275,7 @@ export async function toggleBancoStatus(codigo: string) {
 
     revalidatePath("/admin/bancos");
     revalidatePath("/dados-bancarios");
+    revalidatePath("/financeiro/dados-bancarios");
 
     return {
       success: true,

@@ -101,6 +101,8 @@ async function seedRecebimentos(prisma, Prisma) {
         }),
       };
 
+      const referenciaContrato = contrato.titulo || contrato.id;
+
       const parcela = await prisma.contratoParcela.create({
         data: {
           tenantId: tenant.id,
@@ -108,7 +110,7 @@ async function seedRecebimentos(prisma, Prisma) {
           dadosBancariosId: dadosBancariosAleatorio.id,
           numeroParcela,
           titulo: `Parcela ${numeroParcela} - ${contrato.titulo}`,
-          descricao: `Pagamento referente à parcela ${numeroParcela} do contrato ${contrato.numero}`,
+          descricao: `Pagamento referente à parcela ${numeroParcela} do contrato ${referenciaContrato}`,
           valor: valorParcela,
           dataVencimento,
           dataPagamento,
@@ -191,6 +193,8 @@ async function seedRecebimentos(prisma, Prisma) {
       const valorParcela = Math.floor(Math.random() * 30000) + 1000;
       const dataVencimento = new Date(Date.now() + Math.random() * 60 * 24 * 60 * 60 * 1000); // Próximos 60 dias
 
+      const referenciaContrato = contrato.titulo || contrato.id;
+
       await prisma.contratoParcela.create({
         data: {
           tenantId: tenant.id,
@@ -198,7 +202,7 @@ async function seedRecebimentos(prisma, Prisma) {
           dadosBancariosId: dadosBancariosAleatorio.id,
           numeroParcela,
           titulo: `Parcela ${numeroParcela} - ${contrato.titulo}`,
-          descricao: `Parcela ${numeroParcela} do contrato ${contrato.numero} - Vencimento em ${dataVencimento.toLocaleDateString()}`,
+          descricao: `Parcela ${numeroParcela} do contrato ${referenciaContrato} - Vencimento em ${dataVencimento.toLocaleDateString()}`,
           valor: valorParcela,
           dataVencimento,
           status: "PENDENTE",

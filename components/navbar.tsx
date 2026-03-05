@@ -31,11 +31,13 @@ const breadcrumbLabelMap: Record<string, string> = {
   processos: "Processos",
   documentos: "Documentos",
   financeiro: "Financeiro",
+  "dados-bancarios": "Dados bancários",
   relatorios: "Relatórios",
   usuario: "Usuário",
   perfil: "Perfil",
   editar: "Editar",
   configuracoes: "Configurações",
+  billing: "Billing",
   equipe: "Equipe",
   help: "Suporte",
 };

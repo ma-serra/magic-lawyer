@@ -24,6 +24,7 @@ import {
   getAccessibleAdvogadoIds,
   getAdvogadoIdFromSession,
 } from "@/app/lib/advogado-access";
+import { validateDeadlineWithRegime } from "@/app/lib/feriados/prazo-validation";
 
 // ============================================
 // TYPES - Prisma Type Safety (Best Practice)
@@ -161,6 +162,14 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
               id: true,
               titulo: true,
               dataMovimentacao: true,
+            },
+          },
+          regimePrazo: {
+            select: {
+              id: true,
+              nome: true,
+              tipo: true,
+              contarDiasUteis: true,
             },
           },
         },
@@ -312,6 +321,12 @@ export interface ProcessoPrazo {
     id: string;
     titulo: string;
     dataMovimentacao: Date;
+  } | null;
+  regimePrazo?: {
+    id: string;
+    nome: string;
+    tipo: string;
+    contarDiasUteis: boolean;
   } | null;
 }
 
@@ -507,6 +522,7 @@ async function ensureProcessMutationAccess(
         select: {
           id: true,
           nome: true,
+          uf: true,
         },
       },
       juiz: {
@@ -657,6 +673,14 @@ const processoPrazoInclude = {
       dataMovimentacao: true,
     },
   },
+  regimePrazo: {
+    select: {
+      id: true,
+      nome: true,
+      tipo: true,
+      contarDiasUteis: true,
+    },
+  },
 } satisfies Prisma.ProcessoPrazoInclude;
 
 const procuracaoProcessoInclude = {
@@ -721,6 +745,124 @@ function hasExternalSyncTag(tags: Prisma.JsonValue | null | undefined) {
       typeof tag === "string" &&
       tag.trim().toLowerCase() === EXTERNAL_SYNC_TAG,
   );
+}
+
+function parseDateInput(
+  value: string | Date,
+  fieldLabel: string,
+): { ok: true; date: Date } | { ok: false; error: string } {
+  const parsed = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      ok: false,
+      error: `${fieldLabel} inválido(a).`,
+    };
+  }
+
+  return { ok: true, date: parsed };
+}
+
+function parseNullableDateInput(
+  value: string | Date | null | undefined,
+  fieldLabel: string,
+): { ok: true; date: Date | null } | { ok: false; error: string } {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, date: null };
+  }
+
+  const parsed = parseDateInput(value, fieldLabel);
+
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  return { ok: true, date: parsed.date };
+}
+
+function normalizeAuditDate(value?: Date | string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
+}
+
+function buildPrazoAuditSnapshot(prazo: {
+  id: string;
+  titulo: string;
+  descricao?: string | null;
+  fundamentoLegal?: string | null;
+  status: ProcessoPrazoStatus;
+  dataVencimento: Date | string;
+  prorrogadoPara?: Date | string | null;
+  dataCumprimento?: Date | string | null;
+  responsavelId?: string | null;
+  origemMovimentacaoId?: string | null;
+  regimePrazoId?: string | null;
+}): Record<string, string | null> {
+  return {
+    titulo: prazo.titulo ?? null,
+    descricao: prazo.descricao ?? null,
+    fundamentoLegal: prazo.fundamentoLegal ?? null,
+    status: prazo.status ?? null,
+    dataVencimento: normalizeAuditDate(prazo.dataVencimento),
+    prorrogadoPara: normalizeAuditDate(prazo.prorrogadoPara ?? null),
+    dataCumprimento: normalizeAuditDate(prazo.dataCumprimento ?? null),
+    responsavelId: prazo.responsavelId ?? null,
+    origemMovimentacaoId: prazo.origemMovimentacaoId ?? null,
+    regimePrazoId: prazo.regimePrazoId ?? null,
+  };
+}
+
+function buildPrazoAuditDiff(
+  previous: Record<string, string | null>,
+  current: Record<string, string | null>,
+) {
+  const fields = Object.keys(previous);
+
+  return fields.flatMap((field) => {
+    if (previous[field] === current[field]) {
+      return [];
+    }
+
+    return [
+      {
+        field,
+        previous: previous[field],
+        current: current[field],
+      },
+    ];
+  });
+}
+
+async function publishPrazoNotificationToUsers(params: {
+  type: "prazo.created" | "prazo.updated";
+  tenantId: string;
+  userIds: string[];
+  payload: Record<string, unknown>;
+  urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
+  channels?: ("REALTIME" | "EMAIL" | "PUSH")[];
+}) {
+  const uniqueUserIds = Array.from(
+    new Set(params.userIds.filter((userId) => Boolean(userId?.trim()))),
+  );
+
+  for (const userId of uniqueUserIds) {
+    await HybridNotificationService.publishNotification({
+      type: params.type,
+      tenantId: params.tenantId,
+      userId,
+      payload: params.payload,
+      urgency: params.urgency,
+      channels: params.channels,
+    });
+  }
 }
 
 /**
@@ -1840,6 +1982,7 @@ export interface ProcessoPrazoInput {
   status?: ProcessoPrazoStatus;
   responsavelId?: string | null;
   origemMovimentacaoId?: string | null;
+  regimePrazoId?: string | null;
 }
 
 export interface ProcessoPrazoUpdateInput extends Partial<ProcessoPrazoInput> {}
@@ -2855,8 +2998,56 @@ export async function createProcessoPrazo(
     }
 
     const session = await getSession();
-    const { user } = await ensureProcessMutationAccess(session, processoId);
+    const { user, processo } = await ensureProcessMutationAccess(
+      session,
+      processoId,
+    );
     const tenantId = user.tenantId;
+    const actorName =
+      `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
+      (user.email as string | undefined) ||
+      "Usuário";
+    const scope = {
+      tribunalId: processo.tribunalId ?? null,
+      uf: processo.tribunal?.uf ?? null,
+      municipio: processo.comarca ?? null,
+    };
+
+    const parsedDataVencimento = parseDateInput(
+      input.dataVencimento,
+      "Data de vencimento",
+    );
+
+    if (!parsedDataVencimento.ok) {
+      return {
+        success: false,
+        error: parsedDataVencimento.error,
+      };
+    }
+
+    const parsedProrrogadoPara = parseNullableDateInput(
+      input.prorrogadoPara,
+      "Data de prorrogação",
+    );
+
+    if (!parsedProrrogadoPara.ok) {
+      return {
+        success: false,
+        error: parsedProrrogadoPara.error,
+      };
+    }
+
+    const parsedDataCumprimento = parseNullableDateInput(
+      input.dataCumprimento,
+      "Data de cumprimento",
+    );
+
+    if (!parsedDataCumprimento.ok) {
+      return {
+        success: false,
+        error: parsedDataCumprimento.error,
+      };
+    }
 
     const responsavelId = input.responsavelId ?? null;
 
@@ -2894,6 +3085,39 @@ export async function createProcessoPrazo(
       }
     }
 
+    const regimePrazoId = input.regimePrazoId ?? null;
+
+    if (regimePrazoId) {
+      const regime = await prisma.regimePrazo.findFirst({
+        where: {
+          id: regimePrazoId,
+          OR: [{ tenantId }, { tenantId: null }],
+        },
+        select: { id: true },
+      });
+
+      if (!regime) {
+        return {
+          success: false,
+          error: "Regime de prazo informado não está disponível",
+        };
+      }
+    }
+
+    const deadlineValidation = await validateDeadlineWithRegime({
+      tenantId,
+      regimePrazoId,
+      data: parsedDataVencimento.date,
+      scope,
+    });
+
+    if (!deadlineValidation.valid) {
+      return {
+        success: false,
+        error: deadlineValidation.error ?? "Data de vencimento inválida",
+      };
+    }
+
     const prazo = await prisma.processoPrazo.create({
       data: {
         tenantId,
@@ -2902,18 +3126,73 @@ export async function createProcessoPrazo(
         descricao: input.descricao || null,
         fundamentoLegal: input.fundamentoLegal || null,
         status: input.status || ProcessoPrazoStatus.ABERTO,
-        dataVencimento: new Date(input.dataVencimento),
-        prorrogadoPara: input.prorrogadoPara
-          ? new Date(input.prorrogadoPara)
-          : null,
-        dataCumprimento: input.dataCumprimento
-          ? new Date(input.dataCumprimento)
-          : null,
+        dataVencimento: parsedDataVencimento.date,
+        prorrogadoPara: parsedProrrogadoPara.date,
+        dataCumprimento: parsedDataCumprimento.date,
         responsavelId,
         origemMovimentacaoId: input.origemMovimentacaoId ?? null,
+        regimePrazoId,
       },
       include: processoPrazoInclude,
     });
+
+    try {
+      const targetUserIds = [
+        prazo.responsavel?.id ?? null,
+        processo.advogadoResponsavel?.usuario?.id ?? null,
+        user.id ?? null,
+      ].filter((value): value is string => Boolean(value));
+
+      await publishPrazoNotificationToUsers({
+        type: "prazo.created",
+        tenantId,
+        userIds: targetUserIds,
+        urgency: "HIGH",
+        channels: ["REALTIME", "EMAIL"],
+        payload: {
+          prazoId: prazo.id,
+          processoId,
+          processoNumero: processo.numero,
+          titulo: prazo.titulo,
+          dataVencimento: prazo.dataVencimento.toISOString(),
+          status: prazo.status,
+          referenciaTipo: "prazo",
+          referenciaId: prazo.id,
+        },
+      });
+    } catch (notificationError) {
+      logger.warn(
+        "Falha ao publicar notificação de criação de prazo",
+        notificationError,
+      );
+    }
+
+    try {
+      const snapshot = buildPrazoAuditSnapshot({
+        ...prazo,
+        regimePrazoId: prazo.regimePrazo?.id ?? null,
+      });
+
+      await logAudit({
+        tenantId,
+        usuarioId: user.id,
+        acao: "PROCESSO_PRAZO_CRIADO",
+        entidade: "ProcessoPrazo",
+        entidadeId: prazo.id,
+        dados: toAuditJson({
+          ...snapshot,
+          processoId,
+          processoNumero: processo.numero,
+          criadoPor: actorName,
+          criadoPorId: user.id,
+          criadoEm: new Date().toISOString(),
+        }),
+        previousValues: null,
+        changedFields: Object.keys(snapshot),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de criação de prazo", auditError);
+    }
 
     return {
       success: true,
@@ -2935,8 +3214,32 @@ export async function updateProcessoPrazo(
 ) {
   try {
     const session = await getSession();
-    const { user, prazo } = await ensurePrazoMutationAccess(session, prazoId);
+    const { user, prazo, processo } = await ensurePrazoMutationAccess(
+      session,
+      prazoId,
+    );
     const tenantId = user.tenantId;
+    const actorName =
+      `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
+      (user.email as string | undefined) ||
+      "Usuário";
+    const scope = {
+      tribunalId: processo.tribunalId ?? null,
+      uf: processo.tribunal?.uf ?? null,
+      municipio: processo.comarca ?? null,
+    };
+
+    const prazoAnterior = await prisma.processoPrazo.findFirst({
+      where: {
+        id: prazoId,
+        tenantId,
+      },
+      include: processoPrazoInclude,
+    });
+
+    if (!prazoAnterior) {
+      return { success: false, error: "Prazo não encontrado" };
+    }
 
     const updateData: Prisma.ProcessoPrazoUpdateInput = {};
 
@@ -2946,17 +3249,53 @@ export async function updateProcessoPrazo(
     if (input.fundamentoLegal !== undefined)
       updateData.fundamentoLegal = input.fundamentoLegal ?? null;
     if (input.status !== undefined) updateData.status = input.status;
-    if (input.dataVencimento !== undefined)
-      updateData.dataVencimento = new Date(input.dataVencimento);
-    if (input.prorrogadoPara !== undefined) {
-      updateData.prorrogadoPara = input.prorrogadoPara
-        ? new Date(input.prorrogadoPara)
+
+    const parsedDataVencimento =
+      input.dataVencimento !== undefined
+        ? parseDateInput(input.dataVencimento, "Data de vencimento")
         : null;
+
+    if (parsedDataVencimento && !parsedDataVencimento.ok) {
+      return {
+        success: false,
+        error: parsedDataVencimento.error,
+      };
     }
+
+    if (parsedDataVencimento) {
+      updateData.dataVencimento = parsedDataVencimento.date;
+    }
+
+    if (input.prorrogadoPara !== undefined) {
+      const parsedProrrogadoPara = parseNullableDateInput(
+        input.prorrogadoPara,
+        "Data de prorrogação",
+      );
+
+      if (!parsedProrrogadoPara.ok) {
+        return {
+          success: false,
+          error: parsedProrrogadoPara.error,
+        };
+      }
+
+      updateData.prorrogadoPara = parsedProrrogadoPara.date;
+    }
+
     if (input.dataCumprimento !== undefined) {
-      updateData.dataCumprimento = input.dataCumprimento
-        ? new Date(input.dataCumprimento)
-        : null;
+      const parsedDataCumprimento = parseNullableDateInput(
+        input.dataCumprimento,
+        "Data de cumprimento",
+      );
+
+      if (!parsedDataCumprimento.ok) {
+        return {
+          success: false,
+          error: parsedDataCumprimento.error,
+        };
+      }
+
+      updateData.dataCumprimento = parsedDataCumprimento.date;
     }
 
     if (input.responsavelId !== undefined) {
@@ -3007,11 +3346,130 @@ export async function updateProcessoPrazo(
       }
     }
 
+    if (input.regimePrazoId !== undefined) {
+      if (input.regimePrazoId === null) {
+        updateData.regimePrazo = { disconnect: true };
+      } else {
+        const regime = await prisma.regimePrazo.findFirst({
+          where: {
+            id: input.regimePrazoId,
+            OR: [{ tenantId }, { tenantId: null }],
+          },
+          select: { id: true },
+        });
+
+        if (!regime) {
+          return {
+            success: false,
+            error: "Regime de prazo informado não está disponível",
+          };
+        }
+
+        updateData.regimePrazo = { connect: { id: input.regimePrazoId } };
+      }
+    }
+
+    const proximoRegimePrazoId =
+      input.regimePrazoId !== undefined
+        ? input.regimePrazoId
+        : prazoAnterior.regimePrazo?.id ?? null;
+    const proximaDataVencimento =
+      parsedDataVencimento?.date ?? prazoAnterior.dataVencimento;
+
+    const deadlineValidation = await validateDeadlineWithRegime({
+      tenantId,
+      regimePrazoId: proximoRegimePrazoId ?? null,
+      data: proximaDataVencimento,
+      scope,
+    });
+
+    if (!deadlineValidation.valid) {
+      return {
+        success: false,
+        error: deadlineValidation.error ?? "Data de vencimento inválida",
+      };
+    }
+
     const atualizado = await prisma.processoPrazo.update({
       where: { id: prazoId },
       data: updateData,
       include: processoPrazoInclude,
     });
+
+    const previousSnapshot = buildPrazoAuditSnapshot({
+      ...prazoAnterior,
+      regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
+    });
+    const currentSnapshot = buildPrazoAuditSnapshot({
+      ...atualizado,
+      regimePrazoId: atualizado.regimePrazo?.id ?? null,
+    });
+    const diff = buildPrazoAuditDiff(previousSnapshot, currentSnapshot);
+
+    if (diff.length > 0) {
+      try {
+        const targetUserIds = [
+          atualizado.responsavel?.id ?? null,
+          processo.advogadoResponsavel?.usuario?.id ?? null,
+          user.id ?? null,
+        ].filter((value): value is string => Boolean(value));
+
+        await publishPrazoNotificationToUsers({
+          type: "prazo.updated",
+          tenantId,
+          userIds: targetUserIds,
+          urgency: "HIGH",
+          channels: ["REALTIME"],
+          payload: {
+            prazoId: atualizado.id,
+            processoId: prazo.processoId,
+            processoNumero: processo.numero,
+            titulo: atualizado.titulo,
+            dataVencimento: atualizado.dataVencimento.toISOString(),
+            status: atualizado.status,
+            changes: diff.map((item) => item.field),
+            referenciaTipo: "prazo",
+            referenciaId: atualizado.id,
+          },
+        });
+      } catch (notificationError) {
+        logger.warn(
+          "Falha ao publicar notificação de atualização de prazo",
+          notificationError,
+        );
+      }
+    }
+
+    if (diff.length > 0) {
+      try {
+        await logAudit({
+          tenantId,
+          usuarioId: user.id,
+          acao:
+            input.status !== undefined && input.status !== prazoAnterior.status
+              ? "PROCESSO_PRAZO_STATUS_ALTERADO"
+              : "PROCESSO_PRAZO_ATUALIZADO",
+          entidade: "ProcessoPrazo",
+          entidadeId: atualizado.id,
+          dados: toAuditJson({
+            processoId: prazo.processoId,
+            processoNumero: processo.numero,
+            valoresAtuais: currentSnapshot,
+            diff,
+            atualizadoPor: actorName,
+            atualizadoPorId: user.id,
+            atualizadoEm: new Date().toISOString(),
+          }),
+          previousValues: toAuditJson(previousSnapshot),
+          changedFields: extractChangedFieldsFromDiff(diff),
+        });
+      } catch (auditError) {
+        logger.warn(
+          "Falha ao registrar auditoria de atualização de prazo",
+          auditError,
+        );
+      }
+    }
 
     return {
       success: true,
@@ -3030,12 +3488,51 @@ export async function updateProcessoPrazo(
 export async function deleteProcessoPrazo(prazoId: string) {
   try {
     const session = await getSession();
+    const { user, prazo, processo } = await ensurePrazoMutationAccess(
+      session,
+      prazoId,
+    );
 
-    await ensurePrazoMutationAccess(session, prazoId);
+    const prazoAnterior = await prisma.processoPrazo.findFirst({
+      where: {
+        id: prazoId,
+        tenantId: user.tenantId,
+      },
+      include: processoPrazoInclude,
+    });
+
+    if (!prazoAnterior) {
+      return { success: false, error: "Prazo não encontrado" };
+    }
 
     await prisma.processoPrazo.delete({
       where: { id: prazoId },
     });
+
+    try {
+      const snapshot = buildPrazoAuditSnapshot({
+        ...prazoAnterior,
+        regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
+      });
+
+      await logAudit({
+        tenantId: user.tenantId,
+        usuarioId: user.id,
+        acao: "PROCESSO_PRAZO_EXCLUIDO",
+        entidade: "ProcessoPrazo",
+        entidadeId: prazoId,
+        dados: toAuditJson({
+          ...snapshot,
+          processoId: prazo.processoId,
+          processoNumero: processo.numero,
+          removidoPorId: user.id,
+          removidoEm: new Date().toISOString(),
+        }),
+        changedFields: Object.keys(snapshot),
+      });
+    } catch (auditError) {
+      logger.warn("Falha ao registrar auditoria de remoção de prazo", auditError);
+    }
 
     return {
       success: true,

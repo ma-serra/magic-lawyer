@@ -39,6 +39,30 @@ const INPI_OFFICIAL_SEARCH_RATE_WINDOW_MS =
   INPI_OFFICIAL_SEARCH_RATE_WINDOW_HOURS * 60 * 60 * 1000;
 const INPI_CATALOG_SYNC_STALE_MS = 10 * 60 * 1000;
 const INPI_CATALOG_GLOBAL_INFLIGHT_TTL_SECONDS = 25 * 60;
+const INPI_SCHEMA_NOT_READY_MESSAGE =
+  "Módulo INPI ainda não foi aplicado neste banco. Execute a atualização de schema em produção (prisma db push ou migrate deploy) e faça novo deploy.";
+
+function getPrismaErrorCode(error: unknown): string | null {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    return (error as { code: string }).code;
+  }
+
+  return null;
+}
+
+function isInpiSchemaMissingError(error: unknown): boolean {
+  if (getPrismaErrorCode(error) !== "P2021") {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  return /magiclawyer\.Inpi/i.test(message);
+}
 
 export interface InpiCatalogSearchParams {
   termo: string;
@@ -811,6 +835,7 @@ export async function getInpiDashboardStats(): Promise<{
   success: boolean;
   data?: InpiDashboardStats;
   error?: string;
+  warning?: string;
 }> {
   try {
     const ctx = await requireInpiContext("read");
@@ -874,6 +899,23 @@ export async function getInpiDashboardStats(): Promise<{
       },
     };
   } catch (error) {
+    if (isInpiSchemaMissingError(error)) {
+      logger.warn("Schema INPI não aplicado no banco atual ao carregar métricas.");
+      return {
+        success: true,
+        warning: INPI_SCHEMA_NOT_READY_MESSAGE,
+        data: {
+          catalogoGlobalTotal: 0,
+          dossiesTotal: 0,
+          dossiesViaveis: 0,
+          dossiesRiscoAltoOuCritico: 0,
+          dossiesProtocolados: 0,
+          buscasUltimas24h: 0,
+          ultimaAtualizacaoCatalogo: null,
+        },
+      };
+    }
+
     logger.error("Erro ao carregar métricas INPI:", error);
 
     return {
@@ -1153,6 +1195,23 @@ export async function listInpiBuscaHistory(
       },
     };
   } catch (error) {
+    if (isInpiSchemaMissingError(error)) {
+      const page = Math.max(1, params?.page ?? 1);
+      const pageSize = Math.min(Math.max(6, params?.pageSize ?? 8), 50);
+      logger.warn("Schema INPI não aplicado no banco atual ao listar histórico.");
+      return {
+        success: true,
+        warning: INPI_SCHEMA_NOT_READY_MESSAGE,
+        data: {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 1,
+        },
+      };
+    }
+
     logger.error("Erro ao listar histórico de buscas INPI:", error);
 
     return {
@@ -1787,6 +1846,7 @@ export async function listInpiNiceClasses(): Promise<{
   success: boolean;
   data?: InpiNiceClassItem[];
   error?: string;
+  warning?: string;
 }> {
   try {
     const ctx = await requireInpiContext("read");
@@ -1887,6 +1947,24 @@ export async function listInpiNiceClasses(): Promise<{
       }),
     };
   } catch (error) {
+    if (isInpiSchemaMissingError(error)) {
+      logger.warn("Schema INPI não aplicado no banco atual ao listar classes NICE.");
+      return {
+        success: true,
+        warning: INPI_SCHEMA_NOT_READY_MESSAGE,
+        data: NICE_CLASS_CATALOG.map((item) => ({
+          code: item.code,
+          codeDisplay: formatNiceClassCode(item.code),
+          heading: item.heading,
+          description: item.description,
+          type: item.type,
+          usageDossies: 0,
+          usageSearches: 0,
+          usageTotal: 0,
+        })),
+      };
+    }
+
     logger.error("Erro ao listar classes NICE:", error);
 
     return {
@@ -1907,6 +1985,7 @@ export async function listInpiDossies(params?: InpiDossieListParams): Promise<{
     totalPages: number;
   };
   error?: string;
+  warning?: string;
 }> {
   try {
     const ctx = await requireInpiContext("read");
@@ -1989,6 +2068,23 @@ export async function listInpiDossies(params?: InpiDossieListParams): Promise<{
       },
     };
   } catch (error) {
+    if (isInpiSchemaMissingError(error)) {
+      const page = Math.max(1, params?.page ?? 1);
+      const pageSize = Math.min(Math.max(6, params?.pageSize ?? 12), 50);
+      logger.warn("Schema INPI não aplicado no banco atual ao listar dossiês.");
+      return {
+        success: true,
+        warning: INPI_SCHEMA_NOT_READY_MESSAGE,
+        data: {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 1,
+        },
+      };
+    }
+
     logger.error("Erro ao listar dossiês INPI:", error);
 
     return {

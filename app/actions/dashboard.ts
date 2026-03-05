@@ -1629,7 +1629,7 @@ async function buildFinanceiroDashboard(
       description: `${faturasVencidas} faturas aguardam cobrança imediata.`,
       tone: "danger",
       icon: "📄",
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     });
   }
 
@@ -1640,7 +1640,7 @@ async function buildFinanceiroDashboard(
       description: `${parcelasAtrasadas} parcelas precisam de follow-up.`,
       tone: "warning",
       icon: "🧾",
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     });
   }
 
@@ -1651,7 +1651,7 @@ async function buildFinanceiroDashboard(
       description: `${pagamentosPendentes} pagamentos ainda não foram confirmados.`,
       tone: "secondary",
       icon: "🏦",
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     });
   }
 
@@ -2476,7 +2476,7 @@ async function buildClienteDashboard(
       description: `${parcelasAtrasadas} parcelas precisam de regularização.`,
       tone: "danger",
       icon: "💳",
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     });
   }
 
@@ -2487,7 +2487,7 @@ async function buildClienteDashboard(
       description: `${parcelasPendentes} parcelas aguardam pagamento.`,
       tone: "warning",
       icon: "💳",
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     });
   }
 
@@ -2510,7 +2510,7 @@ async function buildClienteDashboard(
       tone: (parcela.status === ContratoParcelaStatus.ATRASADA
         ? "danger"
         : "warning") as Tone,
-      href: "/financeiro",
+      href: "/financeiro/dashboard",
     })),
   ]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

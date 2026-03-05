@@ -78,7 +78,12 @@ export async function getNotifications(
   }
 
   // Buscar notificações de AMBOS os sistemas (legado + novo)
-  const [legacyNotifications, newNotifications] = await Promise.all([
+  const [
+    legacyNotifications,
+    newNotifications,
+    legacyUnreadCount,
+    newUnreadCount,
+  ] = await Promise.all([
     // Sistema legado
     prisma.notificacaoUsuario.findMany({
       where: {
@@ -109,6 +114,20 @@ export async function getNotifications(
         },
       },
     }),
+    prisma.notificacaoUsuario.count({
+      where: {
+        tenantId,
+        usuarioId: userId,
+        status: "NAO_LIDA",
+      },
+    }),
+    prisma.notification.count({
+      where: {
+        tenantId,
+        userId,
+        readAt: null,
+      },
+    }),
   ]);
 
   // Converter notificações legadas
@@ -134,8 +153,13 @@ export async function getNotifications(
   const newItems = newNotifications.map((item) => ({
     id: item.id,
     notificacaoId: item.id, // No novo sistema, o ID da notificação é o mesmo
-    titulo: (item.payload as any)?.titulo || item.type,
+    titulo:
+      item.title ||
+      (item.payload as any)?.titulo ||
+      (item.payload as any)?.title ||
+      item.type,
     mensagem:
+      item.message ||
       (item.payload as any)?.mensagem ||
       (item.payload as any)?.message ||
       "Nova notificação",
@@ -165,9 +189,7 @@ export async function getNotifications(
     )
     .slice(0, take);
 
-  const unreadCount = allNotifications.reduce((count, item) => {
-    return item.status === "NAO_LIDA" ? count + 1 : count;
-  }, 0);
+  const unreadCount = legacyUnreadCount + newUnreadCount;
 
   return {
     notifications: allNotifications.map(({ source, ...item }) => item), // Remove campo source antes de retornar

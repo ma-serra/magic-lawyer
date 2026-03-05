@@ -725,7 +725,7 @@ export function ProfileContent() {
                     <h3 className="text-base sm:text-lg font-semibold">Minhas Contas Bancárias</h3>
                   </div>
                   <Button color="primary" size="sm" className="w-full sm:w-auto flex-shrink-0" startContent={<PlusIcon className="w-4 h-4" />} onPress={() => setActiveTab("dados-bancarios")}>
-                    <a className="text-white" href="/dados-bancarios">
+                    <a className="text-white" href="/financeiro/dados-bancarios">
                       <span className="hidden sm:inline">Gerenciar Contas</span>
                       <span className="sm:hidden">Gerenciar</span>
                     </a>
@@ -737,7 +737,7 @@ export function ProfileContent() {
                     <CreditCard className="mx-auto text-gray-400 mb-4" size={48} />
                     <p className="text-gray-500 mb-4">Nenhuma conta bancária cadastrada</p>
                     <Button color="primary" startContent={<PlusIcon className="w-4 h-4" />} variant="flat">
-                      <a className="text-primary" href="/dados-bancarios">
+                      <a className="text-primary" href="/financeiro/dados-bancarios">
                         Cadastrar Primeira Conta
                       </a>
                     </Button>
