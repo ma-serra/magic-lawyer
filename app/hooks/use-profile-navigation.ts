@@ -458,7 +458,7 @@ export function useProfileNavigation() {
 
     items.push({
       label: "Suporte",
-      href: "/help",
+      href: "/suporte",
       icon: "HelpCircle",
       description: "Central de ajuda e suporte",
       section: "Administração",
@@ -520,26 +520,6 @@ export function useProfileNavigation() {
       description: "Editar informações pessoais",
     });
 
-    if (permissions.canManageTeam) {
-      items.push({
-        label: "Equipe & Permissões",
-        href: "/equipe",
-        icon: "Users",
-        description: "Gerenciar usuários e permissões",
-        requiredModules: ["equipe"],
-      });
-    }
-
-    if (isCliente || permissions.canViewFinancialData) {
-      items.push({
-        label: "Financeiro",
-        href: "/financeiro/dashboard",
-        icon: "Wallet",
-        description: "Central financeiro",
-        requiredModules: ["financeiro"],
-      });
-    }
-
     items.push({
       label: "Sair",
       href: "#logout",
@@ -548,7 +528,7 @@ export function useProfileNavigation() {
     });
 
     return filterNavigation(items, hasModuleAccess);
-  }, [hasModuleAccess, permissions, isCliente]);
+  }, [hasModuleAccess]);
 
   const getDashboardTitle = useCallback(() => {
     switch (userRole) {

@@ -481,13 +481,6 @@ export class UploadService {
     options: StructuredDocumentUploadOptions,
   ): Promise<UploadResult & { folderPath?: string }> {
     try {
-      if (!this.useCloudinary) {
-        return {
-          success: false,
-          error: "Upload estruturado requer Cloudinary configurado",
-        };
-      }
-
       const resourceType =
         options.resourceType ||
         this.detectResourceType(options.contentType, originalName);
@@ -498,6 +491,16 @@ export class UploadService {
       const publicId = `${cleanFileName || "arquivo"}_${timestamp}`;
       const mimeType =
         options.contentType || this.guessMimeTypeFromName(originalName);
+
+      if (!this.useCloudinary) {
+        return await this.uploadStructuredDocumentLocally(
+          file,
+          originalName,
+          folderPath,
+          publicId,
+          mimeType,
+        );
+      }
 
       const uploadResult = await cloudinary.uploader.upload(
         `data:${mimeType};base64,${file.toString("base64")}`,
@@ -520,6 +523,56 @@ export class UploadService {
       };
     } catch (error) {
       logger.error("Erro ao fazer upload estruturado:", error);
+
+      return {
+        success: false,
+        error: "Erro ao fazer upload estruturado",
+      };
+    }
+  }
+
+  private async uploadStructuredDocumentLocally(
+    file: Buffer,
+    originalName: string,
+    folderPath: string,
+    publicId: string,
+    mimeType: string,
+  ): Promise<UploadResult & { folderPath?: string }> {
+    try {
+      const safeFolderPath = folderPath
+        .split("/")
+        .filter(Boolean)
+        .map((segment) => this.toPathSegment(segment, "pasta"))
+        .join("/");
+      const uploadDir = join(
+        process.cwd(),
+        "public",
+        "uploads",
+        safeFolderPath,
+      );
+
+      if (!existsSync(uploadDir)) {
+        await mkdir(uploadDir, { recursive: true });
+      }
+
+      const extensionFromOriginal = originalName.split(".").pop()?.toLowerCase();
+      const extension =
+        extensionFromOriginal ||
+        this.getExtensionFromMime(mimeType) ||
+        "bin";
+      const fileName = `${publicId}.${extension}`;
+      const filePath = join(uploadDir, fileName);
+
+      await writeFile(filePath, new Uint8Array(file));
+
+      return {
+        success: true,
+        url: `/uploads/${safeFolderPath}/${fileName}`,
+        publicId: `${safeFolderPath}/${fileName}`,
+        folderPath: safeFolderPath,
+      };
+    } catch (error) {
+      logger.error("Erro ao fazer upload estruturado local:", error);
 
       return {
         success: false,
@@ -1209,6 +1262,21 @@ export class UploadService {
       return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
     return "application/octet-stream";
+  }
+
+  private getExtensionFromMime(mimeType: string): string | null {
+    const normalized = mimeType.toLowerCase();
+
+    if (normalized === "application/pdf") return "pdf";
+    if (normalized === "image/png") return "png";
+    if (normalized === "image/jpeg") return "jpg";
+    if (normalized === "image/gif") return "gif";
+    if (normalized === "image/webp") return "webp";
+    if (normalized === "video/mp4") return "mp4";
+    if (normalized === "video/quicktime") return "mov";
+    if (normalized === "video/webm") return "webm";
+
+    return null;
   }
 
   /**

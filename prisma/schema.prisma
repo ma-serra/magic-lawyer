@@ -444,6 +444,9 @@ model SuperAdmin {
   pacotesJuiz       PacoteJuiz[]         @relation("SuperAdminPacoteJuiz")
   logsAuditoria     SuperAdminAuditLog[]
   tenantGerenciados Tenant[]             @relation("SuperAdminTenant")
+  supportTicketsAssigned Ticket[]        @relation("SupportTicketAssignee")
+  supportTicketMessages TicketMessage[]  @relation("SupportTicketMessageAuthor")
+  supportTicketAttachments TicketAttachment[] @relation("SupportTicketAttachmentUploader")
 
   @@schema("magiclawyer")
 }
@@ -2528,20 +2531,28 @@ model Ticket {
   status      TicketStatus       @default(OPEN)
   priority    TicketPriority     @default(MEDIUM)
   category    TicketCategory     @default(GENERAL)
+  supportLevel TicketSupportLevel @default(N1)
   userId      String
   tenantId    String
+  assignedToSuperAdminId String?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   closedAt    DateTime?
+  firstResponseAt DateTime?
+  requesterLastViewedAt DateTime?
+  supportLastViewedAt DateTime?
   attachments TicketAttachment[]
   messages    TicketMessage[]
   tenant      Tenant             @relation("TenantTickets", fields: [tenantId], references: [id], onDelete: Cascade)
   user        Usuario            @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
+  assignedToSuperAdmin SuperAdmin? @relation("SupportTicketAssignee", fields: [assignedToSuperAdminId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([tenantId])
   @@index([status])
   @@index([priority])
+  @@index([supportLevel])
+  @@index([assignedToSuperAdminId])
   @@index([createdAt])
   @@map("tickets")
   @@schema("support")
@@ -2551,15 +2562,24 @@ model TicketMessage {
   id         String   @id @default(cuid())
   content    String
   isInternal Boolean  @default(false)
+  authorType TicketMessageAuthorType @default(TENANT_USER)
   ticketId   String
-  userId     String
+  userId     String?
+  superAdminId String?
+  readByRequesterAt DateTime?
+  readBySupportAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  attachments TicketAttachment[] @relation("TicketMessageAttachments")
   ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user       Usuario  @relation("UserMessages", fields: [userId], references: [id], onDelete: Cascade)
+  user       Usuario?  @relation("UserMessages", fields: [userId], references: [id], onDelete: SetNull)
+  superAdmin SuperAdmin? @relation("SupportTicketMessageAuthor", fields: [superAdminId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
   @@index([userId])
+  @@index([superAdminId])
+  @@index([authorType])
+  @@index([ticketId, createdAt])
   @@index([createdAt])
   @@map("ticket_messages")
   @@schema("support")
@@ -2573,13 +2593,19 @@ model TicketAttachment {
   size         Int
   url          String
   ticketId     String
-  userId       String
+  ticketMessageId String?
+  userId       String?
+  superAdminId String?
   createdAt    DateTime @default(now())
   ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user         Usuario  @relation("UserAttachments", fields: [userId], references: [id], onDelete: Cascade)
+  message      TicketMessage? @relation("TicketMessageAttachments", fields: [ticketMessageId], references: [id], onDelete: SetNull)
+  user         Usuario? @relation("UserAttachments", fields: [userId], references: [id], onDelete: SetNull)
+  superAdmin   SuperAdmin? @relation("SupportTicketAttachmentUploader", fields: [superAdminId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
+  @@index([ticketMessageId])
   @@index([userId])
+  @@index([superAdminId])
   @@map("ticket_attachments")
   @@schema("support")
 }
@@ -2969,6 +2995,8 @@ enum ProcuracaoStatus {
 enum TicketStatus {
   OPEN
   IN_PROGRESS
+  WAITING_CUSTOMER
+  WAITING_EXTERNAL
   RESOLVED
   CLOSED
 
@@ -3011,6 +3039,23 @@ enum TicketCategory {
   FEATURE_REQUEST
   BUG_REPORT
   GENERAL
+
+  @@schema("magiclawyer")
+}
+
+enum TicketSupportLevel {
+  N1
+  N2
+  N3
+
+  @@schema("magiclawyer")
+}
+
+enum TicketMessageAuthorType {
+  TENANT_USER
+  TENANT_ADMIN
+  SUPER_ADMIN
+  SYSTEM
 
   @@schema("magiclawyer")
 }

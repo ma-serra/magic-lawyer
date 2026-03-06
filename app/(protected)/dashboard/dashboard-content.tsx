@@ -375,7 +375,7 @@ function buildQuickActions(
       actions.push({
         label: "Suporte",
         description: "Abra um chamado ou fale com o time",
-        href: "/help",
+        href: "/suporte",
         tone: "success",
         icon: "💬",
       });
@@ -385,7 +385,7 @@ function buildQuickActions(
         {
           label: "Explorar módulos",
           description: "Conheça os recursos disponíveis",
-          href: "/help",
+          href: "/suporte",
           tone: "primary",
           icon: "✨",
         },

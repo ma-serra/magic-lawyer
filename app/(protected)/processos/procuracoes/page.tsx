@@ -110,7 +110,7 @@ export default function ProcuracoesPage() {
               <p className="text-white">Precisa de integração com cartórios?</p>
               <p>Conecte com sistemas de registro e reconhecimento de firma.</p>
             </div>
-            <Button as="a" color="primary" href="/help" radius="full">
+            <Button as="a" color="primary" href="/suporte" radius="full">
               Solicitar integração
             </Button>
           </CardBody>

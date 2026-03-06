@@ -1381,7 +1381,7 @@ function SidebarContent({
               collapsed ? "p-2" : "px-3 py-2",
             )}
             color="warning"
-            href="/help"
+            href="/suporte"
             isIconOnly={collapsed}
             radius="none"
             variant="bordered"

@@ -389,7 +389,7 @@ export function ConfiguracoesTabs({
                 </p>
                 <p>Conte com nosso time para personalizar seu escritório.</p>
               </div>
-              <Button as={NextLink} color="primary" href="/help" radius="full">
+              <Button as={NextLink} color="primary" href="/suporte" radius="full">
                 Falar com suporte
               </Button>
             </CardBody>
