@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Button, Chip, Spinner, Textarea, Tooltip } from "@heroui/react";
-import { LifeBuoy, Expand, Send, Users, X } from "lucide-react";
+import { Button, Chip, Input, Spinner, Textarea, Tooltip } from "@heroui/react";
+import { LifeBuoy, Expand, Search, Send, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -250,6 +250,7 @@ export function TenantFloatingChatDock() {
   const pathname = usePathname();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [openChatIds, setOpenChatIds] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const shouldHideDock =
     !session?.user ||
@@ -280,13 +281,40 @@ export function TenantFloatingChatDock() {
     [listData?.items],
   );
 
+  const filteredTickets = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+
+    if (!normalizedTerm) {
+      return activeTickets;
+    }
+
+    return activeTickets.filter((ticket) => {
+      const searchable = [
+        ticket.title,
+        ticket.id,
+        ticket.requester.name,
+        ticket.requester.email,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
+    });
+  }, [activeTickets, searchTerm]);
+
   const openSupportPage = (ticketId: string) => {
     setIsPanelOpen(false);
     router.push(`/suporte?ticketId=${encodeURIComponent(ticketId)}`);
   };
 
   const handleOpenMini = (ticket: SupportTicketListItem) => {
-    setOpenChatIds((previous) => [ticket.id, ...previous].slice(0, MAX_OPEN_CHATS));
+    setOpenChatIds((previous) => {
+      if (previous.includes(ticket.id)) {
+        return previous;
+      }
+
+      return [ticket.id, ...previous].slice(0, MAX_OPEN_CHATS);
+    });
   };
 
   const handleCloseMini = (ticketId: string) => {
@@ -333,24 +361,49 @@ export function TenantFloatingChatDock() {
                 <X className="h-4 w-4" />
               </Button>
             </div>
+            <Input
+              className="mb-3"
+              isClearable
+              placeholder="Buscar por título ou protocolo"
+              size="sm"
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={searchTerm}
+              onClear={() => setSearchTerm("")}
+              onValueChange={setSearchTerm}
+            />
 
             {isLoading ? (
               <div className="flex min-h-20 items-center justify-center">
                 <Spinner size="sm" />
               </div>
-            ) : activeTickets.length === 0 ? (
+            ) : filteredTickets.length === 0 ? (
               <p className="rounded-lg border border-white/10 bg-background/40 p-3 text-xs text-default-400">
-                Nenhum chat ativo.
+                {activeTickets.length === 0
+                  ? "Nenhum chat ativo."
+                  : "Nenhum chat encontrado para este filtro."}
               </p>
             ) : (
               <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-                {activeTickets.map((ticket) => {
+                {filteredTickets.map((ticket) => {
                   const isOpen = openChatIds.includes(ticket.id);
 
                   return (
                     <div
                       key={ticket.id}
-                      className="rounded-xl border border-white/10 bg-background/40 p-2"
+                      className={`rounded-xl border p-2 transition cursor-pointer ${
+                        isOpen
+                          ? "border-primary/60 bg-primary/10"
+                          : "border-white/10 bg-background/40 hover:border-primary/40 hover:bg-background/60"
+                      }`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleOpenMini(ticket)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleOpenMini(ticket);
+                        }
+                      }}
                     >
                       <p className="truncate text-xs font-medium text-white">{ticket.title}</p>
                       <p className="truncate text-[11px] text-default-400">
@@ -393,13 +446,7 @@ export function TenantFloatingChatDock() {
                         {isOpen ? (
                           <p className="text-xs text-default-400">Aberto no dock</p>
                         ) : (
-                          <Button
-                            color="primary"
-                            size="sm"
-                            onPress={() => handleOpenMini(ticket)}
-                          >
-                            Abrir chat
-                          </Button>
+                          <p className="text-xs text-default-400">Clique no card para abrir</p>
                         )}
                       </div>
                     </div>

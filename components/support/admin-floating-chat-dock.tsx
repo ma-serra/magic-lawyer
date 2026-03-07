@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import {
   Button,
   Chip,
+  Input,
   Spinner,
   Textarea,
   Tooltip,
@@ -14,6 +15,7 @@ import {
 import {
   Bell,
   Expand,
+  Search,
   Send,
   Users,
   UserCheck,
@@ -262,6 +264,7 @@ export function AdminFloatingChatDock() {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [openChatIds, setOpenChatIds] = useState<string[]>([]);
   const [busyChatIds, setBusyChatIds] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState("");
 
   const shouldHideDock =
     !currentSuperAdminId ||
@@ -303,6 +306,28 @@ export function AdminFloatingChatDock() {
       ).length,
     [queueItems],
   );
+
+  const filteredQueueItems = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+
+    if (!normalizedTerm) {
+      return queueItems;
+    }
+
+    return queueItems.filter((ticket) => {
+      const searchable = [
+        ticket.title,
+        ticket.tenant.name,
+        ticket.requester.name,
+        ticket.requester.email,
+        ticket.id,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
+    });
+  }, [queueItems, searchTerm]);
 
   const handleOpenFullscreen = (ticketId: string) => {
     setIsPanelOpen(false);
@@ -378,18 +403,30 @@ export function AdminFloatingChatDock() {
               </Button>
             </div>
             <p className="mb-3 text-xs text-default-400">Até {MAX_OPEN_CHATS} mini chats simultâneos.</p>
+            <Input
+              className="mb-3"
+              isClearable
+              placeholder="Buscar por tenant, título ou protocolo"
+              size="sm"
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={searchTerm}
+              onClear={() => setSearchTerm("")}
+              onValueChange={setSearchTerm}
+            />
 
             {isLoading ? (
               <div className="flex min-h-20 items-center justify-center">
                 <Spinner size="sm" />
               </div>
-            ) : queueItems.length === 0 ? (
+            ) : filteredQueueItems.length === 0 ? (
               <p className="rounded-lg border border-white/10 bg-background/40 p-3 text-xs text-default-400">
-                Nenhum chat pendente no momento.
+                {queueItems.length === 0
+                  ? "Nenhum chat pendente no momento."
+                  : "Nenhum chat encontrado para este filtro."}
               </p>
             ) : (
               <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-                {queueItems.map((ticket) => {
+                {filteredQueueItems.map((ticket) => {
                   const isAssignedToMe =
                     ticket.assignedTo?.id === currentSuperAdminId;
                   const isOpen = openChatIds.includes(ticket.id);
@@ -397,7 +434,20 @@ export function AdminFloatingChatDock() {
                   return (
                     <div
                       key={ticket.id}
-                      className="rounded-xl border border-white/10 bg-background/40 p-2"
+                      className={`rounded-xl border p-2 transition cursor-pointer ${
+                        isOpen
+                          ? "border-primary/60 bg-primary/10"
+                          : "border-white/10 bg-background/40 hover:border-primary/40 hover:bg-background/60"
+                      }`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => void handleOpenMini(ticket)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          void handleOpenMini(ticket);
+                        }
+                      }}
                     >
                       <p className="truncate text-xs font-medium text-white">
                         {ticket.tenant.name} · {ticket.title}
@@ -447,18 +497,12 @@ export function AdminFloatingChatDock() {
                         ) : null}
                       </div>
                       <div className="mt-2 flex items-center gap-2">
-                        {isOpen ? (
+                        {busyChatIds[ticket.id] ? (
+                          <p className="text-xs text-default-400">Abrindo chat...</p>
+                        ) : isOpen ? (
                           <p className="text-xs text-default-400">Aberto no dock</p>
                         ) : (
-                          <Button
-                            color="primary"
-                            isDisabled={Boolean(busyChatIds[ticket.id])}
-                            isLoading={Boolean(busyChatIds[ticket.id])}
-                            size="sm"
-                            onPress={() => handleOpenMini(ticket)}
-                          >
-                            Abrir chat
-                          </Button>
+                          <p className="text-xs text-default-400">Clique no card para abrir</p>
                         )}
                       </div>
                     </div>

@@ -15,6 +15,8 @@ import {
   Button,
   Chip,
   Divider,
+  Select,
+  SelectItem,
   Spinner,
   Switch,
   Textarea,
@@ -32,13 +34,37 @@ import {
   addSupportMessage,
   addSupportMessageWithImages,
   claimSupportTicket,
+  finalizeSupportTicket,
   getSupportTicketThread,
   markSupportTicketViewed,
 } from "@/app/actions/tickets";
-import { TicketPriority, TicketStatus } from "@/generated/prisma";
+import {
+  TicketCategory,
+  TicketPriority,
+  TicketResolutionOutcome,
+  TicketStatus,
+} from "@/generated/prisma";
 
 const THREAD_POLL_INTERVAL_MS = 2500;
 const MAX_IMAGES_PER_BATCH = 5;
+const CATEGORY_OPTIONS: Array<{ key: TicketCategory; label: string }> = [
+  { key: TicketCategory.TECHNICAL, label: "Técnico" },
+  { key: TicketCategory.BILLING, label: "Financeiro" },
+  { key: TicketCategory.FEATURE_REQUEST, label: "Solicitação de melhoria" },
+  { key: TicketCategory.BUG_REPORT, label: "Bug" },
+  { key: TicketCategory.GENERAL, label: "Geral" },
+];
+const RESOLUTION_OUTCOME_OPTIONS: Array<{
+  key: TicketResolutionOutcome;
+  label: string;
+}> = [
+  { key: TicketResolutionOutcome.RESOLVED, label: "Resolvido" },
+  {
+    key: TicketResolutionOutcome.PARTIALLY_RESOLVED,
+    label: "Parcialmente resolvido",
+  },
+  { key: TicketResolutionOutcome.UNRESOLVED, label: "Não resolvido" },
+];
 
 function getStatusLabel(status: TicketStatus): string {
   switch (status) {
@@ -90,6 +116,13 @@ function getPriorityLabel(priority: TicketPriority): string {
     default:
       return priority;
   }
+}
+
+function getCategoryLabel(category: TicketCategory): string {
+  return (
+    CATEGORY_OPTIONS.find((option) => option.key === category)?.label ??
+    category
+  );
 }
 
 function getPriorityColor(priority: TicketPriority) {
@@ -174,6 +207,12 @@ export default function AdminSuporteChatFullscreenPage({
   const [isInternalReply, setIsInternalReply] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [closureCategoryDraft, setClosureCategoryDraft] =
+    useState<TicketCategory | null>(null);
+  const [resolutionOutcomeDraft, setResolutionOutcomeDraft] =
+    useState<TicketResolutionOutcome>(TicketResolutionOutcome.RESOLVED);
+  const [closureSummaryDraft, setClosureSummaryDraft] = useState("");
   const [clockTick, setClockTick] = useState(Date.now());
 
   const { data: ticket, isLoading, mutate } = useSWR(
@@ -203,6 +242,16 @@ export default function AdminSuporteChatFullscreenPage({
       // silencioso
     });
   }, [ticket?.id]);
+
+  useEffect(() => {
+    if (!ticket?.id) return;
+
+    setClosureCategoryDraft(ticket.closureCategory ?? ticket.category);
+    setResolutionOutcomeDraft(
+      ticket.resolutionOutcome ?? TicketResolutionOutcome.RESOLVED,
+    );
+    setClosureSummaryDraft(ticket.closureSummary ?? "");
+  }, [ticket?.id, ticket?.category, ticket?.closureCategory, ticket?.resolutionOutcome, ticket?.closureSummary]);
 
   const isClosed = ticket?.status === TicketStatus.CLOSED;
   const assignedToAnotherAgent =
@@ -291,6 +340,42 @@ export default function AdminSuporteChatFullscreenPage({
       toast.error(message);
     } finally {
       setIsSendingReply(false);
+    }
+  };
+
+  const handleFinalizeTicket = async () => {
+    if (!ticket?.id) return;
+
+    if (isClosed) {
+      toast.warning("Este ticket já está encerrado.");
+      return;
+    }
+
+    if (!closureCategoryDraft) {
+      toast.error("Selecione a categoria de fechamento.");
+      return;
+    }
+
+    if (!resolutionOutcomeDraft) {
+      toast.error("Selecione o desfecho do atendimento.");
+      return;
+    }
+
+    setIsFinalizing(true);
+    try {
+      await finalizeSupportTicket(ticket.id, {
+        closureCategory: closureCategoryDraft,
+        resolutionOutcome: resolutionOutcomeDraft,
+        closureSummary: closureSummaryDraft.trim() || undefined,
+      });
+      await mutate();
+      toast.success("Atendimento finalizado e chat bloqueado.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Erro ao finalizar atendimento";
+      toast.error(message);
+    } finally {
+      setIsFinalizing(false);
     }
   };
 
@@ -400,6 +485,22 @@ export default function AdminSuporteChatFullscreenPage({
             Finalizado em {formatDateTime(ticket.closedAt)} por{" "}
             {ticket.closedBy?.name ?? "suporte"}.
           </p>
+          {ticket.resolutionOutcome ? (
+            <p className="mt-1 text-xs text-success-200">
+              Desfecho:{" "}
+              {RESOLUTION_OUTCOME_OPTIONS.find(
+                (option) => option.key === ticket.resolutionOutcome,
+              )?.label ?? ticket.resolutionOutcome}
+              {ticket.closureCategory
+                ? ` · Categoria: ${getCategoryLabel(ticket.closureCategory)}`
+                : ""}
+            </p>
+          ) : null}
+          {ticket.closureSummary ? (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-success-100">
+              Resumo: {ticket.closureSummary}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -475,6 +576,66 @@ export default function AdminSuporteChatFullscreenPage({
             })
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-warning/25 bg-warning/10 p-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning-200">
+          Fechar atendimento
+        </p>
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+          <Select
+            isDisabled={isClosed}
+            label="Categoria de fechamento"
+            selectedKeys={closureCategoryDraft ? [closureCategoryDraft] : []}
+            onSelectionChange={(keys) =>
+              setClosureCategoryDraft(
+                (Array.from(keys)[0] as TicketCategory) ?? ticket.category,
+              )
+            }
+          >
+            {CATEGORY_OPTIONS.map((option) => (
+              <SelectItem key={option.key} textValue={option.label}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </Select>
+          <Select
+            isDisabled={isClosed}
+            label="Desfecho"
+            selectedKeys={[resolutionOutcomeDraft]}
+            onSelectionChange={(keys) =>
+              setResolutionOutcomeDraft(
+                (Array.from(keys)[0] as TicketResolutionOutcome) ??
+                  TicketResolutionOutcome.RESOLVED,
+              )
+            }
+          >
+            {RESOLUTION_OUTCOME_OPTIONS.map((option) => (
+              <SelectItem key={option.key} textValue={option.label}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </Select>
+          <Button
+            className="self-end"
+            color="success"
+            isDisabled={isClosed}
+            isLoading={isFinalizing}
+            onPress={handleFinalizeTicket}
+          >
+            Finalizar atendimento
+          </Button>
+        </div>
+        <Textarea
+          className="mt-2"
+          description="Resumo opcional para auditoria e contexto de fechamento."
+          isDisabled={isClosed}
+          label="Resumo do fechamento"
+          minRows={2}
+          placeholder="Ex.: cliente orientado, erro corrigido e validação concluída."
+          value={closureSummaryDraft}
+          onValueChange={setClosureSummaryDraft}
+        />
       </div>
 
       <div className="space-y-3 rounded-xl border border-white/10 bg-background/40 p-3">
