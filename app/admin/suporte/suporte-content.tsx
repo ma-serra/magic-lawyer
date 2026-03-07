@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,7 @@ import {
   type SetStateAction,
 } from "react";
 import useSWR from "swr";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Button,
@@ -62,12 +64,14 @@ import {
   getSupportTenantOptions,
   getSupportTicketThread,
   markSupportTicketViewed,
+  finalizeSupportTicket,
   updateSupportTicketRouting,
   updateSupportTicketStatus,
 } from "@/app/actions/tickets";
 import {
   TicketCategory,
   TicketPriority,
+  TicketResolutionOutcome,
   TicketStatus,
   TicketSupportLevel,
 } from "@/generated/prisma";
@@ -153,6 +157,17 @@ const SUPPORT_REPLY_MACROS: Array<{
     content:
       "Recebemos sua solicitação e já iniciamos a tratativa. Seguiremos atualizando este ticket com os próximos passos.",
   },
+];
+const RESOLUTION_OUTCOME_OPTIONS: Array<{
+  key: TicketResolutionOutcome;
+  label: string;
+}> = [
+  { key: TicketResolutionOutcome.RESOLVED, label: "Resolvido" },
+  {
+    key: TicketResolutionOutcome.PARTIALLY_RESOLVED,
+    label: "Parcialmente resolvido",
+  },
+  { key: TicketResolutionOutcome.UNRESOLVED, label: "Não resolvido" },
 ];
 
 function getStatusLabel(status: TicketStatus) {
@@ -264,6 +279,32 @@ function formatDuration(minutes: number | null) {
   return rest > 0 ? `${hours}h ${rest}min` : `${hours}h`;
 }
 
+function formatElapsedTime(from?: string | null, to?: string | null) {
+  if (!from) return "-";
+
+  const start = new Date(from).getTime();
+  const end = to ? new Date(to).getTime() : Date.now();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return "-";
+  }
+
+  const seconds = Math.floor((end - start) / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const restSeconds = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${restSeconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${restSeconds}s`;
+  }
+
+  return `${restSeconds}s`;
+}
+
 function isSupportMessage(authorType: string) {
   return authorType === "SUPER_ADMIN" || authorType === "SYSTEM";
 }
@@ -326,6 +367,7 @@ function getAvailabilityMeta(status: SupportAvailability): {
 }
 
 export function SuporteContent() {
+  const router = useRouter();
   const { data: session } = useSession();
   const currentSuperAdminId = String((session?.user as any)?.id ?? "");
   const [isBrowserOnline, setIsBrowserOnline] = useState(true);
@@ -361,9 +403,17 @@ export function SuporteContent() {
     TicketSupportLevel | ""
   >("");
   const [routingAssigneeDraft, setRoutingAssigneeDraft] = useState<string>("");
+  const [closureCategoryDraft, setClosureCategoryDraft] = useState<
+    TicketCategory | ""
+  >("");
+  const [resolutionOutcomeDraft, setResolutionOutcomeDraft] =
+    useState<TicketResolutionOutcome>(TicketResolutionOutcome.RESOLVED);
+  const [closureSummaryDraft, setClosureSummaryDraft] = useState("");
+  const [threadClockTick, setThreadClockTick] = useState(() => Date.now());
 
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [isSavingRouting, setIsSavingRouting] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   const {
     isOpen: isThreadOpen,
@@ -522,6 +572,9 @@ export function SuporteContent() {
       setStatusReasonDraft("");
       setRoutingLevelDraft("");
       setRoutingAssigneeDraft("");
+      setClosureCategoryDraft("");
+      setResolutionOutcomeDraft(TicketResolutionOutcome.RESOLVED);
+      setClosureSummaryDraft("");
       return;
     }
 
@@ -529,7 +582,26 @@ export function SuporteContent() {
     setStatusReasonDraft("");
     setRoutingLevelDraft(selectedTicket.supportLevel);
     setRoutingAssigneeDraft(selectedTicket.assignedTo?.id ?? "");
+    setClosureCategoryDraft(
+      selectedTicket.closureCategory ?? selectedTicket.category,
+    );
+    setResolutionOutcomeDraft(
+      selectedTicket.resolutionOutcome ?? TicketResolutionOutcome.RESOLVED,
+    );
+    setClosureSummaryDraft(selectedTicket.closureSummary ?? "");
   }, [selectedTicket]);
+
+  useEffect(() => {
+    if (!isThreadOpen) return;
+
+    const interval = window.setInterval(() => {
+      setThreadClockTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isThreadOpen]);
 
   useEffect(() => {
     if (!selectedTicket?.id || !isThreadOpen) {
@@ -576,6 +648,68 @@ export function SuporteContent() {
   );
 
   const queueTotal = queueTickets.length;
+
+  const showTicketActionToast = useCallback(
+    (data: {
+      ticketId: string;
+      title: string;
+      tenantName: string;
+      type: "queue" | "assigned";
+    }) => {
+      const toastId = toast.custom((id) => (
+        <div className="w-[min(92vw,440px)] rounded-2xl border border-white/15 bg-content1 p-3 shadow-2xl">
+          <div className="flex items-start gap-3">
+            <div
+              className={`mt-0.5 rounded-full p-2 ${
+                data.type === "assigned"
+                  ? "bg-success/20 text-success"
+                  : "bg-primary/20 text-primary"
+              }`}
+            >
+              {data.type === "assigned" ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <Bell className="h-4 w-4" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white">
+                {data.type === "assigned"
+                  ? "Ticket atribuído para você"
+                  : "Cliente aguardando no chat"}
+              </p>
+              <p className="line-clamp-2 text-sm text-default-300">
+                {data.tenantName} · {data.title}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={() => toast.dismiss(id)}
+            >
+              Dispensar
+            </Button>
+            <Button
+              color="primary"
+              size="sm"
+              onPress={() => {
+                setSelectedTicketId(data.ticketId);
+                onThreadOpen();
+                toast.dismiss(id);
+              }}
+            >
+              Ver ticket
+            </Button>
+          </div>
+        </div>
+      ));
+
+      return toastId;
+    },
+    [onThreadOpen],
+  );
 
   useEffect(() => {
     if (typeof navigator !== "undefined") {
@@ -646,8 +780,11 @@ export function SuporteContent() {
       }
 
       seenQueueTicketIdsRef.current.add(ticket.id);
-      toast.info("Cliente aguardando no chat", {
-        description: `${ticket.tenant.name} · ${ticket.title}`,
+      showTicketActionToast({
+        ticketId: ticket.id,
+        tenantName: ticket.tenant.name,
+        title: ticket.title,
+        type: "queue",
       });
     }
 
@@ -658,7 +795,7 @@ export function SuporteContent() {
         seenQueueTicketIdsRef.current.delete(id);
       }
     }
-  }, [queueTickets]);
+  }, [queueTickets, showTicketActionToast]);
 
   useEffect(() => {
     if (!currentSuperAdminId) {
@@ -679,8 +816,11 @@ export function SuporteContent() {
       }
 
       seenAssignedToMeTicketIdsRef.current.add(ticket.id);
-      toast.success("Ticket atribuído para você", {
-        description: `${ticket.tenant.name} · ${ticket.title}`,
+      showTicketActionToast({
+        ticketId: ticket.id,
+        tenantName: ticket.tenant.name,
+        title: ticket.title,
+        type: "assigned",
       });
     }
 
@@ -691,7 +831,7 @@ export function SuporteContent() {
         seenAssignedToMeTicketIdsRef.current.delete(id);
       }
     }
-  }, [assignedToMeTickets, currentSuperAdminId]);
+  }, [assignedToMeTickets, currentSuperAdminId, showTicketActionToast]);
 
   const openThread = (ticketId: string) => {
     setSelectedTicketId(ticketId);
@@ -705,6 +845,14 @@ export function SuporteContent() {
     setReplyImages([]);
     setIsInternalReply(false);
     setStatusReasonDraft("");
+    setClosureSummaryDraft("");
+  };
+
+  const openThreadFullscreen = (ticketId: string) => {
+    const returnTo = "/admin/suporte";
+    router.push(
+      `/admin/suporte/chat/${ticketId}?returnTo=${encodeURIComponent(returnTo)}`,
+    );
   };
 
   const appendImages = (
@@ -741,6 +889,11 @@ export function SuporteContent() {
 
   const handleSendReply = async () => {
     if (!selectedTicket?.id) return;
+
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.error("Este chat já foi finalizado e está bloqueado.");
+      return;
+    }
 
     if (!reply.trim() && replyImages.length === 0) {
       toast.error("Digite uma mensagem ou envie uma imagem.");
@@ -785,6 +938,11 @@ export function SuporteContent() {
   const handleSaveStatus = async () => {
     if (!selectedTicket?.id || !statusDraft) return;
 
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.error("Chat finalizado. Reabra o ticket antes de alterar status.");
+      return;
+    }
+
     if (
       statusDraft === TicketStatus.WAITING_EXTERNAL &&
       !statusReasonDraft.trim()
@@ -819,6 +977,11 @@ export function SuporteContent() {
   const handleSaveRouting = async () => {
     if (!selectedTicket?.id || !routingLevelDraft) return;
 
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.error("Chat finalizado. Reabra o ticket antes de alterar roteamento.");
+      return;
+    }
+
     setIsSavingRouting(true);
 
     try {
@@ -840,6 +1003,49 @@ export function SuporteContent() {
       toast.error(message);
     } finally {
       setIsSavingRouting(false);
+    }
+  };
+
+  const handleFinalizeTicket = async () => {
+    if (!selectedTicket?.id) return;
+
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.warning("Este ticket já está encerrado.");
+      return;
+    }
+
+    if (!closureCategoryDraft) {
+      toast.error("Selecione a categoria de fechamento.");
+      return;
+    }
+
+    if (!resolutionOutcomeDraft) {
+      toast.error("Selecione o desfecho do atendimento.");
+      return;
+    }
+
+    setIsFinalizing(true);
+
+    try {
+      await finalizeSupportTicket(selectedTicket.id, {
+        closureCategory: closureCategoryDraft,
+        resolutionOutcome: resolutionOutcomeDraft,
+        closureSummary: closureSummaryDraft.trim() || undefined,
+      });
+
+      await Promise.all([
+        mutateThread(),
+        mutateList(),
+        mutateQueueRealtime(),
+        mutateStats(),
+      ]);
+      toast.success("Atendimento finalizado e chat bloqueado.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Erro ao finalizar atendimento";
+      toast.error(message);
+    } finally {
+      setIsFinalizing(false);
     }
   };
 
@@ -933,20 +1139,22 @@ export function SuporteContent() {
             >
               Disponibilidade: {supportAvailabilityMeta.label}
             </Chip>
-            <Button
-              className="relative"
-              size="sm"
-              startContent={<Bell className="h-4 w-4" />}
-              variant="flat"
-              onPress={onQueueOpen}
-            >
-              Painel de chats
+            <div className="relative inline-flex">
+              <Button
+                className="overflow-visible"
+                size="sm"
+                startContent={<Bell className="h-4 w-4" />}
+                variant="flat"
+                onPress={onQueueOpen}
+              >
+                Painel de chats
+              </Button>
               {queueTotal > 0 ? (
-                <span className="absolute -right-2 -top-2 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
-                  {queueTotal}
+                <span className="pointer-events-none absolute -right-2 -top-2 z-20 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
+                  {queueTotal > 99 ? "99+" : queueTotal}
                 </span>
               ) : null}
-            </Button>
+            </div>
           </div>
         }
       />
@@ -1407,7 +1615,7 @@ export function SuporteContent() {
               <p className="text-base font-semibold text-white">
                 {selectedTicket?.title ?? "Detalhes do ticket"}
               </p>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {selectedTicket ? (
                   <>
                     <Chip color={getStatusColor(selectedTicket.status)} size="sm" variant="flat">
@@ -1419,6 +1627,14 @@ export function SuporteContent() {
                     <Chip size="sm" variant="bordered">
                       {getSupportLevelLabel(selectedTicket.supportLevel)}
                     </Chip>
+                    <Button
+                      color="primary"
+                      size="sm"
+                      variant="flat"
+                      onPress={() => openThreadFullscreen(selectedTicket.id)}
+                    >
+                      Tela cheia
+                    </Button>
                   </>
                 ) : null}
               </div>
@@ -1437,7 +1653,7 @@ export function SuporteContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 text-xs text-default-300 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 text-xs text-default-300 sm:grid-cols-5">
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">Abertura</p>
                     <p>{formatDateTime(selectedTicket.createdAt)}</p>
@@ -1445,6 +1661,15 @@ export function SuporteContent() {
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">1ª resposta</p>
                     <p>{formatDuration(selectedTicket.firstResponseMinutes)}</p>
+                  </div>
+                  <div>
+                    <p className="uppercase tracking-[0.16em] text-default-500">Tempo de atendimento</p>
+                    <p key={threadClockTick}>
+                      {formatElapsedTime(
+                        selectedTicket.createdAt,
+                        selectedTicket.closedAt,
+                      )}
+                    </p>
                   </div>
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">SLA</p>
@@ -1456,10 +1681,50 @@ export function SuporteContent() {
                   </div>
                 </div>
 
+                {selectedTicket.status === TicketStatus.CLOSED ? (
+                  <div className="rounded-xl border border-success/30 bg-success/10 p-3 text-sm text-success-200">
+                    <p className="font-semibold text-success-100">
+                      Atendimento encerrado
+                    </p>
+                    <p className="mt-1 text-xs text-success-200">
+                      Finalizado em {formatDateTime(selectedTicket.closedAt)} por{" "}
+                      {selectedTicket.closedBy?.name ?? "suporte"}.
+                    </p>
+                    {selectedTicket.resolutionOutcome ? (
+                      <p className="mt-1 text-xs text-success-200">
+                        Desfecho:{" "}
+                        {RESOLUTION_OUTCOME_OPTIONS.find(
+                          (option) =>
+                            option.key === selectedTicket.resolutionOutcome,
+                        )?.label ?? selectedTicket.resolutionOutcome}
+                        {selectedTicket.closureCategory
+                          ? ` · Categoria: ${getCategoryLabel(selectedTicket.closureCategory)}`
+                          : ""}
+                      </p>
+                    ) : null}
+                    {selectedTicket.requesterRating ? (
+                      <p className="mt-1 text-xs text-success-200">
+                        Avaliação do cliente: {selectedTicket.requesterRating}/5
+                        {selectedTicket.requesterRatedAt
+                          ? ` em ${formatDateTime(selectedTicket.requesterRatedAt)}`
+                          : ""}
+                        {selectedTicket.requesterRatingComment
+                          ? ` · "${selectedTicket.requesterRatingComment}"`
+                          : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 lg:grid-cols-3">
                   <Select
+                    isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                     label="Status"
-                    selectedKeys={statusDraft ? [statusDraft] : []}
+                    selectedKeys={
+                      statusDraft && statusDraft !== TicketStatus.CLOSED
+                        ? [statusDraft]
+                        : []
+                    }
                     onSelectionChange={(keys) => {
                       const nextStatus =
                         (Array.from(keys)[0] as TicketStatus) ?? selectedTicket.status;
@@ -1469,7 +1734,10 @@ export function SuporteContent() {
                       }
                     }}
                   >
-                    {STATUS_OPTIONS.filter((option) => option.key !== "ALL").map(
+                    {STATUS_OPTIONS.filter(
+                      (option) =>
+                        option.key !== "ALL" && option.key !== TicketStatus.CLOSED,
+                    ).map(
                       (option) => (
                         <SelectItem key={option.key} textValue={option.label}>
                           {option.label}
@@ -1490,6 +1758,7 @@ export function SuporteContent() {
                   ) : null}
 
                   <Select
+                    isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                     label="Nível"
                     selectedKeys={routingLevelDraft ? [routingLevelDraft] : []}
                     onSelectionChange={(keys) =>
@@ -1509,6 +1778,7 @@ export function SuporteContent() {
                   </Select>
 
                   <Select
+                    isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                     label="Atribuir para"
                     items={assigneeSelectItems}
                     selectedKeys={[routingAssigneeDraft || "unassigned"]}
@@ -1530,7 +1800,10 @@ export function SuporteContent() {
                   <div className="flex flex-wrap items-end gap-2 lg:col-span-3">
                     <Button
                       color="primary"
-                      isDisabled={selectedTicket.assignedTo?.id === currentSuperAdminId}
+                      isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
+                        selectedTicket.assignedTo?.id === currentSuperAdminId
+                      }
                       variant="flat"
                       onPress={() => handleClaimTicket(selectedTicket.id)}
                     >
@@ -1539,6 +1812,7 @@ export function SuporteContent() {
                     <Button
                       color="primary"
                       isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
                         !statusDraft ||
                         statusDraft === selectedTicket.status ||
                         (statusDraft === TicketStatus.WAITING_EXTERNAL &&
@@ -1553,6 +1827,7 @@ export function SuporteContent() {
                     <Button
                       color="secondary"
                       isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
                         !routingLevelDraft ||
                         (routingLevelDraft === selectedTicket.supportLevel &&
                           routingAssigneeDraft === (selectedTicket.assignedTo?.id ?? ""))
@@ -1564,19 +1839,87 @@ export function SuporteContent() {
                       Salvar roteamento
                     </Button>
                     <Button
-                      isDisabled={!routingAssigneeDraft}
+                      isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
+                        !routingAssigneeDraft
+                      }
                       variant="flat"
                       onPress={handleInviteAssignedAgent}
                     >
                       Convidar suporte
                     </Button>
                     <Button
-                      isDisabled={!currentSuperAdminId}
+                      isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
+                        !currentSuperAdminId
+                      }
                       variant="flat"
                       onPress={() => setRoutingAssigneeDraft(currentSuperAdminId)}
                     >
                       Atribuir para mim
                     </Button>
+                  </div>
+                  <div className="rounded-lg border border-warning/25 bg-warning/10 p-2 text-xs text-warning-100 lg:col-span-3">
+                    <p className="mb-2 uppercase tracking-[0.12em] text-warning-200">
+                      Fechar atendimento
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                      <Select
+                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        label="Categoria de fechamento"
+                        selectedKeys={closureCategoryDraft ? [closureCategoryDraft] : []}
+                        onSelectionChange={(keys) =>
+                          setClosureCategoryDraft(
+                            (Array.from(keys)[0] as TicketCategory) ??
+                              selectedTicket.category,
+                          )
+                        }
+                      >
+                        {CATEGORY_OPTIONS.filter((option) => option.key !== "ALL").map(
+                          (option) => (
+                            <SelectItem key={option.key} textValue={option.label}>
+                              {option.label}
+                            </SelectItem>
+                          ),
+                        )}
+                      </Select>
+                      <Select
+                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        label="Desfecho"
+                        selectedKeys={[resolutionOutcomeDraft]}
+                        onSelectionChange={(keys) =>
+                          setResolutionOutcomeDraft(
+                            (Array.from(keys)[0] as TicketResolutionOutcome) ??
+                              TicketResolutionOutcome.RESOLVED,
+                          )
+                        }
+                      >
+                        {RESOLUTION_OUTCOME_OPTIONS.map((option) => (
+                          <SelectItem key={option.key} textValue={option.label}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </Select>
+                      <Button
+                        className="self-end"
+                        color="success"
+                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        isLoading={isFinalizing}
+                        onPress={handleFinalizeTicket}
+                      >
+                        Finalizar chat
+                      </Button>
+                    </div>
+                    <Textarea
+                      className="mt-2"
+                      description="Resumo opcional para auditoria e contexto de fechamento."
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                      label="Resumo do fechamento"
+                      minRows={2}
+                      placeholder="Ex.: cliente orientado, erro corrigido e validação concluída."
+                      value={closureSummaryDraft}
+                      onValueChange={setClosureSummaryDraft}
+                    />
                   </div>
                   <div className="rounded-lg border border-white/10 bg-background/70 p-2 text-xs text-default-300 lg:col-span-3">
                     <p className="mb-1 uppercase tracking-[0.12em] text-default-500">
@@ -1612,15 +1955,15 @@ export function SuporteContent() {
                           <div
                             className={`w-full max-w-3xl rounded-xl border p-3 ${
                               fromSupport
-                                ? "border-primary/30 bg-primary/10"
-                                : "border-success/30 bg-success/10"
+                                ? "border-primary/40 bg-primary/15"
+                                : "border-success/40 bg-success/15"
                             }`}
                           >
                             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="font-semibold text-white">
+                              <span className="font-semibold text-foreground">
                                 {message.author.name}
                               </span>
-                              <span className="text-default-400">
+                              <span className="text-default-600">
                                 {formatDateTime(message.createdAt)}
                               </span>
                               {message.isInternal ? (
@@ -1629,7 +1972,9 @@ export function SuporteContent() {
                                 </Chip>
                               ) : null}
                             </div>
-                            <p className="text-sm text-default-100">{message.content}</p>
+                            <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                              {message.content}
+                            </p>
                             {message.attachments.length > 0 ? (
                               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                                 {message.attachments.map((attachment) => (
@@ -1667,13 +2012,19 @@ export function SuporteContent() {
                     onChange={(event) => appendImages(replyImages, event, setReplyImages)}
                   />
                   <Textarea
+                    isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                     minRows={4}
-                    placeholder="Responder ticket"
+                    placeholder={
+                      selectedTicket.status === TicketStatus.CLOSED
+                        ? "Chat finalizado. Mensagens bloqueadas."
+                        : "Responder ticket"
+                    }
                     value={reply}
                     onValueChange={setReply}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       size="sm"
                       startContent={<ImagePlus className="h-4 w-4" />}
                       variant="flat"
@@ -1689,6 +2040,7 @@ export function SuporteContent() {
                     {SUPPORT_REPLY_MACROS.map((macro) => (
                       <Button
                         key={macro.key}
+                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                         size="sm"
                         variant="flat"
                         onPress={() => applyReplyMacro(macro)}
@@ -1723,6 +2075,7 @@ export function SuporteContent() {
                   ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Switch
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       isSelected={isInternalReply}
                       size="sm"
                       onValueChange={setIsInternalReply}
@@ -1731,6 +2084,7 @@ export function SuporteContent() {
                     </Switch>
                     <Button
                       color="primary"
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       isLoading={isSendingReply}
                       startContent={
                         isSendingReply ? undefined : <MessageSquare className="h-4 w-4" />

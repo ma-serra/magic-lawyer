@@ -16,6 +16,7 @@ import {
   type SetStateAction,
 } from "react";
 import useSWR from "swr";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Button,
@@ -60,11 +61,13 @@ import {
   getTenantSupportStats,
   getTenantSupportTickets,
   markSupportTicketViewed,
+  rateSupportTicket,
   updateSupportTicketStatus,
 } from "@/app/actions/tickets";
 import {
   TicketCategory,
   TicketPriority,
+  TicketResolutionOutcome,
   TicketStatus,
   TicketSupportLevel,
 } from "@/generated/prisma";
@@ -130,6 +133,11 @@ const STATUS_TRANSITION_GUIDE: Array<{ title: string; description: string }> = [
   { title: "Resolvido", description: "Solução aplicada, aguardando encerramento final." },
   { title: "Encerrado", description: "Fluxo concluído e sem pendências." },
 ];
+const RESOLUTION_OUTCOME_LABELS: Record<TicketResolutionOutcome, string> = {
+  RESOLVED: "Resolvido",
+  PARTIALLY_RESOLVED: "Parcialmente resolvido",
+  UNRESOLVED: "Não resolvido",
+};
 
 function getStatusLabel(status: TicketStatus) {
   return (
@@ -222,11 +230,40 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function formatElapsedTime(from?: string | null, to?: string | null) {
+  if (!from) return "-";
+
+  const start = new Date(from).getTime();
+  const end = to ? new Date(to).getTime() : Date.now();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return "-";
+  }
+
+  const seconds = Math.floor((end - start) / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const restSeconds = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${restSeconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${restSeconds}s`;
+  }
+
+  return `${restSeconds}s`;
+}
+
 function isSupportMessage(authorType: SupportTicketThread["messages"][number]["authorType"]) {
   return authorType === "SUPER_ADMIN" || authorType === "SYSTEM";
 }
 
 export function SuporteContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const role = String((session?.user as any)?.role ?? "");
   const canManage = role === "ADMIN";
@@ -251,6 +288,11 @@ export function SuporteContent() {
   const [statusDraft, setStatusDraft] = useState<TicketStatus | "">("");
   const [statusReasonDraft, setStatusReasonDraft] = useState("");
   const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [isSavingRating, setIsSavingRating] = useState(false);
+  const [ratingDraft, setRatingDraft] = useState(0);
+  const [ratingCommentDraft, setRatingCommentDraft] = useState("");
+  const [threadClockTick, setThreadClockTick] = useState(() => Date.now());
+  const ticketIdFromUrl = searchParams.get("ticketId");
 
   const {
     isOpen: isCreateOpen,
@@ -368,12 +410,28 @@ export function SuporteContent() {
     if (!selectedTicket) {
       setStatusDraft("");
       setStatusReasonDraft("");
+      setRatingDraft(0);
+      setRatingCommentDraft("");
       return;
     }
 
     setStatusDraft(selectedTicket.status);
     setStatusReasonDraft("");
+    setRatingDraft(selectedTicket.requesterRating ?? 0);
+    setRatingCommentDraft(selectedTicket.requesterRatingComment ?? "");
   }, [selectedTicket]);
+
+  useEffect(() => {
+    if (!isThreadOpen) return;
+
+    const interval = window.setInterval(() => {
+      setThreadClockTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isThreadOpen]);
 
   useEffect(() => {
     if (!selectedTicket?.id || !isThreadOpen) {
@@ -426,8 +484,33 @@ export function SuporteContent() {
     }
   }, [unreadSupportTickets]);
 
+  useEffect(() => {
+    if (!ticketIdFromUrl) return;
+
+    if (selectedTicketId === ticketIdFromUrl && isThreadOpen) {
+      return;
+    }
+
+    setSelectedTicketId(ticketIdFromUrl);
+    onThreadOpen();
+  }, [ticketIdFromUrl, selectedTicketId, isThreadOpen, onThreadOpen]);
+
+  const replaceTicketInUrl = (ticketId: string | null) => {
+    const next = new URLSearchParams(searchParams.toString());
+
+    if (ticketId) {
+      next.set("ticketId", ticketId);
+    } else {
+      next.delete("ticketId");
+    }
+
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
   const openThread = (ticket: SupportTicketListItem) => {
     setSelectedTicketId(ticket.id);
+    replaceTicketInUrl(ticket.id);
     onThreadOpen();
   };
 
@@ -438,6 +521,9 @@ export function SuporteContent() {
     setReplyImages([]);
     setStatusDraft("");
     setStatusReasonDraft("");
+    setRatingDraft(0);
+    setRatingCommentDraft("");
+    replaceTicketInUrl(null);
   };
 
   const closeCreateModal = () => {
@@ -514,6 +600,7 @@ export function SuporteContent() {
       await Promise.all([mutateList(), mutateStats()]);
 
       setSelectedTicketId(result.ticketId);
+      replaceTicketInUrl(result.ticketId);
       onThreadOpen();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao abrir ticket";
@@ -525,6 +612,11 @@ export function SuporteContent() {
 
   const handleSendReply = async () => {
     if (!selectedTicket?.id) return;
+
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.error("Este chat já foi finalizado e está bloqueado.");
+      return;
+    }
 
     if (!reply.trim() && replyImages.length === 0) {
       toast.error("Digite uma mensagem ou envie uma imagem.");
@@ -562,6 +654,11 @@ export function SuporteContent() {
   const handleSaveStatus = async () => {
     if (!selectedTicket?.id || !statusDraft || !canManage) return;
 
+    if (selectedTicket.status === TicketStatus.CLOSED) {
+      toast.error("Chat finalizado. Reabra o ticket antes de alterar status.");
+      return;
+    }
+
     if (
       statusDraft === TicketStatus.WAITING_EXTERNAL &&
       !statusReasonDraft.trim()
@@ -585,6 +682,38 @@ export function SuporteContent() {
       toast.error(message);
     } finally {
       setIsSavingStatus(false);
+    }
+  };
+
+  const handleSubmitRating = async () => {
+    if (!selectedTicket?.id) return;
+
+    if (selectedTicket.status !== TicketStatus.CLOSED) {
+      toast.error("A avaliação só pode ser enviada após o encerramento.");
+      return;
+    }
+
+    if (ratingDraft < 1 || ratingDraft > 5) {
+      toast.error("Selecione uma nota de 1 a 5.");
+      return;
+    }
+
+    setIsSavingRating(true);
+
+    try {
+      await rateSupportTicket(selectedTicket.id, {
+        rating: ratingDraft,
+        comment: ratingCommentDraft.trim() || undefined,
+      });
+
+      await Promise.all([mutateThread(), mutateList(), mutateStats()]);
+      toast.success("Avaliação enviada com sucesso.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Erro ao enviar avaliação";
+      toast.error(message);
+    } finally {
+      setIsSavingRating(false);
     }
   };
 
@@ -1018,7 +1147,7 @@ export function SuporteContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 text-xs text-default-300 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 text-xs text-default-300 sm:grid-cols-5">
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">Abertura</p>
                     <p>{formatDateTime(selectedTicket.createdAt)}</p>
@@ -1026,6 +1155,15 @@ export function SuporteContent() {
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">Última atualização</p>
                     <p>{formatDateTime(selectedTicket.updatedAt)}</p>
+                  </div>
+                  <div>
+                    <p className="uppercase tracking-[0.16em] text-default-500">Tempo de atendimento</p>
+                    <p key={threadClockTick}>
+                      {formatElapsedTime(
+                        selectedTicket.createdAt,
+                        selectedTicket.closedAt,
+                      )}
+                    </p>
                   </div>
                   <div>
                     <p className="uppercase tracking-[0.16em] text-default-500">Status</p>
@@ -1039,12 +1177,36 @@ export function SuporteContent() {
                   </div>
                 </div>
 
+                {selectedTicket.status === TicketStatus.CLOSED ? (
+                  <div className="rounded-xl border border-success/30 bg-success/10 p-3 text-sm text-success-200">
+                    <p className="font-semibold text-success-100">
+                      Chat finalizado pelo suporte
+                    </p>
+                    <p className="mt-1 text-xs text-success-200">
+                      Encerrado em {formatDateTime(selectedTicket.closedAt)}. Este chat está bloqueado para novas mensagens.
+                    </p>
+                    {selectedTicket.resolutionOutcome ? (
+                      <p className="mt-1 text-xs text-success-200">
+                        Desfecho: {RESOLUTION_OUTCOME_LABELS[selectedTicket.resolutionOutcome]}
+                        {selectedTicket.closureCategory
+                          ? ` · Categoria: ${getCategoryLabel(selectedTicket.closureCategory)}`
+                          : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {canManage ? (
                   <div className="flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-background/40 p-3">
                     <Select
                       className="min-w-[220px]"
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       label="Status do ticket"
-                      selectedKeys={statusDraft ? [statusDraft] : []}
+                      selectedKeys={
+                        statusDraft && statusDraft !== TicketStatus.CLOSED
+                          ? [statusDraft]
+                          : []
+                      }
                       onSelectionChange={(keys) => {
                         const nextStatus =
                           (Array.from(keys)[0] as TicketStatus) ?? selectedTicket.status;
@@ -1054,7 +1216,10 @@ export function SuporteContent() {
                         }
                       }}
                     >
-                      {STATUS_OPTIONS.filter((option) => option.key !== "ALL").map(
+                      {STATUS_OPTIONS.filter(
+                        (option) =>
+                          option.key !== "ALL" && option.key !== TicketStatus.CLOSED,
+                      ).map(
                         (option) => (
                           <SelectItem key={option.key} textValue={option.label}>
                             {option.label}
@@ -1076,6 +1241,7 @@ export function SuporteContent() {
                     <Button
                       color="primary"
                       isDisabled={
+                        selectedTicket.status === TicketStatus.CLOSED ||
                         !statusDraft ||
                         statusDraft === selectedTicket.status ||
                         (statusDraft === TicketStatus.WAITING_EXTERNAL &&
@@ -1121,15 +1287,15 @@ export function SuporteContent() {
                           <div
                             className={`w-full max-w-3xl rounded-xl border p-3 ${
                               fromSupport
-                                ? "border-primary/30 bg-primary/10"
-                                : "border-success/30 bg-success/10"
+                                ? "border-primary/40 bg-primary/15"
+                                : "border-success/40 bg-success/15"
                             }`}
                           >
                             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="font-semibold text-white">
+                              <span className="font-semibold text-foreground">
                                 {message.author.name}
                               </span>
-                              <span className="text-default-400">
+                              <span className="text-default-600">
                                 {formatDateTime(message.createdAt)}
                               </span>
                               {message.isInternal ? (
@@ -1138,7 +1304,9 @@ export function SuporteContent() {
                                 </Chip>
                               ) : null}
                             </div>
-                            <p className="text-sm text-default-100">{message.content}</p>
+                            <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                              {message.content}
+                            </p>
                             {message.attachments.length > 0 ? (
                               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                                 {message.attachments.map((attachment) => (
@@ -1176,13 +1344,19 @@ export function SuporteContent() {
                     onChange={(event) => appendImages(replyImages, event, setReplyImages)}
                   />
                   <Textarea
+                    isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                     minRows={4}
-                    placeholder="Escreva sua mensagem para o suporte"
+                    placeholder={
+                      selectedTicket.status === TicketStatus.CLOSED
+                        ? "Chat finalizado. Mensagens bloqueadas."
+                        : "Escreva sua mensagem para o suporte"
+                    }
                     value={reply}
                     onValueChange={setReply}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       size="sm"
                       startContent={<ImagePlus className="h-4 w-4" />}
                       variant="flat"
@@ -1221,6 +1395,7 @@ export function SuporteContent() {
                   <div className="flex justify-end">
                     <Button
                       color="primary"
+                      isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       isLoading={isSendingReply}
                       startContent={isSendingReply ? undefined : <MessageSquare className="h-4 w-4" />}
                       onPress={handleSendReply}
@@ -1229,6 +1404,47 @@ export function SuporteContent() {
                     </Button>
                   </div>
                 </div>
+
+                {selectedTicket.status === TicketStatus.CLOSED ? (
+                  <div className="space-y-3 rounded-xl border border-white/10 bg-background/40 p-3">
+                    <p className="text-sm font-semibold text-white">Avalie este atendimento</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[1, 2, 3, 4, 5].map((score) => (
+                        <Button
+                          key={score}
+                          color={ratingDraft === score ? "warning" : "default"}
+                          size="sm"
+                          variant={ratingDraft === score ? "solid" : "flat"}
+                          onPress={() => setRatingDraft(score)}
+                        >
+                          {score} estrela{score > 1 ? "s" : ""}
+                        </Button>
+                      ))}
+                    </div>
+                    <Textarea
+                      description="Comentário opcional sobre o atendimento."
+                      label="Comentário da avaliação"
+                      minRows={2}
+                      placeholder="Ex.: atendimento rápido e objetivo."
+                      value={ratingCommentDraft}
+                      onValueChange={setRatingCommentDraft}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-default-400">
+                        {selectedTicket.requesterRatedAt
+                          ? `Última avaliação em ${formatDateTime(selectedTicket.requesterRatedAt)}`
+                          : "Sua avaliação ficará registrada para melhoria contínua do suporte."}
+                      </p>
+                      <Button
+                        color="primary"
+                        isLoading={isSavingRating}
+                        onPress={handleSubmitRating}
+                      >
+                        {selectedTicket.requesterRating ? "Atualizar avaliação" : "Enviar avaliação"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </ModalBody>

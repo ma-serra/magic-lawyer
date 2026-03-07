@@ -445,6 +445,7 @@ model SuperAdmin {
   logsAuditoria     SuperAdminAuditLog[]
   tenantGerenciados Tenant[]             @relation("SuperAdminTenant")
   supportTicketsAssigned Ticket[]        @relation("SupportTicketAssignee")
+  supportTicketsClosed Ticket[]          @relation("SupportTicketCloser")
   supportTicketMessages TicketMessage[]  @relation("SupportTicketMessageAuthor")
   supportTicketAttachments TicketAttachment[] @relation("SupportTicketAttachmentUploader")
 
@@ -2538,6 +2539,13 @@ model Ticket {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   closedAt    DateTime?
+  closureCategory TicketCategory?
+  resolutionOutcome TicketResolutionOutcome?
+  closureSummary String?
+  closedBySuperAdminId String?
+  requesterRating Int?
+  requesterRatingComment String?
+  requesterRatedAt DateTime?
   firstResponseAt DateTime?
   requesterLastViewedAt DateTime?
   supportLastViewedAt DateTime?
@@ -2546,6 +2554,7 @@ model Ticket {
   tenant      Tenant             @relation("TenantTickets", fields: [tenantId], references: [id], onDelete: Cascade)
   user        Usuario            @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
   assignedToSuperAdmin SuperAdmin? @relation("SupportTicketAssignee", fields: [assignedToSuperAdminId], references: [id], onDelete: SetNull)
+  closedBySuperAdmin SuperAdmin? @relation("SupportTicketCloser", fields: [closedBySuperAdminId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([tenantId])
@@ -2553,6 +2562,7 @@ model Ticket {
   @@index([priority])
   @@index([supportLevel])
   @@index([assignedToSuperAdminId])
+  @@index([closedBySuperAdminId])
   @@index([createdAt])
   @@map("tickets")
   @@schema("support")
@@ -3047,6 +3057,14 @@ enum TicketSupportLevel {
   N1
   N2
   N3
+
+  @@schema("magiclawyer")
+}
+
+enum TicketResolutionOutcome {
+  RESOLVED
+  PARTIALLY_RESOLVED
+  UNRESOLVED
 
   @@schema("magiclawyer")
 }

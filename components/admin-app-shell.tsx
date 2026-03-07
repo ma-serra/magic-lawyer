@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { AppSidebar, type SidebarNavItem } from "@/components/app-sidebar";
 import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
+import { AdminFloatingChatDock } from "@/components/support/admin-floating-chat-dock";
 import { useAdminNavigation } from "@/app/hooks/use-admin-navigation";
 
 export type AdminAppShellProps = {
@@ -71,6 +72,7 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
             {children}
           </div>
         </main>
+        <AdminFloatingChatDock />
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import {
   TicketCategory,
   TicketMessageAuthorType,
   TicketPriority,
+  TicketResolutionOutcome,
   TicketStatus,
   TicketSupportLevel,
 } from "@/generated/prisma";
@@ -31,6 +32,19 @@ const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   [TicketStatus.RESOLVED]: "Resolvido",
   [TicketStatus.CLOSED]: "Encerrado",
 };
+const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
+  [TicketCategory.TECHNICAL]: "Técnico",
+  [TicketCategory.BILLING]: "Financeiro",
+  [TicketCategory.FEATURE_REQUEST]: "Solicitação de melhoria",
+  [TicketCategory.BUG_REPORT]: "Bug",
+  [TicketCategory.GENERAL]: "Geral",
+};
+const TICKET_RESOLUTION_OUTCOME_LABELS: Record<TicketResolutionOutcome, string> =
+  {
+    [TicketResolutionOutcome.RESOLVED]: "Resolvido",
+    [TicketResolutionOutcome.PARTIALLY_RESOLVED]: "Parcialmente resolvido",
+    [TicketResolutionOutcome.UNRESOLVED]: "Não resolvido",
+  };
 const SUPPORT_MAX_IMAGES_PER_BATCH = 5;
 const SUPPORT_MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 const SUPPORT_IMAGE_ALLOWED_MIME = new Set([
@@ -90,6 +104,23 @@ function isRequesterAuthor(authorType: TicketMessageAuthorType): boolean {
     authorType === TicketMessageAuthorType.TENANT_USER ||
     authorType === TicketMessageAuthorType.TENANT_ADMIN
   );
+}
+
+function getTenantUserRoleLabel(role: string): string {
+  switch (role) {
+    case "ADMIN":
+      return "Admin do tenant";
+    case "ADVOGADO":
+      return "Advogado";
+    case "SECRETARIA":
+      return "Secretaria";
+    case "FINANCEIRO":
+      return "Financeiro";
+    case "CLIENTE":
+      return "Cliente";
+    default:
+      return "Usuário";
+  }
 }
 
 interface AuthContext {
@@ -331,6 +362,17 @@ export interface CreateMessageData {
   isInternal?: boolean;
 }
 
+export interface FinalizeSupportTicketData {
+  closureCategory: TicketCategory;
+  resolutionOutcome: TicketResolutionOutcome;
+  closureSummary?: string | null;
+}
+
+export interface RateSupportTicketData {
+  rating: number;
+  comment?: string | null;
+}
+
 export interface SupportTicketFilters {
   page?: number;
   pageSize?: number;
@@ -348,6 +390,13 @@ export interface GlobalSupportTicketFilters extends SupportTicketFilters {
   assignedOnly?: boolean;
 }
 
+export interface SupportTicketParticipant {
+  id: string;
+  name: string;
+  roleLabel: string;
+  type: "SUPPORT" | "TENANT_USER" | "CLIENT";
+}
+
 export interface SupportTicketListItem {
   id: string;
   title: string;
@@ -359,6 +408,11 @@ export interface SupportTicketListItem {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closureCategory: TicketCategory | null;
+  resolutionOutcome: TicketResolutionOutcome | null;
+  closureSummary: string | null;
+  requesterRating: number | null;
+  requesterRatedAt: string | null;
   firstResponseAt: string | null;
   firstResponseDueAt: string | null;
   firstResponseMinutes: number | null;
@@ -384,6 +438,7 @@ export interface SupportTicketListItem {
     name: string;
     email: string;
   } | null;
+  participants: SupportTicketParticipant[];
 }
 
 export interface SupportTicketListResult {
@@ -431,6 +486,12 @@ export interface SupportTicketThread {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closureCategory: TicketCategory | null;
+  resolutionOutcome: TicketResolutionOutcome | null;
+  closureSummary: string | null;
+  requesterRating: number | null;
+  requesterRatingComment: string | null;
+  requesterRatedAt: string | null;
   firstResponseAt: string | null;
   firstResponseDueAt: string | null;
   firstResponseMinutes: number | null;
@@ -448,6 +509,11 @@ export interface SupportTicketThread {
     role: string;
   };
   assignedTo: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  closedBy: {
     id: string;
     name: string;
     email: string;
@@ -489,6 +555,11 @@ function mapTicketListItem(
     createdAt: Date;
     updatedAt: Date;
     closedAt: Date | null;
+    closureCategory: TicketCategory | null;
+    resolutionOutcome: TicketResolutionOutcome | null;
+    closureSummary: string | null;
+    requesterRating: number | null;
+    requesterRatedAt: Date | null;
     firstResponseAt: Date | null;
     requesterLastViewedAt: Date | null;
     supportLastViewedAt: Date | null;
@@ -515,6 +586,17 @@ function mapTicketListItem(
       createdAt: Date;
       authorType: TicketMessageAuthorType;
       isInternal: boolean;
+      user: {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        role: string;
+      } | null;
+      superAdmin: {
+        id: string;
+        firstName: string;
+        lastName: string;
+      } | null;
     }>;
     _count: {
       messages: number;
@@ -578,6 +660,60 @@ function mapTicketListItem(
         ticket.status === TicketStatus.WAITING_EXTERNAL) &&
       now > firstResponseDueAt;
 
+  const participantsById = new Map<string, SupportTicketParticipant>();
+  const addParticipant = (participant: SupportTicketParticipant) => {
+    if (!participantsById.has(participant.id)) {
+      participantsById.set(participant.id, participant);
+    }
+  };
+
+  const requesterName = fullName(ticket.user.firstName, ticket.user.lastName);
+  const requesterType: SupportTicketParticipant["type"] =
+    ticket.user.role === "CLIENTE" ? "CLIENT" : "TENANT_USER";
+
+  addParticipant({
+    id: `tenant:${ticket.user.id}`,
+    name: requesterName,
+    roleLabel: getTenantUserRoleLabel(ticket.user.role),
+    type: requesterType,
+  });
+
+  if (ticket.assignedToSuperAdmin) {
+    addParticipant({
+      id: `support:${ticket.assignedToSuperAdmin.id}`,
+      name: fullName(
+        ticket.assignedToSuperAdmin.firstName,
+        ticket.assignedToSuperAdmin.lastName,
+      ),
+      roleLabel: "Suporte",
+      type: "SUPPORT",
+    });
+  }
+
+  for (const message of ticket.messages) {
+    if (message.superAdmin) {
+      addParticipant({
+        id: `support:${message.superAdmin.id}`,
+        name: fullName(message.superAdmin.firstName, message.superAdmin.lastName),
+        roleLabel: "Suporte",
+        type: "SUPPORT",
+      });
+      continue;
+    }
+
+    if (message.user) {
+      const participantType: SupportTicketParticipant["type"] =
+        message.user.role === "CLIENTE" ? "CLIENT" : "TENANT_USER";
+
+      addParticipant({
+        id: `tenant:${message.user.id}`,
+        name: fullName(message.user.firstName, message.user.lastName),
+        roleLabel: getTenantUserRoleLabel(message.user.role),
+        type: participantType,
+      });
+    }
+  }
+
   return {
     id: ticket.id,
     title: ticket.title,
@@ -589,6 +725,13 @@ function mapTicketListItem(
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
     closedAt: ticket.closedAt ? ticket.closedAt.toISOString() : null,
+    closureCategory: ticket.closureCategory,
+    resolutionOutcome: ticket.resolutionOutcome,
+    closureSummary: ticket.closureSummary,
+    requesterRating: ticket.requesterRating,
+    requesterRatedAt: ticket.requesterRatedAt
+      ? ticket.requesterRatedAt.toISOString()
+      : null,
     firstResponseAt: ticket.firstResponseAt
       ? ticket.firstResponseAt.toISOString()
       : null,
@@ -621,6 +764,7 @@ function mapTicketListItem(
           email: ticket.assignedToSuperAdmin.email,
         }
       : null,
+    participants: Array.from(participantsById.values()),
   };
 }
 
@@ -1040,12 +1184,27 @@ export async function getTenantSupportTickets(
         },
         messages: {
           orderBy: { createdAt: "desc" },
-          take: 1,
+          take: 40,
           select: {
             id: true,
             createdAt: true,
             authorType: true,
             isInternal: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+              },
+            },
+            superAdmin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
         },
         _count: {
@@ -1129,12 +1288,27 @@ export async function getGlobalSupportTickets(
         },
         messages: {
           orderBy: { createdAt: "desc" },
-          take: 1,
+          take: 40,
           select: {
             id: true,
             createdAt: true,
             authorType: true,
             isInternal: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+              },
+            },
+            superAdmin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
         },
         _count: {
@@ -1195,6 +1369,14 @@ export async function getSupportTicketThread(
         },
       },
       assignedToSuperAdmin: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      closedBySuperAdmin: {
         select: {
           id: true,
           firstName: true,
@@ -1266,6 +1448,14 @@ export async function getSupportTicketThread(
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
     closedAt: ticket.closedAt ? ticket.closedAt.toISOString() : null,
+    closureCategory: ticket.closureCategory,
+    resolutionOutcome: ticket.resolutionOutcome,
+    closureSummary: ticket.closureSummary,
+    requesterRating: ticket.requesterRating,
+    requesterRatingComment: ticket.requesterRatingComment,
+    requesterRatedAt: ticket.requesterRatedAt
+      ? ticket.requesterRatedAt.toISOString()
+      : null,
     firstResponseAt: ticket.firstResponseAt
       ? ticket.firstResponseAt.toISOString()
       : null,
@@ -1296,6 +1486,16 @@ export async function getSupportTicketThread(
             ticket.assignedToSuperAdmin.lastName,
           ),
           email: ticket.assignedToSuperAdmin.email,
+        }
+      : null,
+    closedBy: ticket.closedBySuperAdmin
+      ? {
+          id: ticket.closedBySuperAdmin.id,
+          name: fullName(
+            ticket.closedBySuperAdmin.firstName,
+            ticket.closedBySuperAdmin.lastName,
+          ),
+          email: ticket.closedBySuperAdmin.email,
         }
       : null,
     attachments: ticket.attachments.map((attachment) => ({
@@ -1364,6 +1564,12 @@ async function addSupportMessageInternal(params: {
     }
   }
 
+  if (ticket.status === TicketStatus.CLOSED) {
+    throw new Error(
+      "Este atendimento já foi finalizado. Reabra o ticket antes de enviar novas mensagens.",
+    );
+  }
+
   const now = new Date();
 
   let authorType: TicketMessageAuthorType;
@@ -1430,19 +1636,12 @@ async function addSupportMessageInternal(params: {
       ticketUpdate.status = TicketStatus.IN_PROGRESS;
     }
 
-    if (ticket.status === TicketStatus.CLOSED) {
-      ticketUpdate.status = TicketStatus.IN_PROGRESS;
-      ticketUpdate.closedAt = null;
-    }
   } else {
     ticketUpdate.requesterLastViewedAt = now;
 
     if (ticket.status === TicketStatus.WAITING_CUSTOMER) {
       ticketUpdate.status = TicketStatus.IN_PROGRESS;
-    } else if (
-      ticket.status === TicketStatus.CLOSED ||
-      ticket.status === TicketStatus.RESOLVED
-    ) {
+    } else if (ticket.status === TicketStatus.RESOLVED) {
       ticketUpdate.status = TicketStatus.OPEN;
       ticketUpdate.closedAt = null;
     }
@@ -1510,6 +1709,12 @@ export async function updateSupportTicketStatus(
     throw new Error("Ticket não encontrado");
   }
 
+  if (status === TicketStatus.CLOSED) {
+    throw new Error(
+      "Use a ação de finalização para encerrar o atendimento com categoria e desfecho.",
+    );
+  }
+
   if (context.isSuperAdmin) {
     // permitido
   } else {
@@ -1532,9 +1737,11 @@ export async function updateSupportTicketStatus(
     where: { id: ticketId },
     data: {
       status,
-      ...(status === TicketStatus.CLOSED
-        ? { closedAt: now }
-        : { closedAt: null }),
+      closedAt: null,
+      closureCategory: null,
+      resolutionOutcome: null,
+      closureSummary: null,
+      closedBySuperAdminId: null,
     },
   });
 
@@ -1554,6 +1761,155 @@ export async function updateSupportTicketStatus(
       },
     });
   }
+
+  revalidateSupportPaths();
+
+  return { success: true };
+}
+
+export async function finalizeSupportTicket(
+  ticketId: string,
+  data: FinalizeSupportTicketData,
+): Promise<{ success: boolean }> {
+  const context = await getAuthContext();
+  ensureSuperAdminAccess(context);
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  if (!ticket) {
+    throw new Error("Ticket não encontrado");
+  }
+
+  if (!data.closureCategory) {
+    throw new Error("Categoria de fechamento é obrigatória");
+  }
+
+  if (!data.resolutionOutcome) {
+    throw new Error("Desfecho do atendimento é obrigatório");
+  }
+
+  if (ticket.status === TicketStatus.CLOSED) {
+    throw new Error("Este ticket já foi finalizado.");
+  }
+
+  const now = new Date();
+  const closureSummary = data.closureSummary?.trim() || null;
+  const outcomeLabel = TICKET_RESOLUTION_OUTCOME_LABELS[data.resolutionOutcome];
+  const categoryLabel = TICKET_CATEGORY_LABELS[data.closureCategory];
+
+  const summarySuffix = closureSummary ? `\nResumo: ${closureSummary}` : "";
+  const messageContent = [
+    "Atendimento finalizado pelo suporte.",
+    `Desfecho: ${outcomeLabel}.`,
+    `Categoria: ${categoryLabel}.`,
+  ].join(" ") + summarySuffix;
+
+  await prisma.$transaction([
+    prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        status: TicketStatus.CLOSED,
+        closedAt: now,
+        closureCategory: data.closureCategory,
+        resolutionOutcome: data.resolutionOutcome,
+        closureSummary,
+        closedBySuperAdminId: context.userId,
+        supportLastViewedAt: now,
+        requesterRating: null,
+        requesterRatingComment: null,
+        requesterRatedAt: null,
+      },
+    }),
+    prisma.ticketMessage.create({
+      data: {
+        ticketId,
+        content: messageContent,
+        isInternal: false,
+        authorType: TicketMessageAuthorType.SYSTEM,
+        readByRequesterAt: null,
+        readBySupportAt: now,
+      },
+    }),
+  ]);
+
+  revalidateSupportPaths();
+
+  return { success: true };
+}
+
+export async function rateSupportTicket(
+  ticketId: string,
+  data: RateSupportTicketData,
+): Promise<{ success: boolean }> {
+  const context = await getAuthContext();
+  ensureTenantAccess(context);
+
+  const parsedRating = Math.floor(Number(data.rating));
+
+  if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+    throw new Error("A nota deve estar entre 1 e 5.");
+  }
+
+  const comment = data.comment?.trim() || null;
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      id: true,
+      tenantId: true,
+      userId: true,
+      status: true,
+    },
+  });
+
+  if (!ticket) {
+    throw new Error("Ticket não encontrado");
+  }
+
+  if (ticket.tenantId !== context.tenantId) {
+    throw new Error("Ticket não pertence ao tenant atual");
+  }
+
+  if (!context.canManageTenantSupport && ticket.userId !== context.userId) {
+    throw new Error("Sem permissão para avaliar este atendimento");
+  }
+
+  if (ticket.status !== TicketStatus.CLOSED) {
+    throw new Error("A avaliação só pode ser enviada após o encerramento.");
+  }
+
+  const now = new Date();
+  const messageContent = comment
+    ? `Avaliação registrada pelo solicitante: ${parsedRating}/5. Comentário: ${comment}`
+    : `Avaliação registrada pelo solicitante: ${parsedRating}/5.`;
+
+  await prisma.$transaction([
+    prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        requesterRating: parsedRating,
+        requesterRatingComment: comment,
+        requesterRatedAt: now,
+        requesterLastViewedAt: now,
+      },
+    }),
+    prisma.ticketMessage.create({
+      data: {
+        ticketId,
+        content: messageContent,
+        isInternal: false,
+        authorType: TicketMessageAuthorType.SYSTEM,
+        readByRequesterAt: now,
+        readBySupportAt: null,
+      },
+    }),
+  ]);
 
   revalidateSupportPaths();
 
@@ -1628,6 +1984,9 @@ export async function claimSupportTicket(ticketId: string): Promise<{
     where: {
       id: ticketId,
       assignedToSuperAdminId: null,
+      status: {
+        not: TicketStatus.CLOSED,
+      },
     },
     data: {
       assignedToSuperAdminId: context.userId,
