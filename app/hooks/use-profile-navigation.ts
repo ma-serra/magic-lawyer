@@ -467,35 +467,11 @@ export function useProfileNavigation() {
 
     if (permissions.canManageOfficeSettings) {
       items.push({
-        label: "Configurações",
+        label: "Configurações do escritório",
         href: "/configuracoes",
         icon: "Settings",
-        description: "Configurações gerais do escritório",
+        description: "Central de configurações do escritório",
         section: "Administração",
-        isAccordion: true,
-        children: [
-          {
-            label: "Configurações do escritório",
-            href: "/configuracoes",
-            icon: "Settings",
-            description: "Configurações gerais",
-            requiredModules: ["configuracoes"],
-          },
-          {
-            label: "Feriados",
-            href: "/configuracoes/feriados",
-            icon: "Calendar",
-            description: "Gestão de feriados e dias não úteis",
-            requiredModules: ["configuracoes"],
-          },
-          {
-            label: "Billing da assinatura",
-            href: "/configuracoes/billing",
-            icon: "Landmark",
-            description: "Faturas e status da assinatura do escritório",
-            requiredModules: ["configuracoes"],
-          },
-        ],
         requiredModules: ["configuracoes"],
       });
     }
@@ -511,24 +487,8 @@ export function useProfileNavigation() {
   ]);
 
   const secondaryNavigationItems = useMemo(() => {
-    const items: NavigationItem[] = [];
-
-    items.push({
-      label: "Meu Perfil",
-      href: "/usuario/perfil/editar",
-      icon: "User",
-      description: "Editar informações pessoais",
-    });
-
-    items.push({
-      label: "Sair",
-      href: "#logout",
-      icon: "LogOut",
-      description: "Encerrar sessão",
-    });
-
-    return filterNavigation(items, hasModuleAccess);
-  }, [hasModuleAccess]);
+    return [] as NavigationItem[];
+  }, []);
 
   const getDashboardTitle = useCallback(() => {
     switch (userRole) {

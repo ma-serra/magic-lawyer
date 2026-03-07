@@ -1,12 +1,28 @@
 "use client";
 
+import { type Key, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Tabs, Tab } from "@heroui/tabs";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Divider } from "@heroui/divider";
 import { Chip } from "@heroui/chip";
 import { Button } from "@heroui/button";
 import NextLink from "next/link";
-import { Building2, Palette, Mail, BarChart3, Shield } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  BarChart3,
+  Building2,
+  Calendar,
+  CheckSquare,
+  CreditCard,
+  FileSignature,
+  FileText,
+  Landmark,
+  Mail,
+  Palette,
+  Scale,
+  Shield,
+} from "lucide-react";
 
 import { EmailCredentialsCard } from "./email-credentials-card";
 import { TenantSettingsForm } from "./tenant-settings-form";
@@ -14,6 +30,73 @@ import { TenantBrandingForm } from "./tenant-branding-form";
 import { DigitalCertificatesPanel } from "./digital-certificates-panel";
 import { DigitalCertificatePolicyCard } from "./digital-certificate-policy-card";
 import type { DigitalCertificatePolicy } from "@/generated/prisma";
+
+const SettingsTabLoader = () => (
+  <Card className="mt-6 border border-white/10 bg-background/70 backdrop-blur-xl">
+    <CardBody className="py-10 text-center text-sm text-default-400">
+      Carregando configurações...
+    </CardBody>
+  </Card>
+);
+
+const FeriadosSettingsTab = dynamic(() => import("./feriados/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const BillingSettingsTab = dynamic(() => import("./billing/billing-content"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const TribunaisSettingsTab = dynamic(() => import("./tribunais/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const TiposPeticaoSettingsTab = dynamic(() => import("./tipos-peticao/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const TiposContratoSettingsTab = dynamic(() => import("./tipos-contrato/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const AreasProcessoSettingsTab = dynamic(() => import("./areas-processo/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+const CategoriasTarefaSettingsTab = dynamic(
+  () => import("./categorias-tarefa/page"),
+  {
+    ssr: false,
+    loading: () => <SettingsTabLoader />,
+  },
+);
+const AsaasSettingsTab = dynamic(() => import("./asaas/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
+
+const SETTINGS_TAB_KEYS = [
+  "overview",
+  "tenant",
+  "branding",
+  "email",
+  "certificates",
+  "feriados",
+  "billing",
+  "tribunais",
+  "tipos-peticao",
+  "tipos-contrato",
+  "areas-processo",
+  "categorias-tarefa",
+  "asaas",
+] as const;
+
+type SettingsTabKey = (typeof SETTINGS_TAB_KEYS)[number];
+
+function isSettingsTabKey(value: string | null): value is SettingsTabKey {
+  if (!value) return false;
+  return (SETTINGS_TAB_KEYS as readonly string[]).includes(value);
+}
 
 interface TenantSettingsFormProps {
   tenant: {
@@ -120,6 +203,40 @@ export function ConfiguracoesTabs({
   ModulesProps &
   MetricsProps &
   DigitalCertificatesProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const tabFromUrl = searchParams.get("tab");
+  const normalizedTabFromUrl = isSettingsTabKey(tabFromUrl)
+    ? tabFromUrl
+    : ("overview" as SettingsTabKey);
+  const [selectedTab, setSelectedTab] =
+    useState<SettingsTabKey>(normalizedTabFromUrl);
+
+  useEffect(() => {
+    setSelectedTab(normalizedTabFromUrl);
+  }, [normalizedTabFromUrl]);
+
+  const handleTabChange = (key: Key) => {
+    const nextTab = String(key);
+    if (!isSettingsTabKey(nextTab)) return;
+
+    setSelectedTab(nextTab);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextTab === "overview") {
+      params.delete("tab");
+    } else {
+      params.set("tab", nextTab);
+    }
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
+
   const isSubscriptionActive = subscription?.status === "ATIVA";
   const statusPillClasses = isSubscriptionActive
     ? "border-success/30 bg-success/10 text-success"
@@ -133,7 +250,10 @@ export function ConfiguracoesTabs({
       aria-label="Configurações"
       className="w-full"
       color="primary"
+      destroyInactiveTabPanel
+      selectedKey={selectedTab}
       variant="underlined"
+      onSelectionChange={handleTabChange}
       classNames={{
         base: "w-full",
         tabList:
@@ -480,6 +600,116 @@ export function ConfiguracoesTabs({
               policy={certificatePolicy}
             />
           </div>
+        </div>
+      </Tab>
+
+      <Tab
+        key="feriados"
+        title={
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            <span>Feriados</span>
+          </div>
+        }
+      >
+        <FeriadosSettingsTab />
+      </Tab>
+
+      <Tab
+        key="billing"
+        title={
+          <div className="flex items-center gap-2">
+            <Landmark className="h-4 w-4" />
+            <span>Billing</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <BillingSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="tribunais"
+        title={
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            <span>Tribunais</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <TribunaisSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="tipos-peticao"
+        title={
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            <span>Tipos de petição</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <TiposPeticaoSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="tipos-contrato"
+        title={
+          <div className="flex items-center gap-2">
+            <FileSignature className="h-4 w-4" />
+            <span>Tipos de contrato</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <TiposContratoSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="areas-processo"
+        title={
+          <div className="flex items-center gap-2">
+            <Scale className="h-4 w-4" />
+            <span>Áreas de processo</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <AreasProcessoSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="categorias-tarefa"
+        title={
+          <div className="flex items-center gap-2">
+            <CheckSquare className="h-4 w-4" />
+            <span>Categorias de tarefa</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <CategoriasTarefaSettingsTab />
+        </div>
+      </Tab>
+
+      <Tab
+        key="asaas"
+        title={
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            <span>Asaas</span>
+          </div>
+        }
+      >
+        <div className="mt-6">
+          <AsaasSettingsTab />
         </div>
       </Tab>
     </Tabs>

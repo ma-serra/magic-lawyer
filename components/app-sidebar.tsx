@@ -26,16 +26,8 @@ import {
   ModalHeader,
 } from "@heroui/modal";
 import { Button } from "@heroui/button";
-import { User } from "@heroui/user";
-import {
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
-} from "@heroui/dropdown";
 import { Tooltip } from "@heroui/react";
-import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 import { fetchSystemStatus } from "@/app/actions/system-status";
 import type { ExternalServiceStatus } from "@/app/actions/system-status";
@@ -851,102 +843,6 @@ const SidebarToggleIcon = ({ collapsed }: { collapsed: boolean }) => (
   </span>
 );
 
-function MobileUserProfile({ onClose }: { onClose: () => void }) {
-  const { data: session } = useSession();
-  const router = useRouter();
-
-  if (!session?.user) return null;
-
-  const userDisplayName = session.user.name || session.user.email || "Usuário";
-  const userEmail = session.user.email || "";
-  const userAvatar = session.user.image || undefined;
-  const isSuperAdmin = (session.user as any)?.role === "SUPER_ADMIN";
-
-  const handleUserAction = (key: string) => {
-    onClose(); // Fechar o drawer
-
-    if (key === "profile") {
-      // SuperAdmin não tem perfil de usuário comum
-      if (isSuperAdmin) {
-        router.push("/admin/configuracoes");
-      } else {
-        router.push("/usuario/perfil/editar");
-      }
-
-      return;
-    }
-
-    if (key === "tenant-settings") {
-      // SuperAdmin vai para configurações do sistema
-      if (isSuperAdmin) {
-        router.push("/admin/configuracoes");
-      } else {
-        router.push("/configuracoes");
-      }
-
-      return;
-    }
-
-    if (key === "logout") {
-      void signOut({ callbackUrl: "/login" });
-    }
-  };
-
-  return (
-    <div className="px-4 py-3 border-b border-default-200">
-      <Dropdown className="w-full" placement="bottom-start">
-        <DropdownTrigger>
-          <Button className="w-full justify-start p-3 h-auto" variant="light">
-            <User
-              avatarProps={{
-                src: userAvatar,
-                name: userDisplayName,
-                size: "sm",
-                className: "w-8 h-8 text-xs",
-              }}
-              className="w-full"
-              description={userEmail}
-              name={userDisplayName}
-            />
-          </Button>
-        </DropdownTrigger>
-        <DropdownMenu
-          aria-label="Menu do usuário"
-          className="min-w-[220px]"
-          onAction={(key) => handleUserAction(String(key))}
-        >
-          <DropdownItem
-            key="profile"
-            description={
-              isSuperAdmin
-                ? "Configurações do sistema"
-                : "Gerenciar informações pessoais"
-            }
-          >
-            {isSuperAdmin ? "Configurações" : "Meu perfil"}
-          </DropdownItem>
-          {!isSuperAdmin ? (
-            <DropdownItem
-              key="tenant-settings"
-              description="Configurações do escritório"
-            >
-              Configurações
-            </DropdownItem>
-          ) : null}
-          <DropdownItem
-            key="logout"
-            className="text-danger"
-            color="danger"
-            description="Sair da sua conta"
-          >
-            Sair
-          </DropdownItem>
-        </DropdownMenu>
-      </Dropdown>
-    </div>
-  );
-}
-
 function SidebarContent({
   tenantName,
   tenantLogoUrl,
@@ -1502,15 +1398,6 @@ export function AppSidebar({
                     <NotificationCenter />
                   </div>
                 </div>
-
-                {/* Mobile User Profile */}
-                <MobileUserProfile
-                  onClose={() => {
-                    onCloseMobile();
-                    onClose();
-                  }}
-                />
-
                 <SidebarContent
                   collapsed={false}
                   isDesktop={false}
