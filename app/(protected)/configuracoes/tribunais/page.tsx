@@ -2,41 +2,123 @@
 
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Card, CardBody } from "@heroui/card";
-import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-import { Chip } from "@heroui/chip";
-
 import {
-  Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, } from "@heroui/modal";
-import { Skeleton, Select, SelectItem } from "@heroui/react";
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  SelectItem,
+  Skeleton,
+  Switch,
+  useDisclosure,
+} from "@heroui/react";
 import {
-  Plus,
-  RefreshCw,
-  Pencil,
-  Trash2,
   Building2,
+  Globe,
+  Landmark,
   MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 import {
-  listTribunais,
   createTribunal,
-  updateTribunal,
   deleteTribunal,
+  listTribunais,
+  updateTribunal,
 } from "@/app/actions/tribunais";
 import { getEstadosBrasilCached } from "@/lib/api/brazil-states";
-import { title } from "@/components/primitives";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+
+type TribunalItem = {
+  id: string;
+  tenantId?: string | null;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  isGlobal?: boolean;
+  isOwnedByTenant?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  nome: string;
+  sigla?: string | null;
+  esfera?: string | null;
+  uf?: string | null;
+  siteUrl?: string | null;
+  _count?: {
+    processos?: number;
+    juizes?: number;
+  };
+};
+
+type EstadoBrasil = {
+  sigla: string;
+  nome: string;
+};
 
 const ESFERAS = [
   { key: "Federal", label: "Federal" },
   { key: "Estadual", label: "Estadual" },
   { key: "Municipal", label: "Municipal" },
-];
+] as const;
+
+function toSingleSelectionValue(selection: "all" | Set<React.Key>) {
+  if (selection === "all") return "";
+
+  const key = Array.from(selection)[0];
+  return typeof key === "string" ? key : "";
+}
+
+function normalizeUrl(value: string) {
+  if (!value.trim()) return "";
+
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+}
+
+function formatDateTimeBrasilia(value?: string | Date | null) {
+  if (!value) return "Não informado";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Não informado";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
 
 export default function TribunaisPage() {
-  const [tribunalSelecionado, setTribunalSelecionado] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [filtroUf, setFiltroUf] = useState("");
+  const [filtroEsfera, setFiltroEsfera] = useState("");
+  const [apenasVinculados, setApenasVinculados] = useState(false);
+  const [tribunalSelecionado, setTribunalSelecionado] =
+    useState<TribunalItem | null>(null);
+  const [tribunalDetalhe, setTribunalDetalhe] = useState<TribunalItem | null>(
+    null,
+  );
   const [formData, setFormData] = useState({
     nome: "",
     sigla: "",
@@ -46,251 +128,648 @@ export default function TribunaisPage() {
   });
   const [salvando, setSalvando] = useState(false);
 
-  const { isOpen, onOpen, onClose } = useDisclosure();
-
+  const { isOpen, onOpen, onOpenChange, onClose } = useDisclosure();
   const {
-    data: tribunaisData,
-    isLoading,
-    mutate,
-  } = useSWR("tribunais-list", () => listTribunais());
+    isOpen: isDetalhesOpen,
+    onOpen: onDetalhesOpen,
+    onOpenChange: onDetalhesOpenChange,
+    onClose: onDetalhesClose,
+  } = useDisclosure();
 
+  const { data, isLoading, isValidating, mutate } = useSWR(
+    "configuracoes-tribunais-list",
+    () => listTribunais(),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    },
+  );
   const { data: estadosData } = useSWR("estados-brasil", () =>
     getEstadosBrasilCached(),
   );
 
-  const tribunais = useMemo(
-    () => (tribunaisData?.success ? tribunaisData.tribunais : []),
-    [tribunaisData],
+  const tribunais = useMemo<TribunalItem[]>(
+    () => (data?.success ? ((data.tribunais as TribunalItem[]) ?? []) : []),
+    [data],
+  );
+  const estados = useMemo<EstadoBrasil[]>(
+    () => ((estadosData as EstadoBrasil[] | undefined) ?? []).slice(),
+    [estadosData],
   );
 
-  const estados = useMemo(() => estadosData || [], [estadosData]);
+  const errorMessage =
+    data && !data.success ? (data.error ?? "Erro ao carregar tribunais") : null;
 
-  const handleOpenNovo = useCallback(() => {
+  const filteredTribunais = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return tribunais.filter((tribunal) => {
+      if (filtroUf && tribunal.uf !== filtroUf) return false;
+      if (filtroEsfera && tribunal.esfera !== filtroEsfera) return false;
+
+      const totalVinculos =
+        (tribunal._count?.processos ?? 0) + (tribunal._count?.juizes ?? 0);
+      if (apenasVinculados && totalVinculos === 0) return false;
+
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        tribunal.nome,
+        tribunal.sigla ?? "",
+        tribunal.esfera ?? "",
+        tribunal.uf ?? "",
+        tribunal.siteUrl ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [apenasVinculados, filtroEsfera, filtroUf, search, tribunais]);
+
+  const totalComSite = useMemo(
+    () => filteredTribunais.filter((item) => !!item.siteUrl).length,
+    [filteredTribunais],
+  );
+  const totalComVinculos = useMemo(
+    () =>
+      filteredTribunais.filter(
+        (item) => (item._count?.processos ?? 0) + (item._count?.juizes ?? 0) > 0,
+      ).length,
+    [filteredTribunais],
+  );
+  const totalGlobais = useMemo(
+    () => filteredTribunais.filter((item) => !item.tenantId).length,
+    [filteredTribunais],
+  );
+  const ultimaAtualizacaoOficial = useMemo(() => {
+    let lastTimestamp = 0;
+
+    for (const tribunal of tribunais) {
+      if (!tribunal.updatedAt) continue;
+
+      const timestamp = new Date(tribunal.updatedAt).getTime();
+      if (Number.isFinite(timestamp) && timestamp > lastTimestamp) {
+        lastTimestamp = timestamp;
+      }
+    }
+
+    if (!lastTimestamp) {
+      return null;
+    }
+
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(lastTimestamp));
+  }, [tribunais]);
+
+  const ufFilterSelectedKeys = useMemo(() => {
+    if (!filtroUf || !estados.some((estado) => estado.sigla === filtroUf)) {
+      return [];
+    }
+    return [filtroUf];
+  }, [estados, filtroUf]);
+
+  const esferaFilterSelectedKeys = useMemo(() => {
+    if (!filtroEsfera || !ESFERAS.some((item) => item.key === filtroEsfera)) {
+      return [];
+    }
+    return [filtroEsfera];
+  }, [filtroEsfera]);
+
+  const formUfSelectedKeys = useMemo(() => {
+    if (!formData.uf || !estados.some((estado) => estado.sigla === formData.uf)) {
+      return [];
+    }
+    return [formData.uf];
+  }, [estados, formData.uf]);
+
+  const formEsferaSelectedKeys = useMemo(() => {
+    if (
+      !formData.esfera ||
+      !ESFERAS.some((item) => item.key === formData.esfera)
+    ) {
+      return [];
+    }
+    return [formData.esfera];
+  }, [formData.esfera]);
+
+  const openNewModal = useCallback(() => {
     setTribunalSelecionado(null);
-    setFormData({ nome: "", sigla: "", esfera: "", uf: "", siteUrl: "" });
+    setFormData({
+      nome: "",
+      sigla: "",
+      esfera: "",
+      uf: "",
+      siteUrl: "",
+    });
     onOpen();
   }, [onOpen]);
 
-  const handleOpenEditar = useCallback(
-    (tribunal: any) => {
+  const openEditModal = useCallback(
+    (tribunal: TribunalItem) => {
       setTribunalSelecionado(tribunal);
       setFormData({
-        nome: tribunal.nome,
-        sigla: tribunal.sigla || "",
-        esfera: tribunal.esfera || "",
-        uf: tribunal.uf || "",
-        siteUrl: tribunal.siteUrl || "",
+        nome: tribunal.nome ?? "",
+        sigla: tribunal.sigla ?? "",
+        esfera: tribunal.esfera ?? "",
+        uf: tribunal.uf ?? "",
+        siteUrl: tribunal.siteUrl ?? "",
       });
       onOpen();
     },
     [onOpen],
   );
 
-  const handleSalvar = useCallback(async () => {
+  const openDetalhesModal = useCallback(
+    (tribunal: TribunalItem) => {
+      setTribunalDetalhe(tribunal);
+      onDetalhesOpen();
+    },
+    [onDetalhesOpen],
+  );
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setFiltroUf("");
+    setFiltroEsfera("");
+    setApenasVinculados(false);
+  }, []);
+
+  const handleSave = useCallback(async () => {
     if (!formData.nome.trim()) {
       toast.error("Nome é obrigatório");
-
       return;
     }
 
     setSalvando(true);
-
     try {
       const payload = {
-        nome: formData.nome,
-        sigla: formData.sigla || null,
+        nome: formData.nome.trim(),
+        sigla: formData.sigla.trim() || null,
         esfera: formData.esfera || null,
         uf: formData.uf || null,
-        siteUrl: formData.siteUrl || null,
+        siteUrl: normalizeUrl(formData.siteUrl) || null,
       };
 
       const result = tribunalSelecionado
         ? await updateTribunal(tribunalSelecionado.id, payload)
         : await createTribunal(payload);
 
-      if (result.success) {
-        toast.success(
-          tribunalSelecionado
-            ? "Tribunal atualizado com sucesso!"
-            : "Tribunal criado com sucesso!",
-        );
-        mutate();
-        onClose();
-      } else {
-        toast.error(result.error || "Erro ao salvar tribunal");
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível salvar o tribunal");
+        return;
       }
+
+      toast.success(
+        tribunalSelecionado
+          ? "Tribunal atualizado com sucesso."
+          : "Tribunal criado com sucesso.",
+      );
+      await mutate();
+      onClose();
     } catch (error) {
-      toast.error("Erro ao salvar tribunal");
+      toast.error("Erro inesperado ao salvar tribunal");
     } finally {
       setSalvando(false);
     }
-  }, [formData, tribunalSelecionado, mutate, onClose]);
+  }, [formData, mutate, onClose, tribunalSelecionado]);
 
-  const handleExcluir = useCallback(
-    async (id: string) => {
-      if (!confirm("Tem certeza que deseja excluir este tribunal?")) return;
+  const handleDelete = useCallback(
+    async (tribunal: TribunalItem) => {
+      const confirmDelete = window.confirm(
+        `Excluir tribunal "${tribunal.nome}"? Esta ação não pode ser desfeita.`,
+      );
+      if (!confirmDelete) return;
 
-      const result = await deleteTribunal(id);
-
-      if (result.success) {
-        toast.success("Tribunal excluído com sucesso!");
-        mutate();
-      } else {
-        toast.error(result.error || "Erro ao excluir tribunal");
+      const result = await deleteTribunal(tribunal.id);
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível excluir o tribunal");
+        return;
       }
+
+      toast.success("Tribunal excluído com sucesso.");
+      await mutate();
     },
     [mutate],
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={title()}>Tribunais</h1>
-          <p className="text-default-500">
-            Gerencie os tribunais e órgãos judiciais
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            color="default"
-            startContent={<RefreshCw size={18} />}
-            variant="flat"
-            onPress={() => mutate()}
-          >
-            Atualizar
-          </Button>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Tribunais"
+        description="Catálogo de tribunais do escritório para padronizar processos, juízes e integrações."
+        actions={
           <Button
             color="primary"
-            startContent={<Plus size={18} />}
-            onPress={handleOpenNovo}
+            radius="full"
+            startContent={<Plus className="h-4 w-4" />}
+            onPress={openNewModal}
           >
-            Novo Tribunal
+            Novo tribunal
           </Button>
-        </div>
+        }
+      />
+      <p className="text-xs text-default-500">
+        {ultimaAtualizacaoOficial
+          ? `Atualizado por último às ${ultimaAtualizacaoOficial} (horário oficial de Brasília), com base em fontes oficiais.`
+          : "Aguardando primeira atualização oficial em horário de Brasília."}
+      </p>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Tribunais no resultado atual"
+          icon={<Landmark className="h-4 w-4" />}
+          label="Tribunais"
+          tone="primary"
+          value={filteredTribunais.length}
+        />
+        <PeopleMetricCard
+          helper="Com portal oficial cadastrado"
+          icon={<Globe className="h-4 w-4" />}
+          label="Com site"
+          tone="success"
+          value={totalComSite}
+        />
+        <PeopleMetricCard
+          helper="Usados em processos ou juízes"
+          icon={<Building2 className="h-4 w-4" />}
+          label="Com vínculo"
+          tone="warning"
+          value={totalComVinculos}
+        />
+        <PeopleMetricCard
+          helper="Itens compartilhados do catálogo"
+          icon={<MapPin className="h-4 w-4" />}
+          label="Globais"
+          tone="secondary"
+          value={totalGlobais}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Filtros</p>
+            <p className="text-xs text-default-400">
+              Localize tribunais por nome, sigla, esfera e UF.
+            </p>
+          </div>
+          <Button
+            isDisabled={!search && !filtroUf && !filtroEsfera && !apenasVinculados}
+            size="sm"
+            variant="light"
+            onPress={clearFilters}
+          >
+            Limpar filtros
+          </Button>
+        </CardHeader>
+        <CardBody className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+          <Input
+            placeholder="Buscar por nome, sigla ou site"
+            startContent={<Search className="h-4 w-4 text-default-400" />}
+            value={search}
+            variant="bordered"
+            onValueChange={setSearch}
+          />
+          <Select
+            disallowEmptySelection={false}
+            placeholder="UF"
+            selectedKeys={ufFilterSelectedKeys}
+            variant="bordered"
+            onSelectionChange={(selection) =>
+              setFiltroUf(toSingleSelectionValue(selection as "all" | Set<React.Key>))
+            }
+          >
+            {estados.map((estado) => (
+              <SelectItem
+                key={estado.sigla}
+                textValue={`${estado.sigla} - ${estado.nome}`}
+              >
+                {estado.sigla} - {estado.nome}
+              </SelectItem>
+            ))}
+          </Select>
+          <Select
+            disallowEmptySelection={false}
+            placeholder="Esfera"
+            selectedKeys={esferaFilterSelectedKeys}
+            variant="bordered"
+            onSelectionChange={(selection) =>
+              setFiltroEsfera(
+                toSingleSelectionValue(selection as "all" | Set<React.Key>),
+              )
+            }
+          >
+            {ESFERAS.map((esfera) => (
+              <SelectItem key={esfera.key} textValue={esfera.label}>
+                {esfera.label}
+              </SelectItem>
+            ))}
+          </Select>
+          <div className="flex items-center rounded-xl border border-white/10 px-3">
+            <Switch
+              isSelected={apenasVinculados}
+              size="sm"
+              onValueChange={setApenasVinculados}
+            >
+              Apenas com vínculos
+            </Switch>
+          </div>
+        </CardBody>
+      </Card>
+
+      {errorMessage ? (
+        <Card className="border border-danger/20 bg-danger/10">
+          <CardBody className="space-y-3 p-4">
+            <p className="text-sm text-danger">{errorMessage}</p>
+            <div>
+              <Button color="danger" size="sm" variant="flat" onPress={() => mutate()}>
+                Tentar novamente
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {isLoading
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+          ? Array.from({ length: 6 }).map((_, index) => (
+              <Card
+                key={`tribunais-skeleton-${index}`}
+                className="border border-white/10 bg-background/70"
+              >
                 <CardBody>
-                  <Skeleton className="h-24 w-full rounded-lg" />
+                  <Skeleton className="h-40 w-full rounded-xl" />
                 </CardBody>
               </Card>
             ))
-          : tribunais &&
-            tribunais.map((tribunal: any) => (
-              <Card key={tribunal.id}>
-                <CardBody>
-                  <div className="flex items-start gap-3 mb-3">
-                    <Building2 className="text-primary mt-1" size={24} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="font-semibold text-lg leading-tight">
-                          {tribunal.nome}
-                        </h3>
-                        {tribunal.sigla && (
-                          <Chip color="primary" size="sm" variant="flat">
-                            {tribunal.sigla}
-                          </Chip>
-                        )}
-                      </div>
+          : filteredTribunais.map((tribunal) => {
+              const totalProcessos = tribunal._count?.processos ?? 0;
+              const totalJuizes = tribunal._count?.juizes ?? 0;
+              const isGlobal = tribunal.isGlobal ?? !tribunal.tenantId;
+              const canEdit = Boolean(tribunal.canEdit);
+              const canDelete = Boolean(tribunal.canDelete);
+              const originLabel = isGlobal
+                ? "Global"
+                : tribunal.isOwnedByTenant
+                  ? "Seu escritório"
+                  : "Outro escritório";
 
-                      <div className="flex gap-2 flex-wrap text-xs text-default-400 mb-2">
-                        {tribunal.esfera && (
-                          <span className="flex items-center gap-1">
-                            <Building2 size={12} />
-                            {tribunal.esfera}
-                          </span>
-                        )}
-                        {tribunal.uf && (
-                          <span className="flex items-center gap-1">
-                            <MapPin size={12} />
-                            {tribunal.uf}
-                          </span>
-                        )}
-                      </div>
-
-                      {tribunal.siteUrl && (
-                        <a
-                          className="text-xs text-primary hover:underline truncate block"
-                          href={tribunal.siteUrl}
-                          rel="noopener noreferrer"
-                          target="_blank"
+              return (
+                <Card
+                  key={tribunal.id}
+                  className="border border-white/10 bg-background/70 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg hover:shadow-primary/15"
+                >
+                  <CardBody className="space-y-4 p-4 sm:p-5">
+                    <button
+                      className="w-full space-y-4 rounded-xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                      type="button"
+                      onClick={() => openDetalhesModal(tribunal)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {tribunal.nome}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
+                            {tribunal.sigla ? <span>{tribunal.sigla}</span> : null}
+                            {tribunal.esfera ? <span>• {tribunal.esfera}</span> : null}
+                            {tribunal.uf ? <span>• {tribunal.uf}</span> : null}
+                          </div>
+                        </div>
+                        <Chip
+                          color={isGlobal ? "secondary" : "primary"}
+                          size="sm"
+                          variant="flat"
                         >
-                          {tribunal.siteUrl}
-                        </a>
-                      )}
-                    </div>
-                  </div>
+                          {originLabel}
+                        </Chip>
+                      </div>
 
-                  <div className="flex justify-between items-center text-xs text-default-400 pt-3 border-t border-divider">
-                    <div className="flex gap-3">
-                      <span>{tribunal._count?.processos || 0} processo(s)</span>
-                      <span>{tribunal._count?.juizes || 0} juiz(es)</span>
-                    </div>
-                    <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg border border-white/10 p-2">
+                          <p className="text-default-500">Processos</p>
+                          <p className="font-semibold text-foreground">{totalProcessos}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 p-2">
+                          <p className="text-default-500">Juízes</p>
+                          <p className="font-semibold text-foreground">{totalJuizes}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-default-500">
+                          {tribunal.siteUrl
+                            ? "Portal oficial cadastrado"
+                            : "Sem fonte oficial informada"}
+                        </p>
+                        <p className="text-xs text-primary">Clique para ver detalhes</p>
+                      </div>
+                    </button>
+
+                    <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-2">
                       <Button
                         isIconOnly
+                        aria-label={`Editar ${tribunal.nome}`}
+                        isDisabled={!canEdit}
                         size="sm"
                         variant="flat"
-                        onPress={() => handleOpenEditar(tribunal)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!canEdit) return;
+                          openEditModal(tribunal);
+                        }}
                       >
-                        <Pencil size={14} />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         isIconOnly
+                        aria-label={`Excluir ${tribunal.nome}`}
                         color="danger"
+                        isDisabled={!canDelete}
                         size="sm"
                         variant="flat"
-                        onPress={() => handleExcluir(tribunal.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!canDelete) return;
+                          handleDelete(tribunal);
+                        }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
+                  </CardBody>
+                </Card>
+              );
+            })}
       </div>
 
-      <Modal isOpen={isOpen} size="lg" onClose={onClose}>
+      {!isLoading && filteredTribunais.length === 0 ? (
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardBody className="py-10 text-center">
+            <p className="text-base font-semibold text-foreground">
+              Nenhum tribunal encontrado
+            </p>
+            <p className="mt-1 text-sm text-default-400">
+              Ajuste os filtros ou cadastre um novo tribunal para o escritório.
+            </p>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      <Modal isOpen={isDetalhesOpen} size="xl" onOpenChange={onDetalhesOpenChange}>
+        <ModalContent>
+          <ModalHeader>Detalhes do tribunal</ModalHeader>
+          <ModalBody>
+            {tribunalDetalhe ? (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-base font-semibold">{tribunalDetalhe.nome}</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
+                    {tribunalDetalhe.sigla ? <span>{tribunalDetalhe.sigla}</span> : null}
+                    {tribunalDetalhe.esfera ? <span>• {tribunalDetalhe.esfera}</span> : null}
+                    {tribunalDetalhe.uf ? <span>• {tribunalDetalhe.uf}</span> : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-white/10 p-2">
+                    <p className="text-default-500">Processos vinculados</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe._count?.processos ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 p-2">
+                    <p className="text-default-500">Juízes vinculados</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe._count?.juizes ?? 0}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip
+                    color={tribunalDetalhe.isGlobal ? "secondary" : "primary"}
+                    size="sm"
+                    variant="flat"
+                  >
+                    {tribunalDetalhe.isGlobal ? "Catálogo global" : "Seu escritório"}
+                  </Chip>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">Sigla</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe.sigla || "Não informado"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">Esfera</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe.esfera || "Não informado"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">UF</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe.uf || "Não informado"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">Portal oficial</p>
+                    <p className="font-semibold text-foreground">
+                      {tribunalDetalhe.siteUrl ? "Cadastrado" : "Não informado"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">Criado em</p>
+                    <p className="font-semibold text-foreground">
+                      {formatDateTimeBrasilia(tribunalDetalhe.createdAt)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 p-3">
+                    <p className="text-default-500">Atualizado em</p>
+                    <p className="font-semibold text-foreground">
+                      {formatDateTimeBrasilia(tribunalDetalhe.updatedAt)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onDetalhesClose}>
+              Fechar
+            </Button>
+            {tribunalDetalhe?.canEdit ? (
+              <Button
+                color="primary"
+                onPress={() => {
+                  if (!tribunalDetalhe) return;
+                  onDetalhesClose();
+                  openEditModal(tribunalDetalhe);
+                }}
+              >
+                Editar
+              </Button>
+            ) : null}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isOpen} size="lg" onOpenChange={onOpenChange}>
         <ModalContent>
           <ModalHeader>
-            {tribunalSelecionado ? "Editar Tribunal" : "Novo Tribunal"}
+            {tribunalSelecionado ? "Editar tribunal" : "Novo tribunal"}
           </ModalHeader>
           <ModalBody>
             <div className="space-y-4">
               <Input
                 isRequired
-                label="Nome"
-                placeholder="Ex: Tribunal de Justiça de São Paulo"
+                label="Nome do tribunal"
+                placeholder="Ex.: Tribunal de Justiça da Bahia"
                 value={formData.nome}
-                onChange={(e) =>
-                  setFormData({ ...formData, nome: e.target.value })
+                onChange={(event) =>
+                  setFormData((prev) => ({ ...prev, nome: event.target.value }))
                 }
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label="Sigla"
-                  placeholder="Ex: TJSP"
+                  placeholder="Ex.: TJBA"
                   value={formData.sigla}
-                  onChange={(e) =>
-                    setFormData({ ...formData, sigla: e.target.value })
+                  onChange={(event) =>
+                    setFormData((prev) => ({ ...prev, sigla: event.target.value }))
                   }
                 />
-
                 <Select
+                  disallowEmptySelection={false}
                   label="UF"
-                  placeholder="Selecione"
-                  selectedKeys={formData.uf ? [formData.uf] : []}
-                  onChange={(e) =>
-                    setFormData({ ...formData, uf: e.target.value })
+                  placeholder="Selecione a UF"
+                  selectedKeys={formUfSelectedKeys}
+                  onSelectionChange={(selection) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      uf: toSingleSelectionValue(
+                        selection as "all" | Set<React.Key>,
+                      ),
+                    }))
                   }
                 >
-                  {estados.map((estado: any) => (
+                  {estados.map((estado) => (
                     <SelectItem
                       key={estado.sigla}
                       textValue={`${estado.sigla} - ${estado.nome}`}
@@ -302,25 +781,33 @@ export default function TribunaisPage() {
               </div>
 
               <Select
+                disallowEmptySelection={false}
                 label="Esfera"
-                placeholder="Selecione"
-                selectedKeys={formData.esfera ? [formData.esfera] : []}
-                onChange={(e) =>
-                  setFormData({ ...formData, esfera: e.target.value })
+                placeholder="Federal, Estadual ou Municipal"
+                selectedKeys={formEsferaSelectedKeys}
+                onSelectionChange={(selection) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    esfera: toSingleSelectionValue(
+                      selection as "all" | Set<React.Key>,
+                    ),
+                  }))
                 }
               >
                 {ESFERAS.map((esfera) => (
-                  <SelectItem key={esfera.key} textValue={esfera.label}>{esfera.label}</SelectItem>
+                  <SelectItem key={esfera.key} textValue={esfera.label}>
+                    {esfera.label}
+                  </SelectItem>
                 ))}
               </Select>
 
               <Input
-                label="Site"
-                placeholder="https://www.tjsp.jus.br"
+                label="Site oficial"
+                placeholder="https://www.tjba.jus.br"
                 type="url"
                 value={formData.siteUrl}
-                onChange={(e) =>
-                  setFormData({ ...formData, siteUrl: e.target.value })
+                onChange={(event) =>
+                  setFormData((prev) => ({ ...prev, siteUrl: event.target.value }))
                 }
               />
             </div>
@@ -329,12 +816,16 @@ export default function TribunaisPage() {
             <Button variant="light" onPress={onClose}>
               Cancelar
             </Button>
-            <Button color="primary" isLoading={salvando} onPress={handleSalvar}>
-              {tribunalSelecionado ? "Atualizar" : "Criar"}
+            <Button color="primary" isLoading={salvando} onPress={handleSave}>
+              {tribunalSelecionado ? "Salvar alterações" : "Criar tribunal"}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+
+      {isValidating ? (
+        <div className="text-right text-xs text-default-500">Sincronizando lista...</div>
+      ) : null}
+    </section>
   );
 }

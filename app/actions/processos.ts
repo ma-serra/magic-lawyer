@@ -2072,6 +2072,20 @@ export async function createProcesso(data: ProcessoCreateInput) {
       };
     }
 
+    if (data.tribunalId) {
+      const tribunal = await prisma.tribunal.findFirst({
+        where: {
+          id: data.tribunalId,
+          OR: [{ tenantId: null }, { tenantId: user.tenantId }],
+        },
+        select: { id: true },
+      });
+
+      if (!tribunal) {
+        return { success: false, error: "Tribunal informado não encontrado" };
+      }
+    }
+
     // Se for ADVOGADO, validar vínculo com o cliente
     if (user.role === "ADVOGADO") {
       const advogadoId = await getAdvogadoIdFromSession(session);
@@ -2416,7 +2430,7 @@ export async function updateProcesso(
       const tribunal = await prisma.tribunal.findFirst({
         where: {
           id: data.tribunalId,
-          tenantId,
+          OR: [{ tenantId: null }, { tenantId }],
         },
         select: { id: true },
       });

@@ -1067,8 +1067,17 @@ export async function getJuizFormData(): Promise<{
     const user = session.user as any;
     const isSuperAdmin = user.role === "SUPER_ADMIN";
 
+    if (!isSuperAdmin && !user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
     // Buscar tribunais
     const tribunais = await prisma.tribunal.findMany({
+      where: isSuperAdmin
+        ? undefined
+        : {
+            OR: [{ tenantId: null }, { tenantId: user.tenantId }],
+          },
       select: {
         id: true,
         nome: true,
@@ -2434,6 +2443,22 @@ export async function createJuizTenant(data: {
 
     const isSuperAdmin = user.role === "SUPER_ADMIN";
 
+    if (data.tribunalId) {
+      const tribunal = await prisma.tribunal.findFirst({
+        where: isSuperAdmin
+          ? { id: data.tribunalId }
+          : {
+              id: data.tribunalId,
+              OR: [{ tenantId: null }, { tenantId: user.tenantId }],
+            },
+        select: { id: true },
+      });
+
+      if (!tribunal) {
+        return { success: false, error: "Tribunal informado não encontrado" };
+      }
+    }
+
     if (!isSuperAdmin) {
       if (!user.tenantId) {
         return { success: false, error: "Tenant não encontrado" };
@@ -2753,6 +2778,22 @@ export async function updateJuizTenant(
 
     const user = session.user as any;
     const isSuperAdmin = user.role === "SUPER_ADMIN";
+
+    if (data.tribunalId) {
+      const tribunal = await prisma.tribunal.findFirst({
+        where: isSuperAdmin
+          ? { id: data.tribunalId }
+          : {
+              id: data.tribunalId,
+              OR: [{ tenantId: null }, { tenantId: user.tenantId }],
+            },
+        select: { id: true },
+      });
+
+      if (!tribunal) {
+        return { success: false, error: "Tribunal informado não encontrado" };
+      }
+    }
 
     if (!isSuperAdmin) {
       if (!user.tenantId) {

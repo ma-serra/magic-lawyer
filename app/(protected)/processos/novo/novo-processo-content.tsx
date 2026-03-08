@@ -35,6 +35,7 @@ import {
   createProcesso,
   type ProcessoCreateInput,
 } from "@/app/actions/processos";
+import { listTribunaisParaVinculo } from "@/app/actions/tribunais";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
 import {
   ProcessoStatus,
@@ -71,6 +72,7 @@ export function NovoProcessoContent() {
     segredoJustica: false,
     advogadoResponsavelId: "",
     juizId: "",
+    tribunalId: "",
   });
 
   // Buscar clientes para o select (apenas se não veio de um cliente)
@@ -81,6 +83,10 @@ export function NovoProcessoContent() {
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
   );
+  const { data: tribunaisData, isLoading: isLoadingTribunais } = useSWR(
+    "tribunais-vinculo-processos-novo",
+    () => listTribunaisParaVinculo(),
+  );
   const areas = useMemo(() => {
     if (!areasData?.success) {
       return [];
@@ -88,6 +94,13 @@ export function NovoProcessoContent() {
 
     return areasData.areas ?? [];
   }, [areasData]);
+  const tribunais = useMemo(() => {
+    if (!tribunaisData?.success) {
+      return [];
+    }
+
+    return tribunaisData.tribunais ?? [];
+  }, [tribunaisData]);
 
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente) => cliente.id)),
@@ -101,6 +114,10 @@ export function NovoProcessoContent() {
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
   );
+  const tribunalKeys = useMemo(
+    () => new Set((tribunais || []).map((tribunal) => tribunal.id)),
+    [tribunais],
+  );
   const juizKeys = useMemo(
     () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
     [juizesDisponiveis],
@@ -113,6 +130,10 @@ export function NovoProcessoContent() {
     formData.advogadoResponsavelId &&
     advogadoKeys.has(formData.advogadoResponsavelId)
       ? [formData.advogadoResponsavelId]
+      : [];
+  const selectedTribunalKeys =
+    formData.tribunalId && tribunalKeys.has(formData.tribunalId)
+      ? [formData.tribunalId]
       : [];
   const selectedJuizKeys =
     formData.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
@@ -173,6 +194,12 @@ export function NovoProcessoContent() {
       return;
     }
 
+    if (!formData.tribunalId) {
+      toast.error("Selecione o tribunal do caso");
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -215,6 +242,7 @@ export function NovoProcessoContent() {
       if (formData.advogadoResponsavelId)
         payload.advogadoResponsavelId = formData.advogadoResponsavelId;
       if (formData.juizId) payload.juizId = formData.juizId;
+      if (formData.tribunalId) payload.tribunalId = formData.tribunalId;
 
       const result = await createProcesso(payload);
 
@@ -359,6 +387,45 @@ export function NovoProcessoContent() {
                     <span className="text-xs text-default-400">
                       {[juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
                         "Sem vara/comarca informada"}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </Select>
+
+            <Select
+              description="Tribunal ao qual o processo está vinculado. Pode ser global (oficial) ou do seu escritório."
+              isLoading={isLoadingTribunais}
+              isRequired
+              label="Tribunal *"
+              placeholder="Selecione o tribunal do caso"
+              selectedKeys={selectedTribunalKeys}
+              startContent={<Landmark className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  tribunalId: (Array.from(keys)[0] as string) || "",
+                }))
+              }
+            >
+              {(tribunais || []).map((tribunal) => (
+                <SelectItem
+                  key={tribunal.id}
+                  textValue={
+                    tribunal.sigla
+                      ? `${tribunal.sigla} - ${tribunal.nome}`
+                      : tribunal.nome
+                  }
+                >
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold">
+                      {tribunal.sigla
+                        ? `${tribunal.sigla} - ${tribunal.nome}`
+                        : tribunal.nome}
+                    </span>
+                    <span className="text-xs text-default-400">
+                      {[tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+                        "Sem esfera/UF"}
                     </span>
                   </div>
                 </SelectItem>
