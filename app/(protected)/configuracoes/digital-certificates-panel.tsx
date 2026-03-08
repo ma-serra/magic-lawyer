@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type DragEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -37,6 +39,8 @@ import { Tooltip } from "@heroui/tooltip";
 import { Divider } from "@heroui/divider";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 import { Spinner } from "@heroui/spinner";
+import { Pagination } from "@heroui/pagination";
+import { Select, SelectItem } from "@heroui/react";
 import {
   CheckCircle2,
   ShieldCheck,
@@ -51,6 +55,8 @@ import {
   Tag,
   Calendar,
   Sparkles,
+  Search,
+  Filter,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { AnimatePresence, motion } from "framer-motion";
@@ -104,6 +110,7 @@ interface DigitalCertificatesPanelProps {
 
 const ACCEPTED_CERTIFICATE_EXTENSIONS = [".pfx", ".p12"];
 const MAX_CERTIFICATE_SIZE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_PAGE_SIZE = 8;
 
 function isValidCertificateFile(file: File) {
   const normalized = file.name.toLowerCase();
@@ -166,6 +173,7 @@ export function DigitalCertificatesPanel({
   mode,
   policy,
 }: DigitalCertificatesPanelProps) {
+  const router = useRouter();
   const isOfficeMode = mode === "office";
   const policyAllowsOffice =
     policy === DigitalCertificatePolicy.OFFICE ||
@@ -180,9 +188,18 @@ export function DigitalCertificatesPanel({
   const [isUploadOpen, setUploadOpen] = useState(false);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logs, setLogs] = useState<CertificateLog[]>([]);
-  const [selectedCertificateId, setSelectedCertificateId] = useState<
+  const [actionCertificateId, setActionCertificateId] = useState<
     string | null
   >(null);
+  const [logsCertificateId, setLogsCertificateId] = useState<
+    string | null
+  >(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "ACTIVE" | "INACTIVE" | "EXPIRED"
+  >("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [isPending, startTransition] = useTransition();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -192,9 +209,95 @@ export function DigitalCertificatesPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeCertificate = useMemo(
-    () => (Array.isArray(certificates) ? certificates.find((cert) => cert.isActive) : undefined),
+    () =>
+      Array.isArray(certificates)
+        ? certificates.find((cert) => cert.isActive)
+        : undefined,
     [certificates],
   );
+
+  const expiredCount = useMemo(
+    () =>
+      (certificates ?? []).filter(
+        (cert) =>
+          Boolean(cert.validUntil) &&
+          new Date(cert.validUntil as string).getTime() < Date.now(),
+      ).length,
+    [certificates],
+  );
+
+  const expiringSoonCount = useMemo(() => {
+    const now = Date.now();
+    const limit = now + 1000 * 60 * 60 * 24 * 30;
+    return (certificates ?? []).filter((cert) => {
+      if (!cert.validUntil) {
+        return false;
+      }
+      const ts = new Date(cert.validUntil).getTime();
+      return ts >= now && ts <= limit;
+    }).length;
+  }, [certificates]);
+
+  const filteredCertificates = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return (certificates ?? []).filter((cert) => {
+      const expired =
+        Boolean(cert.validUntil) &&
+        new Date(cert.validUntil as string).getTime() < Date.now();
+      const statusMatches =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && cert.isActive) ||
+        (statusFilter === "INACTIVE" && !cert.isActive && !expired) ||
+        (statusFilter === "EXPIRED" && expired);
+
+      if (!statusMatches) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const text = [
+        cert.label,
+        cert.tipo,
+        cert.id,
+        cert.responsavelUsuario?.firstName,
+        cert.responsavelUsuario?.lastName,
+        cert.responsavelUsuario?.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return text.includes(normalizedSearch);
+    });
+  }, [certificates, searchTerm, statusFilter]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredCertificates.length / rowsPerPage),
+  );
+  const pagedCertificates = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    return filteredCertificates.slice(start, start + rowsPerPage);
+  }, [filteredCertificates, currentPage, rowsPerPage]);
+  const pageStartItem =
+    filteredCertificates.length === 0
+      ? 0
+      : (currentPage - 1) * rowsPerPage + 1;
+  const pageEndItem = Math.min(currentPage * rowsPerPage, filteredCertificates.length);
+  const hasActiveFilters =
+    searchTerm.trim().length > 0 || statusFilter !== "ALL";
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, rowsPerPage]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   const hasCertificates = Array.isArray(certificates) && certificates.length > 0;
   const dropzoneDisabled = isSubmitting || !policyAllowsCurrent;
@@ -348,11 +451,12 @@ export function DigitalCertificatesPanel({
       }
 
       toast.success("Certificado enviado com sucesso.", {
-        description: "Atualize a página para ver o status mais recente.",
+        description: "Lista atualizada com o novo certificado.",
       });
 
       setUploadOpen(false);
       resetForm();
+      router.refresh();
     } catch (error) {
       toast.error("Falha no upload", {
         description:
@@ -369,19 +473,25 @@ export function DigitalCertificatesPanel({
     }
 
     startTransition(async () => {
-      const result = await deactivateDigitalCertificate({ certificateId });
+      setActionCertificateId(certificateId);
+      try {
+        const result = await deactivateDigitalCertificate({ certificateId });
 
-      if (!result.success) {
-        toast.error("Não foi possível desativar o certificado", {
-          description: result.error,
+        if (!result.success) {
+          toast.error("Não foi possível desativar o certificado", {
+            description: result.error,
+          });
+
+          return;
+        }
+
+        toast.success("Certificado desativado", {
+          description: "Status atualizado com sucesso.",
         });
-
-        return;
+        router.refresh();
+      } finally {
+        setActionCertificateId(null);
       }
-
-      toast.success("Certificado desativado", {
-        description: "Atualize a página para sincronizar a lista.",
-      });
     });
   };
 
@@ -391,19 +501,25 @@ export function DigitalCertificatesPanel({
     }
 
     startTransition(async () => {
-      const result = await activateDigitalCertificate({ certificateId });
+      setActionCertificateId(certificateId);
+      try {
+        const result = await activateDigitalCertificate({ certificateId });
 
-      if (!result.success) {
-        toast.error("Não foi possível ativar o certificado", {
-          description: result.error,
+        if (!result.success) {
+          toast.error("Não foi possível ativar o certificado", {
+            description: result.error,
+          });
+
+          return;
+        }
+
+        toast.success("Certificado ativado", {
+          description: "Status atualizado com sucesso.",
         });
-
-        return;
+        router.refresh();
+      } finally {
+        setActionCertificateId(null);
       }
-
-      toast.success("Certificado ativado", {
-        description: "Atualize a página para sincronizar a lista.",
-      });
     });
   };
 
@@ -413,22 +529,29 @@ export function DigitalCertificatesPanel({
     }
 
     startTransition(async () => {
-      const result = await testDigitalCertificate({ certificateId });
+      setActionCertificateId(certificateId);
+      try {
+        const result = await testDigitalCertificate({ certificateId });
 
-      if (!result.success) {
-        toast.error("Teste falhou", { description: result.error });
+        if (!result.success) {
+          toast.error("Teste falhou", { description: result.error });
 
-        return;
+          return;
+        }
+
+        toast.success("Teste bem-sucedido", {
+          description: result.message ?? "Certificado validado.",
+        });
+        router.refresh();
+      } finally {
+        setActionCertificateId(null);
       }
-
-      toast.success("Teste bem-sucedido", {
-        description: result.message ?? "Certificado validado.",
-      });
     });
   };
 
   const handleOpenLogs = async (certificateId: string) => {
-    setSelectedCertificateId(certificateId);
+    setLogsCertificateId(certificateId);
+    setLogs([]);
     setIsLoadingLogs(true);
 
     try {
@@ -507,6 +630,59 @@ export function DigitalCertificatesPanel({
           </div>
         </CardHeader>
         <CardBody className="space-y-6">
+          <Card className="border border-primary/20 bg-primary/5">
+            <CardBody className="space-y-2 text-sm text-default-300">
+              <p className="font-medium text-white">
+                {isOfficeMode
+                  ? "Escopo: certificado do escritório"
+                  : "Escopo: certificado pessoal do advogado"}
+              </p>
+              <p>
+                {isOfficeMode
+                  ? "Use esta aba para controlar integrações PJe do tenant. Certificado pessoal é gerenciado em Perfil do usuário."
+                  : "Use esta aba para seu certificado individual no PJe. Certificado central do escritório fica em Configurações do escritório."}
+              </p>
+              <p>
+                Fluxo recomendado: enviar certificado A1, testar conexão, ativar e monitorar validade.
+              </p>
+            </CardBody>
+          </Card>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <Card className="border border-white/10 bg-white/5">
+              <CardBody className="gap-1 py-4">
+                <p className="text-[11px] uppercase tracking-wide text-default-500">
+                  Cadastrados
+                </p>
+                <p className="text-xl font-semibold text-white">
+                  {certificates.length}
+                </p>
+              </CardBody>
+            </Card>
+            <Card className="border border-white/10 bg-white/5">
+              <CardBody className="gap-1 py-4">
+                <p className="text-[11px] uppercase tracking-wide text-default-500">Ativos</p>
+                <p className="text-xl font-semibold text-success">
+                  {certificates.filter((item) => item.isActive).length}
+                </p>
+              </CardBody>
+            </Card>
+            <Card className="border border-white/10 bg-white/5">
+              <CardBody className="gap-1 py-4">
+                <p className="text-[11px] uppercase tracking-wide text-default-500">
+                  Expiram em 30 dias
+                </p>
+                <p className="text-xl font-semibold text-warning">{expiringSoonCount}</p>
+              </CardBody>
+            </Card>
+            <Card className="border border-white/10 bg-white/5">
+              <CardBody className="gap-1 py-4">
+                <p className="text-[11px] uppercase tracking-wide text-default-500">Expirados</p>
+                <p className="text-xl font-semibold text-danger">{expiredCount}</p>
+              </CardBody>
+            </Card>
+          </div>
+
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-3">
               <Badge
@@ -554,6 +730,79 @@ export function DigitalCertificatesPanel({
             </div>
           </div>
 
+          {hasCertificates && (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+              <Input
+                label="Buscar certificado"
+                placeholder="Nome, tipo, ID ou responsável"
+                startContent={<Search className="h-4 w-4 text-default-400" />}
+                value={searchTerm}
+                onValueChange={setSearchTerm}
+              />
+              <Select
+                label="Status"
+                selectedKeys={statusFilter ? [statusFilter] : []}
+                startContent={<Filter className="h-4 w-4 text-default-400" />}
+                onSelectionChange={(keys) => {
+                  const [value] = Array.from(keys);
+                  if (typeof value === "string") {
+                    setStatusFilter(
+                      value as "ALL" | "ACTIVE" | "INACTIVE" | "EXPIRED",
+                    );
+                  }
+                }}
+              >
+                <SelectItem key="ALL" textValue="Todos">
+                  Todos
+                </SelectItem>
+                <SelectItem key="ACTIVE" textValue="Ativos">
+                  Ativos
+                </SelectItem>
+                <SelectItem key="INACTIVE" textValue="Inativos">
+                  Inativos
+                </SelectItem>
+                <SelectItem key="EXPIRED" textValue="Expirados">
+                  Expirados
+                </SelectItem>
+              </Select>
+              <Select
+                label="Por página"
+                selectedKeys={[String(rowsPerPage)]}
+                onSelectionChange={(keys) => {
+                  const [value] = Array.from(keys);
+                  if (typeof value === "string") {
+                    const parsed = Number(value);
+                    if (!Number.isNaN(parsed)) {
+                      setRowsPerPage(parsed);
+                    }
+                  }
+                }}
+              >
+                <SelectItem key="6" textValue="6">
+                  6
+                </SelectItem>
+                <SelectItem key="8" textValue="8">
+                  8
+                </SelectItem>
+                <SelectItem key="12" textValue="12">
+                  12
+                </SelectItem>
+              </Select>
+              <Button
+                className="self-end"
+                isDisabled={!hasActiveFilters}
+                variant="flat"
+                onPress={() => {
+                  setSearchTerm("");
+                  setStatusFilter("ALL");
+                  setCurrentPage(1);
+                }}
+              >
+                Limpar filtros
+              </Button>
+            </div>
+          )}
+
           {!policyAllowsCurrent && (
             <Card className="border border-dashed border-warning/40 bg-warning/5">
               <CardBody className="text-sm text-warning-700">
@@ -579,127 +828,145 @@ export function DigitalCertificatesPanel({
               </CardBody>
             </Card>
           ) : (
-            <ScrollShadow className="max-h-[420px]">
-              <Table removeWrapper aria-label="Certificados digitais">
-                <TableHeader>
-                  <TableColumn>STATUS</TableColumn>
-                  <TableColumn>IDENTIFICAÇÃO</TableColumn>
-                  <TableColumn>RESPONSÁVEL</TableColumn>
-                  <TableColumn>ÚLTIMO USO</TableColumn>
-                  <TableColumn>VALIDADE</TableColumn>
-                  <TableColumn className="text-right">AÇÕES</TableColumn>
-                </TableHeader>
-                <TableBody emptyContent="Nenhum certificado cadastrado.">
-                  {certificates.map((certificate) => (
-                    <TableRow key={certificate.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {statusChip(certificate)}
-                          <span className="text-xs text-default-500">
-                            {certificate.tipo}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <p className="font-medium text-white">
-                            {certificate.label || certificate.id.slice(0, 12)}
-                          </p>
-                          <span className="text-xs text-default-500">
-                            Registrado em {formatDate(certificate.createdAt)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-xs text-primary">
-                            {initialsFromResponsible(certificate.responsavelUsuario)}
+            <div className="space-y-3">
+              <ScrollShadow className="max-h-[420px]">
+                <Table removeWrapper aria-label="Certificados digitais">
+                  <TableHeader>
+                    <TableColumn>STATUS</TableColumn>
+                    <TableColumn>IDENTIFICAÇÃO</TableColumn>
+                    <TableColumn>RESPONSÁVEL</TableColumn>
+                    <TableColumn>ÚLTIMO USO</TableColumn>
+                    <TableColumn>VALIDADE</TableColumn>
+                    <TableColumn className="text-right">AÇÕES</TableColumn>
+                  </TableHeader>
+                  <TableBody emptyContent="Nenhum certificado encontrado no filtro aplicado.">
+                    {pagedCertificates.map((certificate) => (
+                      <TableRow key={certificate.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {statusChip(certificate)}
+                            <span className="text-xs text-default-500">
+                              {certificate.tipo}
+                            </span>
                           </div>
-                          <div>
-                            <p className="text-sm text-white">
-                              {fullName(certificate.responsavelUsuario)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <p className="font-medium text-white">
+                              {certificate.label || certificate.id.slice(0, 12)}
                             </p>
-                            <p className="text-xs text-default-500">
-                              {certificate.responsavelUsuario?.email ?? "—"}
-                            </p>
+                            <span className="text-xs text-default-500">
+                              Registrado em {formatDate(certificate.createdAt)}
+                            </span>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-default-400">
-                          <Activity className="h-4 w-4" />
-                          <span>{formatDate(certificate.lastUsedAt)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-default-400">
-                          <AlertTriangle className="h-4 w-4 text-warning" />
-                          <span>{formatDate(certificate.validUntil)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-2">
-                          <Tooltip content="Visualizar histórico">
-                            <Button
-                              isIconOnly
-                              isDisabled={!policyAllowsCurrent}
-                              size="sm"
-                              variant="light"
-                              onPress={() => handleOpenLogs(certificate.id)}
-                            >
-                              <UserCircle2 className="h-4 w-4" />
-                            </Button>
-                          </Tooltip>
-                          <Tooltip content="Testar acesso">
-                            <Button
-                              isDisabled={!policyAllowsCurrent}
-                              isLoading={
-                                isPending && selectedCertificateId === certificate.id
-                              }
-                              isIconOnly
-                              size="sm"
-                              variant="light"
-                              onPress={() => handleTest(certificate.id)}
-                            >
-                              <CheckCircle2 className="h-4 w-4 text-success" />
-                            </Button>
-                          </Tooltip>
-                          {certificate.isActive ? (
-                            <Tooltip content="Desativar">
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-xs text-primary">
+                              {initialsFromResponsible(certificate.responsavelUsuario)}
+                            </div>
+                            <div>
+                              <p className="text-sm text-white">
+                                {fullName(certificate.responsavelUsuario)}
+                              </p>
+                              <p className="text-xs text-default-500">
+                                {certificate.responsavelUsuario?.email ?? "—"}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm text-default-400">
+                            <Activity className="h-4 w-4" />
+                            <span>{formatDate(certificate.lastUsedAt)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm text-default-400">
+                            <AlertTriangle className="h-4 w-4 text-warning" />
+                            <span>{formatDate(certificate.validUntil)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-2">
+                            <Tooltip content="Visualizar histórico">
                               <Button
-                                color="danger"
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                onPress={() => handleOpenLogs(certificate.id)}
+                              >
+                                <UserCircle2 className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content="Testar acesso">
+                              <Button
                                 isDisabled={!policyAllowsCurrent}
                                 isLoading={
-                                  isPending &&
-                                  selectedCertificateId === certificate.id
+                                  isPending && actionCertificateId === certificate.id
                                 }
+                                isIconOnly
                                 size="sm"
-                                variant="flat"
-                                onPress={() => handleDeactivate(certificate.id)}
+                                variant="light"
+                                onPress={() => handleTest(certificate.id)}
                               >
-                                Desativar
+                                <CheckCircle2 className="h-4 w-4 text-success" />
                               </Button>
                             </Tooltip>
-                          ) : (
-                            <Tooltip content="Ativar">
-                              <Button
-                                color="success"
-                                isDisabled={!policyAllowsCurrent}
-                                size="sm"
-                                variant="flat"
-                                onPress={() => handleActivate(certificate.id)}
-                              >
-                                Ativar
-                              </Button>
-                            </Tooltip>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollShadow>
+                            {certificate.isActive ? (
+                              <Tooltip content="Desativar">
+                                <Button
+                                  color="danger"
+                                  isDisabled={!policyAllowsCurrent}
+                                  isLoading={
+                                    isPending &&
+                                    actionCertificateId === certificate.id
+                                  }
+                                  size="sm"
+                                  variant="flat"
+                                  onPress={() => handleDeactivate(certificate.id)}
+                                >
+                                  Desativar
+                                </Button>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip content="Ativar">
+                                <Button
+                                  color="success"
+                                  isDisabled={!policyAllowsCurrent}
+                                  isLoading={
+                                    isPending &&
+                                    actionCertificateId === certificate.id
+                                  }
+                                  size="sm"
+                                  variant="flat"
+                                  onPress={() => handleActivate(certificate.id)}
+                                >
+                                  Ativar
+                                </Button>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollShadow>
+              {filteredCertificates.length > rowsPerPage && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-default-500">
+                    Exibindo {pageStartItem}-{pageEndItem} de {filteredCertificates.length} certificado(s).
+                  </p>
+                  <Pagination
+                    color="primary"
+                    page={currentPage}
+                    total={totalPages}
+                    onChange={setCurrentPage}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </CardBody>
         <CardFooter className="flex flex-col items-start gap-2 text-xs text-default-500">
@@ -1001,9 +1268,9 @@ export function DigitalCertificatesPanel({
       </Modal>
 
       <Modal
-        isOpen={!!selectedCertificateId}
+        isOpen={!!logsCertificateId}
         onClose={() => {
-          setSelectedCertificateId(null);
+          setLogsCertificateId(null);
           setLogs([]);
         }}
         size="lg"

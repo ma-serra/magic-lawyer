@@ -255,6 +255,15 @@ export function ProfileContent() {
     );
   }
 
+  const currentRole = ((session?.user as any)?.role as string | undefined) || profile.role;
+  const isAdminRole = currentRole === "ADMIN" || currentRole === "SUPER_ADMIN";
+  const certificatePolicyLabel =
+    certificatePolicy === DigitalCertificatePolicy.OFFICE
+      ? "Certificado único do escritório"
+      : certificatePolicy === DigitalCertificatePolicy.LAWYER
+        ? "Certificados por advogado"
+        : "Modo misto";
+
   return (
     <div className="space-y-6">
       {/* Header do Perfil */}
@@ -827,11 +836,51 @@ export function ProfileContent() {
                 title={
                   <div className="flex items-center space-x-2">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Certificados Digitais</span>
+                    <span>Certificado pessoal (PJe)</span>
                   </div>
                 }
               >
-                <div className="p-3 sm:p-6 min-w-0 overflow-x-hidden">
+                <div className="p-3 sm:p-6 space-y-4 min-w-0 overflow-x-hidden">
+                  <Card className="border border-primary/20 bg-primary/5">
+                    <CardBody className="space-y-2 text-sm text-default-300">
+                      <p className="font-medium text-white">Escopo desta aba: certificado do advogado logado</p>
+                      <p>
+                        Aqui você gerencia apenas o seu certificado pessoal para autenticação no
+                        PJe. Política ativa do escritório: <strong>{certificatePolicyLabel}</strong>.
+                      </p>
+                      <p>
+                        Certificado do <strong>escritório</strong> (tenant) é gerenciado em{" "}
+                        <strong>Configurações do escritório → Integrações PJe</strong>.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  {certificatePolicy === DigitalCertificatePolicy.OFFICE && (
+                    <Card className="border border-warning/20 bg-warning/5">
+                      <CardBody className="space-y-2 text-sm text-default-300">
+                        <p className="font-medium text-warning-300">
+                          Política atual bloqueia certificado pessoal
+                        </p>
+                        <p>
+                          Neste tenant, a política exige certificado central do escritório. O
+                          certificado pessoal do advogado fica desativado até mudança de política.
+                        </p>
+                        {isAdminRole ? (
+                          <div className="pt-1">
+                            <Button
+                              color="warning"
+                              size="sm"
+                              variant="flat"
+                              onPress={() => router.push("/configuracoes?tab=certificates")}
+                            >
+                              Ir para Integrações PJe do escritório
+                            </Button>
+                          </div>
+                        ) : null}
+                      </CardBody>
+                    </Card>
+                  )}
+
                   <DigitalCertificatesPanel
                     certificates={myCertificates}
                     mode="lawyer"

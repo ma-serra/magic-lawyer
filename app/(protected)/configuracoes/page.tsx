@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 
 import { ConfiguracoesTabs } from "./configuracoes-tabs";
 
-import { title, subtitle } from "@/components/primitives";
 import { getSession } from "@/app/lib/auth";
 import { TENANT_PERMISSIONS } from "@/types";
 import { getTenantConfigData } from "@/app/actions/tenant-config";
+import { PeoplePageHeader } from "@/components/people-ui";
+import { getBrazilTimezoneOptions } from "@/app/lib/timezones/brazil-timezones";
 
 export const metadata: Metadata = {
   title: "Configurações do escritório",
@@ -31,7 +32,10 @@ export default async function ConfiguracoesPage() {
   }
 
   // Buscar dados do tenant
-  const tenantData = await getTenantConfigData();
+  const [tenantData, timezoneOptions] = await Promise.all([
+    getTenantConfigData(),
+    getBrazilTimezoneOptions(),
+  ]);
 
   if (!tenantData.success || !tenantData.data) {
     redirect("/dashboard");
@@ -41,22 +45,16 @@ export default async function ConfiguracoesPage() {
     tenantData.data;
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Configurações
-        </p>
-        <h1 className={title({ size: "lg", color: "blue" })}>
-          Central de configurações do escritório
-        </h1>
-        <p className={subtitle({ fullWidth: true })}>
-          Gerencie informações do seu plano, módulos disponíveis e dados do
-          escritório.
-        </p>
-      </header>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        description="Central única para configurar escritório, branding, integrações e catálogos operacionais."
+        tag="Administração"
+        title="Configurações do escritório"
+      />
 
       <ConfiguracoesTabs
         branding={branding}
+        timezoneOptions={timezoneOptions}
         metrics={metrics}
         modules={modules}
         subscription={subscription}

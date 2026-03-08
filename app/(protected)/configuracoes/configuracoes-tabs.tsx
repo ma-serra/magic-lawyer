@@ -1,6 +1,6 @@
 "use client";
 
-import { type Key, useEffect, useState } from "react";
+import { type Key, type ReactNode, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Tabs, Tab } from "@heroui/tabs";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -12,7 +12,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   Building2,
-  Calendar,
   CheckSquare,
   CreditCard,
   FileSignature,
@@ -30,6 +29,7 @@ import { TenantBrandingForm } from "./tenant-branding-form";
 import { DigitalCertificatesPanel } from "./digital-certificates-panel";
 import { DigitalCertificatePolicyCard } from "./digital-certificate-policy-card";
 import type { DigitalCertificatePolicy } from "@/generated/prisma";
+import type { BrazilTimezoneOption } from "@/app/lib/timezones/brazil-timezones";
 
 const SettingsTabLoader = () => (
   <Card className="mt-6 border border-white/10 bg-background/70 backdrop-blur-xl">
@@ -39,10 +39,6 @@ const SettingsTabLoader = () => (
   </Card>
 );
 
-const FeriadosSettingsTab = dynamic(() => import("./feriados/page"), {
-  ssr: false,
-  loading: () => <SettingsTabLoader />,
-});
 const BillingSettingsTab = dynamic(() => import("./billing/billing-content"), {
   ssr: false,
   loading: () => <SettingsTabLoader />,
@@ -81,7 +77,6 @@ const SETTINGS_TAB_KEYS = [
   "branding",
   "email",
   "certificates",
-  "feriados",
   "billing",
   "tribunais",
   "tipos-peticao",
@@ -98,15 +93,35 @@ function isSettingsTabKey(value: string | null): value is SettingsTabKey {
   return (SETTINGS_TAB_KEYS as readonly string[]).includes(value);
 }
 
+function EmbeddedSettingsPanel({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-6 [&>section]:mx-0 [&>section]:max-w-none [&>section]:px-0 [&>section]:py-0 [&>.container]:mx-0 [&>.container]:max-w-none [&>.container]:px-0 [&>.container]:py-0">
+      {children}
+    </div>
+  );
+}
+
 interface TenantSettingsFormProps {
   tenant: {
+    id: string;
     name: string;
+    slug: string;
+    domain: string | null;
+    documento: string | null;
+    tipoPessoa: "FISICA" | "JURIDICA";
     email: string | null;
     telefone: string | null;
     razaoSocial: string | null;
     nomeFantasia: string | null;
     timezone: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
   };
+}
+
+interface TimezoneOptionsProps {
+  timezoneOptions: BrazilTimezoneOption[];
 }
 
 interface TenantBrandingFormProps {
@@ -116,6 +131,61 @@ interface TenantBrandingFormProps {
     accentColor: string | null;
     logoUrl: string | null;
     faviconUrl: string | null;
+    loginBackgroundUrl: string | null;
+    emailFromName: string | null;
+    emailFromAddress: string | null;
+    activePresetKey: string | null;
+    hasDraft: boolean;
+    lastPublishedAt: string | null;
+    lastPublishedBy: string | null;
+    accessibilityScore: number;
+    accessibilityWarnings: string[];
+    draft: {
+      primaryColor: string | null;
+      secondaryColor: string | null;
+      accentColor: string | null;
+      logoUrl: string | null;
+      faviconUrl: string | null;
+      loginBackgroundUrl: string | null;
+      emailFromName: string | null;
+      emailFromAddress: string | null;
+      updatedAt: string;
+      updatedBy?: string | null;
+      presetKey?: string | null;
+    } | null;
+    history: Array<{
+      id: string;
+      acao: string;
+      createdAt: string;
+      changedFields: string[];
+      usuario: {
+        id: string;
+        name: string;
+        email: string;
+      } | null;
+      snapshot: {
+        primaryColor: string | null;
+        secondaryColor: string | null;
+        accentColor: string | null;
+        logoUrl: string | null;
+        faviconUrl: string | null;
+        loginBackgroundUrl: string | null;
+        emailFromName: string | null;
+        emailFromAddress: string | null;
+      } | null;
+      previousSnapshot: {
+        primaryColor: string | null;
+        secondaryColor: string | null;
+        accentColor: string | null;
+        logoUrl: string | null;
+        faviconUrl: string | null;
+        loginBackgroundUrl: string | null;
+        emailFromName: string | null;
+        emailFromAddress: string | null;
+      } | null;
+      presetKey: string | null;
+      mode: "draft" | "publish" | "rollback" | "unknown";
+    }>;
   } | null;
 }
 
@@ -195,10 +265,12 @@ export function ConfiguracoesTabs({
   subscription,
   modules,
   metrics,
+  timezoneOptions,
   certificates,
   certificatePolicy,
 }: TenantSettingsFormProps &
   TenantBrandingFormProps &
+  TimezoneOptionsProps &
   SubscriptionProps &
   ModulesProps &
   MetricsProps &
@@ -211,8 +283,21 @@ export function ConfiguracoesTabs({
   const normalizedTabFromUrl = isSettingsTabKey(tabFromUrl)
     ? tabFromUrl
     : ("overview" as SettingsTabKey);
+  const [isClientReady, setIsClientReady] = useState(false);
   const [selectedTab, setSelectedTab] =
     useState<SettingsTabKey>(normalizedTabFromUrl);
+
+  useEffect(() => {
+    setIsClientReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (tabFromUrl === "feriados") {
+      router.replace("/regimes-prazo?tab=feriados", {
+        scroll: false,
+      });
+    }
+  }, [router, tabFromUrl]);
 
   useEffect(() => {
     setSelectedTab(normalizedTabFromUrl);
@@ -245,6 +330,10 @@ export function ConfiguracoesTabs({
     ? "bg-success shadow-[0_0_10px_rgba(34,197,94,0.6)]"
     : "bg-warning shadow-[0_0_10px_rgba(251,191,36,0.6)]";
 
+  if (!isClientReady) {
+    return <SettingsTabLoader />;
+  }
+
   return (
     <Tabs
       aria-label="Configurações"
@@ -258,7 +347,7 @@ export function ConfiguracoesTabs({
         base: "w-full",
         tabList:
           "w-full justify-center gap-2 overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
-        tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0",
+        tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0 outline-none data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/35 data-[focus-visible=true]:ring-offset-0",
         tabContent: "text-sm font-medium whitespace-nowrap",
         panel: "w-full",
       }}
@@ -280,7 +369,7 @@ export function ConfiguracoesTabs({
               <CardHeader className="flex flex-col gap-4 pb-3">
                 <div className="grid gap-4 md:grid-cols-[1fr_auto] items-start">
                   <div className="space-y-1">
-                    <h2 className="text-lg font-semibold text-white">
+                    <h2 className="text-lg font-semibold text-foreground">
                       Plano Atual
                     </h2>
                     <p className="text-sm text-default-400">
@@ -311,7 +400,7 @@ export function ConfiguracoesTabs({
                     <p className="text-sm font-medium text-default-400">
                       Nome do Plano
                     </p>
-                    <p className="text-lg font-semibold text-white">
+                    <p className="text-lg font-semibold text-foreground">
                       {subscription.planName || "Não definido"}
                     </p>
                   </div>
@@ -321,7 +410,7 @@ export function ConfiguracoesTabs({
                       <p className="text-sm font-medium text-default-400">
                         Valor Mensal
                       </p>
-                      <p className="text-lg font-semibold text-white">
+                      <p className="text-lg font-semibold text-foreground">
                         {subscription.moeda}{" "}
                         {subscription.valorMensal.toLocaleString("pt-BR", {
                           minimumFractionDigits: 2,
@@ -335,7 +424,7 @@ export function ConfiguracoesTabs({
                       <p className="text-sm font-medium text-default-400">
                         Valor Anual
                       </p>
-                      <p className="text-lg font-semibold text-white">
+                      <p className="text-lg font-semibold text-foreground">
                         {subscription.moeda}{" "}
                         {subscription.valorAnual.toLocaleString("pt-BR", {
                           minimumFractionDigits: 2,
@@ -402,7 +491,7 @@ export function ConfiguracoesTabs({
           {/* Métricas do Escritório */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">Métricas</h2>
+              <h2 className="text-lg font-semibold text-foreground">Métricas</h2>
               <p className="text-sm text-default-400">
                 Estatísticas gerais do seu escritório.
               </p>
@@ -441,7 +530,7 @@ export function ConfiguracoesTabs({
           {/* Módulos Disponíveis */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Módulos do Sistema
               </h2>
               <p className="text-sm text-default-400">
@@ -461,7 +550,7 @@ export function ConfiguracoesTabs({
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold text-white">
+                          <h3 className="font-semibold text-foreground">
                             {module.name}
                           </h3>
                           <Chip
@@ -504,7 +593,7 @@ export function ConfiguracoesTabs({
           <Card className="border border-white/10 bg-white/5">
             <CardBody className="flex flex-wrap items-center justify-between gap-3 text-sm text-default-400">
               <div>
-                <p className="text-white">
+                <p className="text-foreground">
                   Precisando de ajuda com configurações?
                 </p>
                 <p>Conte com nosso time para personalizar seu escritório.</p>
@@ -530,13 +619,22 @@ export function ConfiguracoesTabs({
         <div className="mt-6">
           <TenantSettingsForm
             initialData={{
+              id: tenant.id,
               name: tenant.name,
+              slug: tenant.slug,
+              domain: tenant.domain,
+              documento: tenant.documento,
+              tipoPessoa: tenant.tipoPessoa,
               email: tenant.email,
               telefone: tenant.telefone,
               razaoSocial: tenant.razaoSocial,
               nomeFantasia: tenant.nomeFantasia,
               timezone: tenant.timezone,
+              status: tenant.status,
+              createdAt: tenant.createdAt,
+              updatedAt: tenant.updatedAt,
             }}
+            timezoneOptions={timezoneOptions}
           />
         </div>
       </Tab>
@@ -559,6 +657,17 @@ export function ConfiguracoesTabs({
               accentColor: branding?.accentColor || null,
               logoUrl: branding?.logoUrl || null,
               faviconUrl: branding?.faviconUrl || null,
+              loginBackgroundUrl: branding?.loginBackgroundUrl || null,
+              emailFromName: branding?.emailFromName || null,
+              emailFromAddress: branding?.emailFromAddress || null,
+              activePresetKey: branding?.activePresetKey || null,
+              hasDraft: branding?.hasDraft || false,
+              draft: branding?.draft || null,
+              lastPublishedAt: branding?.lastPublishedAt || null,
+              lastPublishedBy: branding?.lastPublishedBy || null,
+              accessibilityScore: branding?.accessibilityScore || 0,
+              accessibilityWarnings: branding?.accessibilityWarnings || [],
+              history: branding?.history || [],
             }}
           />
         </div>
@@ -591,6 +700,19 @@ export function ConfiguracoesTabs({
       >
         <div className="mt-6">
           <div className="space-y-6">
+            <Card className="border border-primary/20 bg-primary/5">
+              <CardBody className="space-y-2 text-sm text-default-300">
+                <p className="font-medium text-foreground">Escopo desta aba: certificado do escritório</p>
+                <p>
+                  Esta área controla a política e os certificados A1 do <strong>tenant</strong>,
+                  usados em integrações PJe para toda a operação.
+                </p>
+                <p>
+                  Certificado <strong>pessoal</strong> de advogado fica em{" "}
+                  <strong>Perfil do usuário → Certificado pessoal (PJe)</strong>.
+                </p>
+              </CardBody>
+            </Card>
             <DigitalCertificatePolicyCard
               initialPolicy={certificatePolicy}
             />
@@ -604,18 +726,6 @@ export function ConfiguracoesTabs({
       </Tab>
 
       <Tab
-        key="feriados"
-        title={
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>Feriados</span>
-          </div>
-        }
-      >
-        <FeriadosSettingsTab />
-      </Tab>
-
-      <Tab
         key="billing"
         title={
           <div className="flex items-center gap-2">
@@ -624,9 +734,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <BillingSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -638,9 +748,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <TribunaisSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -652,9 +762,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <TiposPeticaoSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -666,9 +776,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <TiposContratoSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -680,9 +790,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <AreasProcessoSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -694,9 +804,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <CategoriasTarefaSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
 
       <Tab
@@ -708,9 +818,9 @@ export function ConfiguracoesTabs({
           </div>
         }
       >
-        <div className="mt-6">
+        <EmbeddedSettingsPanel>
           <AsaasSettingsTab />
-        </div>
+        </EmbeddedSettingsPanel>
       </Tab>
     </Tabs>
   );

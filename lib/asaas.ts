@@ -46,6 +46,7 @@ export type AsaasPaymentStatus =
 
 export interface AsaasPayment {
   id?: string;
+  subscription?: string;
   customer: string;
   billingType: "BOLETO" | "CREDIT_CARD" | "PIX" | "UNDEFINED";
   value: number;
@@ -254,6 +255,27 @@ export class AsaasClient {
 
   async getPayment(paymentId: string): Promise<AsaasPayment> {
     return this.makeRequest<AsaasPayment>(`/payments/${paymentId}`);
+  }
+
+  async listPayments(params: {
+    customer?: string;
+    subscription?: string;
+    status?: string;
+    offset?: number;
+    limit?: number;
+  } = {}): Promise<AsaasListResponse<AsaasPayment>> {
+    const searchParams = new URLSearchParams();
+
+    if (params.customer) searchParams.set("customer", params.customer);
+    if (params.subscription)
+      searchParams.set("subscription", params.subscription);
+    if (params.status) searchParams.set("status", params.status);
+    searchParams.set("offset", String(params.offset ?? 0));
+    searchParams.set("limit", String(params.limit ?? 100));
+
+    return this.makeRequest<AsaasListResponse<AsaasPayment>>(
+      `/payments?${searchParams.toString()}`,
+    );
   }
 
   async updatePayment(

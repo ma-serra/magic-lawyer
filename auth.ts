@@ -586,6 +586,23 @@ export const authOptions: NextAuthOptions = {
         if (typeof incomingPlanRevision === "number") {
           (token as any).tenantPlanRevision = incomingPlanRevision;
         }
+
+        const incomingTenantLogoUrl =
+          rawPayload.tenantLogoUrl !== undefined
+            ? rawPayload.tenantLogoUrl
+            : rawPayload.user?.tenantLogoUrl;
+        if (incomingTenantLogoUrl !== undefined) {
+          (token as any).tenantLogoUrl = incomingTenantLogoUrl || undefined;
+        }
+
+        const incomingTenantFaviconUrl =
+          rawPayload.tenantFaviconUrl !== undefined
+            ? rawPayload.tenantFaviconUrl
+            : rawPayload.user?.tenantFaviconUrl;
+        if (incomingTenantFaviconUrl !== undefined) {
+          (token as any).tenantFaviconUrl =
+            incomingTenantFaviconUrl || undefined;
+        }
       }
 
       // No login

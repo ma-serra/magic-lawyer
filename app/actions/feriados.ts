@@ -7,6 +7,7 @@ import prisma from "@/app/lib/prisma";
 import { Prisma, TipoFeriado } from "@/generated/prisma";
 import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
+import { getRedisInstance } from "@/app/lib/notifications/redis-singleton";
 
 // ============================================
 // TIPOS
@@ -49,6 +50,9 @@ export interface ActionResponse<T> {
   error?: string;
 }
 
+const HOLIDAY_SYNC_LOCK_TTL_SECONDS = 90;
+const HOLIDAY_SYNC_CACHE_TTL_SECONDS = 6 * 60 * 60;
+
 // ============================================
 // VALIDAÇÃO DE TENANT
 // ============================================
@@ -58,6 +62,252 @@ async function getTenantId(): Promise<string | null> {
 
   // Feriados podem ser globais (tenantId null) ou específicos do tenant
   return session?.user?.tenantId || null;
+}
+
+function getYearRangeUtc(ano: number) {
+  return {
+    start: new Date(Date.UTC(ano, 0, 1)),
+    end: new Date(Date.UTC(ano, 11, 31, 23, 59, 59, 999)),
+  };
+}
+
+async function tryGetRedis() {
+  try {
+    return getRedisInstance();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTextKey(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function toDateIso(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function getHolidayDedupKey(feriado: {
+  data: Date;
+  tipo: TipoFeriado;
+  uf?: string | null;
+  municipio?: string | null;
+  tribunalId?: string | null;
+}): string {
+  return [
+    toDateIso(new Date(feriado.data)),
+    feriado.tipo,
+    normalizeTextKey(feriado.uf),
+    normalizeTextKey(feriado.municipio),
+    feriado.tribunalId ?? "",
+  ].join("|");
+}
+
+function dedupeHolidaysByScope<
+  T extends {
+    data: Date;
+    tipo: TipoFeriado;
+    uf?: string | null;
+    municipio?: string | null;
+    tribunalId?: string | null;
+    tenantId?: string | null;
+  },
+>(items: T[]): T[] {
+  const map = new Map<string, T>();
+
+  for (const item of items) {
+    const key = getHolidayDedupKey(item);
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, item);
+      continue;
+    }
+
+    const existingIsTenant = Boolean(existing.tenantId);
+    const itemIsTenant = Boolean(item.tenantId);
+
+    if (itemIsTenant && !existingIsTenant) {
+      map.set(key, item);
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime(),
+  );
+}
+
+async function ensureSharedNationalHolidays(
+  ano: number,
+): Promise<{
+  seeded: boolean;
+  reason?:
+    | "invalid_year"
+    | "cache_hit"
+    | "already_seeded"
+    | "lock_busy"
+    | "source_unavailable";
+  source?: string;
+  created?: number;
+  updated?: number;
+  ignored?: number;
+}> {
+  if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) {
+    return { seeded: false, reason: "invalid_year" };
+  }
+
+  const { start, end } = getYearRangeUtc(ano);
+  const redis = await tryGetRedis();
+  const doneKey = `feriados:nacionais:${ano}:seeded`;
+  const lockKey = `feriados:nacionais:${ano}:seed-lock`;
+
+  if (redis) {
+    try {
+      const cachedSeed = await redis.get(doneKey);
+      if (cachedSeed) {
+        return { seeded: false, reason: "cache_hit" };
+      }
+    } catch {
+      // sem bloqueio por falha de redis
+    }
+  }
+
+  const globalCount = await prisma.feriado.count({
+    where: {
+      tenantId: null,
+      tipo: "NACIONAL",
+      data: {
+        gte: start,
+        lte: end,
+      },
+    },
+  });
+
+  if (globalCount > 0) {
+    if (redis) {
+      try {
+        await redis.set(
+          doneKey,
+          String(Date.now()),
+          "EX",
+          HOLIDAY_SYNC_CACHE_TTL_SECONDS,
+        );
+      } catch {
+        // sem bloqueio por falha de redis
+      }
+    }
+
+    return { seeded: false, reason: "already_seeded" };
+  }
+
+  let canSync = true;
+  if (redis) {
+    try {
+      const lock = await redis.set(
+        lockKey,
+        String(Date.now()),
+        "EX",
+        HOLIDAY_SYNC_LOCK_TTL_SECONDS,
+        "NX",
+      );
+      canSync = lock === "OK";
+    } catch {
+      canSync = true;
+    }
+  }
+
+  if (!canSync) {
+    return { seeded: false, reason: "lock_busy" };
+  }
+
+  const sourceResult = await fetchOfficialNationalHolidays(ano);
+  if (!sourceResult.success) {
+    return {
+      seeded: false,
+      reason: "source_unavailable",
+      source: sourceResult.source,
+    };
+  }
+
+  let created = 0;
+  let updated = 0;
+  let ignored = 0;
+
+  for (const feriado of sourceResult.holidays) {
+    const existente = await prisma.feriado.findFirst({
+      where: {
+        tenantId: null,
+        tipo: "NACIONAL",
+        data: feriado.date,
+      },
+      select: {
+        id: true,
+        nome: true,
+        descricao: true,
+      },
+    });
+
+    if (!existente) {
+      await prisma.feriado.create({
+        data: {
+          tenantId: null,
+          nome: feriado.name,
+          data: feriado.date,
+          tipo: "NACIONAL",
+          recorrente: false,
+          descricao:
+            "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).",
+        },
+      });
+      created += 1;
+      continue;
+    }
+
+    const shouldUpdate =
+      existente.nome !== feriado.name ||
+      existente.descricao !==
+        "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).";
+
+    if (shouldUpdate) {
+      await prisma.feriado.update({
+        where: { id: existente.id },
+        data: {
+          nome: feriado.name,
+          descricao:
+            "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).",
+        },
+      });
+      updated += 1;
+    } else {
+      ignored += 1;
+    }
+  }
+
+  if (redis) {
+    try {
+      await redis.set(
+        doneKey,
+        String(Date.now()),
+        "EX",
+        HOLIDAY_SYNC_CACHE_TTL_SECONDS,
+      );
+    } catch {
+      // sem bloqueio por falha de redis
+    }
+  }
+
+  return {
+    seeded: true,
+    source: sourceResult.source,
+    created,
+    updated,
+    ignored,
+  };
 }
 
 // ============================================
@@ -134,9 +384,11 @@ export async function listFeriados(
       },
     });
 
+    const dedupedFeriados = dedupeHolidaysByScope(feriados);
+
     return {
       success: true,
-      data: feriados,
+      data: dedupedFeriados,
     };
   } catch (error: any) {
     console.error("Erro ao listar feriados:", error);
@@ -229,7 +481,7 @@ export async function createFeriado(
       },
     });
 
-    revalidatePath("/configuracoes/feriados");
+    revalidatePath("/regimes-prazo");
 
     return {
       success: true,
@@ -293,7 +545,7 @@ export async function updateFeriado(
       },
     });
 
-    revalidatePath("/configuracoes/feriados");
+    revalidatePath("/regimes-prazo");
 
     return {
       success: true,
@@ -337,7 +589,7 @@ export async function deleteFeriado(
       where: { id: feriadoAtual.id },
     });
 
-    revalidatePath("/configuracoes/feriados");
+    revalidatePath("/regimes-prazo");
 
     return {
       success: true,
@@ -363,11 +615,31 @@ export async function getDashboardFeriados(
   try {
     const tenantId = await getTenantId();
     const anoFiltro = ano || new Date().getFullYear();
+    const autoSeedResult = await ensureSharedNationalHolidays(anoFiltro);
 
     const startOfYear = new Date(anoFiltro, 0, 1);
     const endOfYear = new Date(anoFiltro, 11, 31, 23, 59, 59);
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+    const endOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
 
-    const where: any = {
+    const where: Prisma.FeriadoWhereInput = {
       OR: [{ tenantId: tenantId }, { tenantId: null }],
       data: {
         gte: startOfYear,
@@ -375,22 +647,10 @@ export async function getDashboardFeriados(
       },
     };
 
-    const [total, porTipo, proximosFeriados] = await Promise.all([
-      prisma.feriado.count({ where }),
-      prisma.feriado.groupBy({
-        by: ["tipo"],
-        where,
-        _count: true,
-      }),
+    const [feriadosAnoRaw, feriadosHojeCandidates] =
+      await Promise.all([
       prisma.feriado.findMany({
-        where: {
-          ...where,
-          data: {
-            gte: new Date(),
-          },
-        },
-        take: 5,
-        orderBy: { data: "asc" },
+        where,
         include: {
           tribunal: {
             select: {
@@ -400,15 +660,88 @@ export async function getDashboardFeriados(
           },
         },
       }),
+      prisma.feriado.findMany({
+        where: {
+          AND: [
+            {
+              OR: [{ tenantId: tenantId }, { tenantId: null }],
+            },
+            {
+              OR: [
+                {
+                  data: {
+                    gte: startOfToday,
+                    lte: endOfToday,
+                  },
+                },
+                {
+                  recorrente: true,
+                },
+              ],
+            },
+          ],
+        },
+        include: {
+          tribunal: {
+            select: {
+              nome: true,
+              sigla: true,
+            },
+          },
+        },
+        orderBy: [{ tenantId: "desc" }, { nome: "asc" }],
+      }),
     ]);
+
+    const feriadosAno = dedupeHolidaysByScope(feriadosAnoRaw);
+    const porTipoMap = feriadosAno.reduce<Record<TipoFeriado, number>>(
+      (acc, feriado) => {
+        const tipo = feriado.tipo as TipoFeriado;
+        acc[tipo] = (acc[tipo] || 0) + 1;
+        return acc;
+      },
+      {
+        NACIONAL: 0,
+        ESTADUAL: 0,
+        MUNICIPAL: 0,
+        JUDICIARIO: 0,
+      },
+    );
+    const porTipo = (Object.keys(porTipoMap) as TipoFeriado[]).map((tipo) => ({
+      tipo,
+      _count: porTipoMap[tipo] || 0,
+    }));
+    const proximosFeriados = feriadosAno
+      .filter((feriado) => new Date(feriado.data) >= startOfToday)
+      .slice(0, 5);
+
+    const feriadosHoje = dedupeHolidaysByScope(feriadosHojeCandidates).filter((feriado) => {
+      const feriadoDate = new Date(feriado.data);
+      if (feriado.recorrente) {
+        return (
+          feriadoDate.getDate() === startOfToday.getDate() &&
+          feriadoDate.getMonth() === startOfToday.getMonth()
+        );
+      }
+
+      return feriadoDate >= startOfToday && feriadoDate <= endOfToday;
+    });
 
     return {
       success: true,
       data: {
-        total,
+        total: feriadosAno.length,
         porTipo,
         proximosFeriados,
+        feriadosHoje,
         ano: anoFiltro,
+        autoSeed: {
+          seeded: autoSeedResult.seeded,
+          source: autoSeedResult.source ?? null,
+          created: autoSeedResult.created ?? 0,
+          updated: autoSeedResult.updated ?? 0,
+          ignored: autoSeedResult.ignored ?? 0,
+        },
       },
     };
   } catch (error: any) {
@@ -493,90 +826,38 @@ export async function importarFeriadosNacionais(
 ): Promise<ActionResponse<any>> {
   try {
     const tenantId = await getTenantId();
-    const sourceResult = await fetchOfficialNationalHolidays(ano);
-
-    if (!sourceResult.success) {
-      const startOfYear = new Date(Date.UTC(ano, 0, 1));
-      const endOfYear = new Date(Date.UTC(ano, 11, 31, 23, 59, 59, 999));
-      const cachedCount = await prisma.feriado.count({
-        where: {
-          tenantId: tenantId,
-          tipo: "NACIONAL",
-          data: {
-            gte: startOfYear,
-            lte: endOfYear,
-          },
+    const { start, end } = getYearRangeUtc(ano);
+    const seeded = await ensureSharedNationalHolidays(ano);
+    const globalCount = await prisma.feriado.count({
+      where: {
+        tenantId: null,
+        tipo: "NACIONAL",
+        data: {
+          gte: start,
+          lte: end,
         },
-      });
+      },
+    });
 
-      if (cachedCount > 0) {
+    if (!seeded.seeded && globalCount <= 0) {
+      if (seeded.reason === "lock_busy") {
         return {
-          success: true,
-          data: {
-            total: 0,
-            created: 0,
-            updated: 0,
-            ignored: cachedCount,
-            source: sourceResult.source,
-            fallbackCache: true,
-            warning:
-              "Fonte oficial indisponível. Mantida a base de feriados já sincronizada.",
-            feriados: [],
-          },
+          success: false,
+          error:
+            "Sincronização já está em andamento por outro usuário. Aguarde alguns segundos e tente novamente.",
         };
       }
 
-      return {
-        success: false,
-        error: sourceResult.error,
-      };
-    }
-
-    const feriadosDoAno = sourceResult.holidays;
-
-    const feriadosCriados = [];
-    let feriadosAtualizados = 0;
-    let feriadosIgnorados = 0;
-
-    for (const feriado of feriadosDoAno) {
-      // Verificar se já existe
-      const existe = await prisma.feriado.findFirst({
-        where: {
-          OR: [{ tenantId: tenantId }, { tenantId: null }],
-          data: feriado.date,
-          tipo: "NACIONAL",
-        },
-      });
-
-      if (!existe) {
-        const criado = await prisma.feriado.create({
-          data: {
-            tenantId,
-            nome: feriado.name,
-            data: feriado.date,
-            tipo: "NACIONAL",
-            recorrente: false,
-            descricao: "Feriado nacional sincronizado da fonte oficial (BrasilAPI).",
-          },
-        });
-
-        feriadosCriados.push(criado);
-      } else if (existe.tenantId === tenantId && existe.nome !== feriado.name) {
-        await prisma.feriado.update({
-          where: { id: existe.id },
-          data: {
-            nome: feriado.name,
-            descricao:
-              "Feriado nacional atualizado da fonte oficial (BrasilAPI).",
-          },
-        });
-        feriadosAtualizados += 1;
-      } else {
-        feriadosIgnorados += 1;
+      if (seeded.reason === "source_unavailable") {
+        return {
+          success: false,
+          error:
+            "Fonte oficial indisponível no momento. Tente novamente em alguns instantes.",
+        };
       }
     }
 
-    revalidatePath("/configuracoes/feriados");
+    revalidatePath("/regimes-prazo");
 
     try {
       const session = await getSession();
@@ -589,10 +870,11 @@ export async function importarFeriadosNacionais(
           entidade: "Feriado",
           dados: toAuditJson({
             ano,
-            created: feriadosCriados.length,
-            updated: feriadosAtualizados,
-            ignored: feriadosIgnorados,
-            source: sourceResult.source,
+            created: seeded.created ?? 0,
+            updated: seeded.updated ?? 0,
+            ignored: seeded.ignored ?? globalCount,
+            source: seeded.source ?? "cache_local",
+            escopo: "global_shared",
           }),
           changedFields: ["created", "updated", "ignored"],
         });
@@ -604,12 +886,15 @@ export async function importarFeriadosNacionais(
     return {
       success: true,
       data: {
-        total: feriadosCriados.length + feriadosAtualizados,
-        created: feriadosCriados.length,
-        updated: feriadosAtualizados,
-        ignored: feriadosIgnorados,
-        source: sourceResult.source,
-        feriados: feriadosCriados,
+        total: (seeded.created ?? 0) + (seeded.updated ?? 0),
+        created: seeded.created ?? 0,
+        updated: seeded.updated ?? 0,
+        ignored: seeded.ignored ?? globalCount,
+        source: seeded.source ?? "cache_local",
+        feriados: [],
+        sharedCatalog: true,
+        seeded: seeded.seeded,
+        reason: seeded.reason ?? "already_seeded",
       },
     };
   } catch (error: any) {

@@ -33,6 +33,7 @@ import { fetchSystemStatus } from "@/app/actions/system-status";
 import type { ExternalServiceStatus } from "@/app/actions/system-status";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { Logo } from "@/components/icons";
+import { DevInfo } from "@/components/dev-info";
 
 const navIconStroke = 1.6;
 type IconProps = {
@@ -650,7 +651,7 @@ const SidebarSectionLabel = ({
 }) =>
   collapsed ? null : (
     <div className="px-2 py-0.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-default-500">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-default-400">
         {children}
       </p>
     </div>
@@ -1270,22 +1271,31 @@ function SidebarContent({
 
       {isDesktop ? (
         <div className="border-t border-default-200 p-3 space-y-2">
+          {process.env.NODE_ENV === "development" && !collapsed ? (
+            <DevInfo
+              mode="inline"
+              buttonClassName="w-full justify-start px-3 py-2 h-auto border border-default-200 bg-default-100/60 text-default-700 hover:bg-default-100 hover:text-default-900 shadow-none"
+              buttonContainerClassName="w-full"
+            />
+          ) : null}
           <Button
             as={NextLink}
             className={clsx(
-              "group relative w-full",
-              collapsed ? "p-2" : "px-3 py-2",
+              "group w-full border shadow-none transition-all duration-200",
+              collapsed
+                ? "h-10 min-w-10 rounded-xl border-warning/30 bg-warning/10 px-0 text-warning hover:bg-warning/20"
+                : "h-10 justify-start rounded-xl border-warning/25 bg-warning/10 px-3 text-warning hover:bg-warning/15",
             )}
-            color="warning"
+            color="default"
             href="/suporte"
             isIconOnly={collapsed}
-            radius="none"
-            variant="bordered"
+            radius="lg"
+            variant="flat"
           >
-            <HelpIcon size={collapsed ? 16 : 18} />
+            <HelpIcon size={collapsed ? 16 : 17} />
             <span className="sr-only">Abrir chamado</span>
             {!collapsed ? (
-              <span className="ml-3 text-[10px] font-semibold uppercase tracking-[0.35em]">
+              <span className="ml-2 text-sm font-medium tracking-tight">
                 Ajuda
               </span>
             ) : null}
@@ -1293,13 +1303,15 @@ function SidebarContent({
           <Button
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             className={clsx(
-              "group relative w-full",
-              collapsed ? "p-2" : "px-3 py-2",
+              "group w-full border shadow-none transition-all duration-200",
+              collapsed
+                ? "h-10 min-w-10 rounded-xl border-primary/30 bg-primary/10 px-0 text-primary hover:bg-primary/20"
+                : "h-10 justify-start rounded-xl border-primary/25 bg-primary/10 px-3 text-primary hover:bg-primary/15",
             )}
-            color="primary"
+            color="default"
             isIconOnly={collapsed}
-            radius="none"
-            variant="bordered"
+            radius="lg"
+            variant="flat"
             onPress={onToggleCollapse}
           >
             <SidebarToggleIcon collapsed={collapsed} />
@@ -1307,8 +1319,8 @@ function SidebarContent({
               {collapsed ? "Expandir menu" : "Recolher menu"}
             </span>
             {!collapsed ? (
-              <span className="ml-3 text-[10px] font-semibold uppercase tracking-[0.35em]">
-                Menu
+              <span className="ml-2 text-sm font-medium tracking-tight">
+                {collapsed ? "Expandir menu" : "Recolher menu"}
               </span>
             ) : null}
           </Button>
@@ -1383,7 +1395,7 @@ export function AppSidebar({
                     <p className="truncate text-sm font-semibold text-white">
                       {tenantName}
                     </p>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-default-500">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-default-400">
                       Menu Principal
                     </p>
                   </div>
@@ -1392,7 +1404,7 @@ export function AppSidebar({
               <DrawerBody className="p-0">
                 <div className="border-b border-default-200 px-4 py-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-default-500">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-default-400">
                       Notificações
                     </span>
                     <NotificationCenter />

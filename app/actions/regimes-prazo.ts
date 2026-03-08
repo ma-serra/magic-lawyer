@@ -706,7 +706,6 @@ export async function syncRegimesNationalHolidays(ano: number) {
     }
 
     // Propaga atualização de feriados para módulos que dependem de cálculo de prazo.
-    revalidatePath("/configuracoes/feriados");
     revalidatePath("/regimes-prazo");
     revalidatePath("/processos");
     revalidatePath("/diligencias");

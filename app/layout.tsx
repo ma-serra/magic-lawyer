@@ -9,9 +9,9 @@ import { Providers } from "./providers";
 
 import { siteConfig } from "@/config/site";
 import { fontSans } from "@/config/fonts";
-import { DevInfo } from "@/components/dev-info";
 import { getTenantBrandingByHost } from "@/lib/tenant-branding";
 import { buildIconList } from "@/lib/branding-icons";
+import { buildTenantThemeCss } from "@/lib/tenant-theme";
 
 export const dynamic = "force-dynamic";
 
@@ -60,27 +60,42 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "";
+  const branding = await getTenantBrandingByHost(host);
+  const tenantThemeCss = buildTenantThemeCss({
+    primaryColor: branding?.primaryColor,
+    secondaryColor: branding?.secondaryColor,
+    accentColor: branding?.accentColor,
+  });
+
   return (
     <html suppressHydrationWarning lang="pt-br">
-      <head />
+      <head>
+        {tenantThemeCss ? (
+          <style
+            dangerouslySetInnerHTML={{ __html: tenantThemeCss }}
+            id="tenant-theme-css-vars"
+          />
+        ) : null}
+      </head>
       <body
         suppressHydrationWarning
         className={clsx(
-        "min-h-screen text-foreground bg-background font-sans antialiased",
-        fontSans.variable,
-      )}
-    >
-      <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
-        {children}
-        <DevInfo />
-        <Toaster richColors position="top-right" />
-        <Analytics />
-      </Providers>
+          "min-h-screen text-foreground bg-background font-sans antialiased",
+          fontSans.variable,
+        )}
+      >
+        <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
+          {children}
+          <Toaster richColors position="top-right" />
+          <Analytics />
+        </Providers>
       </body>
     </html>
   );

@@ -6,6 +6,9 @@ type TenantBrandingResponse =
         logoUrl: string | null;
         faviconUrl: string | null;
         primaryColor: string | null;
+        secondaryColor: string | null;
+        accentColor: string | null;
+        loginBackgroundUrl: string | null;
       };
     }
   | {

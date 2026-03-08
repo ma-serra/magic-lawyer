@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { RegimesPrazoContent } from "./regimes-prazo-content";
+import { RegimesPrazoWorkspace } from "./regimes-prazo-workspace";
 
 import { getSession } from "@/app/lib/auth";
 import { checkPermission } from "@/app/actions/equipe";
@@ -33,7 +33,7 @@ export default async function RegimesPrazoPage() {
 
   // Admin sempre tem acesso
   if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-    return <RegimesPrazoContent />;
+    return <RegimesPrazoWorkspace />;
   }
 
   // Para outros roles, verificar permissão equipe.editar
@@ -45,7 +45,7 @@ export default async function RegimesPrazoPage() {
       redirect("/dashboard");
     }
 
-    return <RegimesPrazoContent />;
+    return <RegimesPrazoWorkspace />;
   } catch {
     redirect("/dashboard");
   }

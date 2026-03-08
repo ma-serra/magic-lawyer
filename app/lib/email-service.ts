@@ -242,11 +242,23 @@ export const getNotificacaoTemplate = (data: {
   mensagem: string;
   linkAcao?: string;
   textoAcao?: string;
+  tenantName?: string;
+  branding?: {
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
+    accentColor?: string | null;
+  };
 }): EmailTemplate => {
   const messageHtml = data.mensagem.replace(/\n/g, "<br />");
+  const brandName = data.tenantName?.trim() || "Magic Lawyer";
+  const primary = data.branding?.primaryColor?.trim() || "#2563eb";
+  const secondary = data.branding?.secondaryColor?.trim() || "#1d4ed8";
+  const accent = data.branding?.accentColor?.trim() || "#2563eb";
+  const logoUrl = data.branding?.logoUrl?.trim() || null;
 
   return {
-    subject: `🔔 Magic Lawyer - ${data.titulo}`,
+    subject: `🔔 ${brandName} - ${data.titulo}`,
     html: `
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -279,8 +291,16 @@ export const getNotificacaoTemplate = (data: {
           .logo {
             font-size: 28px;
             font-weight: bold;
-            color: #2563eb;
+            color: ${primary};
             margin-bottom: 10px;
+          }
+          .logo-image {
+            max-height: 54px;
+            width: auto;
+            max-width: 220px;
+            object-fit: contain;
+            margin: 0 auto 12px;
+            display: block;
           }
           .notification-title {
             color: #1f2937;
@@ -289,14 +309,14 @@ export const getNotificacaoTemplate = (data: {
           }
           .notification-content {
             background-color: #f8f9fa;
-            border-left: 4px solid #2563eb;
+            border-left: 4px solid ${secondary};
             padding: 20px;
             margin: 20px 0;
             border-radius: 5px;
           }
           .button {
             display: inline-block;
-            background-color: #2563eb;
+            background-color: ${accent};
             color: white;
             padding: 12px 24px;
             text-decoration: none;
@@ -305,7 +325,7 @@ export const getNotificacaoTemplate = (data: {
             margin: 20px 0;
           }
           .button:hover {
-            background-color: #1d4ed8;
+            opacity: 0.9;
           }
           .footer {
             text-align: center;
@@ -320,7 +340,11 @@ export const getNotificacaoTemplate = (data: {
       <body>
         <div class="container">
           <div class="header">
-            <div class="logo">⚖️ Magic Lawyer</div>
+            ${
+              logoUrl
+                ? `<img class="logo-image" src="${logoUrl}" alt="${brandName}" />`
+                : `<div class="logo">⚖️ ${brandName}</div>`
+            }
             <h1 class="notification-title">${data.titulo}</h1>
           </div>
 
@@ -340,18 +364,18 @@ export const getNotificacaoTemplate = (data: {
               : ""
           }
 
-          <p>Atenciosamente,<br>Equipe Magic Lawyer</p>
+          <p>Atenciosamente,<br>Equipe ${brandName}</p>
 
           <div class="footer">
-            <p>Este é um email automático do sistema Magic Lawyer.</p>
-            <p>© ${new Date().getFullYear()} Magic Lawyer. Todos os direitos reservados.</p>
+            <p>Este é um email automático do sistema ${brandName}.</p>
+            <p>© ${new Date().getFullYear()} ${brandName}. Todos os direitos reservados.</p>
           </div>
         </div>
       </body>
       </html>
     `,
     text: `
-      Magic Lawyer - ${data.titulo}
+      ${brandName} - ${data.titulo}
 
       Olá ${data.nome},
 
@@ -360,9 +384,9 @@ export const getNotificacaoTemplate = (data: {
       ${data.linkAcao && data.textoAcao ? `${data.textoAcao}: ${data.linkAcao}` : ""}
 
       Atenciosamente,
-      Equipe Magic Lawyer
+      Equipe ${brandName}
 
-      © ${new Date().getFullYear()} Magic Lawyer. Todos os direitos reservados.
+      © ${new Date().getFullYear()} ${brandName}. Todos os direitos reservados.
     `,
   };
 };
@@ -497,7 +521,33 @@ class EmailService {
       textoAcao?: string;
     },
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-    const template = getNotificacaoTemplate(data);
+    const tenantBranding = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        name: true,
+        branding: {
+          select: {
+            logoUrl: true,
+            primaryColor: true,
+            secondaryColor: true,
+            accentColor: true,
+          },
+        },
+      },
+    });
+
+    const template = getNotificacaoTemplate({
+      ...data,
+      tenantName: tenantBranding?.name || "Magic Lawyer",
+      branding: tenantBranding?.branding
+        ? {
+            logoUrl: tenantBranding.branding.logoUrl,
+            primaryColor: tenantBranding.branding.primaryColor,
+            secondaryColor: tenantBranding.branding.secondaryColor,
+            accentColor: tenantBranding.branding.accentColor,
+          }
+        : undefined,
+    });
 
     return this.sendEmailPerTenant(tenantId, {
       to: data.email,
@@ -513,24 +563,51 @@ class EmailService {
     tenantId: string,
     type: "DEFAULT" | "ADMIN" = "DEFAULT",
   ): Promise<boolean> {
+    const result = await this.testConnectionDetailed(tenantId, type);
+
+    return result.success;
+  }
+
+  async testConnectionDetailed(
+    tenantId: string,
+    type: "DEFAULT" | "ADMIN" = "DEFAULT",
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       const credential = await this.getTenantEmailCredential(tenantId, type);
 
-      if (!credential) return false;
+      if (!credential) {
+        return {
+          success: false,
+          error: `Credencial ${type} não configurada para este tenant.`,
+        };
+      }
 
       const resend = this.createResendClient(credential.apiKey);
       const { error } = await resend.domains.list();
 
       if (error) {
         console.error("Resend connection test failed:", error);
-        return false;
+
+        return {
+          success: false,
+          error:
+            typeof error.message === "string" && error.message.trim()
+              ? error.message
+              : "Resend rejeitou a validação da API key.",
+        };
       }
 
-      return true;
+      return { success: true };
     } catch (error) {
       console.error("Email connection test failed (Resend):", error);
 
-      return false;
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Erro desconhecido ao validar credenciais de email.",
+      };
     }
   }
 

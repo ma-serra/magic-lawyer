@@ -103,6 +103,29 @@ export default withAuth(
   async function proxy(req) {
     const pathname = req.nextUrl.pathname;
 
+    // Centralizar configurações em uma única superfície com abas.
+    // Mantém compatibilidade de links antigos sem expor rotas separadas.
+    if (pathname.startsWith("/configuracoes/")) {
+      const legacyToTab: Record<string, string> = {
+        "/configuracoes/feriados": "feriados",
+        "/configuracoes/billing": "billing",
+        "/configuracoes/tribunais": "tribunais",
+        "/configuracoes/tipos-peticao": "tipos-peticao",
+        "/configuracoes/tipos-contrato": "tipos-contrato",
+        "/configuracoes/areas-processo": "areas-processo",
+        "/configuracoes/categorias-tarefa": "categorias-tarefa",
+        "/configuracoes/asaas": "asaas",
+      };
+
+      const tab = legacyToTab[pathname];
+      if (tab) {
+        const redirectUrl = new URL("/configuracoes", req.url);
+        redirectUrl.searchParams.set("tab", tab);
+
+        return NextResponse.redirect(redirectUrl);
+      }
+    }
+
     const token = req.nextauth.token;
     const isAuth = !!token;
     const isAuthPage = req.nextUrl.pathname.startsWith("/login");

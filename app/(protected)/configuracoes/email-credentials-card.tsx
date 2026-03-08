@@ -35,11 +35,13 @@ import {
   upsertTenantEmailCredential,
   deleteTenantEmailCredential,
   testTenantEmailConnection,
+  sendTenantTestEmail,
 } from "@/app/actions/tenant-email-credentials";
 
 export function EmailCredentialsCard() {
   const { data: session } = useSession();
   const tenantId = (session?.user as any)?.tenantId as string | undefined;
+  const role = ((session?.user as any)?.role as string | undefined) || null;
 
   const { data, mutate, isLoading } = useSWR(
     tenantId ? ["tenant-email-creds", tenantId] : null,
@@ -47,7 +49,7 @@ export function EmailCredentialsCard() {
       if (!tenantId) return [];
       const res = await listTenantEmailCredentials(tenantId);
 
-      if (!res.success) throw new Error("Falha ao carregar credenciais");
+      if (!res.success) throw new Error(res.error || "Falha ao carregar credenciais");
 
       return res.data.map((cred) => ({
         id: cred.id,
@@ -67,6 +69,12 @@ export function EmailCredentialsCard() {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState<"DEFAULT" | "ADMIN" | null>(null);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState<
+    "DEFAULT" | "ADMIN" | null
+  >(null);
+  const [testEmailTarget, setTestEmailTarget] = useState(
+    session?.user?.email || "",
+  );
   const [hasExistingCredential, setHasExistingCredential] = useState(false);
 
   useEffect(() => {
@@ -77,6 +85,12 @@ export function EmailCredentialsCard() {
     setFormFromName(existing?.fromName ?? "");
     setHasExistingCredential(!!existing);
   }, [data, formType]);
+
+  useEffect(() => {
+    if (!testEmailTarget && session?.user?.email) {
+      setTestEmailTarget(session.user.email);
+    }
+  }, [session?.user?.email, testEmailTarget]);
 
   const handleSave = async () => {
     if (!tenantId) {
@@ -89,10 +103,12 @@ export function EmailCredentialsCard() {
       return;
     }
 
-    if (!formFromAddress || !formApiKey) {
+    if (!formFromAddress || (!formApiKey && !hasExistingCredential)) {
       addToast({
         title: "Campos obrigatórios",
-        description: "Informe remetente e API key do Resend",
+        description: hasExistingCredential
+          ? "Informe ao menos o remetente."
+          : "Informe remetente e API key do Resend.",
         color: "warning",
       });
 
@@ -105,11 +121,11 @@ export function EmailCredentialsCard() {
         tenantId,
         type: formType,
         fromAddress: formFromAddress,
-        apiKey: formApiKey,
+        apiKey: formApiKey || undefined,
         fromName: formFromName || null,
       });
 
-      if (!res.success) throw new Error("Falha ao salvar credenciais");
+      if (!res.success) throw new Error(res.error || "Falha ao salvar credenciais");
       addToast({
         title: "Credenciais salvas",
         description: `${formType} atualizado com sucesso`,
@@ -140,7 +156,10 @@ export function EmailCredentialsCard() {
       return;
     }
     try {
-      await deleteTenantEmailCredential(tenantId, type);
+      const res = await deleteTenantEmailCredential(tenantId, type);
+      if (!res.success) {
+        throw new Error(res.error || "Falha ao remover credencial.");
+      }
       addToast({
         title: "Removido",
         description: `${type} excluído com sucesso`,
@@ -181,7 +200,9 @@ export function EmailCredentialsCard() {
       } else {
         addToast({
           title: "❌ Falha na verificação",
-          description: `Não foi possível validar as credenciais ${type}. Verifique remetente e API key do Resend.`,
+          description:
+            res.error ||
+            `Não foi possível validar as credenciais ${type}. Verifique remetente e API key do Resend.`,
           color: "danger",
           timeout: 8000,
         });
@@ -201,12 +222,125 @@ export function EmailCredentialsCard() {
     }
   };
 
+  const handleSendTestEmail = async (type: "DEFAULT" | "ADMIN") => {
+    if (!tenantId) return;
+
+    setIsSendingTestEmail(type);
+    try {
+      const res = await sendTenantTestEmail({
+        tenantId,
+        type,
+        toEmail: testEmailTarget,
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || "Falha ao enviar email de teste.");
+      }
+
+      addToast({
+        title: "📨 Email de teste enviado",
+        description: `Teste ${type} enviado para ${res.toEmail}.`,
+        color: "success",
+        timeout: 6000,
+      });
+    } catch (error) {
+      addToast({
+        title: "Erro ao enviar teste",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        color: "danger",
+      });
+    } finally {
+      setIsSendingTestEmail(null);
+    }
+  };
+
   if (!tenantId) {
     return null;
   }
 
+  const defaultCredential = data?.find((item) => item.type === "DEFAULT");
+  const adminCredential = data?.find((item) => item.type === "ADMIN");
+  const isReadyForDefault = Boolean(defaultCredential);
+  const isReadyForAdmin = Boolean(adminCredential);
+  const roleLabel =
+    role === "SUPER_ADMIN"
+      ? "Super Admin"
+      : role === "ADMIN"
+        ? "Administrador"
+        : "Usuário";
+
   return (
     <div className="flex flex-col gap-6">
+      <Card className="border border-primary/20 bg-primary/5 backdrop-blur">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-5 w-5 text-primary" />
+            <h3 className="text-base font-semibold text-white">
+              Tutorial rápido da aba Email
+            </h3>
+          </div>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-2 text-sm text-default-300">
+          <p>1. Cadastre credenciais DEFAULT para notificações operacionais do sistema.</p>
+          <p>2. Cadastre ADMIN para comunicações administrativas críticas.</p>
+          <p>3. Clique em Testar para validar API key sem disparar emails.</p>
+          <p>4. Use Enviar teste para confirmar entrega no destino escolhido.</p>
+          <p>
+            5. Se precisar trocar remetente sem trocar API key, deixe a chave vazia ao salvar.
+          </p>
+          <div className="pt-1">
+            <Chip color="default" size="sm" variant="flat">
+              Perfil atual: {roleLabel}
+            </Chip>
+          </div>
+        </CardBody>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardBody className="gap-1">
+            <p className="text-xs uppercase tracking-wide text-default-500">DEFAULT</p>
+            <p className="text-sm text-default-300">Notificações operacionais</p>
+            <Chip
+              color={isReadyForDefault ? "success" : "warning"}
+              size="sm"
+              variant="flat"
+            >
+              {isReadyForDefault ? "Configurado" : "Pendente"}
+            </Chip>
+          </CardBody>
+        </Card>
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardBody className="gap-1">
+            <p className="text-xs uppercase tracking-wide text-default-500">ADMIN</p>
+            <p className="text-sm text-default-300">Boas-vindas e comunicações críticas</p>
+            <Chip
+              color={isReadyForAdmin ? "success" : "warning"}
+              size="sm"
+              variant="flat"
+            >
+              {isReadyForAdmin ? "Configurado" : "Opcional"}
+            </Chip>
+          </CardBody>
+        </Card>
+        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+          <CardBody className="gap-2">
+            <p className="text-xs uppercase tracking-wide text-default-500">Email de teste</p>
+            <Input
+              labelPlacement="outside"
+              placeholder="destino@dominio.com"
+              type="email"
+              value={testEmailTarget}
+              onValueChange={setTestEmailTarget}
+            />
+            <p className="text-xs text-default-500">
+              Usado pelos botões de envio de teste da tabela abaixo.
+            </p>
+          </CardBody>
+        </Card>
+      </div>
+
       {/* Card Informativo */}
       <Card className="border border-warning/20 bg-warning/5 backdrop-blur">
         <CardBody>
@@ -325,7 +459,7 @@ export function EmailCredentialsCard() {
           </div>
           <div className="grid gap-3 md:grid-cols-1">
             <Input
-              isRequired
+              isRequired={!hasExistingCredential}
               description="Chave de API do Resend para este tenant"
               endContent={
                 formApiKey ? (
@@ -350,7 +484,7 @@ export function EmailCredentialsCard() {
               label="API Key do Resend"
               placeholder={
                 hasExistingCredential
-                  ? "re_•••••••••••• (api key já cadastrada)"
+                  ? "Deixe vazio para manter a chave atual"
                   : "re_xxxxxxxxxxxxxxxxxx"
               }
               startContent={<KeyRound className="h-4 w-4 text-warning" />}
@@ -471,6 +605,25 @@ export function EmailCredentialsCard() {
                             onPress={() => handleTest(c.type)}
                           >
                             {isTesting === c.type ? "Testando..." : "Testar"}
+                          </Button>
+                        </Tooltip>
+                        <Tooltip content="Envia email real de teste para o destino configurado acima.">
+                          <Button
+                            color="primary"
+                            isLoading={isSendingTestEmail === c.type}
+                            radius="full"
+                            size="sm"
+                            startContent={
+                              isSendingTestEmail !== c.type ? (
+                                <Mail className="h-4 w-4" />
+                              ) : null
+                            }
+                            variant="flat"
+                            onPress={() => handleSendTestEmail(c.type)}
+                          >
+                            {isSendingTestEmail === c.type
+                              ? "Enviando..."
+                              : "Enviar teste"}
                           </Button>
                         </Tooltip>
                         <Tooltip content="Remove permanentemente esta credencial. O sistema não poderá mais enviar emails usando este tipo.">

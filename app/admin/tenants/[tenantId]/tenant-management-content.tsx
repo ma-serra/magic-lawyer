@@ -1307,7 +1307,9 @@ function EmailTab({ tenantId }: { tenantId: string }) {
   const { data, mutate, isLoading } = useSWR(
     ["tenant-email-creds", tenantId],
     async () => {
-      const res = await listTenantEmailCredentials(tenantId);
+      const res = await listTenantEmailCredentials(tenantId, {
+        includeApiKey: true,
+      });
 
       if (!res.success) throw new Error("Falha ao carregar credenciais");
 

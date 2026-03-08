@@ -8,6 +8,9 @@ export type TenantBrandingData = {
   logoUrl: string | null;
   faviconUrl: string | null;
   primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  loginBackgroundUrl: string | null;
 };
 
 export function normalizeHost(host: string): string {
@@ -70,6 +73,9 @@ export async function getTenantBrandingByHost(host: string): Promise<TenantBrand
           logoUrl: tenantByDomain.branding?.logoUrl ?? null,
           faviconUrl: tenantByDomain.branding?.faviconUrl ?? null,
           primaryColor: tenantByDomain.branding?.primaryColor ?? null,
+          secondaryColor: tenantByDomain.branding?.secondaryColor ?? null,
+          accentColor: tenantByDomain.branding?.accentColor ?? null,
+          loginBackgroundUrl: tenantByDomain.branding?.loginBackgroundUrl ?? null,
         };
       }
     }
@@ -85,6 +91,9 @@ export async function getTenantBrandingByHost(host: string): Promise<TenantBrand
           logoUrl: tenantBySlug.branding?.logoUrl ?? null,
           faviconUrl: tenantBySlug.branding?.faviconUrl ?? null,
           primaryColor: tenantBySlug.branding?.primaryColor ?? null,
+          secondaryColor: tenantBySlug.branding?.secondaryColor ?? null,
+          accentColor: tenantBySlug.branding?.accentColor ?? null,
+          loginBackgroundUrl: tenantBySlug.branding?.loginBackgroundUrl ?? null,
         };
       }
     }

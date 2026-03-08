@@ -7,12 +7,19 @@ import prisma from "@/app/lib/prisma";
 import { getTenantAccessibleModules } from "@/app/lib/tenant-modules";
 import { getModuleRouteMap } from "@/app/lib/module-map";
 import logger from "@/lib/logger";
+import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import {
   DigitalCertificateLogAction,
   DigitalCertificatePolicy,
   DigitalCertificateScope,
+  Prisma,
 } from "@/generated/prisma";
 import { TENANT_PERMISSIONS } from "@/types";
+import { getBrandingPresetByKey } from "@/lib/branding/presets";
+import {
+  buildBrandingAccessibilityReport,
+  normalizeHexColor,
+} from "@/lib/branding/accessibility";
 
 export interface TenantConfigData {
   tenant: {
@@ -23,6 +30,9 @@ export interface TenantConfigData {
     email: string | null;
     telefone: string | null;
     documento: string | null;
+    tipoPessoa: "FISICA" | "JURIDICA";
+    inscricaoEstadual: string | null;
+    inscricaoMunicipal: string | null;
     razaoSocial: string | null;
     nomeFantasia: string | null;
     timezone: string;
@@ -41,6 +51,31 @@ export interface TenantConfigData {
     accentColor: string | null;
     logoUrl: string | null;
     faviconUrl: string | null;
+    loginBackgroundUrl: string | null;
+    emailFromName: string | null;
+    emailFromAddress: string | null;
+    activePresetKey: string | null;
+    draft: BrandingDraftState | null;
+    hasDraft: boolean;
+    lastPublishedAt: string | null;
+    lastPublishedBy: string | null;
+    accessibilityScore: number;
+    accessibilityWarnings: string[];
+    history: Array<{
+      id: string;
+      acao: string;
+      createdAt: string;
+      changedFields: string[];
+      usuario: {
+        id: string;
+        name: string;
+        email: string;
+      } | null;
+      snapshot: BrandingVisualState | null;
+      previousSnapshot: BrandingVisualState | null;
+      presetKey: string | null;
+      mode: "draft" | "publish" | "rollback" | "unknown";
+    }>;
   } | null;
   subscription: {
     id: string | null;
@@ -99,6 +134,169 @@ export interface TenantConfigData {
       email: string;
     } | null;
   }>;
+}
+
+type BrandingVisualState = {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  loginBackgroundUrl: string | null;
+  emailFromName: string | null;
+  emailFromAddress: string | null;
+};
+
+type BrandingDraftState = BrandingVisualState & {
+  updatedAt: string;
+  updatedBy?: string | null;
+  presetKey?: string | null;
+};
+
+type TenantBrandingSettings = {
+  draft?: BrandingDraftState | null;
+  lastPublishedAt?: string | null;
+  lastPublishedBy?: string | null;
+  activePresetKey?: string | null;
+};
+
+function getDefaultBrandingState(): BrandingVisualState {
+  return {
+    primaryColor: "#2563eb",
+    secondaryColor: "#1d4ed8",
+    accentColor: "#3b82f6",
+    logoUrl: null,
+    faviconUrl: null,
+    loginBackgroundUrl: null,
+    emailFromName: null,
+    emailFromAddress: null,
+  };
+}
+
+function sanitizeEmailFromAddress(value?: string | null): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed.toLowerCase();
+}
+
+function normalizeBrandingState(
+  value: Partial<BrandingVisualState> | null | undefined,
+): BrandingVisualState {
+  const defaults = getDefaultBrandingState();
+
+  return {
+    primaryColor:
+      normalizeHexColor(value?.primaryColor) ?? defaults.primaryColor,
+    secondaryColor:
+      normalizeHexColor(value?.secondaryColor) ?? defaults.secondaryColor,
+    accentColor: normalizeHexColor(value?.accentColor) ?? defaults.accentColor,
+    logoUrl: normalizeBrandingUrl(value?.logoUrl),
+    faviconUrl: normalizeBrandingUrl(value?.faviconUrl),
+    loginBackgroundUrl: normalizeBrandingUrl(value?.loginBackgroundUrl),
+    emailFromName: value?.emailFromName?.trim() || null,
+    emailFromAddress:
+      sanitizeEmailFromAddress(value?.emailFromAddress ?? null) ?? null,
+  };
+}
+
+function parseTenantBrandingSettings(
+  settings: Prisma.JsonValue | null | undefined,
+): TenantBrandingSettings {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return {};
+  }
+
+  const settingsObj = settings as Record<string, unknown>;
+  const draftRaw = settingsObj.draft;
+  let draft: BrandingDraftState | null = null;
+
+  if (draftRaw && typeof draftRaw === "object" && !Array.isArray(draftRaw)) {
+    const draftObj = draftRaw as Record<string, unknown>;
+    const normalizedDraft = normalizeBrandingState({
+      primaryColor:
+        typeof draftObj.primaryColor === "string"
+          ? draftObj.primaryColor
+          : null,
+      secondaryColor:
+        typeof draftObj.secondaryColor === "string"
+          ? draftObj.secondaryColor
+          : null,
+      accentColor:
+        typeof draftObj.accentColor === "string" ? draftObj.accentColor : null,
+      logoUrl: typeof draftObj.logoUrl === "string" ? draftObj.logoUrl : null,
+      faviconUrl:
+        typeof draftObj.faviconUrl === "string" ? draftObj.faviconUrl : null,
+      loginBackgroundUrl:
+        typeof draftObj.loginBackgroundUrl === "string"
+          ? draftObj.loginBackgroundUrl
+          : null,
+      emailFromName:
+        typeof draftObj.emailFromName === "string"
+          ? draftObj.emailFromName
+          : null,
+      emailFromAddress:
+        typeof draftObj.emailFromAddress === "string"
+          ? draftObj.emailFromAddress
+          : null,
+    });
+
+    const updatedAt =
+      typeof draftObj.updatedAt === "string"
+        ? draftObj.updatedAt
+        : new Date().toISOString();
+
+    draft = {
+      ...normalizedDraft,
+      updatedAt,
+      updatedBy:
+        typeof draftObj.updatedBy === "string" ? draftObj.updatedBy : null,
+      presetKey:
+        typeof draftObj.presetKey === "string" ? draftObj.presetKey : null,
+    };
+  }
+
+  return {
+    draft,
+    lastPublishedAt:
+      typeof settingsObj.lastPublishedAt === "string"
+        ? settingsObj.lastPublishedAt
+        : null,
+    lastPublishedBy:
+      typeof settingsObj.lastPublishedBy === "string"
+        ? settingsObj.lastPublishedBy
+        : null,
+    activePresetKey:
+      typeof settingsObj.activePresetKey === "string"
+        ? settingsObj.activePresetKey
+        : null,
+  };
+}
+
+function computeBrandingChangedFields(
+  previousState: BrandingVisualState,
+  nextState: BrandingVisualState,
+): string[] {
+  const changedFields: string[] = [];
+
+  for (const key of Object.keys(nextState) as Array<keyof BrandingVisualState>) {
+    if ((previousState[key] ?? null) !== (nextState[key] ?? null)) {
+      changedFields.push(key);
+    }
+  }
+
+  return changedFields;
 }
 
 // Converter campos Decimal para number
@@ -279,6 +477,174 @@ export async function getTenantConfigData(): Promise<{
       },
     });
 
+    const brandingSettings = parseTenantBrandingSettings(tenant.branding?.settings);
+    const publishedState = normalizeBrandingState({
+      primaryColor: tenant.branding?.primaryColor,
+      secondaryColor: tenant.branding?.secondaryColor,
+      accentColor: tenant.branding?.accentColor,
+      logoUrl: tenant.branding?.logoUrl,
+      faviconUrl: tenant.branding?.faviconUrl,
+      loginBackgroundUrl: tenant.branding?.loginBackgroundUrl,
+      emailFromName: tenant.branding?.emailFromName,
+      emailFromAddress: tenant.branding?.emailFromAddress,
+    });
+
+    const brandingHistoryRows = await prisma.auditLog.findMany({
+      where: {
+        tenantId,
+        entidade: "TENANT_BRANDING",
+        acao: {
+          in: [
+            "TENANT_BRANDING_DRAFT_SAVED",
+            "TENANT_BRANDING_PUBLISHED",
+            "TENANT_BRANDING_ROLLBACK",
+          ],
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 20,
+      select: {
+        id: true,
+        acao: true,
+        createdAt: true,
+        changedFields: true,
+        dados: true,
+        previousValues: true,
+        usuario: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const history = brandingHistoryRows.map((row) => {
+      const dados =
+        row.dados && typeof row.dados === "object" && !Array.isArray(row.dados)
+          ? (row.dados as Record<string, unknown>)
+          : null;
+      const previous =
+        row.previousValues &&
+        typeof row.previousValues === "object" &&
+        !Array.isArray(row.previousValues)
+          ? (row.previousValues as Record<string, unknown>)
+          : null;
+      const modeRaw = typeof dados?.mode === "string" ? dados.mode : "unknown";
+      const snapshotRaw =
+        dados?.next && typeof dados.next === "object" && !Array.isArray(dados.next)
+          ? (dados.next as Record<string, unknown>)
+          : null;
+      const previousSnapshotRaw =
+        previous?.state &&
+        typeof previous.state === "object" &&
+        !Array.isArray(previous.state)
+          ? (previous.state as Record<string, unknown>)
+          : null;
+
+      const mode: "draft" | "publish" | "rollback" | "unknown" =
+        modeRaw === "draft" || modeRaw === "publish" || modeRaw === "rollback"
+          ? modeRaw
+          : "unknown";
+
+      return {
+        id: row.id,
+        acao: row.acao,
+        createdAt: row.createdAt.toISOString(),
+        changedFields: row.changedFields,
+        usuario: row.usuario
+          ? {
+              id: row.usuario.id,
+              name:
+                [row.usuario.firstName, row.usuario.lastName]
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim() || row.usuario.email,
+              email: row.usuario.email,
+            }
+          : null,
+        snapshot: snapshotRaw
+          ? normalizeBrandingState({
+              primaryColor:
+                typeof snapshotRaw.primaryColor === "string"
+                  ? snapshotRaw.primaryColor
+                  : null,
+              secondaryColor:
+                typeof snapshotRaw.secondaryColor === "string"
+                  ? snapshotRaw.secondaryColor
+                  : null,
+              accentColor:
+                typeof snapshotRaw.accentColor === "string"
+                  ? snapshotRaw.accentColor
+                  : null,
+              logoUrl:
+                typeof snapshotRaw.logoUrl === "string" ? snapshotRaw.logoUrl : null,
+              faviconUrl:
+                typeof snapshotRaw.faviconUrl === "string"
+                  ? snapshotRaw.faviconUrl
+                  : null,
+              loginBackgroundUrl:
+                typeof snapshotRaw.loginBackgroundUrl === "string"
+                  ? snapshotRaw.loginBackgroundUrl
+                  : null,
+              emailFromName:
+                typeof snapshotRaw.emailFromName === "string"
+                  ? snapshotRaw.emailFromName
+                  : null,
+              emailFromAddress:
+                typeof snapshotRaw.emailFromAddress === "string"
+                  ? snapshotRaw.emailFromAddress
+                  : null,
+            })
+          : null,
+        previousSnapshot: previousSnapshotRaw
+          ? normalizeBrandingState({
+              primaryColor:
+                typeof previousSnapshotRaw.primaryColor === "string"
+                  ? previousSnapshotRaw.primaryColor
+                  : null,
+              secondaryColor:
+                typeof previousSnapshotRaw.secondaryColor === "string"
+                  ? previousSnapshotRaw.secondaryColor
+                  : null,
+              accentColor:
+                typeof previousSnapshotRaw.accentColor === "string"
+                  ? previousSnapshotRaw.accentColor
+                  : null,
+              logoUrl:
+                typeof previousSnapshotRaw.logoUrl === "string"
+                  ? previousSnapshotRaw.logoUrl
+                  : null,
+              faviconUrl:
+                typeof previousSnapshotRaw.faviconUrl === "string"
+                  ? previousSnapshotRaw.faviconUrl
+                  : null,
+              loginBackgroundUrl:
+                typeof previousSnapshotRaw.loginBackgroundUrl === "string"
+                  ? previousSnapshotRaw.loginBackgroundUrl
+                  : null,
+              emailFromName:
+                typeof previousSnapshotRaw.emailFromName === "string"
+                  ? previousSnapshotRaw.emailFromName
+                  : null,
+              emailFromAddress:
+                typeof previousSnapshotRaw.emailFromAddress === "string"
+                  ? previousSnapshotRaw.emailFromAddress
+                  : null,
+            })
+          : null,
+        presetKey:
+          typeof dados?.presetKey === "string" ? dados.presetKey : null,
+        mode,
+      };
+    });
+
+    const accessibility = buildBrandingAccessibilityReport(publishedState);
+
     const data: TenantConfigData = {
       tenant: {
         id: tenant.id,
@@ -288,6 +654,9 @@ export async function getTenantConfigData(): Promise<{
         email: tenant.email,
         telefone: tenant.telefone,
         documento: tenant.documento,
+        tipoPessoa: tenant.tipoPessoa,
+        inscricaoEstadual: tenant.inscricaoEstadual,
+        inscricaoMunicipal: tenant.inscricaoMunicipal,
         razaoSocial: tenant.razaoSocial,
         nomeFantasia: tenant.nomeFantasia,
         timezone: tenant.timezone,
@@ -301,15 +670,24 @@ export async function getTenantConfigData(): Promise<{
         createdAt: tenant.createdAt.toISOString(),
         updatedAt: tenant.updatedAt.toISOString(),
       },
-      branding: tenant.branding
-        ? {
-            primaryColor: tenant.branding.primaryColor,
-            secondaryColor: tenant.branding.secondaryColor,
-            accentColor: tenant.branding.accentColor,
-            logoUrl: tenant.branding.logoUrl,
-            faviconUrl: tenant.branding.faviconUrl,
-          }
-        : null,
+      branding: {
+        primaryColor: publishedState.primaryColor,
+        secondaryColor: publishedState.secondaryColor,
+        accentColor: publishedState.accentColor,
+        logoUrl: publishedState.logoUrl,
+        faviconUrl: publishedState.faviconUrl,
+        loginBackgroundUrl: publishedState.loginBackgroundUrl,
+        emailFromName: publishedState.emailFromName,
+        emailFromAddress: publishedState.emailFromAddress,
+        activePresetKey: brandingSettings.activePresetKey || null,
+        draft: brandingSettings.draft || null,
+        hasDraft: Boolean(brandingSettings.draft),
+        lastPublishedAt: brandingSettings.lastPublishedAt || null,
+        lastPublishedBy: brandingSettings.lastPublishedBy || null,
+        accessibilityScore: accessibility.score,
+        accessibilityWarnings: accessibility.warnings,
+        history,
+      },
       subscription: tenant.subscription
         ? {
             id: tenant.subscription.id,
@@ -395,6 +773,10 @@ export interface UpdateTenantBasicDataInput {
   name?: string;
   email?: string;
   telefone?: string;
+  documento?: string;
+  tipoPessoa?: "FISICA" | "JURIDICA";
+  inscricaoEstadual?: string;
+  inscricaoMunicipal?: string;
   razaoSocial?: string;
   nomeFantasia?: string;
   timezone?: string;
@@ -405,11 +787,41 @@ export interface UpdateTenantCertificatePolicyInput {
 }
 
 export interface UpdateTenantBrandingInput {
+  mode?: "draft" | "publish";
+  presetKey?: string | null;
   primaryColor?: string | null;
   secondaryColor?: string | null;
   accentColor?: string | null;
   logoUrl?: string | null;
   faviconUrl?: string | null;
+  loginBackgroundUrl?: string | null;
+  emailFromName?: string | null;
+  emailFromAddress?: string | null;
+}
+
+function normalizeBrandingUrl(value?: string | null): string | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return trimmed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ===== ACTIONS DE EDIÇÃO =====
@@ -445,6 +857,17 @@ export async function updateTenantBasicData(
     if (data.email !== undefined) updateData.email = data.email?.trim() || null;
     if (data.telefone !== undefined)
       updateData.telefone = data.telefone?.trim() || null;
+    if (data.documento !== undefined) {
+      const normalizedDocumento = data.documento.replace(/\D/g, "");
+      updateData.documento = normalizedDocumento || null;
+    }
+    if (data.tipoPessoa !== undefined) updateData.tipoPessoa = data.tipoPessoa;
+    if (data.inscricaoEstadual !== undefined) {
+      updateData.inscricaoEstadual = data.inscricaoEstadual?.trim() || null;
+    }
+    if (data.inscricaoMunicipal !== undefined) {
+      updateData.inscricaoMunicipal = data.inscricaoMunicipal?.trim() || null;
+    }
     if (data.razaoSocial !== undefined)
       updateData.razaoSocial = data.razaoSocial?.trim() || null;
     if (data.nomeFantasia !== undefined)
@@ -469,6 +892,16 @@ export async function updateTenantBasicData(
 
     return { success: true };
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return {
+        success: false,
+        error: "Documento já está sendo usado por outro escritório.",
+      };
+    }
+
     logger.error("Erro ao atualizar dados básicos do tenant:", error);
 
     return {
@@ -503,42 +936,307 @@ export async function updateTenantBranding(
       };
     }
 
-    // Construir updateData apenas com campos definidos
-    const updateData: Record<string, unknown> = {};
+    const mode = data.mode ?? "publish";
+    if (mode !== "draft" && mode !== "publish") {
+      return {
+        success: false,
+        error: "Modo de atualização de branding inválido.",
+      };
+    }
 
-    if (data.primaryColor !== undefined)
-      updateData.primaryColor = data.primaryColor;
-    if (data.secondaryColor !== undefined)
-      updateData.secondaryColor = data.secondaryColor;
-    if (data.accentColor !== undefined)
-      updateData.accentColor = data.accentColor;
-    if (data.logoUrl !== undefined) updateData.logoUrl = data.logoUrl;
-    if (data.faviconUrl !== undefined) updateData.faviconUrl = data.faviconUrl;
+    const existing = await prisma.tenantBranding.findUnique({
+      where: { tenantId },
+      select: {
+        id: true,
+        primaryColor: true,
+        secondaryColor: true,
+        accentColor: true,
+        logoUrl: true,
+        faviconUrl: true,
+        loginBackgroundUrl: true,
+        emailFromName: true,
+        emailFromAddress: true,
+        settings: true,
+      },
+    });
 
-    // Só atualizar se houver mudanças
-    if (Object.keys(updateData).length > 0) {
+    const settings = parseTenantBrandingSettings(existing?.settings);
+    const currentPublished = normalizeBrandingState({
+      primaryColor: existing?.primaryColor,
+      secondaryColor: existing?.secondaryColor,
+      accentColor: existing?.accentColor,
+      logoUrl: existing?.logoUrl,
+      faviconUrl: existing?.faviconUrl,
+      loginBackgroundUrl: existing?.loginBackgroundUrl,
+      emailFromName: existing?.emailFromName,
+      emailFromAddress: existing?.emailFromAddress,
+    });
+    const currentDraft = settings.draft
+      ? normalizeBrandingState(settings.draft)
+      : null;
+
+    const explicitPrimary = data.primaryColor !== undefined;
+    const explicitSecondary = data.secondaryColor !== undefined;
+    const explicitAccent = data.accentColor !== undefined;
+    const explicitLogo = data.logoUrl !== undefined;
+    const explicitFavicon = data.faviconUrl !== undefined;
+    const explicitLoginBackground = data.loginBackgroundUrl !== undefined;
+    const explicitEmailFromName = data.emailFromName !== undefined;
+    const explicitEmailFromAddress = data.emailFromAddress !== undefined;
+
+    const hasExplicitColorOrMediaChange =
+      explicitPrimary ||
+      explicitSecondary ||
+      explicitAccent ||
+      explicitLogo ||
+      explicitFavicon ||
+      explicitLoginBackground ||
+      explicitEmailFromName ||
+      explicitEmailFromAddress;
+
+    const preset =
+      data.presetKey === undefined ? null : getBrandingPresetByKey(data.presetKey);
+    if (data.presetKey && !preset) {
+      return {
+        success: false,
+        error: "Preset de branding inválido.",
+      };
+    }
+
+    const sourceState =
+      mode === "publish" && !hasExplicitColorOrMediaChange && currentDraft
+        ? currentDraft
+        : mode === "draft"
+          ? currentDraft || currentPublished
+          : currentPublished;
+
+    const requestedState: BrandingVisualState = {
+      primaryColor:
+        data.primaryColor !== undefined
+          ? normalizeHexColor(data.primaryColor)
+          : sourceState.primaryColor,
+      secondaryColor:
+        data.secondaryColor !== undefined
+          ? normalizeHexColor(data.secondaryColor)
+          : sourceState.secondaryColor,
+      accentColor:
+        data.accentColor !== undefined
+          ? normalizeHexColor(data.accentColor)
+          : sourceState.accentColor,
+      logoUrl:
+        data.logoUrl !== undefined
+          ? normalizeBrandingUrl(data.logoUrl)
+          : sourceState.logoUrl,
+      faviconUrl:
+        data.faviconUrl !== undefined
+          ? normalizeBrandingUrl(data.faviconUrl)
+          : sourceState.faviconUrl,
+      loginBackgroundUrl:
+        data.loginBackgroundUrl !== undefined
+          ? normalizeBrandingUrl(data.loginBackgroundUrl)
+          : sourceState.loginBackgroundUrl,
+      emailFromName:
+        data.emailFromName !== undefined
+          ? data.emailFromName?.trim() || null
+          : sourceState.emailFromName,
+      emailFromAddress:
+        data.emailFromAddress !== undefined
+          ? sanitizeEmailFromAddress(data.emailFromAddress)
+          : sourceState.emailFromAddress,
+    };
+
+    if (explicitPrimary && !requestedState.primaryColor) {
+      return {
+        success: false,
+        error: "Cor primária inválida. Use hexadecimal como #2563eb ou #fff.",
+      };
+    }
+    if (explicitSecondary && !requestedState.secondaryColor) {
+      return {
+        success: false,
+        error:
+          "Cor secundária inválida. Use hexadecimal como #1d4ed8 ou #fff.",
+      };
+    }
+    if (explicitAccent && !requestedState.accentColor) {
+      return {
+        success: false,
+        error: "Cor de destaque inválida. Use hexadecimal como #3b82f6 ou #fff.",
+      };
+    }
+    if (
+      explicitLogo &&
+      data.logoUrl?.trim() &&
+      !requestedState.logoUrl
+    ) {
+      return {
+        success: false,
+        error:
+          "URL da logo inválida. Use URL HTTP/HTTPS ou caminho interno (/uploads/...).",
+      };
+    }
+    if (
+      explicitFavicon &&
+      data.faviconUrl?.trim() &&
+      !requestedState.faviconUrl
+    ) {
+      return {
+        success: false,
+        error:
+          "URL do favicon inválida. Use URL HTTP/HTTPS ou caminho interno (/uploads/...).",
+      };
+    }
+    if (
+      explicitLoginBackground &&
+      data.loginBackgroundUrl?.trim() &&
+      !requestedState.loginBackgroundUrl
+    ) {
+      return {
+        success: false,
+        error:
+          "URL de fundo inválida. Use URL HTTP/HTTPS ou caminho interno (/uploads/...).",
+      };
+    }
+    if (
+      explicitEmailFromAddress &&
+      data.emailFromAddress?.trim() &&
+      !requestedState.emailFromAddress
+    ) {
+      return {
+        success: false,
+        error: "Email de envio inválido para branding.",
+      };
+    }
+
+    const updatedSettings: TenantBrandingSettings = {
+      ...settings,
+      activePresetKey:
+        data.presetKey !== undefined
+          ? data.presetKey || null
+          : (settings.activePresetKey ?? null),
+    };
+
+    const previousStateForAudit = mode === "draft" ? currentDraft : currentPublished;
+    const changedFields = computeBrandingChangedFields(
+      previousStateForAudit || currentPublished,
+      requestedState,
+    );
+    const willChangePreset =
+      data.presetKey !== undefined &&
+      (data.presetKey || null) !== (settings.activePresetKey || null);
+
+    if (
+      mode === "publish" &&
+      !settings.draft &&
+      changedFields.length === 0 &&
+      !willChangePreset
+    ) {
+      return { success: true };
+    }
+
+    if (mode === "draft") {
+      const draftSnapshot: BrandingDraftState = {
+        ...requestedState,
+        updatedAt: new Date().toISOString(),
+        updatedBy: session.user.id,
+        presetKey:
+          data.presetKey !== undefined
+            ? data.presetKey || null
+            : settings.activePresetKey || null,
+      };
+
+      updatedSettings.draft = draftSnapshot;
+
       await prisma.tenantBranding.upsert({
         where: { tenantId },
-        update: updateData,
+        update: {
+          settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
+        },
         create: {
           tenantId,
-          primaryColor: data.primaryColor ?? "#2563eb",
-          secondaryColor: data.secondaryColor ?? "#1d4ed8",
-          accentColor: data.accentColor ?? "#3b82f6",
-          logoUrl: data.logoUrl ?? null,
-          faviconUrl: data.faviconUrl ?? null,
+          primaryColor: currentPublished.primaryColor,
+          secondaryColor: currentPublished.secondaryColor,
+          accentColor: currentPublished.accentColor,
+          logoUrl: currentPublished.logoUrl,
+          faviconUrl: currentPublished.faviconUrl,
+          loginBackgroundUrl: currentPublished.loginBackgroundUrl,
+          emailFromName: currentPublished.emailFromName,
+          emailFromAddress: currentPublished.emailFromAddress,
+          settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
         },
       });
 
-      // Incrementar sessionVersion para forçar refresh
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: { sessionVersion: { increment: 1 } },
+      await logAudit({
+        tenantId,
+        usuarioId: session.user.id,
+        acao: "TENANT_BRANDING_DRAFT_SAVED",
+        entidade: "TENANT_BRANDING",
+        entidadeId: existing?.id ?? tenantId,
+        dados: toAuditJson({
+          mode: "draft",
+          presetKey: draftSnapshot.presetKey || null,
+          next: requestedState,
+        }),
+        previousValues: toAuditJson({
+          state: previousStateForAudit,
+        }),
+        changedFields,
+      });
+    } else {
+      updatedSettings.lastPublishedAt = new Date().toISOString();
+      updatedSettings.lastPublishedBy = session.user.id;
+      updatedSettings.draft = null;
+
+      await prisma.tenantBranding.upsert({
+        where: { tenantId },
+        update: {
+          primaryColor: requestedState.primaryColor,
+          secondaryColor: requestedState.secondaryColor,
+          accentColor: requestedState.accentColor,
+          logoUrl: requestedState.logoUrl,
+          faviconUrl: requestedState.faviconUrl,
+          loginBackgroundUrl: requestedState.loginBackgroundUrl,
+          emailFromName: requestedState.emailFromName,
+          emailFromAddress: requestedState.emailFromAddress,
+          settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
+        },
+        create: {
+          tenantId,
+          primaryColor: requestedState.primaryColor,
+          secondaryColor: requestedState.secondaryColor,
+          accentColor: requestedState.accentColor,
+          logoUrl: requestedState.logoUrl,
+          faviconUrl: requestedState.faviconUrl,
+          loginBackgroundUrl: requestedState.loginBackgroundUrl,
+          emailFromName: requestedState.emailFromName,
+          emailFromAddress: requestedState.emailFromAddress,
+          settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
+        },
+      });
+
+      await logAudit({
+        tenantId,
+        usuarioId: session.user.id,
+        acao: "TENANT_BRANDING_PUBLISHED",
+        entidade: "TENANT_BRANDING",
+        entidadeId: existing?.id ?? tenantId,
+        dados: toAuditJson({
+          mode: "publish",
+          presetKey:
+            data.presetKey !== undefined
+              ? data.presetKey || null
+              : settings.activePresetKey || null,
+          next: requestedState,
+        }),
+        previousValues: toAuditJson({
+          state: previousStateForAudit,
+        }),
+        changedFields,
       });
     }
 
     logger.info(
-      `Branding do tenant ${tenantId} atualizado por ${session.user.email}`,
+      `Branding do tenant ${tenantId} atualizado (${mode}) por ${session.user.email}`,
     );
 
     return { success: true };
@@ -548,6 +1246,183 @@ export async function updateTenantBranding(
     return {
       success: false,
       error: "Erro interno ao salvar branding",
+    };
+  }
+}
+
+export async function rollbackTenantBrandingVersion(
+  historyEntryId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id || !session.user.tenantId) {
+      return { success: false, error: "Não autorizado" };
+    }
+
+    const tenantId = session.user.tenantId;
+    const role = (session.user as any)?.role as string;
+
+    if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+      return {
+        success: false,
+        error: "Apenas administradores podem restaurar versões de branding.",
+      };
+    }
+
+    const historyEntry = await prisma.auditLog.findFirst({
+      where: {
+        id: historyEntryId,
+        tenantId,
+        entidade: "TENANT_BRANDING",
+      },
+      select: {
+        id: true,
+        dados: true,
+      },
+    });
+
+    if (!historyEntry) {
+      return {
+        success: false,
+        error: "Versão de branding não encontrada.",
+      };
+    }
+
+    const dados =
+      historyEntry.dados &&
+      typeof historyEntry.dados === "object" &&
+      !Array.isArray(historyEntry.dados)
+        ? (historyEntry.dados as Record<string, unknown>)
+        : null;
+    const snapshotRaw =
+      dados?.next && typeof dados.next === "object" && !Array.isArray(dados.next)
+        ? (dados.next as Record<string, unknown>)
+        : null;
+
+    if (!snapshotRaw) {
+      return {
+        success: false,
+        error: "A versão escolhida não possui snapshot para rollback.",
+      };
+    }
+
+    const snapshot = normalizeBrandingState({
+      primaryColor:
+        typeof snapshotRaw.primaryColor === "string"
+          ? snapshotRaw.primaryColor
+          : null,
+      secondaryColor:
+        typeof snapshotRaw.secondaryColor === "string"
+          ? snapshotRaw.secondaryColor
+          : null,
+      accentColor:
+        typeof snapshotRaw.accentColor === "string" ? snapshotRaw.accentColor : null,
+      logoUrl: typeof snapshotRaw.logoUrl === "string" ? snapshotRaw.logoUrl : null,
+      faviconUrl:
+        typeof snapshotRaw.faviconUrl === "string" ? snapshotRaw.faviconUrl : null,
+      loginBackgroundUrl:
+        typeof snapshotRaw.loginBackgroundUrl === "string"
+          ? snapshotRaw.loginBackgroundUrl
+          : null,
+      emailFromName:
+        typeof snapshotRaw.emailFromName === "string"
+          ? snapshotRaw.emailFromName
+          : null,
+      emailFromAddress:
+        typeof snapshotRaw.emailFromAddress === "string"
+          ? snapshotRaw.emailFromAddress
+          : null,
+    });
+
+    const currentBranding = await prisma.tenantBranding.findUnique({
+      where: { tenantId },
+      select: {
+        id: true,
+        primaryColor: true,
+        secondaryColor: true,
+        accentColor: true,
+        logoUrl: true,
+        faviconUrl: true,
+        loginBackgroundUrl: true,
+        emailFromName: true,
+        emailFromAddress: true,
+        settings: true,
+      },
+    });
+
+    const currentState = normalizeBrandingState({
+      primaryColor: currentBranding?.primaryColor,
+      secondaryColor: currentBranding?.secondaryColor,
+      accentColor: currentBranding?.accentColor,
+      logoUrl: currentBranding?.logoUrl,
+      faviconUrl: currentBranding?.faviconUrl,
+      loginBackgroundUrl: currentBranding?.loginBackgroundUrl,
+      emailFromName: currentBranding?.emailFromName,
+      emailFromAddress: currentBranding?.emailFromAddress,
+    });
+    const settings = parseTenantBrandingSettings(currentBranding?.settings);
+    const updatedSettings: TenantBrandingSettings = {
+      ...settings,
+      draft: null,
+      lastPublishedAt: new Date().toISOString(),
+      lastPublishedBy: session.user.id,
+      activePresetKey:
+        typeof dados?.presetKey === "string" ? dados.presetKey : settings.activePresetKey,
+    };
+
+    await prisma.tenantBranding.upsert({
+      where: { tenantId },
+      update: {
+        primaryColor: snapshot.primaryColor,
+        secondaryColor: snapshot.secondaryColor,
+        accentColor: snapshot.accentColor,
+        logoUrl: snapshot.logoUrl,
+        faviconUrl: snapshot.faviconUrl,
+        loginBackgroundUrl: snapshot.loginBackgroundUrl,
+        emailFromName: snapshot.emailFromName,
+        emailFromAddress: snapshot.emailFromAddress,
+        settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
+      },
+      create: {
+        tenantId,
+        primaryColor: snapshot.primaryColor,
+        secondaryColor: snapshot.secondaryColor,
+        accentColor: snapshot.accentColor,
+        logoUrl: snapshot.logoUrl,
+        faviconUrl: snapshot.faviconUrl,
+        loginBackgroundUrl: snapshot.loginBackgroundUrl,
+        emailFromName: snapshot.emailFromName,
+        emailFromAddress: snapshot.emailFromAddress,
+        settings: toAuditJson(updatedSettings) ?? Prisma.JsonNull,
+      },
+    });
+
+    await logAudit({
+      tenantId,
+      usuarioId: session.user.id,
+      acao: "TENANT_BRANDING_ROLLBACK",
+      entidade: "TENANT_BRANDING",
+      entidadeId: currentBranding?.id ?? tenantId,
+      dados: toAuditJson({
+        mode: "rollback",
+        sourceAuditId: historyEntry.id,
+        presetKey: updatedSettings.activePresetKey || null,
+        next: snapshot,
+      }),
+      previousValues: toAuditJson({
+        state: currentState,
+      }),
+      changedFields: computeBrandingChangedFields(currentState, snapshot),
+    });
+
+    return { success: true };
+  } catch (error) {
+    logger.error("Erro ao restaurar versão de branding:", error);
+
+    return {
+      success: false,
+      error: "Erro interno ao restaurar versão de branding.",
     };
   }
 }

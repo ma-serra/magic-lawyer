@@ -34,11 +34,13 @@ interface DevInfo {
 interface DevInfoProps {
   buttonClassName?: string;
   buttonContainerClassName?: string;
+  mode?: "floating" | "inline";
 }
 
 export function DevInfo({
   buttonClassName,
   buttonContainerClassName,
+  mode = "floating",
 }: DevInfoProps = {}) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -93,13 +95,15 @@ export function DevInfo({
 
   if (!isVisible || !devInfo || isLoading || error) return null;
 
+  const isInlineMode = mode === "inline";
+
   const defaultButtonPosition = isLargeScreen
     ? "bottom-6 right-6"
     : "bottom-6 right-6";
 
   return (
     <>
-      {!isLargeScreen && isPanelOpen && (
+      {!isInlineMode && !isLargeScreen && isPanelOpen && (
         <div
           className="fixed inset-0 z-[55] bg-black/40 backdrop-blur-sm transition-opacity"
           onClick={() => setIsPanelOpen(false)}
@@ -133,19 +137,31 @@ export function DevInfo({
       )}
 
       <aside
-        className={`fixed z-[60] transition-all duration-300 ${
-          isLargeScreen
-            ? "top-24 right-6 w-[320px]"
-            : "top-24 left-1/2 w-[min(420px,calc(100vw-2.5rem))] -translate-x-1/2"
-        } ${
-          isPanelOpen
-            ? "opacity-100 pointer-events-auto translate-y-0"
-            : isLargeScreen
-              ? "opacity-0 pointer-events-none translate-x-6"
-              : "opacity-0 pointer-events-none -translate-y-4"
-        }`}
+        className={
+          isInlineMode
+            ? `w-full transition-all duration-300 ${
+                isPanelOpen
+                  ? "mt-2 max-h-[65vh] opacity-100 pointer-events-auto"
+                  : "max-h-0 overflow-hidden opacity-0 pointer-events-none"
+              }`
+            : `fixed z-[60] transition-all duration-300 ${
+                isLargeScreen
+                  ? "top-24 right-6 w-[320px]"
+                  : "top-24 left-1/2 w-[min(420px,calc(100vw-2.5rem))] -translate-x-1/2"
+              } ${
+                isPanelOpen
+                  ? "opacity-100 pointer-events-auto translate-y-0"
+                  : isLargeScreen
+                    ? "opacity-0 pointer-events-none translate-x-6"
+                    : "opacity-0 pointer-events-none -translate-y-4"
+              }`
+        }
       >
-        <Card className="border border-primary/20 shadow-2xl backdrop-blur bg-black/90 text-white h-full max-h-[75vh] flex flex-col">
+        <Card
+          className={`border border-primary/20 shadow-2xl backdrop-blur bg-black/90 text-white flex flex-col ${
+            isInlineMode ? "h-full max-h-[60vh] w-full" : "h-full max-h-[75vh]"
+          }`}
+        >
           <CardHeader className="flex flex-row items-center justify-between gap-2 py-3">
             <div className="flex items-center gap-2 min-w-0">
               <Server className="h-4 w-4 text-green-400" />

@@ -53,9 +53,9 @@ const toneMap: Record<
   },
   default: {
     card: "border-white/10 bg-background/50",
-    value: "text-white",
+    value: "text-foreground",
     iconWrap: "bg-white/10 text-default-300",
-    label: "text-default-400",
+    label: "text-default-500",
   },
 };
 
@@ -219,7 +219,7 @@ export function PeoplePageHeader({
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
             {tag}
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {title}
           </h1>
           <p className="max-w-3xl text-sm text-default-400 sm:text-base">
@@ -286,7 +286,7 @@ export function PeoplePanel({
     <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
           {description ? (
             <p className="text-sm text-default-400">{description}</p>
           ) : null}

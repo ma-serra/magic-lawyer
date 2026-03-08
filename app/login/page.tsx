@@ -47,6 +47,9 @@ function LoginPageInner() {
 
   const tenantLogoUrl = tenantBranding?.success ? tenantBranding.data?.logoUrl : null;
   const tenantName = tenantBranding?.success ? tenantBranding.data?.name : null;
+  const tenantLoginBackgroundUrl = tenantBranding?.success
+    ? tenantBranding.data?.loginBackgroundUrl
+    : null;
   const [devQuickLogins, setDevQuickLogins] = useState<
     Array<{
       group: string;
@@ -667,7 +670,18 @@ function LoginPageInner() {
   }, [firstAccessReady]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-background via-background to-primary/5 px-4 py-12">
+    <div
+      className="min-h-screen flex items-center justify-center bg-linear-to-br from-background via-background to-primary/5 px-4 py-12"
+      style={
+        tenantLoginBackgroundUrl
+          ? {
+              backgroundImage: `linear-gradient(rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.74)), url(${tenantLoginBackgroundUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }
+          : undefined
+      }
+    >
       {/* Botão de voltar */}
       <Button
         as={NextLink}
@@ -686,6 +700,13 @@ function LoginPageInner() {
         Voltar
       </Button>
 
+      {isDevMode ? (
+        <DevInfo
+          buttonClassName="shadow-lg"
+          buttonContainerClassName="fixed top-6 right-6 z-10"
+        />
+      ) : null}
+
       {isDevMode && devQuickLogins.length > 0 && (
         <>
           {!isLargeScreen && devPanelOpen && <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setDevPanelOpen(false)} />}
@@ -702,7 +723,6 @@ function LoginPageInner() {
             >
               {devPanelOpen ? "Esconder logins" : "Logins rápidos"}
             </Button>
-            <DevInfo buttonContainerClassName="" buttonClassName="shadow-lg" />
           </div>
 
           <aside

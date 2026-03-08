@@ -25,10 +25,13 @@ import {
 import {
   Building2,
   CalendarClock,
+  CreditCard,
   DollarSign,
   ExternalLink,
   FileSpreadsheet,
   Landmark,
+  RefreshCcw,
+  ReceiptText,
   Search,
 } from "lucide-react";
 
@@ -70,6 +73,31 @@ function getStatusColor(status: string) {
       return "default" as const;
     default:
       return "secondary" as const;
+  }
+}
+
+function getStatusLabel(status: string) {
+  switch (status) {
+    case "PAGA":
+      return "Paga";
+    case "ABERTA":
+      return "Aberta";
+    case "VENCIDA":
+      return "Vencida";
+    case "RASCUNHO":
+      return "Rascunho";
+    case "CANCELADA":
+      return "Cancelada";
+    case "TRIAL":
+      return "Trial";
+    case "ATIVA":
+      return "Ativa";
+    case "INADIMPLENTE":
+      return "Inadimplente";
+    case "SUSPENSA":
+      return "Suspensa";
+    default:
+      return status || "Não informado";
   }
 }
 
@@ -118,36 +146,78 @@ export default function BillingContent() {
         title="Billing da assinatura"
         description="Faturas do escritório com a Magic Lawyer. Este painel é separado dos recibos operacionais de clientes."
         actions={
-          <Button
-            as={Link}
-            href="/financeiro/recibos"
-            radius="full"
-            startContent={<FileSpreadsheet className="h-4 w-4" />}
-            variant="flat"
-          >
-            Voltar para recibos
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              radius="full"
+              startContent={<RefreshCcw className="h-4 w-4" />}
+              variant="flat"
+              onPress={() => mutate()}
+            >
+              Sincronizar agora
+            </Button>
+            <Button
+              as={Link}
+              href="/financeiro/recibos"
+              radius="full"
+              startContent={<FileSpreadsheet className="h-4 w-4" />}
+              variant="flat"
+            >
+              Voltar para recibos
+            </Button>
+          </div>
         }
       />
 
       {assinatura && (
         <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <CardBody className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6 xl:grid-cols-4">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-                Assinatura ativa
+                Plano atual
               </p>
-              <p className="text-sm text-default-300">
-                Plano: <span className="font-medium">{assinatura.plano || "-"}</span>
+              <p className="text-sm font-medium text-foreground">
+                {assinatura.plano || "Não configurado"}
               </p>
               <p className="text-xs text-default-500">
-                Renovação: {formatDate(assinatura.renovaEm)} • Trial até{" "}
-                {formatDate(assinatura.trialEndsAt)}
+                Assinado em {formatDate(assinatura.dataInicio)}
               </p>
             </div>
-            <Chip color={getStatusColor(assinatura.status)} variant="flat">
-              {assinatura.status}
-            </Chip>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                Método de cobrança
+              </p>
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-default-400" />
+                <p className="text-sm font-medium text-foreground">
+                  {assinatura.metodoCobrancaLabel}
+                </p>
+              </div>
+              <p className="text-xs text-default-500">
+                {assinatura.detalheMetodo || "Dados sensíveis do cartão não são expostos."}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                Ciclo
+              </p>
+              <p className="text-sm text-default-300">
+                Renovação: <span className="font-medium">{formatDate(assinatura.renovaEm)}</span>
+              </p>
+              <p className="text-xs text-default-500">
+                Trial até {formatDate(assinatura.trialEndsAt)}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                Status da assinatura
+              </p>
+              <Chip color={getStatusColor(assinatura.status)} variant="flat">
+                {getStatusLabel(assinatura.status)}
+              </Chip>
+              <p className="text-xs text-default-500">
+                Última sincronização: {formatDate(assinatura.ultimaSincronizacao)}
+              </p>
+            </div>
           </CardBody>
         </Card>
       )}
@@ -273,6 +343,7 @@ export default function BillingContent() {
                 <TableHeader>
                   <TableColumn>FATURA</TableColumn>
                   <TableColumn>STATUS</TableColumn>
+                  <TableColumn>MÉTODO</TableColumn>
                   <TableColumn>VALOR</TableColumn>
                   <TableColumn>VENCIMENTO</TableColumn>
                   <TableColumn>PAGAMENTO</TableColumn>
@@ -302,7 +373,12 @@ export default function BillingContent() {
                           size="sm"
                           variant="flat"
                         >
-                          {fatura.status}
+                          {getStatusLabel(fatura.status)}
+                        </Chip>
+                      </TableCell>
+                      <TableCell>
+                        <Chip color="secondary" size="sm" variant="flat">
+                          {fatura.metodoPagamentoLabel || "Não informado"}
                         </Chip>
                       </TableCell>
                       <TableCell>
@@ -313,20 +389,48 @@ export default function BillingContent() {
                       <TableCell>{formatDate(fatura.vencimento)}</TableCell>
                       <TableCell>{formatDate(fatura.pagoEm)}</TableCell>
                       <TableCell>
-                        {fatura.urlBoleto ? (
-                          <Button
-                            as="a"
-                            href={fatura.urlBoleto}
-                            rel="noopener noreferrer"
-                            size="sm"
-                            startContent={<ExternalLink className="h-3.5 w-3.5" />}
-                            target="_blank"
-                            variant="flat"
-                          >
-                            Abrir cobrança
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-default-500">-</span>
+                        <div className="flex flex-wrap gap-2">
+                          {fatura.urlCobranca && (
+                            <Button
+                              as="a"
+                              color={
+                                fatura.status === "ABERTA" || fatura.status === "VENCIDA"
+                                  ? "primary"
+                                  : "default"
+                              }
+                              href={fatura.urlCobranca}
+                              rel="noopener noreferrer"
+                              size="sm"
+                              startContent={<ExternalLink className="h-3.5 w-3.5" />}
+                              target="_blank"
+                              variant="flat"
+                            >
+                              {fatura.status === "ABERTA" || fatura.status === "VENCIDA"
+                                ? "Pagar agora"
+                                : "Ver cobrança"}
+                            </Button>
+                          )}
+                          {fatura.urlComprovante && (
+                            <Button
+                              as="a"
+                              href={fatura.urlComprovante}
+                              rel="noopener noreferrer"
+                              size="sm"
+                              startContent={<ReceiptText className="h-3.5 w-3.5" />}
+                              target="_blank"
+                              variant="flat"
+                            >
+                              Comprovante
+                            </Button>
+                          )}
+                          {!fatura.urlCobranca && !fatura.urlComprovante && (
+                            <span className="text-xs text-default-500">Sem link disponível</span>
+                          )}
+                        </div>
+                        {fatura.linhaDigitavel && (
+                          <p className="mt-1 text-[11px] text-default-500">
+                            Linha digitável: {fatura.linhaDigitavel}
+                          </p>
                         )}
                       </TableCell>
                     </TableRow>

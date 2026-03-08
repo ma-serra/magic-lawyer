@@ -309,7 +309,7 @@ export default function RecibosPage() {
           Deseja encontrar as faturas da assinatura da Magic Lawyer?{" "}
           <Link
             className="font-medium text-primary/90 underline-offset-2 transition hover:text-primary hover:underline"
-            href="/configuracoes/billing"
+            href="/configuracoes?tab=billing"
           >
             clique aqui
           </Link>
