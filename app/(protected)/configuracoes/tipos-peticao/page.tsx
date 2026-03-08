@@ -1,37 +1,67 @@
 "use client";
 
-import React, { useState } from "react";
-import { Card, CardBody, CardHeader, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Spinner, Switch, Textarea, Tabs, Tab, Select, SelectItem } from "@heroui/react";
+import { useCallback, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
+  Button,
+  Chip,
+  Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  SelectItem,
+  Spinner,
+  Switch,
+  Tab,
+  Tabs,
+  Textarea,
+} from "@heroui/react";
+import {
   FileTextIcon,
   GlobeIcon,
+  PencilIcon,
+  PlusIcon,
+  SearchIcon,
+  SlidersHorizontalIcon,
+  TrashIcon,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
-
 import {
-  listarTiposGlobais,
   configurarTiposGlobaisTenant,
   createTipoPeticao,
-  updateTipoPeticao,
   deleteTipoPeticao,
-  listTiposPeticao,
   getCategoriasTipoPeticao,
+  listTiposPeticaoConfiguracaoTenant,
+  listarTiposGlobais,
+  updateTipoPeticao,
 } from "@/app/actions/tipos-peticao";
-import { title, subtitle } from "@/components/primitives";
+import {
+  PeopleEntityCard,
+  PeopleEntityCardBody,
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 
-interface TipoGlobal {
+type CategoriaOption = {
+  value: string;
+  label: string;
+};
+
+type TipoGlobal = {
   id: string;
   nome: string;
   categoria: string | null;
   ordem: number;
   global: boolean;
   ativo: boolean;
-}
+  descricao?: string | null;
+};
 
-interface TipoCustomizado {
+type TipoTenant = {
   id: string;
   nome: string;
   categoria: string | null;
@@ -39,488 +69,803 @@ interface TipoCustomizado {
   global: boolean;
   ativo: boolean;
   tenantId: string | null;
-}
+  descricao?: string | null;
+};
 
-interface TipoFormData {
+type TipoFormData = {
   nome: string;
   categoria: string;
   ordem: number;
-  descricao?: string;
+  descricao: string;
+  ativo: boolean;
+};
+
+const DEFAULT_FORM: TipoFormData = {
+  nome: "",
+  categoria: "OUTROS",
+  ordem: 1000,
+  descricao: "",
+  ativo: true,
+};
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function toSingleSelectionValue(selection: "all" | Set<React.Key>) {
+  if (selection === "all") return "";
+  const first = Array.from(selection)[0];
+  return typeof first === "string" ? first : "";
+}
+
+function formatCategoria(categoria: string | null, categorias: CategoriaOption[]) {
+  if (!categoria) return "Sem categoria";
+  return categorias.find((item) => item.value === categoria)?.label ?? categoria;
+}
+
+function getCategoriaColor(
+  categoria: string | null,
+): "default" | "success" | "primary" | "warning" | "secondary" | "danger" {
+  if (!categoria) return "default";
+
+  const colors: Record<
+    string,
+    "default" | "success" | "primary" | "warning" | "secondary" | "danger"
+  > = {
+    INICIAL: "success",
+    RESPOSTA: "warning",
+    RECURSO: "danger",
+    EXECUCAO: "primary",
+    URGENTE: "secondary",
+    PROCEDIMENTO: "default",
+    OUTROS: "default",
+  };
+
+  return colors[categoria] ?? "default";
 }
 
 export default function ConfiguracaoTiposPeticaoPage() {
-  // Estados
+  const [activeTab, setActiveTab] = useState<"globais" | "customizados">(
+    "globais",
+  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState("");
+  const [somenteAtivosCustomizados, setSomenteAtivosCustomizados] =
+    useState(true);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("globais");
+  const [formData, setFormData] = useState<TipoFormData>(DEFAULT_FORM);
 
-  // Formulário
-  const [formData, setFormData] = useState<TipoFormData>({
-    nome: "",
-    categoria: "OUTROS",
-    ordem: 1000,
-    descricao: "",
-  });
+  const [savingForm, setSavingForm] = useState(false);
+  const [updatingGlobalId, setUpdatingGlobalId] = useState<string | null>(null);
+  const [updatingCustomId, setUpdatingCustomId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Estados para categorias
-  const [categorias, setCategorias] = useState<any[]>([]);
-
-  // Estados para dados
-  const [tiposGlobais, setTiposGlobais] = useState<TipoGlobal[]>([]);
-  const [tiposCustomizados, setTiposCustomizados] = useState<TipoCustomizado[]>(
-    [],
+  const {
+    data: categoriasResult,
+    isLoading: loadingCategorias,
+    mutate: mutateCategorias,
+  } = useSWR("tipos-peticao-categorias", () => getCategoriasTipoPeticao());
+  const {
+    data: globaisResult,
+    isLoading: loadingGlobais,
+    mutate: mutateGlobais,
+  } = useSWR("tipos-peticao-globais", () => listarTiposGlobais());
+  const {
+    data: tenantResult,
+    isLoading: loadingTenant,
+    mutate: mutateTenant,
+  } = useSWR("tipos-peticao-tenant-config", () =>
+    listTiposPeticaoConfiguracaoTenant(),
   );
-  const [loadingTipos, setLoadingTipos] = useState(true);
 
-  // Carregar dados
-  const loadData = async () => {
-    try {
-      setLoadingTipos(true);
+  const categorias = useMemo<CategoriaOption[]>(
+    () =>
+      categoriasResult?.success
+        ? (categoriasResult.data as CategoriaOption[]) ?? []
+        : [],
+    [categoriasResult],
+  );
 
-      // Carregar categorias
-      const categoriasResult = await getCategoriasTipoPeticao();
+  const tiposGlobais = useMemo<TipoGlobal[]>(
+    () =>
+      globaisResult?.success ? ((globaisResult.data as TipoGlobal[]) ?? []) : [],
+    [globaisResult],
+  );
+  const nomesGlobaisSet = useMemo(() => {
+    return new Set(tiposGlobais.map((tipo) => normalizeText(tipo.nome)));
+  }, [tiposGlobais]);
 
-      if (categoriasResult.success) {
-        setCategorias(categoriasResult.data);
-      }
+  const tenantTipos = useMemo<TipoTenant[]>(
+    () => (tenantResult?.success ? ((tenantResult.data as TipoTenant[]) ?? []) : []),
+    [tenantResult],
+  );
 
-      // Carregar tipos globais
-      const globaisResult = await listarTiposGlobais();
+  const tiposCustomizados = useMemo(
+    () =>
+      tenantTipos.filter(
+        (tipo) =>
+          Boolean(tipo.tenantId) &&
+          !tipo.global &&
+          !nomesGlobaisSet.has(normalizeText(tipo.nome)),
+      ),
+    [nomesGlobaisSet, tenantTipos],
+  );
 
-      if (globaisResult.success) {
-        setTiposGlobais(globaisResult.data);
-      }
+  const loadingData = loadingCategorias || loadingGlobais || loadingTenant;
 
-      // Carregar tipos customizados do tenant
-      const customizadosResult = await listTiposPeticao();
-
-      if (customizadosResult.success) {
-        // Filtrar apenas os customizados (com tenantId)
-        const customizados = customizadosResult.data.filter(
-          (tipo: any) => tipo.tenantId,
-        );
-
-        setTiposCustomizados(customizados);
-      }
-    } catch (error) {
-      toast.error("Erro ao carregar tipos de petição");
-    } finally {
-      setLoadingTipos(false);
+  const tenantOverrideByNome = useMemo(() => {
+    const map = new Map<string, TipoTenant>();
+    for (const tipo of tenantTipos) {
+      map.set(normalizeText(tipo.nome), tipo);
     }
-  };
+    return map;
+  }, [tenantTipos]);
 
-  // Carregar dados na montagem
-  React.useEffect(() => {
-    loadData();
+  const nomeFiltro = searchTerm.trim().toLowerCase();
+
+  const filteredGlobais = useMemo(() => {
+    return tiposGlobais.filter((tipo) => {
+      if (
+        categoriaFiltro &&
+        categoriaFiltro !== "TODAS" &&
+        (tipo.categoria ?? "OUTROS") !== categoriaFiltro
+      ) {
+        return false;
+      }
+
+      if (!nomeFiltro) return true;
+
+      const haystack = `${tipo.nome} ${tipo.categoria ?? ""}`.toLowerCase();
+      return haystack.includes(nomeFiltro);
+    });
+  }, [categoriaFiltro, nomeFiltro, tiposGlobais]);
+
+  const filteredCustomizados = useMemo(() => {
+    return tiposCustomizados.filter((tipo) => {
+      if (
+        categoriaFiltro &&
+        categoriaFiltro !== "TODAS" &&
+        (tipo.categoria ?? "OUTROS") !== categoriaFiltro
+      ) {
+        return false;
+      }
+
+      if (somenteAtivosCustomizados && !tipo.ativo) {
+        return false;
+      }
+
+      if (!nomeFiltro) return true;
+
+      const haystack =
+        `${tipo.nome} ${tipo.categoria ?? ""} ${tipo.descricao ?? ""}`.toLowerCase();
+      return haystack.includes(nomeFiltro);
+    });
+  }, [
+    categoriaFiltro,
+    nomeFiltro,
+    somenteAtivosCustomizados,
+    tiposCustomizados,
+  ]);
+
+  const totalGlobaisAtivosTenant = useMemo(
+    () =>
+      tiposGlobais.filter((tipo) => {
+        const override = tenantOverrideByNome.get(normalizeText(tipo.nome));
+        return override?.ativo ?? true;
+      }).length,
+    [tenantOverrideByNome, tiposGlobais],
+  );
+
+  const totalCustomizadosAtivos = useMemo(
+    () => tiposCustomizados.filter((tipo) => tipo.ativo).length,
+    [tiposCustomizados],
+  );
+
+  const categoriaFiltroKeys = useMemo(() => {
+    const allowed = new Set(["", "TODAS", ...categorias.map((item) => item.value)]);
+    if (!allowed.has(categoriaFiltro)) return [];
+    return categoriaFiltro ? [categoriaFiltro] : [];
+  }, [categoriaFiltro, categorias]);
+  const categoriasComTodas = useMemo(
+    () => [{ value: "TODAS", label: "Todas as categorias" }, ...categorias],
+    [categorias],
+  );
+
+  const formCategoriaKeys = useMemo(() => {
+    const allowed = new Set(categorias.map((item) => item.value));
+    if (!allowed.has(formData.categoria)) return [];
+    return [formData.categoria];
+  }, [categorias, formData.categoria]);
+
+  const resetForm = useCallback(() => {
+    setEditingId(null);
+    setFormData(DEFAULT_FORM);
   }, []);
 
-  // Funções
-  const handleToggleGlobal = async (tipoId: string, ativo: boolean) => {
-    try {
-      setLoading(true);
-      const result = await configurarTiposGlobaisTenant(tipoId, ativo);
-
-      if (result.success) {
-        toast.success(result.message || "Configuração atualizada!");
-        loadData();
-      } else {
-        toast.error(result.error || "Erro ao atualizar configuração");
-      }
-    } catch (error) {
-      toast.error("Erro inesperado ao atualizar configuração");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenModal = (tipo?: TipoCustomizado) => {
-    if (tipo) {
-      setEditingId(tipo.id);
-      setFormData({
-        nome: tipo.nome,
-        categoria: tipo.categoria || "OUTROS",
-        ordem: tipo.ordem,
-        descricao: "",
-      });
-    } else {
-      setEditingId(null);
-      setFormData({
-        nome: "",
-        categoria: "OUTROS",
-        ordem: 1000,
-        descricao: "",
-      });
-    }
+  const openCreateModal = useCallback(() => {
+    resetForm();
     setModalOpen(true);
-  };
+  }, [resetForm]);
 
-  const handleCloseModal = () => {
-    setModalOpen(false);
-    setEditingId(null);
+  const openEditModal = useCallback((tipo: TipoTenant) => {
+    setEditingId(tipo.id);
     setFormData({
-      nome: "",
-      categoria: "OUTROS",
-      ordem: 1000,
-      descricao: "",
+      nome: tipo.nome,
+      categoria: tipo.categoria ?? "OUTROS",
+      ordem: tipo.ordem ?? 1000,
+      descricao: tipo.descricao ?? "",
+      ativo: tipo.ativo,
     });
-  };
+    setModalOpen(true);
+  }, []);
 
-  const handleSubmit = async () => {
+  const closeModal = useCallback(() => {
+    setModalOpen(false);
+    resetForm();
+  }, [resetForm]);
+
+  const refreshData = useCallback(async () => {
+    await Promise.all([mutateCategorias(), mutateGlobais(), mutateTenant()]);
+  }, [mutateCategorias, mutateGlobais, mutateTenant]);
+
+  const handleToggleGlobal = useCallback(
+    async (tipo: TipoGlobal, ativo: boolean) => {
+      setUpdatingGlobalId(tipo.id);
+      try {
+        const result = await configurarTiposGlobaisTenant(tipo.id, ativo);
+
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar configuração global");
+          return;
+        }
+
+        toast.success(
+          result.message ||
+            `Tipo "${tipo.nome}" ${ativo ? "ativado" : "desativado"} no escritório`,
+        );
+        await mutateTenant();
+      } catch {
+        toast.error("Erro inesperado ao atualizar configuração global");
+      } finally {
+        setUpdatingGlobalId(null);
+      }
+    },
+    [mutateTenant],
+  );
+
+  const handleToggleCustom = useCallback(
+    async (tipo: TipoTenant, ativo: boolean) => {
+      setUpdatingCustomId(tipo.id);
+      try {
+        const result = await updateTipoPeticao(tipo.id, { ativo });
+
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar tipo customizado");
+          return;
+        }
+
+        toast.success(
+          `Tipo "${tipo.nome}" ${ativo ? "ativado" : "desativado"} com sucesso`,
+        );
+        await mutateTenant();
+      } catch {
+        toast.error("Erro inesperado ao atualizar tipo customizado");
+      } finally {
+        setUpdatingCustomId(null);
+      }
+    },
+    [mutateTenant],
+  );
+
+  const handleSubmit = useCallback(async () => {
+    if (!formData.nome.trim()) {
+      toast.error("Nome é obrigatório");
+      return;
+    }
+
+    setSavingForm(true);
     try {
-      setLoading(true);
+      if (editingId) {
+        const result = await updateTipoPeticao(editingId, {
+          nome: formData.nome.trim(),
+          categoria: formData.categoria,
+          ordem: formData.ordem,
+          descricao: formData.descricao.trim() || undefined,
+          ativo: formData.ativo,
+        });
 
-      if (!formData.nome.trim()) {
-        toast.error("Nome é obrigatório");
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar tipo");
+          return;
+        }
 
+        toast.success(result.message || "Tipo customizado atualizado com sucesso");
+        await mutateTenant();
+        closeModal();
         return;
       }
 
-      let result;
+      const createResult = await createTipoPeticao({
+        nome: formData.nome.trim(),
+        categoria: formData.categoria,
+        ordem: formData.ordem,
+        descricao: formData.descricao.trim() || undefined,
+      });
 
-      if (editingId) {
-        result = await updateTipoPeticao(editingId, formData);
-      } else {
-        result = await createTipoPeticao(formData);
+      if (!createResult.success) {
+        toast.error(createResult.error || "Erro ao criar tipo");
+        return;
       }
 
-      if (result.success) {
-        toast.success(result.message || "Tipo salvo com sucesso!");
-        loadData();
-        handleCloseModal();
-      } else {
-        toast.error(result.error || "Erro ao salvar tipo");
+      const createdId = (createResult.data as { id?: string } | undefined)?.id;
+      if (!formData.ativo && createdId) {
+        await updateTipoPeticao(createdId, { ativo: false });
       }
-    } catch (error) {
+
+      toast.success(createResult.message || "Tipo customizado criado com sucesso");
+      await mutateTenant();
+      closeModal();
+    } catch {
       toast.error("Erro inesperado ao salvar tipo");
     } finally {
-      setLoading(false);
+      setSavingForm(false);
     }
-  };
+  }, [closeModal, editingId, formData, mutateTenant]);
 
-  const handleDelete = async (id: string) => {
-    try {
-      setLoading(true);
-      const result = await deleteTipoPeticao(id);
+  const handleDelete = useCallback(
+    async (tipo: TipoTenant) => {
+      const confirmDelete = window.confirm(
+        `Excluir o tipo customizado "${tipo.nome}"?`,
+      );
+      if (!confirmDelete) return;
 
-      if (result.success) {
-        toast.success("Tipo removido com sucesso!");
-        loadData();
-      } else {
-        toast.error(result.error || "Erro ao remover tipo");
+      setDeletingId(tipo.id);
+      try {
+        const result = await deleteTipoPeticao(tipo.id);
+
+        if (!result.success) {
+          toast.error(result.error || "Erro ao excluir tipo customizado");
+          return;
+        }
+
+        toast.success(result.message || "Tipo customizado removido com sucesso");
+        await mutateTenant();
+      } catch {
+        toast.error("Erro inesperado ao excluir tipo customizado");
+      } finally {
+        setDeletingId(null);
       }
-    } catch (error) {
-      toast.error("Erro inesperado ao remover tipo");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getCategoriaLabel = (categoria: string) => {
-    const cat = categorias.find((c) => c.value === categoria);
-
-    return cat?.label || categoria;
-  };
-
-  const getCategoriaColor = (
-    categoria: string | null,
-  ): "default" | "success" | "primary" | "warning" | "secondary" | "danger" => {
-    if (!categoria) return "default";
-
-    const colors: Record<
-      string,
-      "default" | "success" | "primary" | "warning" | "secondary" | "danger"
-    > = {
-      INICIAL: "success",
-      RESPOSTA: "warning",
-      RECURSO: "danger",
-      EXECUCAO: "primary",
-      URGENTE: "secondary",
-      PROCEDIMENTO: "default",
-      OUTROS: "default",
-    };
-
-    return colors[categoria] || "default";
-  };
-
-  const formatCategoria = (categoria: string | null) => {
-    if (!categoria) return "Sem categoria";
-    const labels: Record<string, string> = {
-      INICIAL: "Inicial",
-      RESPOSTA: "Resposta",
-      RECURSO: "Recurso",
-      EXECUCAO: "Execução",
-      URGENTE: "Urgente",
-      PROCEDIMENTO: "Procedimento",
-      OUTROS: "Outros",
-    };
-
-    return labels[categoria] || categoria;
-  };
+    },
+    [mutateTenant],
+  );
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={title({ size: "lg", color: "blue" })}>
-            Configuração de Tipos de Petição
-          </h1>
-          <p className={subtitle({ fullWidth: true })}>
-            Gerencie os tipos de petição disponíveis no sistema
-          </p>
-        </div>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Tipos de petição"
+        description="Padronize os tipos utilizados no escritório. Ative/desative globais e mantenha tipos customizados por contexto operacional."
+        actions={
+          <Button
+            color="primary"
+            radius="full"
+            startContent={<PlusIcon className="h-4 w-4" />}
+            onPress={openCreateModal}
+          >
+            Novo tipo customizado
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Catálogo padrão do sistema"
+          icon={<GlobeIcon className="h-4 w-4" />}
+          label="Tipos globais"
+          tone="secondary"
+          value={tiposGlobais.length}
+        />
+        <PeopleMetricCard
+          helper="Globais ativos no escritório"
+          icon={<FileTextIcon className="h-4 w-4" />}
+          label="Globais ativos"
+          tone="success"
+          value={totalGlobaisAtivosTenant}
+        />
+        <PeopleMetricCard
+          helper="Tipos próprios do tenant"
+          icon={<PencilIcon className="h-4 w-4" />}
+          label="Customizados"
+          tone="primary"
+          value={tiposCustomizados.length}
+        />
+        <PeopleMetricCard
+          helper="Customizados com status ativo"
+          icon={<SlidersHorizontalIcon className="h-4 w-4" />}
+          label="Customizados ativos"
+          tone="warning"
+          value={totalCustomizadosAtivos}
+        />
       </div>
 
-      {/* Tabs */}
-      <Tabs
-        selectedKey={activeTab}
-        onSelectionChange={(key) => setActiveTab(key as string)}
+      <PeoplePanel
+        title="Filtros"
+        description="Filtre por nome e categoria para localizar rapidamente o tipo de petição desejado."
+        actions={
+          <Button
+            isDisabled={!searchTerm && !categoriaFiltro && somenteAtivosCustomizados}
+            size="sm"
+            variant="light"
+            onPress={() => {
+              setSearchTerm("");
+              setCategoriaFiltro("");
+              setSomenteAtivosCustomizados(true);
+            }}
+          >
+            Limpar filtros
+          </Button>
+        }
       >
-        <Tab key="globais" title="Tipos Globais">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center w-full">
-                <h2 className="text-lg font-semibold">
-                  Tipos Globais do Sistema
-                </h2>
-                <p className="text-sm text-gray-500">
-                  29 tipos padrão disponíveis para todos os tenants
-                </p>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <Input
+            aria-label="Buscar tipo de petição"
+            placeholder="Buscar por nome, categoria ou descrição"
+            startContent={<SearchIcon className="h-4 w-4 text-default-400" />}
+            value={searchTerm}
+            variant="bordered"
+            onValueChange={setSearchTerm}
+          />
+          <Select
+            aria-label="Filtrar por categoria"
+            disallowEmptySelection={false}
+            items={categoriasComTodas}
+            placeholder="Categoria"
+            selectedKeys={categoriaFiltroKeys}
+            variant="bordered"
+            onSelectionChange={(keys) =>
+              setCategoriaFiltro(toSingleSelectionValue(keys as "all" | Set<React.Key>))
+            }
+          >
+            {(item) => (
+              <SelectItem key={item.value} textValue={item.label}>
+                {item.label}
+              </SelectItem>
+            )}
+          </Select>
+          <div className="flex items-center rounded-xl border border-white/10 px-3">
+            <Switch
+              isSelected={somenteAtivosCustomizados}
+              size="sm"
+              onValueChange={setSomenteAtivosCustomizados}
+            >
+              Apenas ativos em customizados
+            </Switch>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <Tabs
+        aria-label="Abas de tipos de petição"
+        color="primary"
+        selectedKey={activeTab}
+        variant="underlined"
+        onSelectionChange={(key) =>
+          setActiveTab((key as "globais" | "customizados") ?? "globais")
+        }
+      >
+        <Tab
+          key="globais"
+          title={
+            <div className="flex items-center gap-2">
+              <GlobeIcon className="h-4 w-4" />
+              <span>Globais ({filteredGlobais.length})</span>
+            </div>
+          }
+        >
+          <PeoplePanel
+            title="Tipos globais do sistema"
+            description="Ative ou desative no escopo do escritório. O catálogo global é compartilhado, mas a decisão de uso é do tenant."
+            actions={
+              <Button
+                isLoading={loadingData}
+                size="sm"
+                variant="flat"
+                onPress={refreshData}
+              >
+                Recarregar
+              </Button>
+            }
+          >
+            {loadingData ? (
+              <div className="flex items-center justify-center py-10">
+                <Spinner label="Carregando tipos globais..." size="lg" />
               </div>
-            </CardHeader>
-            <CardBody>
-              {loadingTipos ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size="lg" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {tiposGlobais.map((tipo) => (
+            ) : filteredGlobais.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {filteredGlobais.map((tipo) => {
+                  const override = tenantOverrideByNome.get(normalizeText(tipo.nome));
+                  const ativoTenant = override?.ativo ?? true;
+
+                  return (
                     <div
                       key={tipo.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                      className="rounded-xl border border-white/10 bg-background/60 p-4 transition-colors hover:border-primary/35"
                     >
-                      <div className="flex items-center gap-4">
-                        <FileTextIcon className="text-gray-400" size={20} />
-                        <div>
-                          <p className="font-medium">{tipo.nome}</p>
-                          <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-foreground">
+                            {tipo.nome}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
                             <Chip
                               color={getCategoriaColor(tipo.categoria)}
                               size="sm"
                               variant="flat"
                             >
-                              {formatCategoria(tipo.categoria)}
+                              {formatCategoria(tipo.categoria, categorias)}
                             </Chip>
-                            <Chip color="primary" size="sm" variant="flat">
-                              Ordem: {tipo.ordem}
+                            <Chip size="sm" variant="flat">
+                              Ordem {tipo.ordem}
                             </Chip>
+                            {override ? (
+                              <Chip color="primary" size="sm" variant="flat">
+                                Regra do escritório
+                              </Chip>
+                            ) : null}
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500">
-                          Ativo para este tenant:
-                        </span>
-                        <Switch
-                          isDisabled={loading}
-                          isSelected={tipo.ativo}
-                          size="sm"
-                          onValueChange={(ativo) =>
-                            handleToggleGlobal(tipo.id, ativo)
-                          }
-                        />
+                        <div className="flex min-w-[170px] flex-col items-end gap-1">
+                          <span className="text-xs text-default-500">Ativo no escritório</span>
+                          <Switch
+                            isDisabled={updatingGlobalId === tipo.id}
+                            isSelected={ativoTenant}
+                            size="sm"
+                            onValueChange={(ativo) => handleToggleGlobal(tipo, ativo)}
+                          />
+                        </div>
                       </div>
                     </div>
-                  ))}
-
-                  {tiposGlobais.length === 0 && (
-                    <div className="text-center py-8">
-                      <GlobeIcon
-                        className="mx-auto text-gray-400 mb-4"
-                        size={48}
-                      />
-                      <p className="text-gray-500">
-                        Nenhum tipo global encontrado
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardBody>
-          </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-default-400">
+                Nenhum tipo global encontrado com os filtros atuais.
+              </div>
+            )}
+          </PeoplePanel>
         </Tab>
 
-        <Tab key="customizados" title="Tipos Customizados">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center w-full">
-                <h2 className="text-lg font-semibold">Tipos Customizados</h2>
-                <Button
-                  color="primary"
-                  startContent={<PlusIcon size={16} />}
-                  onPress={() => handleOpenModal()}
-                >
-                  Novo Tipo
-                </Button>
+        <Tab
+          key="customizados"
+          title={
+            <div className="flex items-center gap-2">
+              <FileTextIcon className="h-4 w-4" />
+              <span>Customizados ({filteredCustomizados.length})</span>
+            </div>
+          }
+        >
+          <PeoplePanel
+            title="Tipos customizados do escritório"
+            description="Crie tipos próprios para fluxos específicos da operação. Clique no card para editar."
+            actions={
+              <Button
+                color="primary"
+                size="sm"
+                startContent={<PlusIcon className="h-4 w-4" />}
+                onPress={openCreateModal}
+              >
+                Novo tipo
+              </Button>
+            }
+          >
+            {loadingData ? (
+              <div className="flex items-center justify-center py-10">
+                <Spinner label="Carregando tipos customizados..." size="lg" />
               </div>
-            </CardHeader>
-            <CardBody>
-              {loadingTipos ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size="lg" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {tiposCustomizados.map((tipo) => (
-                    <div
-                      key={tipo.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <FileTextIcon className="text-gray-400" size={20} />
-                        <div>
-                          <p className="font-medium">{tipo.nome}</p>
-                          <div className="flex items-center gap-2 mt-1">
+            ) : filteredCustomizados.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {filteredCustomizados.map((tipo) => (
+                  <PeopleEntityCard
+                    key={tipo.id}
+                    isPressable
+                    onPress={() => openEditModal(tipo)}
+                  >
+                    <PeopleEntityCardBody className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-foreground">{tipo.nome}</p>
+                          <div className="flex flex-wrap items-center gap-2">
                             <Chip
                               color={getCategoriaColor(tipo.categoria)}
                               size="sm"
                               variant="flat"
                             >
-                              {formatCategoria(tipo.categoria)}
+                              {formatCategoria(tipo.categoria, categorias)}
                             </Chip>
-                            <Chip color="default" size="sm" variant="flat">
-                              Ordem: {tipo.ordem}
+                            <Chip size="sm" variant="flat">
+                              Ordem {tipo.ordem}
                             </Chip>
-                            <Chip color="success" size="sm" variant="flat">
-                              Customizado
+                            <Chip
+                              color={tipo.ativo ? "success" : "default"}
+                              size="sm"
+                              variant="flat"
+                            >
+                              {tipo.ativo ? "Ativo" : "Inativo"}
                             </Chip>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          startContent={<PencilIcon size={14} />}
-                          variant="light"
-                          onPress={() => handleOpenModal(tipo)}
+                        <div
+                          className="flex items-center gap-2"
+                          data-stop-card-press="true"
                         >
-                          Editar
-                        </Button>
-                        <Button
-                          color="danger"
-                          size="sm"
-                          startContent={<TrashIcon size={14} />}
-                          variant="light"
-                          onPress={() => handleDelete(tipo.id)}
-                        >
-                          Remover
-                        </Button>
+                          <Button
+                            isIconOnly
+                            aria-label={`Editar ${tipo.nome}`}
+                            size="sm"
+                            variant="flat"
+                            onPress={() => openEditModal(tipo)}
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            isIconOnly
+                            aria-label={`Excluir ${tipo.nome}`}
+                            color="danger"
+                            isLoading={deletingId === tipo.id}
+                            size="sm"
+                            variant="flat"
+                            onPress={() => handleDelete(tipo)}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
 
-                  {tiposCustomizados.length === 0 && (
-                    <div className="text-center py-8">
-                      <PlusIcon
-                        className="mx-auto text-gray-400 mb-4"
-                        size={48}
-                      />
-                      <p className="text-gray-500">
-                        Nenhum tipo customizado criado
-                      </p>
-                      <Button
-                        className="mt-2"
-                        color="primary"
-                        variant="light"
-                        onPress={() => handleOpenModal()}
+                      {tipo.descricao ? (
+                        <p className="line-clamp-2 text-xs text-default-400">{tipo.descricao}</p>
+                      ) : (
+                        <p className="text-xs text-default-500">Sem descrição cadastrada</p>
+                      )}
+
+                      <div
+                        className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
+                        data-stop-card-press="true"
                       >
-                        Criar Primeiro Tipo
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardBody>
-          </Card>
+                        <span className="text-xs text-default-500">
+                          Disponível para seleção
+                        </span>
+                        <Switch
+                          isDisabled={updatingCustomId === tipo.id}
+                          isSelected={tipo.ativo}
+                          size="sm"
+                          onValueChange={(ativo) => handleToggleCustom(tipo, ativo)}
+                        />
+                      </div>
+                    </PeopleEntityCardBody>
+                  </PeopleEntityCard>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <p className="text-sm text-default-400">
+                  Nenhum tipo customizado encontrado com os filtros atuais.
+                </p>
+                <Button
+                  color="primary"
+                  startContent={<PlusIcon className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={openCreateModal}
+                >
+                  Criar primeiro tipo customizado
+                </Button>
+              </div>
+            )}
+          </PeoplePanel>
         </Tab>
       </Tabs>
 
-      {/* Modal de Criação/Edição */}
-      <Modal isOpen={modalOpen} size="lg" onClose={handleCloseModal}>
+      <Modal
+        isDismissable={!savingForm}
+        isOpen={modalOpen}
+        size="2xl"
+        onClose={closeModal}
+      >
         <ModalContent>
           <ModalHeader>
-            {editingId ? "Editar Tipo Customizado" : "Novo Tipo Customizado"}
+            {editingId ? "Editar tipo customizado" : "Novo tipo customizado"}
           </ModalHeader>
           <ModalBody className="space-y-4">
             <Input
               isRequired
-              label="Nome do Tipo"
-              placeholder="Ex: Petição de Prestação de Contas"
+              description="Nome usado nas telas de criação de petições."
+              label="Nome do tipo"
+              placeholder="Ex.: Petição de prestação de contas"
               value={formData.nome}
-              onChange={(e) =>
-                setFormData({ ...formData, nome: e.target.value })
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, nome: value }))
               }
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Select
+                aria-label="Categoria do tipo de petição"
                 isRequired
+                items={categorias}
                 label="Categoria"
                 placeholder="Selecione a categoria"
-                selectedKeys={[formData.categoria]}
-                onSelectionChange={(keys) => {
-                  const categoria = Array.from(keys)[0] as string;
-
-                  setFormData({ ...formData, categoria });
-                }}
+                selectedKeys={formCategoriaKeys}
+                variant="bordered"
+                onSelectionChange={(keys) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    categoria:
+                      toSingleSelectionValue(keys as "all" | Set<React.Key>) ||
+                      "OUTROS",
+                  }))
+                }
               >
-                {categorias.map((categoria) => (
-                  <SelectItem key={categoria.value} textValue={categoria.label}>
-                    <div className="flex items-center gap-2">
-                      <span>{categoria.icon}</span>
-                      <span>{categoria.label}</span>
-                    </div>
+                {(item) => (
+                  <SelectItem key={item.value} textValue={item.label}>
+                    {item.label}
                   </SelectItem>
-                ))}
+                )}
               </Select>
 
               <Input
-                description="Números menores aparecem primeiro"
-                label="Ordem"
+                description="Números menores aparecem primeiro."
+                label="Ordem de exibição"
+                min={0}
                 placeholder="1000"
                 type="number"
-                value={formData.ordem.toString()}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    ordem: parseInt(e.target.value) || 1000,
-                  })
+                value={String(formData.ordem)}
+                variant="bordered"
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ordem: Number.parseInt(event.target.value || "1000", 10) || 1000,
+                  }))
                 }
               />
             </div>
 
             <Textarea
-              label="Descrição"
-              placeholder="Descrição opcional do tipo de petição"
-              rows={3}
+              description="Opcional. Ajuda o time a entender quando usar este tipo."
+              label="Descrição interna"
+              minRows={3}
+              placeholder="Descreva contexto e finalidade deste tipo customizado."
               value={formData.descricao}
-              onChange={(e) =>
-                setFormData({ ...formData, descricao: e.target.value })
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, descricao: value }))
               }
             />
+
+            <div className="rounded-xl border border-white/10 px-3 py-3">
+              <Switch
+                isSelected={formData.ativo}
+                size="sm"
+                onValueChange={(ativo) =>
+                  setFormData((prev) => ({ ...prev, ativo }))
+                }
+              >
+                Tipo ativo para uso imediato
+              </Switch>
+            </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={handleCloseModal}>
+            <Button isDisabled={savingForm} variant="light" onPress={closeModal}>
               Cancelar
             </Button>
-            <Button color="primary" isLoading={loading} onPress={handleSubmit}>
-              {editingId ? "Atualizar" : "Criar"}
+            <Button color="primary" isLoading={savingForm} onPress={handleSubmit}>
+              {editingId ? "Salvar alterações" : "Criar tipo"}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+    </section>
   );
 }

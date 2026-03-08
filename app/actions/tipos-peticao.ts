@@ -19,6 +19,19 @@ async function getTenantId(): Promise<string> {
   return session.user.tenantId;
 }
 
+function normalizeTipoNome(nome: string) {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function sanitizeNomeTipo(nome: string) {
+  return nome.replace(/\s+/g, " ").trim();
+}
+
 // ============================================
 // LISTAR TIPOS DE PETIÇÃO
 // ============================================
@@ -27,14 +40,103 @@ export async function listTiposPeticao() {
   try {
     const tenantId = await getTenantId();
 
-    // Buscar tipos GLOBAIS (tenantId = null) + tipos CUSTOMIZADOS do tenant
+    const [tiposGlobais, tiposTenant] = await Promise.all([
+      prisma.tipoPeticao.findMany({
+        where: {
+          tenantId: null,
+          global: true,
+          ativo: true,
+          deletedAt: null,
+        },
+        orderBy: [{ ordem: "asc" }, { nome: "asc" }],
+      }),
+      prisma.tipoPeticao.findMany({
+        where: {
+          tenantId,
+          global: false,
+          deletedAt: null,
+        },
+        orderBy: [{ ordem: "asc" }, { nome: "asc" }],
+      }),
+    ]);
+
+    const tenantPorNome = new Map<string, (typeof tiposTenant)[number]>();
+    for (const tipo of tiposTenant) {
+      tenantPorNome.set(normalizeTipoNome(tipo.nome), tipo);
+    }
+
+    const nomesGlobais = new Set<string>();
+    const efetivos: typeof tiposGlobais = [];
+
+    for (const tipoGlobal of tiposGlobais) {
+      const nomeNormalizado = normalizeTipoNome(tipoGlobal.nome);
+      nomesGlobais.add(nomeNormalizado);
+
+      const override = tenantPorNome.get(nomeNormalizado);
+      if (!override) {
+        efetivos.push(tipoGlobal);
+        continue;
+      }
+
+      if (!override.ativo) {
+        continue;
+      }
+
+      efetivos.push({
+        ...tipoGlobal,
+        id: override.id,
+        tenantId: override.tenantId,
+        nome: override.nome,
+        descricao: override.descricao ?? tipoGlobal.descricao,
+        categoria: override.categoria ?? tipoGlobal.categoria,
+        ordem: override.ordem ?? tipoGlobal.ordem,
+        global: false,
+        ativo: true,
+        createdAt: override.createdAt,
+        updatedAt: override.updatedAt,
+        deletedAt: override.deletedAt,
+      });
+    }
+
+    for (const tipoTenant of tiposTenant) {
+      if (!tipoTenant.ativo) continue;
+      if (nomesGlobais.has(normalizeTipoNome(tipoTenant.nome))) continue;
+      efetivos.push(tipoTenant);
+    }
+
+    efetivos.sort((a, b) => {
+      if ((a.ordem ?? 0) !== (b.ordem ?? 0)) {
+        return (a.ordem ?? 0) - (b.ordem ?? 0);
+      }
+      return a.nome.localeCompare(b.nome, "pt-BR");
+    });
+
+    return {
+      success: true,
+      data: efetivos,
+    };
+  } catch (error) {
+    console.error("Erro ao listar tipos de petição:", error);
+
+    return {
+      success: false,
+      error: "Erro ao listar tipos de petição",
+      data: [],
+    };
+  }
+}
+
+// ============================================
+// LISTAR CONFIGURAÇÕES DE TIPOS DO TENANT (ATIVOS E INATIVOS)
+// ============================================
+
+export async function listTiposPeticaoConfiguracaoTenant() {
+  try {
+    const tenantId = await getTenantId();
+
     const tipos = await prisma.tipoPeticao.findMany({
       where: {
-        OR: [
-          { tenantId: null, global: true }, // Tipos globais (para todos)
-          { tenantId }, // Tipos customizados do tenant
-        ],
-        ativo: true,
+        tenantId,
         deletedAt: null,
       },
       orderBy: [{ ordem: "asc" }, { nome: "asc" }],
@@ -45,11 +147,11 @@ export async function listTiposPeticao() {
       data: tipos,
     };
   } catch (error) {
-    console.error("Erro ao listar tipos de petição:", error);
+    console.error("Erro ao listar configurações de tipos do tenant:", error);
 
     return {
       success: false,
-      error: "Erro ao listar tipos de petição",
+      error: "Erro ao listar configurações do tenant",
       data: [],
     };
   }
@@ -67,13 +169,43 @@ export async function createTipoPeticao(data: {
 }) {
   try {
     const tenantId = await getTenantId();
+    const nomeNormalizadoInput = sanitizeNomeTipo(data.nome);
+
+    if (!nomeNormalizadoInput) {
+      return {
+        success: false,
+        error: "Nome do tipo é obrigatório",
+      };
+    }
+
+    // Não permitir criar customizado com mesmo nome de tipo global
+    const tiposGlobais = await prisma.tipoPeticao.findMany({
+      where: {
+        tenantId: null,
+        global: true,
+        deletedAt: null,
+      },
+      select: { nome: true },
+    });
+    const nomeConflitaComGlobal = tiposGlobais.some(
+      (tipo) =>
+        normalizeTipoNome(tipo.nome) === normalizeTipoNome(nomeNormalizadoInput),
+    );
+
+    if (nomeConflitaComGlobal) {
+      return {
+        success: false,
+        error:
+          "Este nome já existe como tipo global. Gerencie a ativação na aba de tipos globais.",
+      };
+    }
 
     // Verificar se já existe um tipo com o mesmo nome
     const existente = await prisma.tipoPeticao.findUnique({
       where: {
         tenantId_nome: {
           tenantId,
-          nome: data.nome,
+          nome: nomeNormalizadoInput,
         },
       },
     });
@@ -89,7 +221,7 @@ export async function createTipoPeticao(data: {
     const tipo = await prisma.tipoPeticao.create({
       data: {
         tenantId, // ← Sempre preenchido para tipos customizados
-        nome: data.nome,
+        nome: nomeNormalizadoInput,
         descricao: data.descricao,
         categoria: data.categoria,
         ordem: data.ordem || 1000, // Ordem alta para aparecer depois dos globais
@@ -149,12 +281,33 @@ export async function updateTipoPeticao(
     }
 
     // Se está mudando o nome, verificar se já existe outro com o mesmo nome
-    if (data.nome && data.nome !== tipoExistente.nome) {
+    if (data.nome && sanitizeNomeTipo(data.nome) !== tipoExistente.nome) {
+      const novoNome = sanitizeNomeTipo(data.nome);
+
+      const tiposGlobais = await prisma.tipoPeticao.findMany({
+        where: {
+          tenantId: null,
+          global: true,
+          deletedAt: null,
+        },
+        select: { nome: true },
+      });
+      const nomeConflitaComGlobal = tiposGlobais.some(
+        (tipo) => normalizeTipoNome(tipo.nome) === normalizeTipoNome(novoNome),
+      );
+      if (nomeConflitaComGlobal) {
+        return {
+          success: false,
+          error:
+            "Este nome já existe como tipo global. Use outro nome para o tipo customizado.",
+        };
+      }
+
       const outroComMesmoNome = await prisma.tipoPeticao.findUnique({
         where: {
           tenantId_nome: {
             tenantId,
-            nome: data.nome,
+            nome: novoNome,
           },
         },
       });
@@ -170,7 +323,7 @@ export async function updateTipoPeticao(
     const tipo = await prisma.tipoPeticao.update({
       where: { id },
       data: {
-        nome: data.nome,
+        nome: data.nome ? sanitizeNomeTipo(data.nome) : undefined,
         descricao: data.descricao,
         categoria: data.categoria,
         ordem: data.ordem,
@@ -440,6 +593,7 @@ export async function configurarTiposGlobaisTenant(
     }
 
     // Criar ou atualizar configuração específica do tenant
+    // Registro do tenant funciona como override de ativação e metadados do global.
     await prisma.tipoPeticao.upsert({
       where: {
         tenantId_nome: {

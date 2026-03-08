@@ -1,304 +1,674 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Card, CardBody } from "@heroui/card";
-import { Button } from "@heroui/button";
-import { Input, Textarea } from "@heroui/input";
-import { Chip } from "@heroui/chip";
 import {
+  Button,
+  Chip,
+  Input,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
-  useDisclosure,
-} from "@heroui/modal";
-import { Skeleton } from "@heroui/react";
-import { Plus, RefreshCw, Pencil, Trash2, FileText, File } from "lucide-react";
-import { toast } from "@/lib/toast";
-
+  Spinner,
+  Switch,
+  Tab,
+  Tabs,
+  Textarea,
+} from "@heroui/react";
 import {
-  listTiposContrato,
+  Building2,
+  FileTextIcon,
+  PencilIcon,
+  PlusIcon,
+  SearchIcon,
+  TrashIcon,
+} from "lucide-react";
+import { toast } from "@/lib/toast";
+import {
   createTipoContrato,
-  updateTipoContrato,
   deleteTipoContrato,
+  listTiposContrato,
+  updateTipoContrato,
 } from "@/app/actions/tipos-contrato";
-import { title } from "@/components/primitives";
+import {
+  PeopleEntityCard,
+  PeopleEntityCardBody,
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
+
+type TipoContratoItem = {
+  id: string;
+  tenantId: string | null;
+  nome: string;
+  slug: string;
+  descricao: string | null;
+  ordem: number | null;
+  ativo: boolean;
+  isGlobal?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  _count?: {
+    contratos?: number;
+    modelos?: number;
+  };
+};
+
+type TipoContratoForm = {
+  nome: string;
+  slug: string;
+  descricao: string;
+  ordem: number;
+  ativo: boolean;
+};
+
+const DEFAULT_FORM: TipoContratoForm = {
+  nome: "",
+  slug: "",
+  descricao: "",
+  ordem: 100,
+  ativo: true,
+};
+
+function toSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 export default function TiposContratoPage() {
-  const [tipoSelecionado, setTipoSelecionado] = useState<any>(null);
-  const [formData, setFormData] = useState({
-    nome: "",
-    slug: "",
-    descricao: "",
-    ordem: 0,
-  });
-  const [salvando, setSalvando] = useState(false);
+  const [activeTab, setActiveTab] = useState<"globais" | "escritorio">(
+    "escritorio",
+  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [apenasAtivos, setApenasAtivos] = useState(true);
 
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTipo, setEditingTipo] = useState<TipoContratoItem | null>(null);
+  const [formData, setFormData] = useState<TipoContratoForm>(DEFAULT_FORM);
+
+  const [savingForm, setSavingForm] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   const {
-    data: tiposData,
+    data: tiposResult,
     isLoading,
     mutate,
-  } = useSWR("tipos-contrato-list", () => listTiposContrato());
+  } = useSWR("configuracoes-tipos-contrato", () => listTiposContrato());
 
-  const tipos = useMemo(
-    () => (tiposData?.success ? tiposData.tipos : []),
-    [tiposData],
+  const tipos = useMemo<TipoContratoItem[]>(
+    () => (tiposResult?.success ? ((tiposResult.tipos as TipoContratoItem[]) ?? []) : []),
+    [tiposResult],
   );
 
-  const handleOpenNovo = useCallback(() => {
-    setTipoSelecionado(null);
-    setFormData({ nome: "", slug: "", descricao: "", ordem: 0 });
-    onOpen();
-  }, [onOpen]);
-
-  const handleOpenEditar = useCallback(
-    (tipo: any) => {
-      setTipoSelecionado(tipo);
-      setFormData({
-        nome: tipo.nome,
-        slug: tipo.slug,
-        descricao: tipo.descricao || "",
-        ordem: tipo.ordem || 0,
-      });
-      onOpen();
-    },
-    [onOpen],
+  const tiposGlobais = useMemo(
+    () => tipos.filter((tipo) => Boolean(tipo.isGlobal)),
+    [tipos],
+  );
+  const hasGlobais = tiposGlobais.length > 0;
+  const tiposEscritorio = useMemo(
+    () => tipos.filter((tipo) => !tipo.isGlobal),
+    [tipos],
   );
 
-  const handleSalvar = useCallback(async () => {
-    if (!formData.nome.trim() || !formData.slug.trim()) {
-      toast.error("Nome e slug são obrigatórios");
+  const termoFiltro = searchTerm.trim().toLowerCase();
 
+  const filteredGlobais = useMemo(() => {
+    return tiposGlobais.filter((tipo) => {
+      if (apenasAtivos && !tipo.ativo) return false;
+      if (!termoFiltro) return true;
+      const haystack = `${tipo.nome} ${tipo.slug} ${tipo.descricao ?? ""}`.toLowerCase();
+      return haystack.includes(termoFiltro);
+    });
+  }, [apenasAtivos, termoFiltro, tiposGlobais]);
+
+  const filteredEscritorio = useMemo(() => {
+    return tiposEscritorio.filter((tipo) => {
+      if (apenasAtivos && !tipo.ativo) return false;
+      if (!termoFiltro) return true;
+      const haystack = `${tipo.nome} ${tipo.slug} ${tipo.descricao ?? ""}`.toLowerCase();
+      return haystack.includes(termoFiltro);
+    });
+  }, [apenasAtivos, termoFiltro, tiposEscritorio]);
+
+  const totalSemUso = useMemo(
+    () =>
+      tiposEscritorio.filter(
+        (tipo) => (tipo._count?.contratos ?? 0) + (tipo._count?.modelos ?? 0) === 0,
+      ).length,
+    [tiposEscritorio],
+  );
+
+  useEffect(() => {
+    if (!hasGlobais && activeTab === "globais") {
+      setActiveTab("escritorio");
+    }
+  }, [activeTab, hasGlobais]);
+
+  const openCreateModal = useCallback(() => {
+    setEditingTipo(null);
+    setFormData(DEFAULT_FORM);
+    setModalOpen(true);
+  }, []);
+
+  const openEditModal = useCallback((tipo: TipoContratoItem) => {
+    if (!tipo.canEdit) {
+      toast.error("Tipos globais são somente leitura nesta tela");
       return;
     }
 
-    setSalvando(true);
+    setEditingTipo(tipo);
+    setFormData({
+      nome: tipo.nome,
+      slug: tipo.slug,
+      descricao: tipo.descricao ?? "",
+      ordem: tipo.ordem ?? 100,
+      ativo: tipo.ativo,
+    });
+    setModalOpen(true);
+  }, []);
 
+  const closeModal = useCallback(() => {
+    setModalOpen(false);
+    setEditingTipo(null);
+    setFormData(DEFAULT_FORM);
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (!formData.nome.trim()) {
+      toast.error("Nome é obrigatório");
+      return;
+    }
+
+    if (!formData.slug.trim()) {
+      toast.error("Slug é obrigatório");
+      return;
+    }
+
+    setSavingForm(true);
     try {
-      const payload = {
+      if (editingTipo) {
+        const result = await updateTipoContrato(editingTipo.id, {
+          nome: formData.nome,
+          slug: formData.slug,
+          descricao: formData.descricao || null,
+          ordem: formData.ordem,
+          ativo: formData.ativo,
+        });
+
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar tipo de contrato");
+          return;
+        }
+
+        toast.success("Tipo de contrato atualizado com sucesso");
+        await mutate();
+        closeModal();
+        return;
+      }
+
+      const result = await createTipoContrato({
         nome: formData.nome,
         slug: formData.slug,
         descricao: formData.descricao || null,
         ordem: formData.ordem,
-      };
+      });
 
-      const result = tipoSelecionado
-        ? await updateTipoContrato(tipoSelecionado.id, payload)
-        : await createTipoContrato(payload);
-
-      if (result.success) {
-        toast.success(
-          tipoSelecionado
-            ? "Tipo atualizado com sucesso!"
-            : "Tipo criado com sucesso!",
-        );
-        mutate();
-        onClose();
-      } else {
-        toast.error(result.error || "Erro ao salvar tipo");
+      if (!result.success) {
+        toast.error(result.error || "Erro ao criar tipo de contrato");
+        return;
       }
-    } catch (error) {
-      toast.error("Erro ao salvar tipo");
+
+      if (!formData.ativo && result.tipo?.id) {
+        await updateTipoContrato(result.tipo.id, { ativo: false });
+      }
+
+      toast.success("Tipo de contrato criado com sucesso");
+      await mutate();
+      closeModal();
+    } catch {
+      toast.error("Erro inesperado ao salvar tipo de contrato");
     } finally {
-      setSalvando(false);
+      setSavingForm(false);
     }
-  }, [formData, tipoSelecionado, mutate, onClose]);
+  }, [closeModal, editingTipo, formData, mutate]);
 
-  const handleExcluir = useCallback(
-    async (id: string) => {
-      if (!confirm("Tem certeza que deseja excluir este tipo?")) return;
+  const handleDelete = useCallback(
+    async (tipo: TipoContratoItem) => {
+      if (!tipo.canDelete) {
+        toast.error("Tipos globais não podem ser removidos nesta tela");
+        return;
+      }
 
-      const result = await deleteTipoContrato(id);
+      const confirmDelete = window.confirm(
+        `Excluir o tipo "${tipo.nome}"? Esta ação não pode ser desfeita.`,
+      );
+      if (!confirmDelete) return;
 
-      if (result.success) {
-        toast.success("Tipo excluído com sucesso!");
-        mutate();
-      } else {
-        toast.error(result.error || "Erro ao excluir tipo");
+      setDeletingId(tipo.id);
+      try {
+        const result = await deleteTipoContrato(tipo.id);
+        if (!result.success) {
+          toast.error(result.error || "Erro ao excluir tipo de contrato");
+          return;
+        }
+
+        toast.success("Tipo de contrato removido com sucesso");
+        await mutate();
+      } catch {
+        toast.error("Erro inesperado ao excluir tipo de contrato");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [mutate],
+  );
+
+  const handleToggleStatus = useCallback(
+    async (tipo: TipoContratoItem, ativo: boolean) => {
+      if (!tipo.canEdit) {
+        toast.error("Tipos globais são somente leitura");
+        return;
+      }
+
+      setUpdatingStatusId(tipo.id);
+      try {
+        const result = await updateTipoContrato(tipo.id, { ativo });
+        if (!result.success) {
+          toast.error(result.error || "Erro ao atualizar status do tipo");
+          return;
+        }
+        toast.success(`Tipo ${ativo ? "ativado" : "desativado"} com sucesso`);
+        await mutate();
+      } catch {
+        toast.error("Erro inesperado ao atualizar status");
+      } finally {
+        setUpdatingStatusId(null);
       }
     },
     [mutate],
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={title()}>Tipos de Contrato</h1>
-          <p className="text-default-500">
-            Gerencie os tipos de contrato do escritório
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            color="default"
-            startContent={<RefreshCw size={18} />}
-            variant="flat"
-            onPress={() => mutate()}
-          >
-            Atualizar
-          </Button>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Tipos de contrato"
+        description="Padronize os tipos usados nos contratos do escritório. Tipos globais ficam disponíveis em modo leitura e tipos do escritório podem ser gerenciados aqui."
+        actions={
           <Button
             color="primary"
-            startContent={<Plus size={18} />}
-            onPress={handleOpenNovo}
+            radius="full"
+            startContent={<PlusIcon className="h-4 w-4" />}
+            onPress={openCreateModal}
           >
-            Novo Tipo
+            Novo tipo do escritório
           </Button>
+        }
+      />
+
+      <PeoplePanel
+        title="Para que esta aba serve"
+        description="Uso prático para não virar poluição visual."
+      >
+        <div className="space-y-2 text-sm text-default-300">
+          <p>
+            1. <span className="font-semibold text-foreground">Padronizar contratos</span>: o tipo organiza criação, filtros e relatórios financeiros.
+          </p>
+          <p>
+            2. <span className="font-semibold text-foreground">Separar produtos jurídicos</span>: ex. Consultoria, Contencioso, Êxito, Mensalidade.
+          </p>
+          <p>
+            3. <span className="font-semibold text-foreground">Evitar excesso</span>: se um tipo não tem uso (0 contratos e 0 modelos), revise ou remova.
+          </p>
+          <p>
+            4. <span className="font-semibold text-foreground">Quando NÃO criar tipo novo</span>: diferença só de cliente ou de texto pontual não justifica novo tipo.
+          </p>
         </div>
+      </PeoplePanel>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Todos os tipos disponíveis para seleção"
+          icon={<FileTextIcon className="h-4 w-4" />}
+          label="Total de tipos"
+          tone="primary"
+          value={tipos.length}
+        />
+        <PeopleMetricCard
+          helper="Catálogo compartilhado do sistema"
+          icon={<Building2 className="h-4 w-4" />}
+          label="Tipos globais"
+          tone="secondary"
+          value={tiposGlobais.length}
+        />
+        <PeopleMetricCard
+          helper="Tipos criados pelo escritório"
+          icon={<PencilIcon className="h-4 w-4" />}
+          label="Tipos do escritório"
+          tone="success"
+          value={tiposEscritorio.length}
+        />
+        <PeopleMetricCard
+          helper="Tipos próprios sem contratos e sem modelos"
+          icon={<FileTextIcon className="h-4 w-4" />}
+          label="Sem uso"
+          tone="warning"
+          value={totalSemUso}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
-                <CardBody>
-                  <Skeleton className="h-20 w-full rounded-lg" />
-                </CardBody>
-              </Card>
-            ))
-          : tipos &&
-            tipos.map((tipo: any) => (
-              <Card key={tipo.id}>
-                <CardBody>
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-start gap-2 flex-1">
-                      <FileText className="mt-1 text-primary" size={20} />
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">{tipo.nome}</h3>
-                        <p className="text-xs text-default-400">
-                          Slug: {tipo.slug}
+      <PeoplePanel
+        title="Filtros"
+        description="Pesquise por nome, slug ou descrição e restrinja para tipos ativos."
+        actions={
+          <Button
+            isDisabled={!searchTerm && apenasAtivos}
+            size="sm"
+            variant="light"
+            onPress={() => {
+              setSearchTerm("");
+              setApenasAtivos(true);
+            }}
+          >
+            Limpar filtros
+          </Button>
+        }
+      >
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <Input
+            aria-label="Buscar tipo de contrato"
+            placeholder="Buscar por nome, slug ou descrição"
+            startContent={<SearchIcon className="h-4 w-4 text-default-400" />}
+            value={searchTerm}
+            variant="bordered"
+            onValueChange={setSearchTerm}
+          />
+          <div className="flex items-center rounded-xl border border-white/10 px-3 lg:col-span-2">
+            <Switch isSelected={apenasAtivos} size="sm" onValueChange={setApenasAtivos}>
+              Mostrar apenas tipos ativos
+            </Switch>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <Tabs
+        aria-label="Abas de tipos de contrato"
+        color="primary"
+        selectedKey={activeTab}
+        variant="underlined"
+        onSelectionChange={(key) =>
+          setActiveTab((key as "globais" | "escritorio") ?? "escritorio")
+        }
+      >
+        <Tab
+          key="escritorio"
+          title={
+            <div className="flex items-center gap-2">
+              <PencilIcon className="h-4 w-4" />
+              <span>Escritório ({filteredEscritorio.length})</span>
+            </div>
+          }
+        >
+          <PeoplePanel
+            title="Tipos do escritório"
+            description="Clique no card para editar. Tipos com contratos/modelos vinculados não podem ser removidos."
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Spinner label="Carregando tipos do escritório..." size="lg" />
+              </div>
+            ) : filteredEscritorio.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {filteredEscritorio.map((tipo) => (
+                  <PeopleEntityCard
+                    key={tipo.id}
+                    isPressable
+                    onPress={() => openEditModal(tipo)}
+                  >
+                    <PeopleEntityCardBody className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{tipo.nome}</p>
+                          <p className="text-xs text-default-500">Slug: {tipo.slug}</p>
+                        </div>
+                        <div className="flex items-center gap-2" data-stop-card-press="true">
+                          <Button
+                            isIconOnly
+                            aria-label={`Editar ${tipo.nome}`}
+                            size="sm"
+                            variant="flat"
+                            onPress={() => openEditModal(tipo)}
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            isIconOnly
+                            aria-label={`Excluir ${tipo.nome}`}
+                            color="danger"
+                            isLoading={deletingId === tipo.id}
+                            size="sm"
+                            variant="flat"
+                            onPress={() => handleDelete(tipo)}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {tipo.descricao ? (
+                        <p className="line-clamp-2 text-xs text-default-400">{tipo.descricao}</p>
+                      ) : (
+                        <p className="text-xs text-default-500">Sem descrição cadastrada</p>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Chip color={tipo.ativo ? "success" : "default"} size="sm" variant="flat">
+                          {tipo.ativo ? "Ativo" : "Inativo"}
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          Ordem {tipo.ordem ?? 0}
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          {tipo._count?.contratos ?? 0} contrato(s)
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          {tipo._count?.modelos ?? 0} modelo(s)
+                        </Chip>
+                      </div>
+
+                      <div
+                        className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
+                        data-stop-card-press="true"
+                      >
+                        <span className="text-xs text-default-500">Disponível para uso</span>
+                        <Switch
+                          isDisabled={updatingStatusId === tipo.id}
+                          isSelected={tipo.ativo}
+                          size="sm"
+                          onValueChange={(ativo) => handleToggleStatus(tipo, ativo)}
+                        />
+                      </div>
+                    </PeopleEntityCardBody>
+                  </PeopleEntityCard>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <p className="text-sm text-default-400">
+                  Nenhum tipo do escritório encontrado com os filtros atuais.
+                </p>
+                <Button
+                  color="primary"
+                  startContent={<PlusIcon className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={openCreateModal}
+                >
+                  Criar primeiro tipo
+                </Button>
+              </div>
+            )}
+          </PeoplePanel>
+        </Tab>
+
+        {hasGlobais ? (
+          <Tab
+            key="globais"
+            title={
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                <span>Globais ({filteredGlobais.length})</span>
+              </div>
+            }
+          >
+            <PeoplePanel
+              title="Catálogo global"
+              description="Tipos globais são controlados pelo sistema e aparecem como somente leitura no escritório."
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Spinner label="Carregando tipos globais..." size="lg" />
+                </div>
+              ) : filteredGlobais.length > 0 ? (
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  {filteredGlobais.map((tipo) => (
+                    <div
+                      key={tipo.id}
+                      className="rounded-xl border border-white/10 bg-background/60 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{tipo.nome}</p>
+                          <p className="text-xs text-default-500">Slug: {tipo.slug}</p>
+                        </div>
+                        <Chip color="secondary" size="sm" variant="flat">
+                          Global
+                        </Chip>
+                      </div>
+                      {tipo.descricao ? (
+                        <p className="mt-2 line-clamp-2 text-xs text-default-400">
+                          {tipo.descricao}
                         </p>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Chip color={tipo.ativo ? "success" : "default"} size="sm" variant="flat">
+                          {tipo.ativo ? "Ativo" : "Inativo"}
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          Ordem {tipo.ordem ?? 0}
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          {tipo._count?.contratos ?? 0} contrato(s)
+                        </Chip>
+                        <Chip size="sm" variant="flat">
+                          {tipo._count?.modelos ?? 0} modelo(s)
+                        </Chip>
                       </div>
                     </div>
-                    <Chip
-                      color={tipo.ativo ? "success" : "default"}
-                      size="sm"
-                      variant="flat"
-                    >
-                      {tipo.ativo ? "Ativo" : "Inativo"}
-                    </Chip>
-                  </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-sm text-default-400">
+                  Nenhum tipo global encontrado com os filtros atuais.
+                </div>
+              )}
+            </PeoplePanel>
+          </Tab>
+        ) : null}
+      </Tabs>
 
-                  {tipo.descricao && (
-                    <p className="text-sm text-default-500 mb-3">
-                      {tipo.descricao}
-                    </p>
-                  )}
-
-                  <div className="flex justify-between items-center text-xs text-default-400">
-                    <div className="flex gap-3">
-                      <span className="flex items-center gap-1">
-                        <FileText size={12} />
-                        {tipo._count?.contratos || 0}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <File size={12} />
-                        {tipo._count?.modelos || 0} modelo(s)
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="flat"
-                        onPress={() => handleOpenEditar(tipo)}
-                      >
-                        <Pencil size={14} />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        color="danger"
-                        size="sm"
-                        variant="flat"
-                        onPress={() => handleExcluir(tipo.id)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
-      </div>
-
-      <Modal isOpen={isOpen} size="lg" onClose={onClose}>
+      <Modal isDismissable={!savingForm} isOpen={modalOpen} size="2xl" onClose={closeModal}>
         <ModalContent>
           <ModalHeader>
-            {tipoSelecionado ? "Editar Tipo" : "Novo Tipo"}
+            {editingTipo ? "Editar tipo de contrato" : "Novo tipo de contrato"}
           </ModalHeader>
-          <ModalBody>
-            <div className="space-y-4">
+          <ModalBody className="space-y-4">
+            <Input
+              isRequired
+              description="Nome exibido nos contratos e filtros do módulo financeiro."
+              label="Nome do tipo"
+              placeholder="Ex.: Honorários de consultoria"
+              value={formData.nome}
+              variant="bordered"
+              onValueChange={(nome) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  nome,
+                  slug: editingTipo ? prev.slug : toSlug(nome),
+                }))
+              }
+            />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 isRequired
-                label="Nome"
-                placeholder="Ex: Honorários Advocatícios"
-                value={formData.nome}
-                onChange={(e) => {
-                  const nome = e.target.value;
-
-                  setFormData({
-                    ...formData,
-                    nome,
-                    slug: tipoSelecionado
-                      ? formData.slug
-                      : nome
-                          .toLowerCase()
-                          .normalize("NFD")
-                          .replace(/[\u0300-\u036f]/g, "")
-                          .replace(/[^a-z0-9]+/g, "-"),
-                  });
-                }}
-              />
-
-              <Input
-                isRequired
+                description="Identificador técnico sem espaços."
                 label="Slug"
-                placeholder="honorarios-advocaticios"
+                placeholder="honorarios-consultoria"
                 value={formData.slug}
-                onChange={(e) =>
-                  setFormData({ ...formData, slug: e.target.value })
+                variant="bordered"
+                onValueChange={(slug) =>
+                  setFormData((prev) => ({ ...prev, slug: toSlug(slug) }))
                 }
               />
-
-              <Textarea
-                label="Descrição"
-                minRows={3}
-                placeholder="Descrição opcional"
-                value={formData.descricao}
-                onChange={(e) =>
-                  setFormData({ ...formData, descricao: e.target.value })
-                }
-              />
-
               <Input
+                description="Números menores aparecem primeiro."
                 label="Ordem"
-                placeholder="0"
+                min={0}
+                placeholder="100"
                 type="number"
-                value={formData.ordem.toString()}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    ordem: parseInt(e.target.value) || 0,
-                  })
+                value={String(formData.ordem)}
+                variant="bordered"
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ordem: Number.parseInt(event.target.value || "100", 10) || 100,
+                  }))
                 }
               />
             </div>
+
+            <Textarea
+              description="Opcional. Descreva quando usar este tipo."
+              label="Descrição interna"
+              minRows={3}
+              placeholder="Contexto de uso deste tipo de contrato."
+              value={formData.descricao}
+              variant="bordered"
+              onValueChange={(descricao) =>
+                setFormData((prev) => ({ ...prev, descricao }))
+              }
+            />
+
+            <div className="rounded-xl border border-white/10 px-3 py-3">
+              <Switch
+                isSelected={formData.ativo}
+                size="sm"
+                onValueChange={(ativo) => setFormData((prev) => ({ ...prev, ativo }))}
+              >
+                Tipo ativo para uso imediato
+              </Switch>
+            </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onClose}>
+            <Button isDisabled={savingForm} variant="light" onPress={closeModal}>
               Cancelar
             </Button>
-            <Button color="primary" isLoading={salvando} onPress={handleSalvar}>
-              {tipoSelecionado ? "Atualizar" : "Criar"}
+            <Button color="primary" isLoading={savingForm} onPress={handleSubmit}>
+              {editingTipo ? "Salvar alterações" : "Criar tipo"}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
+    </section>
   );
 }

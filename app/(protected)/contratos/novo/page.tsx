@@ -284,13 +284,15 @@ export default function NovoContratoPage() {
       const result = await createContratoComArquivo(createPayload);
 
       if (result.success) {
+        const contratoCriado = "contrato" in result ? result.contrato : null;
+
         if (
           vincularProcuracao &&
           procuracaoSelecionada &&
-          result.contrato?.id
+          contratoCriado?.id
         ) {
           const vinculacao = await vincularContratoProcuracao(
-            result.contrato.id,
+            contratoCriado.id,
             procuracaoSelecionada,
           );
 

@@ -243,11 +243,15 @@ model TenantAsaasConfig {
   id               String        @id @default(cuid())
   tenantId         String        @unique
   asaasApiKey      String        @db.Text // Criptografado
+  webhookAccessToken String?     @db.Text // Criptografado
   asaasAccountId   String
   asaasWalletId    String?
   ambiente         AsaasAmbiente @default(SANDBOX)
   integracaoAtiva  Boolean       @default(false)
   dataConfiguracao DateTime      @default(now())
+  webhookConfiguredAt DateTime?
+  lastWebhookAt    DateTime?
+  lastWebhookEvent String?
   ultimaValidacao  DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt

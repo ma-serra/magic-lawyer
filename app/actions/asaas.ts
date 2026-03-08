@@ -14,15 +14,39 @@ import {
   formatValueForAsaas,
   formatDateForAsaas,
 } from "@/lib/asaas";
+import { TENANT_PERMISSIONS } from "@/types";
+
+function canManageAsaas(user: any) {
+  const role = user?.role as string | undefined;
+  const permissions = (user?.permissions ?? []) as string[];
+
+  return (
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings) ||
+    permissions.includes(TENANT_PERMISSIONS.manageFinance)
+  );
+}
+
+function resolveAsaasWebhookUrl() {
+  const envBase =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "").trim() ||
+    "http://localhost:9192";
+
+  return `${envBase.replace(/\/$/, "")}/api/webhooks/asaas`;
+}
 
 // ============================================
 // CONFIGURAÇÃO ASAAS POR TENANT
 // ============================================
 
 export async function configurarAsaasTenant(data: {
-  asaasApiKey: string;
-  asaasAccountId: string;
+  asaasApiKey?: string;
+  asaasAccountId?: string;
   asaasWalletId?: string;
+  webhookAccessToken?: string;
   ambiente: "SANDBOX" | "PRODUCAO";
 }) {
   try {
@@ -34,23 +58,57 @@ export async function configurarAsaasTenant(data: {
 
     const user = session.user as any;
 
-    if (user.role !== "ADMIN") {
+    if (!canManageAsaas(user)) {
       return {
         success: false,
-        error: "Apenas administradores podem configurar Asaas",
+        error: "Sem permissão para configurar a integração Asaas",
       };
     }
 
-    // Validar API key
-    if (!validateAsaasApiKey(data.asaasApiKey)) {
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não identificado" };
+    }
+
+    const existingConfig = await prisma.tenantAsaasConfig.findUnique({
+      where: { tenantId: user.tenantId },
+    });
+
+    const apiKeyInput = data.asaasApiKey?.trim() ?? "";
+    const accountId = data.asaasAccountId?.trim() || existingConfig?.asaasAccountId;
+
+    if (!accountId) {
+      return { success: false, error: "ID da conta Asaas é obrigatório" };
+    }
+
+    if (apiKeyInput && !validateAsaasApiKey(apiKeyInput)) {
       return { success: false, error: "API key do Asaas inválida" };
     }
 
-    // Testar conexão com Asaas
-    const asaasClient = new AsaasClient(
-      data.asaasApiKey,
-      data.ambiente.toLowerCase() as "sandbox" | "production",
-    );
+    if (!apiKeyInput && !existingConfig) {
+      return {
+        success: false,
+        error: "API key do Asaas é obrigatória na primeira configuração",
+      };
+    }
+
+    const webhookTokenInput = data.webhookAccessToken?.trim() ?? "";
+    if (webhookTokenInput && webhookTokenInput.length < 8) {
+      return {
+        success: false,
+        error: "Token do webhook deve ter no mínimo 8 caracteres",
+      };
+    }
+
+    // Testar conexão com Asaas com as credenciais efetivas
+    const asaasClient = apiKeyInput
+      ? new AsaasClient(
+          apiKeyInput,
+          data.ambiente.toLowerCase() as "sandbox" | "production",
+        )
+      : createAsaasClientFromEncrypted(
+          existingConfig!.asaasApiKey,
+          data.ambiente.toLowerCase() as "sandbox" | "production",
+        );
     const connectionTest = await asaasClient.testConnection();
 
     if (!connectionTest) {
@@ -60,41 +118,67 @@ export async function configurarAsaasTenant(data: {
       };
     }
 
-    // Criptografar API key
-    const encryptedApiKey = encryptAsaasCredentials(data.asaasApiKey);
+    const encryptedApiKey = apiKeyInput
+      ? encryptAsaasCredentials(apiKeyInput)
+      : existingConfig!.asaasApiKey;
+
+    const walletId =
+      data.asaasWalletId !== undefined
+        ? (data.asaasWalletId.trim() || null)
+        : (existingConfig?.asaasWalletId ?? null);
+    const hasWebhookPayload = data.webhookAccessToken !== undefined;
+    const encryptedWebhookToken = webhookTokenInput
+      ? encryptAsaasCredentials(webhookTokenInput)
+      : null;
+    const now = new Date();
 
     // Salvar configuração
     const config = await prisma.tenantAsaasConfig.upsert({
       where: { tenantId: user.tenantId },
       update: {
         asaasApiKey: encryptedApiKey,
-        asaasAccountId: data.asaasAccountId,
-        asaasWalletId: data.asaasWalletId,
+        ...(hasWebhookPayload
+          ? {
+              webhookAccessToken: encryptedWebhookToken,
+              webhookConfiguredAt: encryptedWebhookToken ? now : null,
+            }
+          : {}),
+        asaasAccountId: accountId,
+        asaasWalletId: walletId,
         ambiente: data.ambiente,
         integracaoAtiva: true,
-        ultimaValidacao: new Date(),
-        updatedAt: new Date(),
+        ultimaValidacao: now,
+        updatedAt: now,
       },
       create: {
         tenantId: user.tenantId,
         asaasApiKey: encryptedApiKey,
-        asaasAccountId: data.asaasAccountId,
-        asaasWalletId: data.asaasWalletId,
+        webhookAccessToken: encryptedWebhookToken,
+        webhookConfiguredAt: encryptedWebhookToken ? now : null,
+        asaasAccountId: accountId,
+        asaasWalletId: walletId,
         ambiente: data.ambiente,
         integracaoAtiva: true,
-        ultimaValidacao: new Date(),
+        ultimaValidacao: now,
       },
     });
 
+    revalidatePath("/configuracoes");
     revalidatePath("/configuracoes/asaas");
+    revalidatePath("/financeiro");
 
     return {
       success: true,
       data: {
         id: config.id,
+        asaasAccountId: config.asaasAccountId,
         ambiente: config.ambiente,
         integracaoAtiva: config.integracaoAtiva,
         dataConfiguracao: config.dataConfiguracao,
+        ultimaValidacao: config.ultimaValidacao,
+        hasWebhookAccessToken: Boolean(config.webhookAccessToken),
+        webhookConfiguredAt: config.webhookConfiguredAt,
+        webhookUrl: resolveAsaasWebhookUrl(),
       },
     };
   } catch (error) {
@@ -113,6 +197,13 @@ export async function testarConexaoAsaas() {
     }
 
     const user = session.user as any;
+
+    if (!canManageAsaas(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para testar integração Asaas",
+      };
+    }
 
     const config = await prisma.tenantAsaasConfig.findUnique({
       where: { tenantId: user.tenantId },
@@ -134,6 +225,9 @@ export async function testarConexaoAsaas() {
         where: { id: config.id },
         data: { ultimaValidacao: new Date() },
       });
+
+      revalidatePath("/configuracoes");
+      revalidatePath("/configuracoes/asaas");
     }
 
     return {
@@ -160,6 +254,13 @@ export async function obterConfiguracaoAsaas() {
 
     const user = session.user as any;
 
+    if (!canManageAsaas(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para visualizar integração Asaas",
+      };
+    }
+
     const config = await prisma.tenantAsaasConfig.findUnique({
       where: { tenantId: user.tenantId },
     });
@@ -172,11 +273,20 @@ export async function obterConfiguracaoAsaas() {
       success: true,
       data: {
         id: config.id,
+        asaasAccountId: config.asaasAccountId,
+        asaasWalletId: config.asaasWalletId,
         ambiente: config.ambiente,
         integracaoAtiva: config.integracaoAtiva,
         dataConfiguracao: config.dataConfiguracao,
         ultimaValidacao: config.ultimaValidacao,
-        // Não retornar API key por segurança
+        hasWebhookAccessToken: Boolean(config.webhookAccessToken),
+        webhookConfiguredAt: config.webhookConfiguredAt,
+        lastWebhookAt: config.lastWebhookAt,
+        lastWebhookEvent: config.lastWebhookEvent,
+        webhookUrl: resolveAsaasWebhookUrl(),
+        globalWebhookSecretConfigured: Boolean(
+          process.env.ASAAS_WEBHOOK_SECRET?.trim(),
+        ),
       },
     };
   } catch (error) {

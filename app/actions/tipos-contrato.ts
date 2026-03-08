@@ -3,6 +3,7 @@
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
+import { TENANT_PERMISSIONS } from "@/types";
 
 export interface TipoContratoCreatePayload {
   nome: string;
@@ -17,6 +18,39 @@ export interface TipoContratoUpdatePayload {
   descricao?: string | null;
   ordem?: number;
   ativo?: boolean;
+}
+
+function sanitizeNome(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function sanitizeSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeNomeCompare(value: string) {
+  return sanitizeNome(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function canManageTiposContrato(user: any) {
+  const role = user?.role as string | undefined;
+  const permissions = (user?.permissions ?? []) as string[];
+
+  return (
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings)
+  );
 }
 
 export async function listTiposContrato(params?: { ativo?: boolean }) {
@@ -34,14 +68,14 @@ export async function listTiposContrato(params?: { ativo?: boolean }) {
     }
 
     const where: any = {
-      OR: [{ tenantId: user.tenantId }, { tenantId: "GLOBAL" }],
+      OR: [{ tenantId: user.tenantId }, { tenantId: null }],
     };
 
     if (params?.ativo !== undefined) {
       where.ativo = params.ativo;
     }
 
-    const tipos = await prisma.tipoContrato.findMany({
+    const tiposRaw = await prisma.tipoContrato.findMany({
       where,
       include: {
         _count: {
@@ -56,6 +90,19 @@ export async function listTiposContrato(params?: { ativo?: boolean }) {
         },
       },
       orderBy: [{ ordem: "asc" }, { nome: "asc" }],
+    });
+
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const tipos = tiposRaw.map((tipo) => {
+      const isGlobal = tipo.tenantId === null;
+      const canEdit = !isGlobal || isSuperAdmin;
+
+      return {
+        ...tipo,
+        isGlobal,
+        canEdit,
+        canDelete: canEdit,
+      };
     });
 
     return { success: true, tipos };
@@ -75,11 +122,14 @@ export async function getTipoContrato(id: string) {
     }
 
     const user = session.user as any;
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
 
     const tipo = await prisma.tipoContrato.findFirst({
       where: {
         id,
-        tenantId: user.tenantId,
+        OR: [{ tenantId: user.tenantId }, { tenantId: null }],
       },
       include: {
         _count: {
@@ -99,7 +149,13 @@ export async function getTipoContrato(id: string) {
       return { success: false, error: "Tipo não encontrado" };
     }
 
-    return { success: true, tipo };
+    return {
+      success: true,
+      tipo: {
+        ...tipo,
+        isGlobal: tipo.tenantId === null,
+      },
+    };
   } catch (error) {
     logger.error("Erro ao buscar tipo de contrato:", error);
 
@@ -121,32 +177,73 @@ export async function createTipoContrato(data: TipoContratoCreatePayload) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Validações
-    if (!data.nome?.trim()) {
+    if (!canManageTiposContrato(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para criar tipos de contrato",
+      };
+    }
+
+    const nome = sanitizeNome(data.nome || "");
+    const slug = sanitizeSlug(data.slug || "");
+    const descricao = data.descricao?.trim() || null;
+
+    if (!nome) {
       return { success: false, error: "Nome é obrigatório" };
     }
 
-    if (!data.slug?.trim()) {
+    if (!slug) {
       return { success: false, error: "Slug é obrigatório" };
     }
 
-    // Verificar se slug já existe
-    const slugExistente = await prisma.tipoContrato.findFirst({
-      where: {
-        tenantId: user.tenantId,
-        slug: data.slug.trim(),
-      },
-    });
+    const [slugExistente, nomeExistenteTenant, nomeGlobal] = await Promise.all([
+      prisma.tipoContrato.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          slug,
+        },
+        select: { id: true },
+      }),
+      prisma.tipoContrato.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          nome,
+        },
+        select: { id: true },
+      }),
+      prisma.tipoContrato.findMany({
+        where: {
+          tenantId: null,
+        },
+        select: { nome: true },
+      }),
+    ]);
 
     if (slugExistente) {
-      return { success: false, error: "Slug já existe" };
+      return { success: false, error: "Slug já existe no seu escritório" };
+    }
+
+    if (nomeExistenteTenant) {
+      return { success: false, error: "Já existe um tipo com este nome" };
+    }
+
+    const conflitaComGlobal = nomeGlobal.some(
+      (item) => normalizeNomeCompare(item.nome) === normalizeNomeCompare(nome),
+    );
+
+    if (conflitaComGlobal) {
+      return {
+        success: false,
+        error:
+          "Este nome já existe no catálogo global. Crie um nome customizado diferente.",
+      };
     }
 
     const tipo = await prisma.tipoContrato.create({
       data: {
-        nome: data.nome.trim(),
-        slug: data.slug.trim(),
-        descricao: data.descricao?.trim(),
+        nome,
+        slug,
+        descricao,
         ordem: data.ordem,
         ativo: true,
         tenantId: user.tenantId,
@@ -178,7 +275,17 @@ export async function updateTipoContrato(
 
     const user = session.user as any;
 
-    // Verificar se o tipo existe e pertence ao tenant
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    if (!canManageTiposContrato(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para editar tipos de contrato",
+      };
+    }
+
     const tipoExistente = await prisma.tipoContrato.findFirst({
       where: {
         id,
@@ -190,31 +297,77 @@ export async function updateTipoContrato(
       return { success: false, error: "Tipo não encontrado" };
     }
 
-    // Se mudando o slug, verificar se novo slug já existe
-    if (data.slug && data.slug !== tipoExistente.slug) {
-      const slugExistente = await prisma.tipoContrato.findFirst({
-        where: {
-          tenantId: user.tenantId,
-          slug: data.slug.trim(),
-          id: {
-            not: id,
-          },
-        },
-      });
-
-      if (slugExistente) {
-        return { success: false, error: "Slug já existe" };
-      }
-    }
-
     const updateData: any = {};
 
-    if (data.nome !== undefined) updateData.nome = data.nome.trim();
-    if (data.slug !== undefined) updateData.slug = data.slug.trim();
-    if (data.descricao !== undefined)
-      updateData.descricao = data.descricao?.trim();
+    if (data.nome !== undefined) {
+      const nome = sanitizeNome(data.nome);
+      if (!nome) {
+        return { success: false, error: "Nome é obrigatório" };
+      }
+      updateData.nome = nome;
+    }
+
+    if (data.slug !== undefined) {
+      const slug = sanitizeSlug(data.slug);
+      if (!slug) {
+        return { success: false, error: "Slug é obrigatório" };
+      }
+      updateData.slug = slug;
+    }
+
+    if (data.descricao !== undefined) {
+      updateData.descricao = data.descricao?.trim() || null;
+    }
+
     if (data.ordem !== undefined) updateData.ordem = data.ordem;
     if (data.ativo !== undefined) updateData.ativo = data.ativo;
+
+    const nomeParaValidar = updateData.nome ?? tipoExistente.nome;
+    const slugParaValidar = updateData.slug ?? tipoExistente.slug;
+
+    const [slugExistente, nomeExistenteTenant, globais] = await Promise.all([
+      prisma.tipoContrato.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          slug: slugParaValidar,
+          id: { not: id },
+        },
+        select: { id: true },
+      }),
+      prisma.tipoContrato.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          nome: nomeParaValidar,
+          id: { not: id },
+        },
+        select: { id: true },
+      }),
+      prisma.tipoContrato.findMany({
+        where: { tenantId: null },
+        select: { nome: true },
+      }),
+    ]);
+
+    if (slugExistente) {
+      return { success: false, error: "Slug já existe no seu escritório" };
+    }
+
+    if (nomeExistenteTenant) {
+      return { success: false, error: "Já existe um tipo com este nome" };
+    }
+
+    const conflitaComGlobal = globais.some(
+      (item) =>
+        normalizeNomeCompare(item.nome) === normalizeNomeCompare(nomeParaValidar),
+    );
+
+    if (conflitaComGlobal) {
+      return {
+        success: false,
+        error:
+          "Este nome já existe no catálogo global. Use um nome customizado diferente.",
+      };
+    }
 
     const tipo = await prisma.tipoContrato.update({
       where: { id },
@@ -241,7 +394,17 @@ export async function deleteTipoContrato(id: string) {
 
     const user = session.user as any;
 
-    // Verificar se o tipo existe e pertence ao tenant
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    if (!canManageTiposContrato(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para excluir tipos de contrato",
+      };
+    }
+
     const tipo = await prisma.tipoContrato.findFirst({
       where: {
         id,
@@ -265,7 +428,6 @@ export async function deleteTipoContrato(id: string) {
       return { success: false, error: "Tipo não encontrado" };
     }
 
-    // Verificar se há contratos ou modelos vinculados
     const totalVinculados = tipo._count.contratos + tipo._count.modelos;
 
     if (totalVinculados > 0) {

@@ -3,6 +3,7 @@
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
+import { TENANT_PERMISSIONS } from "@/types";
 
 export interface AreaProcessoCreatePayload {
   nome: string;
@@ -17,6 +18,39 @@ export interface AreaProcessoUpdatePayload {
   descricao?: string | null;
   ordem?: number;
   ativo?: boolean;
+}
+
+function sanitizeNome(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function sanitizeSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeNomeCompare(value: string) {
+  return sanitizeNome(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function canManageAreasProcesso(user: any) {
+  const role = user?.role as string | undefined;
+  const permissions = (user?.permissions ?? []) as string[];
+
+  return (
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings)
+  );
 }
 
 export async function listAreasProcesso(params?: { ativo?: boolean }) {
@@ -119,32 +153,58 @@ export async function createAreaProcesso(data: AreaProcessoCreatePayload) {
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Validações
-    if (!data.nome?.trim()) {
+    if (!canManageAreasProcesso(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para criar áreas de processo",
+      };
+    }
+
+    const nome = sanitizeNome(data.nome || "");
+    const slug = sanitizeSlug(data.slug || "");
+    const descricao = data.descricao?.trim() || null;
+
+    if (!nome) {
       return { success: false, error: "Nome é obrigatório" };
     }
 
-    if (!data.slug?.trim()) {
+    if (!slug) {
       return { success: false, error: "Slug é obrigatório" };
     }
 
-    // Verificar se slug já existe
-    const slugExistente = await prisma.areaProcesso.findFirst({
-      where: {
-        tenantId: user.tenantId,
-        slug: data.slug.trim(),
-      },
-    });
+    const [slugExistente, nomesTenant] = await Promise.all([
+      prisma.areaProcesso.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          slug,
+        },
+        select: { id: true },
+      }),
+      prisma.areaProcesso.findMany({
+        where: {
+          tenantId: user.tenantId,
+        },
+        select: { nome: true },
+      }),
+    ]);
 
     if (slugExistente) {
-      return { success: false, error: "Slug já existe" };
+      return { success: false, error: "Slug já existe no escritório" };
+    }
+
+    const nomeExistente = nomesTenant.some(
+      (item) => normalizeNomeCompare(item.nome) === normalizeNomeCompare(nome),
+    );
+
+    if (nomeExistente) {
+      return { success: false, error: "Já existe uma área com este nome" };
     }
 
     const area = await prisma.areaProcesso.create({
       data: {
-        nome: data.nome.trim(),
-        slug: data.slug.trim(),
-        descricao: data.descricao?.trim(),
+        nome,
+        slug,
+        descricao,
         ordem: data.ordem,
         ativo: true,
         tenantId: user.tenantId,
@@ -176,7 +236,17 @@ export async function updateAreaProcesso(
 
     const user = session.user as any;
 
-    // Verificar se a área existe e pertence ao tenant
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    if (!canManageAreasProcesso(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para editar áreas de processo",
+      };
+    }
+
     const areaExistente = await prisma.areaProcesso.findFirst({
       where: {
         id,
@@ -188,31 +258,80 @@ export async function updateAreaProcesso(
       return { success: false, error: "Área não encontrada" };
     }
 
-    // Se mudando o slug, verificar se novo slug já existe
-    if (data.slug && data.slug !== areaExistente.slug) {
-      const slugExistente = await prisma.areaProcesso.findFirst({
-        where: {
-          tenantId: user.tenantId,
-          slug: data.slug.trim(),
-          id: {
-            not: id,
-          },
-        },
-      });
-
-      if (slugExistente) {
-        return { success: false, error: "Slug já existe" };
-      }
-    }
-
     const updateData: any = {};
 
-    if (data.nome !== undefined) updateData.nome = data.nome.trim();
-    if (data.slug !== undefined) updateData.slug = data.slug.trim();
-    if (data.descricao !== undefined)
-      updateData.descricao = data.descricao?.trim();
+    if (data.nome !== undefined) {
+      const nome = sanitizeNome(data.nome);
+      if (!nome) {
+        return { success: false, error: "Nome é obrigatório" };
+      }
+      updateData.nome = nome;
+    }
+
+    if (data.slug !== undefined) {
+      const slug = sanitizeSlug(data.slug);
+      if (!slug) {
+        return { success: false, error: "Slug é obrigatório" };
+      }
+      updateData.slug = slug;
+    }
+
+    if (data.descricao !== undefined) {
+      updateData.descricao = data.descricao?.trim() || null;
+    }
+
     if (data.ordem !== undefined) updateData.ordem = data.ordem;
     if (data.ativo !== undefined) updateData.ativo = data.ativo;
+
+    const nomeParaValidar = updateData.nome ?? areaExistente.nome;
+    const slugParaValidar = updateData.slug ?? areaExistente.slug;
+
+    const [slugExistente, nomesTenant, processosVinculados] = await Promise.all([
+      prisma.areaProcesso.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          slug: slugParaValidar,
+          id: { not: id },
+        },
+        select: { id: true },
+      }),
+      prisma.areaProcesso.findMany({
+        where: {
+          tenantId: user.tenantId,
+          id: { not: id },
+        },
+        select: { nome: true },
+      }),
+      updateData.ativo === false
+        ? prisma.processo.count({
+            where: {
+              tenantId: user.tenantId,
+              areaId: id,
+              deletedAt: null,
+            },
+          })
+        : Promise.resolve(0),
+    ]);
+
+    if (slugExistente) {
+      return { success: false, error: "Slug já existe no escritório" };
+    }
+
+    const nomeExistente = nomesTenant.some(
+      (item) =>
+        normalizeNomeCompare(item.nome) === normalizeNomeCompare(nomeParaValidar),
+    );
+
+    if (nomeExistente) {
+      return { success: false, error: "Já existe uma área com este nome" };
+    }
+
+    if (updateData.ativo === false && processosVinculados > 0) {
+      return {
+        success: false,
+        error: `Não é possível desativar. Existem ${processosVinculados} processo(s) ativo(s) vinculado(s) a esta área.`,
+      };
+    }
 
     const area = await prisma.areaProcesso.update({
       where: { id },
@@ -239,7 +358,17 @@ export async function deleteAreaProcesso(id: string) {
 
     const user = session.user as any;
 
-    // Verificar se a área existe e pertence ao tenant
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    if (!canManageAreasProcesso(user)) {
+      return {
+        success: false,
+        error: "Sem permissão para excluir áreas de processo",
+      };
+    }
+
     const area = await prisma.areaProcesso.findFirst({
       where: {
         id,
@@ -262,7 +391,6 @@ export async function deleteAreaProcesso(id: string) {
       return { success: false, error: "Área não encontrada" };
     }
 
-    // Verificar se há processos vinculados
     if (area._count.processos > 0) {
       return {
         success: false,

@@ -1,72 +1,193 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-
-import { Chip } from "@heroui/chip";
-import { Divider } from "@heroui/divider";
-import { Spinner } from "@heroui/spinner";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
+import {
+  Button,
+  Chip,
+  Input,
+  Select,
+  SelectItem,
+  Spinner,
+} from "@heroui/react";
+import {
+  AlertTriangleIcon,
+  Building2Icon,
+  CheckCircle2Icon,
+  CopyIcon,
+  KeyRoundIcon,
+  ShieldCheckIcon,
+  ShieldXIcon,
+  TestTube2Icon,
+  WebhookIcon,
+} from "lucide-react";
 import { toast } from "@/lib/toast";
-
 import {
   configurarAsaasTenant,
-  testarConexaoAsaas,
   obterConfiguracaoAsaas,
+  testarConexaoAsaas,
 } from "@/app/actions/asaas";
-import { Select, SelectItem } from "@heroui/react";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
+
+type AsaasAmbiente = "SANDBOX" | "PRODUCAO";
+
+type AsaasConfigData = {
+  id: string | null;
+  asaasAccountId: string | null;
+  asaasWalletId: string | null;
+  ambiente: AsaasAmbiente;
+  integracaoAtiva: boolean;
+  dataConfiguracao: Date | string | null;
+  ultimaValidacao: Date | string | null;
+  hasWebhookAccessToken: boolean;
+  webhookConfiguredAt: Date | string | null;
+  lastWebhookAt: Date | string | null;
+  lastWebhookEvent: string | null;
+  webhookUrl: string;
+  globalWebhookSecretConfigured: boolean;
+};
+
+const AMBIENTES = [
+  { key: "SANDBOX", label: "Sandbox (teste)" },
+  { key: "PRODUCAO", label: "Produção (real)" },
+] as const;
+
+function formatDateTimeBrasilia(value?: Date | string | null) {
+  if (!value) return "Não informado";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Não informado";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function ambienteLabel(ambiente: AsaasAmbiente) {
+  return ambiente === "PRODUCAO" ? "Produção" : "Sandbox";
+}
 
 export default function ConfiguracaoAsaasPage() {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [config, setConfig] = useState<any>(null);
   const [formData, setFormData] = useState({
     asaasApiKey: "",
     asaasAccountId: "",
     asaasWalletId: "",
-    ambiente: "SANDBOX" as "SANDBOX" | "PRODUCAO",
+    webhookAccessToken: "",
+    ambiente: "SANDBOX" as AsaasAmbiente,
   });
 
-  useEffect(() => {
-    loadConfig();
+  const { data, isLoading, mutate } = useSWR(
+    "configuracoes-asaas",
+    () => obterConfiguracaoAsaas(),
+    {
+      onSuccess(result) {
+        if (result?.success && result.data) {
+          const config = result.data as AsaasConfigData;
+          setFormData((prev) => ({
+            ...prev,
+            asaasAccountId: config.asaasAccountId ?? "",
+            asaasWalletId: config.asaasWalletId ?? "",
+            ambiente: config.ambiente,
+            // nunca preencher segredos em edição
+            asaasApiKey: "",
+            webhookAccessToken: "",
+          }));
+        }
+      },
+      revalidateOnFocus: false,
+    },
+  );
+
+  const config = useMemo<AsaasConfigData | null>(() => {
+    if (!data?.success || !data.data) return null;
+    return data.data as AsaasConfigData;
+  }, [data]);
+
+  const fallbackWebhookUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/api/webhooks/asaas`;
   }, []);
 
-  const loadConfig = async () => {
-    setIsLoading(true);
-    try {
-      const result = await obterConfiguracaoAsaas();
+  const webhookUrl = config?.webhookUrl || fallbackWebhookUrl;
 
-      if (result.success && result.data) {
-        setConfig(result.data);
-        setFormData((prev) => ({
-          ...prev,
-          ambiente: result.data.ambiente,
-        }));
-      }
-    } catch (error) {
-    } finally {
-      setIsLoading(false);
+  const ambienteSelectedKeys = useMemo(() => {
+    if (!AMBIENTES.some((item) => item.key === formData.ambiente)) {
+      return [];
+    }
+    return [formData.ambiente];
+  }, [formData.ambiente]);
+
+  const isWebhookProtegido = Boolean(
+    config?.hasWebhookAccessToken || config?.globalWebhookSecretConfigured,
+  );
+
+  const statusIntegracao = config?.integracaoAtiva ? "Ativa" : "Pendente";
+  const statusWebhook = isWebhookProtegido ? "Protegido" : "Pendente";
+
+  const handleCopyWebhookUrl = async () => {
+    const url = webhookUrl;
+    if (!url) {
+      toast.error("URL de webhook indisponível no momento");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("URL do webhook copiada");
+    } catch {
+      toast.error("Não foi possível copiar a URL");
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleSave = async () => {
+    if (!formData.asaasAccountId.trim()) {
+      toast.error("ID da conta Asaas é obrigatório");
+      return;
+    }
 
+    if (!config?.id && !formData.asaasApiKey.trim()) {
+      toast.error("Na primeira configuração, informe a API Key");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      const result = await configurarAsaasTenant(formData);
+      const result = await configurarAsaasTenant({
+        asaasApiKey: formData.asaasApiKey.trim() || undefined,
+        asaasAccountId: formData.asaasAccountId.trim(),
+        asaasWalletId: formData.asaasWalletId.trim() || undefined,
+        webhookAccessToken: formData.webhookAccessToken.trim() || undefined,
+        ambiente: formData.ambiente,
+      });
 
-      if (result.success) {
-        toast.success("Configuração Asaas salva com sucesso!");
-        await loadConfig();
-      } else {
-        toast.error(result.error || "Erro ao salvar configuração");
+      if (!result.success) {
+        toast.error(result.error || "Erro ao salvar configuração Asaas");
+        return;
       }
-    } catch (error) {
-      toast.error("Erro interno do servidor");
+
+      toast.success("Integração Asaas salva com sucesso");
+      setFormData((prev) => ({
+        ...prev,
+        asaasApiKey: "",
+        webhookAccessToken: "",
+      }));
+      await mutate();
+    } catch {
+      toast.error("Erro interno ao salvar configuração Asaas");
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -74,199 +195,286 @@ export default function ConfiguracaoAsaasPage() {
     setIsTesting(true);
     try {
       const result = await testarConexaoAsaas();
-
-      if (result.success) {
-        toast.success("Conexão com Asaas estabelecida com sucesso!");
-        await loadConfig();
-      } else {
-        toast.error(result.error || "Falha na conexão com Asaas");
+      if (!result.success) {
+        toast.error(result.error || "Falha ao testar conexão com Asaas");
+        return;
       }
-    } catch (error) {
-      toast.error("Erro ao testar conexão");
+
+      toast.success("Conexão com Asaas validada com sucesso");
+      await mutate();
+    } catch {
+      toast.error("Erro ao executar teste de conexão");
     } finally {
       setIsTesting(false);
     }
   };
 
-  const getStatusColor = (status: boolean) => {
-    return status ? "success" : "danger";
-  };
-
-  const getStatusText = (status: boolean) => {
-    return status ? "Ativo" : "Inativo";
-  };
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Configuração Asaas</h1>
-        <p className="text-default-500">
-          Configure sua conta Asaas para receber pagamentos dos seus clientes
-        </p>
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Financeiro"
+        title="Integração Asaas"
+        description="Conecte o Asaas do escritório para cobrança no sistema, atualização automática de pagamentos via webhook e conciliação por tenant."
+        actions={
+          <Button
+            color="primary"
+            isDisabled={!config?.id}
+            isLoading={isTesting}
+            radius="full"
+            startContent={
+              isTesting ? undefined : <TestTube2Icon className="h-4 w-4" />
+            }
+            onPress={handleTestConnection}
+          >
+            {isTesting ? "Testando..." : "Testar conexão"}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper={config?.id ? "Configuração do tenant ativa" : "Ainda não configurado"}
+          icon={
+            config?.integracaoAtiva ? (
+              <CheckCircle2Icon className="h-4 w-4" />
+            ) : (
+              <AlertTriangleIcon className="h-4 w-4" />
+            )
+          }
+          label="Integração"
+          tone={config?.integracaoAtiva ? "success" : "warning"}
+          value={statusIntegracao}
+        />
+        <PeopleMetricCard
+          helper={config ? ambienteLabel(config.ambiente) : "Não definido"}
+          icon={<Building2Icon className="h-4 w-4" />}
+          label="Ambiente"
+          tone={config?.ambiente === "PRODUCAO" ? "warning" : "secondary"}
+          value={config ? ambienteLabel(config.ambiente) : "Não definido"}
+        />
+        <PeopleMetricCard
+          helper={
+            isWebhookProtegido
+              ? "Token validado para autenticação"
+              : "Sem token configurado"
+          }
+          icon={
+            isWebhookProtegido ? (
+              <ShieldCheckIcon className="h-4 w-4" />
+            ) : (
+              <ShieldXIcon className="h-4 w-4" />
+            )
+          }
+          label="Webhook"
+          tone={isWebhookProtegido ? "success" : "danger"}
+          value={statusWebhook}
+        />
+        <PeopleMetricCard
+          helper="Último evento recebido no endpoint"
+          icon={<WebhookIcon className="h-4 w-4" />}
+          label="Último webhook"
+          tone="primary"
+          value={formatDateTimeBrasilia(config?.lastWebhookAt)}
+        />
       </div>
 
-      {/* Status Atual */}
-      {config && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold">Status da Integração</h2>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span>Status:</span>
+      <PeoplePanel
+        title="Tutorial de integração (obrigatório)"
+        description="Sem webhook ativo, o sistema pode gerar cobrança, mas não confirma pagamento em tempo real."
+      >
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-content2/40 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+              Passo a passo
+            </p>
+            <div className="mt-2 space-y-1 text-sm text-default-300">
+              <p>1. Salve API Key + Account ID nesta tela.</p>
+              <p>2. No Asaas, cadastre o endpoint de webhook.</p>
+              <p>3. Configure no Asaas o mesmo token de acesso desta tela.</p>
+              <p>4. Selecione eventos de pagamento e assinatura.</p>
+              <p>5. Volte e clique em “Testar conexão”.</p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-warning/20 bg-warning/5 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-warning">
+              Se webhook não estiver configurado
+            </p>
+            <div className="mt-2 space-y-1 text-sm text-default-300">
+              <p>• Parcelas podem ficar sem baixa automática.</p>
+              <p>• Recibos e notificações de pagamento podem atrasar.</p>
+              <p>• Conciliação financeira pode exigir ajuste manual.</p>
+            </div>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Endpoint de webhook"
+        description="Use esta URL no painel do Asaas. O token deve ser exatamente o mesmo configurado abaixo."
+        actions={
+          <Button
+            radius="full"
+            size="sm"
+            startContent={<CopyIcon className="h-4 w-4" />}
+            variant="flat"
+            onPress={handleCopyWebhookUrl}
+          >
+            Copiar URL
+          </Button>
+        }
+      >
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <Input
+            isReadOnly
+            label="URL do webhook"
+            value={webhookUrl}
+            variant="bordered"
+          />
+          <div className="rounded-xl border border-white/10 px-3 py-2">
+            <p className="text-xs text-default-500">Status de autenticação</p>
+            <div className="mt-2 flex flex-wrap gap-2">
               <Chip
-                color={getStatusColor(config.integracaoAtiva)}
+                color={config?.hasWebhookAccessToken ? "success" : "warning"}
+                size="sm"
                 variant="flat"
               >
-                {getStatusText(config.integracaoAtiva)}
+                Token do tenant: {config?.hasWebhookAccessToken ? "Configurado" : "Pendente"}
               </Chip>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Ambiente:</span>
               <Chip
-                color={config.ambiente === "PRODUCAO" ? "warning" : "default"}
+                color={config?.globalWebhookSecretConfigured ? "success" : "default"}
+                size="sm"
                 variant="flat"
               >
-                {config.ambiente}
+                Fallback global:{" "}
+                {config?.globalWebhookSecretConfigured ? "Configurado" : "Não configurado"}
+              </Chip>
+              <Chip size="sm" variant="flat">
+                Último evento: {config?.lastWebhookEvent || "Não recebido"}
               </Chip>
             </div>
-            <div className="flex items-center justify-between">
-              <span>Configurado em:</span>
-              <span className="text-sm text-default-500">
-                {new Date(config.dataConfiguracao).toLocaleDateString("pt-BR")}
-              </span>
-            </div>
-            {config.ultimaValidacao && (
-              <div className="flex items-center justify-between">
-                <span>Última validação:</span>
-                <span className="text-sm text-default-500">
-                  {new Date(config.ultimaValidacao).toLocaleDateString("pt-BR")}
-                </span>
-              </div>
-            )}
-            <Button
-              color="primary"
-              isLoading={isTesting}
-              startContent={isTesting ? <Spinner size="sm" /> : null}
-              variant="flat"
-              onPress={handleTestConnection}
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title={config?.id ? "Atualizar configuração Asaas" : "Configurar Asaas"}
+        description="A API Key e o token de webhook são armazenados criptografados por tenant."
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner label="Carregando configuração..." size="lg" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Input
+              description={
+                config?.id
+                  ? "Opcional ao editar. Preencha apenas se quiser trocar a API Key."
+                  : "Obrigatório na primeira configuração (começa com $aact_)"
+              }
+              label="API Key do Asaas"
+              placeholder="$aact_..."
+              startContent={<KeyRoundIcon className="h-4 w-4 text-default-400" />}
+              type="password"
+              value={formData.asaasApiKey}
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, asaasApiKey: value }))
+              }
+            />
+
+            <Input
+              isRequired
+              description="ID da conta no painel Asaas."
+              label="Account ID"
+              placeholder="conta_xxxxx"
+              value={formData.asaasAccountId}
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, asaasAccountId: value }))
+              }
+            />
+
+            <Input
+              description="Opcional. Carteira específica para recebimentos."
+              label="Wallet ID"
+              placeholder="wallet_xxxxx"
+              value={formData.asaasWalletId}
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, asaasWalletId: value }))
+              }
+            />
+
+            <Select
+              description="Sandbox para homologação; Produção para cobrança real."
+              label="Ambiente"
+              selectedKeys={ambienteSelectedKeys}
+              variant="bordered"
+              onSelectionChange={(keys) => {
+                if (keys === "all") return;
+                const selected = Array.from(keys)[0];
+                if (selected === "PRODUCAO" || selected === "SANDBOX") {
+                  setFormData((prev) => ({ ...prev, ambiente: selected }));
+                }
+              }}
             >
-              {isTesting ? "Testando..." : "Testar Conexão"}
-            </Button>
-          </CardBody>
-        </Card>
-      )}
+              {AMBIENTES.map((item) => (
+                <SelectItem key={item.key} textValue={item.label}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
 
-      {/* Formulário de Configuração */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold">
-            {config ? "Atualizar Configuração" : "Configurar Asaas"}
-          </h2>
-        </CardHeader>
-        <CardBody>
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              <Input
-                isRequired
-                description="Sua chave de API do Asaas (começa com $aact_)"
-                label="API Key do Asaas"
-                placeholder="$aact_prod_..."
-                type="password"
-                value={formData.asaasApiKey}
-                onChange={(e) =>
-                  setFormData({ ...formData, asaasApiKey: e.target.value })
-                }
-              />
+            <Input
+              description="Token enviado no header asaas-access-token. Use para autenticar webhooks."
+              label="Token de acesso do webhook"
+              placeholder="Defina um token forte"
+              type="password"
+              value={formData.webhookAccessToken}
+              variant="bordered"
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, webhookAccessToken: value }))
+              }
+            />
 
-              <Input
-                isRequired
-                description="ID da sua conta no Asaas"
-                label="ID da Conta Asaas"
-                placeholder="conta_123456"
-                value={formData.asaasAccountId}
-                onChange={(e) =>
-                  setFormData({ ...formData, asaasAccountId: e.target.value })
-                }
-              />
-
-              <Input
-                description="ID da carteira específica (deixe vazio para usar a padrão)"
-                label="ID da Carteira (Opcional)"
-                placeholder="carteira_123456"
-                value={formData.asaasWalletId}
-                onChange={(e) =>
-                  setFormData({ ...formData, asaasWalletId: e.target.value })
-                }
-              />
-
-              <Select
-                description="Use SANDBOX para testes e PRODUCAO para ambiente real"
-                label="Ambiente"
-                selectedKeys={[formData.ambiente]}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string;
-
-                  setFormData({
-                    ...formData,
-                    ambiente: selected as "SANDBOX" | "PRODUCAO",
-                  });
-                }}
-              >
-                <SelectItem key="SANDBOX" textValue="Sandbox (Teste)">Sandbox (Teste)</SelectItem>
-                <SelectItem key="PRODUCAO" textValue="Produção (Real)">Produção (Real)</SelectItem>
-              </Select>
+            <div className="rounded-xl border border-white/10 px-3 py-3">
+              <p className="text-xs text-default-500">Última validação de conexão</p>
+              <p className="mt-1 text-sm text-default-300">
+                {formatDateTimeBrasilia(config?.ultimaValidacao)}
+              </p>
+              <p className="mt-2 text-xs text-default-500">
+                Webhook configurado em:{" "}
+                {formatDateTimeBrasilia(config?.webhookConfiguredAt)}
+              </p>
             </div>
+          </div>
+        )}
 
-            <Divider />
-
-            <div className="space-y-4">
-              <h3 className="font-semibold">Como obter suas credenciais:</h3>
-              <div className="space-y-2 text-sm text-default-600">
-                <p>1. Acesse o painel do Asaas</p>
-                <p>
-                  2. Vá em &quot;Configurações&quot; → &quot;Integrações&quot;
-                </p>
-                <p>3. Copie sua API Key e Account ID</p>
-                <p>4. Para ambiente de teste, use o Sandbox do Asaas</p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button
-                color="primary"
-                isLoading={isLoading}
-                startContent={isLoading ? <Spinner size="sm" /> : null}
-                type="submit"
-              >
-                {isLoading
-                  ? "Salvando..."
-                  : config
-                    ? "Atualizar"
-                    : "Configurar"}
-              </Button>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
-
-      {/* Informações Importantes */}
-      <Card className="bg-warning/5 border border-warning/20">
-        <CardHeader>
-          <h3 className="font-semibold text-warning">
-            Informações Importantes
-          </h3>
-        </CardHeader>
-        <CardBody className="space-y-2 text-sm">
-          <p>
-            • Suas credenciais são criptografadas e armazenadas com segurança
-          </p>
-          <p>• Use o ambiente Sandbox para testes antes de ir para produção</p>
-          <p>• A API Key deve começar com &quot;$aact_&quot;</p>
-          <p>• Você pode testar a conexão a qualquer momento</p>
-          <p>• Em caso de dúvidas, consulte a documentação do Asaas</p>
-        </CardBody>
-      </Card>
-    </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            color="primary"
+            isLoading={isSubmitting}
+            radius="full"
+            onPress={handleSave}
+          >
+            {isSubmitting ? "Salvando..." : "Salvar integração"}
+          </Button>
+          <Button
+            radius="full"
+            variant="light"
+            onPress={() =>
+              setFormData((prev) => ({
+                ...prev,
+                asaasApiKey: "",
+                webhookAccessToken: "",
+              }))
+            }
+          >
+            Limpar campos sensíveis
+          </Button>
+        </div>
+      </PeoplePanel>
+    </section>
   );
 }

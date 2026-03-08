@@ -12,7 +12,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   Building2,
-  CheckSquare,
   CreditCard,
   FileSignature,
   FileText,
@@ -59,13 +58,6 @@ const AreasProcessoSettingsTab = dynamic(() => import("./areas-processo/page"), 
   ssr: false,
   loading: () => <SettingsTabLoader />,
 });
-const CategoriasTarefaSettingsTab = dynamic(
-  () => import("./categorias-tarefa/page"),
-  {
-    ssr: false,
-    loading: () => <SettingsTabLoader />,
-  },
-);
 const AsaasSettingsTab = dynamic(() => import("./asaas/page"), {
   ssr: false,
   loading: () => <SettingsTabLoader />,
@@ -82,7 +74,6 @@ const SETTINGS_TAB_KEYS = [
   "tipos-peticao",
   "tipos-contrato",
   "areas-processo",
-  "categorias-tarefa",
   "asaas",
 ] as const;
 
@@ -294,6 +285,13 @@ export function ConfiguracoesTabs({
   useEffect(() => {
     if (tabFromUrl === "feriados") {
       router.replace("/regimes-prazo?tab=feriados", {
+        scroll: false,
+      });
+      return;
+    }
+
+    if (tabFromUrl === "categorias-tarefa") {
+      router.replace("/tarefas", {
         scroll: false,
       });
     }
@@ -792,20 +790,6 @@ export function ConfiguracoesTabs({
       >
         <EmbeddedSettingsPanel>
           <AreasProcessoSettingsTab />
-        </EmbeddedSettingsPanel>
-      </Tab>
-
-      <Tab
-        key="categorias-tarefa"
-        title={
-          <div className="flex items-center gap-2">
-            <CheckSquare className="h-4 w-4" />
-            <span>Categorias de tarefa</span>
-          </div>
-        }
-      >
-        <EmbeddedSettingsPanel>
-          <CategoriasTarefaSettingsTab />
         </EmbeddedSettingsPanel>
       </Tab>
 
