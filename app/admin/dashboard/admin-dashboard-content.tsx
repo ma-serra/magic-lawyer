@@ -1,79 +1,78 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import useSWR from "swr";
-import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Chip } from "@heroui/chip";
-import { Divider } from "@heroui/divider";
-import { Skeleton } from "@heroui/react";
 import NextLink from "next/link";
+import { Button, Chip, Spinner } from "@heroui/react";
+import {
+  Area,
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Cell,
+  BarChart,
+} from "recharts";
+import {
+  AlertTriangle,
+  Building2,
+  DollarSign,
+  FileText,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 
 import {
   getSuperAdminDashboardData,
   type AdminDashboardData,
-  type AdminDashboardStat,
-  type AdminDashboardAlert,
-  type AdminTrendPoint,
-  type AdminTenantHighlight,
-  type AdminTenantSummary,
-  type AdminAuditEntry,
 } from "@/app/actions/admin-dashboard";
-import { title, subtitle } from "@/components/primitives";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 
-const toneColors: Record<string, string> = {
-  primary: "from-primary/10 via-primary/5 to-primary/0",
-  success: "from-success/10 via-success/5 to-success/0",
-  warning: "from-warning/10 via-warning/5 to-warning/0",
-  secondary: "from-secondary/10 via-secondary/5 to-secondary/0",
-  danger: "from-danger/10 via-danger/5 to-danger/0",
-  default: "from-default-200/10 via-default-200/5 to-default-200/0",
-};
+const CHART_COLORS = {
+  revenue: "#0ea5e9",
+  tenants: "#22c55e",
+  users: "#f59e0b",
+  active: "#22c55e",
+  suspended: "#f59e0b",
+  cancelled: "#ef4444",
+  neutral: "#64748b",
+} as const;
 
-const toneBorder: Record<string, string> = {
-  primary: "border-primary/30",
-  success: "border-success/30",
-  warning: "border-warning/30",
-  secondary: "border-secondary/30",
-  danger: "border-danger/30",
-  default: "border-white/10",
-};
-
-const toneText: Record<string, string> = {
-  primary: "text-primary",
-  success: "text-success",
-  warning: "text-warning",
-  secondary: "text-secondary",
-  danger: "text-danger",
-  default: "text-default-500",
-};
-
-const toneStroke: Record<string, string> = {
-  primary: "#3b82f6",
-  success: "#22c55e",
-  warning: "#f97316",
-  secondary: "#a855f7",
-  danger: "#ef4444",
-  default: "#9ca3af",
-};
-
-const numberFormatter = new Intl.NumberFormat("pt-BR");
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
   maximumFractionDigits: 2,
 });
 
-function formatValue(value: number, format?: string) {
-  if (format === "currency") {
-    return currencyFormatter.format(value);
-  }
+const numberFormatter = new Intl.NumberFormat("pt-BR");
 
-  if (format === "percentage") {
-    return `${value.toFixed(1)}%`;
-  }
+function formatCurrency(value: number) {
+  return currencyFormatter.format(value || 0);
+}
 
-  return numberFormatter.format(value);
+function formatNumber(value: number) {
+  return numberFormatter.format(value || 0);
+}
+
+function pct(current: number, previous: number) {
+  if (previous <= 0) return null;
+  return ((current - previous) / previous) * 100;
+}
+
+function pctLabel(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "—";
+  const signal = value > 0 ? "+" : "";
+  return `${signal}${value.toFixed(1)}%`;
 }
 
 function fetchAdminDashboard() {
@@ -86,314 +85,37 @@ function fetchAdminDashboard() {
   });
 }
 
-interface SparklineChartProps {
-  points: AdminTrendPoint[];
-  tone: string;
-}
+type ChartTooltipPayloadItem = {
+  name?: string;
+  value?: number | string;
+};
 
-function SparklineChart({ points, tone }: SparklineChartProps) {
-  const id = useId();
-
-  const { path, areaPath, gradientId, minLabel, maxLabel } = useMemo(() => {
-    if (points.length === 0) {
-      return {
-        path: "",
-        areaPath: "",
-        gradientId: `sparkline-gradient-${id}`,
-        minLabel: "0",
-        maxLabel: "0",
-      };
-    }
-
-    const values = points.map((point) => point.value);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    const range = max - min || 1;
-    const width = points.length > 1 ? points.length - 1 : 1;
-
-    const coords = points.map((point, index) => {
-      const x = (index / width) * 100;
-      const normalized = (point.value - min) / range;
-      const y = 100 - normalized * 80 - 10; // padding 10 top/bottom
-
-      return { x, y };
-    });
-
-    const linePath = coords
-      .map((coord, index) => `${index === 0 ? "M" : "L"} ${coord.x},${coord.y}`)
-      .join(" ");
-
-    const areaPath = `M ${coords[0]?.x ?? 0},100 ${coords
-      .map((coord) => `L ${coord.x},${coord.y}`)
-      .join(" ")} L ${coords[coords.length - 1]?.x ?? 100},100 Z`;
-
-    return {
-      path: linePath,
-      areaPath,
-      gradientId: `sparkline-gradient-${id}`,
-      minLabel: formatValue(min, points[0]?.format),
-      maxLabel: formatValue(max, points[0]?.format),
-    };
-  }, [points, id]);
-
-  const color = toneStroke[tone] ?? toneStroke.default;
-
-  if (!path) {
-    return (
-      <div className="flex h-24 w-full items-center justify-center text-sm text-default-400">
-        Sem dados suficientes ainda
-      </div>
-    );
-  }
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: ChartTooltipPayloadItem[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
 
   return (
-    <div className="space-y-2">
-      <svg
-        className="h-24 w-full"
-        preserveAspectRatio="none"
-        viewBox="0 0 100 100"
-      >
-        <defs>
-          <linearGradient id={gradientId} x1="0%" x2="0%" y1="0%" y2="100%">
-            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <path d={areaPath} fill={`url(#${gradientId})`} />
-        <path
-          d={path}
-          fill="none"
-          stroke={color}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-        />
-      </svg>
-      <div className="flex items-center justify-between text-xs text-default-400">
-        <span>{minLabel}</span>
-        <span>{maxLabel}</span>
-      </div>
-    </div>
-  );
-}
-
-function StatsGrid({ stats }: { stats: AdminDashboardStat[] }) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {stats.map((stat) => (
-        <Card
-          key={stat.id}
-          className={`border ${toneBorder[stat.tone] ?? "border-white/10"} bg-linear-to-br ${toneColors[stat.tone] ?? toneColors.default} backdrop-blur`}
-        >
-          <CardBody className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-default-400">
-                  {stat.label}
-                </p>
-                <p
-                  className={`text-2xl font-semibold ${toneText[stat.tone] ?? "text-white"}`}
-                >
-                  {formatValue(stat.value, stat.format)}
-                </p>
-              </div>
-              <div aria-hidden className="text-3xl">
-                {stat.icon}
-              </div>
-            </div>
-            {stat.helper ? (
-              <p className="text-xs text-default-500">{stat.helper}</p>
-            ) : null}
-          </CardBody>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function AlertsList({ alerts }: { alerts: AdminDashboardAlert[] }) {
-  if (!alerts.length) {
-    return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardBody className="text-sm text-default-400">
-          Nenhum alerta no momento. Tudo em ordem! 🎉
-        </CardBody>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="grid gap-3">
-      {alerts.map((alert) => (
-        <Card
-          key={alert.id}
-          className={`border ${toneBorder[alert.tone] ?? "border-white/10"} bg-linear-to-br ${toneColors[alert.tone] ?? toneColors.default} backdrop-blur`}
-        >
-          <CardBody className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="text-lg">
-                {alert.icon ?? "ℹ️"}
-              </span>
-              <p className="font-semibold text-white">{alert.title}</p>
-            </div>
-            <p className="text-sm text-default-200">{alert.description}</p>
-          </CardBody>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function TenantsTable({ tenants }: { tenants: AdminTenantHighlight[] }) {
-  if (!tenants.length) {
-    return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardBody className="text-sm text-default-400">
-          Ainda não há faturamento registrado para destacar tenants. Assim que
-          os pagamentos começarem a entrar você verá seus clientes mais valiosos
-          aqui.
-        </CardBody>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {tenants.map((tenant) => (
-        <div
-          key={tenant.id}
-          className="flex flex-col gap-3 rounded-xl border border-white/10 bg-background/60 p-4 transition hover:border-primary/40 hover:bg-background/80 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <p className="text-base font-semibold text-white">
-                {tenant.name}
-              </p>
-              <Chip
-                color={
-                  tenant.status === "ACTIVE"
-                    ? "success"
-                    : tenant.status === "SUSPENDED"
-                      ? "warning"
-                      : "danger"
-                }
-                size="sm"
-                variant="flat"
-              >
-                {tenant.status === "ACTIVE"
-                  ? "Ativo"
-                  : tenant.status === "SUSPENDED"
-                    ? "Suspenso"
-                    : "Cancelado"}
-              </Chip>
-            </div>
-            <p className="text-xs text-default-400">{tenant.slug}</p>
-            <div className="flex flex-wrap gap-3 text-xs text-default-500">
-              <span>
-                {tenant.users} usuários • {tenant.processos} processos •{" "}
-                {tenant.clientes} clientes
-              </span>
-              <span>
-                • Receita 90d: {formatValue(tenant.revenue90d, "currency")}
-              </span>
-              <span>
-                • Receita 30d: {formatValue(tenant.revenue30d, "currency")}
-              </span>
-              {tenant.pendingInvoices > 0 ? (
-                <span className="text-warning">
-                  • {tenant.pendingInvoices} fatura(s) em aberto
-                </span>
-              ) : null}
-              {tenant.plan ? (
-                <span>
-                  • Plano {tenant.plan.name}
-                  {tenant.plan.price
-                    ? ` (${formatValue(tenant.plan.price, "currency")} / ${tenant.plan.billing})`
-                    : ""}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 sm:items-end">
-            <Button
-              as={NextLink}
-              color="primary"
-              href={`/admin/tenants?tenant=${tenant.slug}`}
-              radius="full"
-              size="sm"
-              variant="flat"
-            >
-              Gerenciar tenant
-            </Button>
-            <p className="text-xs text-default-400">
-              Ativo desde{" "}
-              {new Date(tenant.createdAt).toLocaleDateString("pt-BR")}
-            </p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LatestTenants({ tenants }: { tenants: AdminTenantSummary[] }) {
-  if (!tenants.length) {
-    return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardBody className="text-sm text-default-400">
-          Ainda não existem novos tenants cadastrados.
-        </CardBody>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {tenants.map((tenant) => (
-        <div
-          key={tenant.id}
-          className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-background/60 p-3"
-        >
-          <div>
-            <p className="text-sm font-semibold text-white">{tenant.name}</p>
-            <p className="text-xs text-default-400">{tenant.slug}</p>
-            <p className="text-xs text-default-500">
-              Criado em {new Date(tenant.createdAt).toLocaleDateString("pt-BR")}
-            </p>
-          </div>
-          <div className="text-right text-xs text-default-500">
-            <p>{tenant.users} usuários</p>
-            <p>{tenant.processos} processos</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AuditTimeline({ entries }: { entries: AdminAuditEntry[] }) {
-  if (!entries.length) {
-    return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardBody className="text-sm text-default-400">
-          Nenhum evento registrado recentemente pela auditoria.
-        </CardBody>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {entries.map((entry) => (
-        <div key={entry.id} className="relative border-l border-white/10 pl-4">
-          <span className="absolute -left-1.5 top-1 h-3 w-3 rounded-full bg-primary" />
-          <p className="text-xs text-default-400">
-            {new Date(entry.createdAt).toLocaleString("pt-BR")}
+    <div className="rounded-lg border border-white/10 bg-content1/95 p-3 shadow-xl backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
+        {label}
+      </p>
+      <div className="space-y-1">
+        {payload.map((item: ChartTooltipPayloadItem) => (
+          <p key={item.name} className="text-xs text-foreground">
+            <span className="font-medium">{item.name}:</span>{" "}
+            {item.name?.toLowerCase().includes("receita")
+              ? formatCurrency(Number(item.value || 0))
+              : formatNumber(Number(item.value || 0))}
           </p>
-          <p className="text-sm font-medium text-white">{entry.action}</p>
-          <p className="text-xs text-default-500">{entry.summary}</p>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -401,72 +123,80 @@ function AuditTimeline({ entries }: { entries: AdminAuditEntry[] }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card
-            key={`stat-skeleton-${index}`}
-            className="border border-white/10 bg-background/70"
-          >
-            <CardBody className="space-y-3">
-              <Skeleton className="h-4 w-32 rounded-lg" isLoaded={false} />
-              <Skeleton className="h-7 w-20 rounded-lg" isLoaded={false} />
-              <Skeleton className="h-3 w-40 rounded-lg" isLoaded={false} />
-            </CardBody>
-          </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div
+            key={`metric-skeleton-${index}`}
+            className="h-28 animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]"
+          />
         ))}
       </div>
-
-      <Card className="border border-white/10 bg-background/70">
-        <CardHeader className="flex items-center justify-between">
-          <Skeleton className="h-5 w-48 rounded-lg" isLoaded={false} />
-          <Skeleton className="h-8 w-24 rounded-full" isLoaded={false} />
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="grid gap-4 lg:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <Skeleton
-              key={`chart-skeleton-${index}`}
-              className="h-40 w-full rounded-xl"
-              isLoaded={false}
-            />
-          ))}
-        </CardBody>
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-        <Card className="border border-white/10 bg-background/70">
-          <CardHeader>
-            <Skeleton className="h-5 w-60 rounded-lg" isLoaded={false} />
-          </CardHeader>
-          <Divider className="border-white/10" />
-          <CardBody className="space-y-3">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton
-                key={`tenant-skeleton-${index}`}
-                className="h-20 w-full rounded-xl"
-                isLoaded={false}
-              />
-            ))}
-          </CardBody>
-        </Card>
-        <Card className="border border-white/10 bg-background/70">
-          <CardHeader>
-            <Skeleton className="h-5 w-40 rounded-lg" isLoaded={false} />
-          </CardHeader>
-          <Divider className="border-white/10" />
-          <CardBody className="space-y-3">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton
-                key={`alert-skeleton-${index}`}
-                className="h-14 w-full rounded-xl"
-                isLoaded={false}
-              />
-            ))}
-          </CardBody>
-        </Card>
-      </div>
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div
+          key={`panel-skeleton-${index}`}
+          className="h-80 animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]"
+        />
+      ))}
     </div>
   );
+}
+
+function buildRecommendations(params: {
+  revenueMoM: number | null;
+  invoicePressure: number;
+  activeTenantRate: number;
+  top1Share: number;
+}) {
+  const recommendations: Array<{
+    title: string;
+    detail: string;
+    tone: "success" | "warning" | "danger" | "primary";
+  }> = [];
+
+  if (params.revenueMoM !== null && params.revenueMoM < 0) {
+    recommendations.push({
+      title: "Receita caiu no mês atual",
+      detail:
+        "Revisar churn, atraso de cobrança e expansão de contas enterprise nos próximos 7 dias.",
+      tone: "danger",
+    });
+  } else {
+    recommendations.push({
+      title: "Receita em estabilidade/crescimento",
+      detail:
+        "Manter foco em retenção e expansão de base ativa para sustentar o ritmo.",
+      tone: "success",
+    });
+  }
+
+  if (params.invoicePressure >= 15) {
+    recommendations.push({
+      title: "Pressão de cobrança acima do ideal",
+      detail:
+        "Fortalecer rotina de cobrança preventiva e bloquear downgrade sem negociação ativa.",
+      tone: "warning",
+    });
+  }
+
+  if (params.activeTenantRate < 90) {
+    recommendations.push({
+      title: "Taxa de tenants ativos pode melhorar",
+      detail:
+        "Acionar plano de recuperação de tenants suspensos e investigar causa de cancelamento.",
+      tone: "warning",
+    });
+  }
+
+  if (params.top1Share >= 45) {
+    recommendations.push({
+      title: "Concentração alta de receita em poucos tenants",
+      detail:
+        "Risco de concentração. Priorizar aquisição e expansão em contas médias para diluir dependência.",
+      tone: "primary",
+    });
+  }
+
+  return recommendations.slice(0, 4);
 }
 
 export function AdminDashboardContent() {
@@ -478,259 +208,396 @@ export function AdminDashboardContent() {
     },
   );
 
+  const analytics = useMemo(() => {
+    if (!data) return null;
+
+    const revenueSeries = data.revenueSeries;
+    const growthSeries = data.tenantGrowthSeries;
+    const usersSeries = data.userGrowthSeries;
+
+    const lastRevenue = revenueSeries.at(-1)?.value ?? 0;
+    const prevRevenue = revenueSeries.at(-2)?.value ?? 0;
+    const revenueMoM = pct(lastRevenue, prevRevenue);
+
+    const lastTenantAdds = growthSeries.at(-1)?.value ?? 0;
+    const prevTenantAdds = growthSeries.at(-2)?.value ?? 0;
+    const tenantGrowthMoM = pct(lastTenantAdds, prevTenantAdds);
+
+    const activeTenantRate =
+      data.totals.totalTenants > 0
+        ? (data.totals.activeTenants / data.totals.totalTenants) * 100
+        : 0;
+
+    const invoicePressure =
+      data.totals.activeTenants > 0
+        ? (data.totals.outstandingInvoices / data.totals.activeTenants) * 100
+        : 0;
+
+    const topRevenueSum = data.topTenants.reduce(
+      (acc, tenant) => acc + tenant.revenue90d,
+      0,
+    );
+    const top1Share =
+      topRevenueSum > 0 ? (data.topTenants[0]?.revenue90d ?? 0) / topRevenueSum * 100 : 0;
+
+    const chartSeries = revenueSeries.map((point, index) => ({
+      label: point.label,
+      receita: point.value,
+      novosTenants: growthSeries[index]?.value ?? 0,
+      novosUsuarios: usersSeries[index]?.value ?? 0,
+    }));
+
+    const tenantStatusChart = [
+      {
+        name: "Ativos",
+        value: data.totals.activeTenants,
+        color: CHART_COLORS.active,
+      },
+      {
+        name: "Suspensos",
+        value: data.totals.suspendedTenants,
+        color: CHART_COLORS.suspended,
+      },
+      {
+        name: "Cancelados",
+        value: data.totals.cancelledTenants,
+        color: CHART_COLORS.cancelled,
+      },
+    ].filter((item) => item.value > 0);
+
+    const topTenantsChart = data.topTenants.map((tenant) => ({
+      name: tenant.name.length > 24 ? `${tenant.name.slice(0, 24)}…` : tenant.name,
+      receita90d: tenant.revenue90d,
+    }));
+
+    const recommendations = buildRecommendations({
+      revenueMoM,
+      invoicePressure,
+      activeTenantRate,
+      top1Share,
+    });
+
+    return {
+      revenueMoM,
+      tenantGrowthMoM,
+      activeTenantRate,
+      invoicePressure,
+      top1Share,
+      chartSeries,
+      tenantStatusChart,
+      topTenantsChart,
+      recommendations,
+    };
+  }, [data]);
+
+  if (!data || !analytics) {
+    return (
+      <section className="space-y-6">
+        <PeoplePageHeader
+          tag="Administração"
+          title="Cockpit executivo"
+          description="Painel para decisões de crescimento, retenção e eficiência operacional da plataforma."
+        />
+        {isLoading ? <DashboardSkeleton /> : null}
+      </section>
+    );
+  }
+
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-6 px-2 sm:py-8 sm:px-4 md:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              🔑 Inteligência corporativa da Magic Lawyer
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Visão executiva com faturamento, crescimento de tenants e sinais
-              de atenção
-            </p>
-          </div>
-          <div className="flex items-center gap-2" />
-        </div>
-      </header>
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Cockpit executivo do Magic Lawyer"
+        description="Foco em poucos indicadores que movem decisão: receita, crescimento, retenção operacional e risco de concentração."
+        actions={
+          <>
+            <Button as={NextLink} color="primary" href="/admin/tenants" size="sm">
+              Tenants
+            </Button>
+            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="bordered">
+              Auditoria
+            </Button>
+          </>
+        }
+      />
 
       {error ? (
-        <Card className="border border-danger/30 bg-danger/10 text-danger">
-          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-semibold">
-                Não foi possível carregar as métricas
-              </p>
-              <p className="text-sm text-danger/80">
-                {error instanceof Error ? error.message : "Erro inesperado"}
-              </p>
-            </div>
-          </CardBody>
-        </Card>
+        <PeoplePanel
+          title="Falha ao carregar painel"
+          description="Não foi possível obter os dados do dashboard administrativo."
+        >
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="h-4 w-4" />
+            {error instanceof Error ? error.message : "Erro inesperado"}
+          </div>
+        </PeoplePanel>
       ) : null}
 
-      {(!data && isLoading) || !data ? (
-        <DashboardSkeleton />
-      ) : (
-        <div className="space-y-8">
-          <StatsGrid stats={data.stats} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <PeopleMetricCard
+          label="Receita 30 dias"
+          value={formatCurrency(data.totals.revenueLast30Days)}
+          helper="Entrada confirmada"
+          tone="success"
+          icon={<DollarSign className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Crescimento mensal"
+          value={pctLabel(analytics.revenueMoM)}
+          helper="Receita vs mês anterior"
+          tone={
+            analytics.revenueMoM !== null && analytics.revenueMoM < 0
+              ? "danger"
+              : "primary"
+          }
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Tenants ativos"
+          value={`${analytics.activeTenantRate.toFixed(1)}%`}
+          helper={`${data.totals.activeTenants}/${data.totals.totalTenants} em operação`}
+          tone="primary"
+          icon={<Building2 className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Pressão de cobrança"
+          value={`${analytics.invoicePressure.toFixed(1)}%`}
+          helper="Faturas em aberto por tenant ativo"
+          tone={analytics.invoicePressure >= 15 ? "warning" : "default"}
+          icon={<FileText className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Concentração top-1"
+          value={`${analytics.top1Share.toFixed(1)}%`}
+          helper="Receita do maior tenant entre top 5"
+          tone={analytics.top1Share >= 45 ? "warning" : "secondary"}
+          icon={<Users className="h-4 w-4" />}
+        />
+      </div>
 
-          <Card className="border border-white/10 bg-background/70 backdrop-blur">
-            <CardHeader className="flex flex-col gap-2 pb-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-white">
-                  📈 Tendências de receita e crescimento
-                </h2>
-                <p className="text-sm text-default-400">
-                  Acompanhe o pulso financeiro da plataforma e o ritmo de novos
-                  tenants.
-                </p>
-              </div>
-            </CardHeader>
-            <Divider className="border-white/10" />
-            <CardBody className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-default-400">
-                    Receita confirmada (últimos 6 meses)
-                  </p>
-                  <p className="text-lg font-semibold text-white">
-                    {formatValue(data.totals.totalRevenueAllTime, "currency")}
-                  </p>
-                </div>
-                <SparklineChart points={data.revenueSeries} tone="primary" />
-              </div>
-              <div className="space-y-5">
-                <div>
-                  <p className="text-sm font-semibold text-default-400">
-                    Novos tenants mensais
-                  </p>
-                  <SparklineChart
-                    points={data.tenantGrowthSeries}
-                    tone="secondary"
-                  />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-default-400">
-                    Usuários criados por mês
-                  </p>
-                  <SparklineChart
-                    points={data.userGrowthSeries}
-                    tone="success"
-                  />
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-            <Card className="border border-white/10 bg-background/70 backdrop-blur">
-              <CardHeader className="flex flex-col gap-2 pb-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    🏆 Tenants de maior valor
-                  </h2>
-                  <p className="text-sm text-default-400">
-                    Monitoramento dos escritórios que mais contribuem para o
-                    faturamento nos últimos 90 dias.
-                  </p>
-                </div>
-              </CardHeader>
-              <Divider className="border-white/10" />
-              <CardBody>
-                <TenantsTable tenants={data.topTenants} />
-              </CardBody>
-            </Card>
-
-            <Card className="border border-white/10 bg-background/70 backdrop-blur">
-              <CardHeader className="flex items-center justify-between pb-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    🔔 Alertas
-                  </h2>
-                  <p className="text-sm text-default-400">
-                    Situações que exigem acompanhamento do super admin.
-                  </p>
-                </div>
-              </CardHeader>
-              <Divider className="border-white/10" />
-              <CardBody>
-                <AlertsList alerts={data.alerts} />
-              </CardBody>
-            </Card>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-            <Card className="border border-white/10 bg-background/70 backdrop-blur">
-              <CardHeader className="flex items-center justify-between pb-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    🆕 Entradas recentes
-                  </h2>
-                  <p className="text-sm text-default-400">
-                    Últimos tenants implantados na plataforma.
-                  </p>
-                </div>
-                <Button
-                  as={NextLink}
-                  color="primary"
-                  href="/admin/tenants"
-                  radius="full"
-                  size="sm"
-                  variant="flat"
-                >
-                  Ver todos
-                </Button>
-              </CardHeader>
-              <Divider className="border-white/10" />
-              <CardBody>
-                <LatestTenants tenants={data.latestTenants} />
-              </CardBody>
-            </Card>
-
-            <Card className="border border-white/10 bg-background/70 backdrop-blur">
-              <CardHeader className="flex items-center justify-between pb-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    🗂️ Auditoria executiva
-                  </h2>
-                  <p className="text-sm text-default-400">
-                    Acompanha as últimas ações de super admins.
-                  </p>
-                </div>
-              </CardHeader>
-              <Divider className="border-white/10" />
-              <CardBody>
-                <AuditTimeline entries={data.auditLog} />
-              </CardBody>
-            </Card>
-          </div>
-
-          <Card className="border border-white/10 bg-background/70 backdrop-blur">
-            <CardHeader className="flex flex-wrap items-center justify-between gap-3 pb-2">
-              <div>
-                <h2 className="text-lg font-semibold text-white">
-                  🧮 Resumo numérico
-                </h2>
-                <p className="text-sm text-default-400">
-                  Totalizadores globais do Magic Lawyer
-                </p>
-              </div>
-            </CardHeader>
-            <Divider className="border-white/10" />
-            <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Tenants ativos
-                </p>
-                <p className="text-xl font-semibold text-white">
-                  {data.totals.activeTenants} / {data.totals.totalTenants}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Usuários ativos
-                </p>
-                <p className="text-xl font-semibold text-white">
-                  {data.totals.activeUsers} / {data.totals.totalUsers}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Clientes cadastrados
-                </p>
-                <p className="text-xl font-semibold text-white">
-                  {numberFormatter.format(data.totals.totalClientes)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Processos totais
-                </p>
-                <p className="text-xl font-semibold text-white">
-                  {numberFormatter.format(data.totals.totalProcessos)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Receita acumulada
-                </p>
-                <p className="text-xl font-semibold text-success">
-                  {formatValue(data.totals.totalRevenueAllTime, "currency")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Ticket médio por tenant
-                </p>
-                <p className="text-xl font-semibold text-secondary">
-                  {formatValue(data.totals.averageRevenuePerTenant, "currency")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Faturamento 30 dias
-                </p>
-                <p className="text-xl font-semibold text-primary">
-                  {formatValue(data.totals.revenueLast30Days, "currency")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-background/60 p-4">
-                <p className="text-xs uppercase text-default-400">
-                  Faturas pendentes
-                </p>
-                <p className="text-xl font-semibold text-warning">
-                  {numberFormatter.format(data.totals.outstandingInvoices)}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
+      <PeoplePanel
+        title="Motor de crescimento"
+        description="Receita mensal confirmada com entradas de novos tenants e usuários."
+      >
+        <div className="h-[360px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={analytics.chartSeries}>
+              <CartesianGrid stroke="rgba(148,163,184,0.15)" strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis
+                yAxisId="money"
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
+                tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="count"
+                orientation="right"
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend />
+              <Area
+                yAxisId="money"
+                dataKey="receita"
+                name="Receita"
+                type="monotone"
+                stroke={CHART_COLORS.revenue}
+                fill={CHART_COLORS.revenue}
+                fillOpacity={0.2}
+                strokeWidth={2}
+              />
+              <Bar
+                yAxisId="count"
+                dataKey="novosTenants"
+                name="Novos tenants"
+                fill={CHART_COLORS.tenants}
+                barSize={18}
+                radius={[4, 4, 0, 0]}
+              />
+              <Bar
+                yAxisId="count"
+                dataKey="novosUsuarios"
+                name="Novos usuários"
+                fill={CHART_COLORS.users}
+                barSize={18}
+                radius={[4, 4, 0, 0]}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
-      )}
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Crescimento de receita</p>
+            <p className="text-sm font-semibold text-foreground">{pctLabel(analytics.revenueMoM)}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Crescimento de novos tenants</p>
+            <p className="text-sm font-semibold text-foreground">{pctLabel(analytics.tenantGrowthMoM)}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Ticket médio por tenant ativo</p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatCurrency(
+                data.totals.activeTenants > 0
+                  ? data.totals.revenueLast30Days / data.totals.activeTenants
+                  : 0,
+              )}
+            </p>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <PeoplePanel
+          title="Receita por tenant (90 dias)"
+          description="Visão de concentração para decisões de risco e expansão comercial."
+        >
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={analytics.topTenantsChart} layout="vertical" margin={{ left: 10, right: 10 }}>
+                <CartesianGrid stroke="rgba(148,163,184,0.15)" strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={180}
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="receita90d" name="Receita 90d" radius={[0, 6, 6, 0]} fill={CHART_COLORS.revenue} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </PeoplePanel>
+
+        <PeoplePanel
+          title="Status da carteira de tenants"
+          description="Distribuição operacional da base ativa/suspensa/cancelada."
+        >
+          {analytics.tenantStatusChart.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-default-400">
+              <Spinner size="sm" />
+              Sem dados de status no momento.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={analytics.tenantStatusChart}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={3}
+                    >
+                      {analytics.tenantStatusChart.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2">
+                {analytics.tenantStatusChart.map((item) => (
+                  <div
+                    key={item.name}
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                      {item.name}
+                    </div>
+                    <Chip size="sm" variant="flat">
+                      {formatNumber(item.value)}
+                    </Chip>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </PeoplePanel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+        <PeoplePanel
+          title="Leituras prioritárias para CEO"
+          description="Recomendações automáticas com base no estado atual de receita, cobrança e retenção da base."
+        >
+          <div className="space-y-3">
+            {analytics.recommendations.length === 0 ? (
+              <p className="text-sm text-default-400">Sem recomendações críticas neste momento.</p>
+            ) : (
+              analytics.recommendations.map((item, idx) => (
+                <div
+                  key={`${item.title}-${idx}`}
+                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <Chip size="sm" color={item.tone} variant="flat">
+                      {item.tone === "danger"
+                        ? "Risco"
+                        : item.tone === "warning"
+                          ? "Atenção"
+                          : item.tone === "success"
+                            ? "Saudável"
+                            : "Estratégico"}
+                    </Chip>
+                    <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                  </div>
+                  <p className="text-sm text-default-400">{item.detail}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </PeoplePanel>
+
+        <PeoplePanel
+          title="Auditoria executiva"
+          description="Últimos eventos administrativos que impactam governança da plataforma."
+          actions={
+            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="flat">
+              Ver auditoria completa
+            </Button>
+          }
+        >
+          <div className="space-y-3">
+            {data.auditLog.length === 0 ? (
+              <p className="text-sm text-default-400">Sem ações administrativas recentes.</p>
+            ) : (
+              data.auditLog.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                >
+                  <p className="text-xs text-default-500">
+                    {new Date(entry.createdAt).toLocaleString("pt-BR")}
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">{entry.action}</p>
+                  <p className="text-xs text-default-400">{entry.summary}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </PeoplePanel>
+      </div>
     </section>
   );
 }

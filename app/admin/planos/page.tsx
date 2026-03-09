@@ -5,9 +5,9 @@ import { PlanosContent } from "./planos-content";
 import { ProfileDashboard } from "@/components/profile-dashboard";
 
 export const metadata: Metadata = {
-  title: "Controle de Planos",
+  title: "Planos e Módulos",
   description:
-    "Gerencie os planos comerciais e os módulos liberados por versão",
+    "Gerencie planos comerciais, catálogo de módulos e a composição oficial da oferta",
 };
 
 export default function PlanosAdminPage() {

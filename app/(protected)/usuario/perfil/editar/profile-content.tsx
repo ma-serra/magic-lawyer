@@ -850,7 +850,7 @@ export function ProfileContent() {
                       </p>
                       <p>
                         Certificado do <strong>escritório</strong> (tenant) é gerenciado em{" "}
-                        <strong>Configurações do escritório → Integrações PJe</strong>.
+                        <strong>Configurações do escritório → Integrações → Certificados e PJe</strong>.
                       </p>
                     </CardBody>
                   </Card>
@@ -871,7 +871,11 @@ export function ProfileContent() {
                               color="warning"
                               size="sm"
                               variant="flat"
-                              onPress={() => router.push("/configuracoes?tab=certificates")}
+                              onPress={() =>
+                                router.push(
+                                  "/configuracoes?tab=integracoes&integration=certificates",
+                                )
+                              }
                             >
                               Ir para Integrações PJe do escritório
                             </Button>

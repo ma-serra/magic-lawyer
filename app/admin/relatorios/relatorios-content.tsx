@@ -1,268 +1,256 @@
 "use client";
 
-import React from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Divider } from "@heroui/divider";
-import { Button } from "@heroui/button";
-import { Badge } from "@heroui/badge";
+import NextLink from "next/link";
+import useSWR from "swr";
+import { Button, Chip, Spinner } from "@heroui/react";
+import { AlertTriangle, Building2, DollarSign, FileText, Users } from "lucide-react";
 
-import { title, subtitle } from "@/components/primitives";
+import { getSuperAdminDashboardData } from "@/app/actions/admin-dashboard";
+import { PeopleMetricCard, PeoplePageHeader, PeoplePanel } from "@/components/people-ui";
+
+const REPORT_REFRESH_MS = 60000;
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString("pt-BR");
+}
 
 export function RelatoriosContent() {
-  const relatorios = [
+  const { data: response, error, isLoading } = useSWR(
+    "admin-relatorios-overview",
+    getSuperAdminDashboardData,
     {
-      id: "1",
-      nome: "Relatório de Tenants",
-      descricao: "Análise completa de todos os escritórios cadastrados",
-      categoria: "Tenants",
-      frequencia: "Mensal",
-      ultimaExecucao: "2025-01-01",
-      status: "Ativo",
+      revalidateOnFocus: false,
+      refreshInterval: REPORT_REFRESH_MS,
     },
-    {
-      id: "2",
-      nome: "Faturamento Global",
-      descricao: "Receita total da plataforma por período",
-      categoria: "Financeiro",
-      frequencia: "Semanal",
-      ultimaExecucao: "2025-01-03",
-      status: "Ativo",
-    },
-    {
-      id: "3",
-      nome: "Uso de Juízes",
-      descricao: "Estatísticas de acesso à base de juízes",
-      categoria: "Uso",
-      frequencia: "Diário",
-      ultimaExecucao: "2025-01-04",
-      status: "Ativo",
-    },
-    {
-      id: "4",
-      nome: "Performance do Sistema",
-      descricao: "Métricas de performance e disponibilidade",
-      categoria: "Sistema",
-      frequencia: "Diário",
-      ultimaExecucao: "2025-01-04",
-      status: "Ativo",
-    },
-  ];
+  );
 
-  const getStatusColor = (status: string) => {
-    return status === "Ativo" ? "success" : "warning";
-  };
-
-  const getCategoriaColor = (categoria: string) => {
-    const colors: Record<string, string> = {
-      Tenants: "primary",
-      Financeiro: "success",
-      Uso: "warning",
-      Sistema: "secondary",
-    };
-
-    return colors[categoria] || "default";
-  };
+  const data = response?.success ? response.data : undefined;
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              Relatórios e Analytics
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Análise completa do sistema e métricas de negócio
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button color="primary" variant="flat">
-              📊 Novo Relatório
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Relatórios operacionais"
+        description="Leitura executiva do negócio: crescimento, receita, riscos e trilha de auditoria em uma única visão."
+        actions={
+          <>
+            <Button as={NextLink} color="primary" href="/admin/dashboard" size="sm">
+              Abrir dashboard
             </Button>
-            <Button color="secondary" variant="flat">
-              📥 Exportar Todos
+            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="bordered">
+              Abrir auditoria
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
-      {/* Métricas Principais */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-blue-600 mr-4">📈</span>
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Relatórios Ativos
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {relatorios.filter((r) => r.status === "Ativo").length}
-              </p>
-              <p className="text-sm text-blue-600">
-                de {relatorios.length} total
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-green-600 mr-4">⏱️</span>
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Execuções Hoje
-              </p>
-              <p className="text-2xl font-bold text-gray-900">12</p>
-              <p className="text-sm text-green-600">+3 vs ontem</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-yellow-600 mr-4">📊</span>
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Dados Processados
-              </p>
-              <p className="text-2xl font-bold text-gray-900">2.4M</p>
-              <p className="text-sm text-yellow-600">registros este mês</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-purple-600 mr-4">💾</span>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Armazenamento</p>
-              <p className="text-2xl font-bold text-gray-900">45GB</p>
-              <p className="text-sm text-purple-600">dados históricos</p>
-            </div>
-          </CardBody>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          label="Receita 30 dias"
+          value={formatCurrency(data?.totals.revenueLast30Days ?? 0)}
+          helper="Confirmações recentes"
+          tone="success"
+          icon={<DollarSign className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Tenants ativos"
+          value={data?.totals.activeTenants ?? 0}
+          helper={`${data?.totals.totalTenants ?? 0} tenant(s) total`}
+          tone="primary"
+          icon={<Building2 className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Usuários ativos"
+          value={data?.totals.activeUsers ?? 0}
+          helper={`${data?.totals.totalUsers ?? 0} usuário(s) total`}
+          tone="secondary"
+          icon={<Users className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Alertas"
+          value={data?.alerts.length ?? 0}
+          helper="Itens que exigem acompanhamento"
+          tone={(data?.alerts.length ?? 0) > 0 ? "warning" : "default"}
+          icon={<AlertTriangle className="h-4 w-4" />}
+        />
       </div>
 
-      {/* Lista de Relatórios */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            📋 Relatórios Disponíveis
-          </h2>
-          <p className="text-sm text-default-400">
-            Gerencie e execute relatórios do sistema
+      {error || (response && !response.success) ? (
+        <PeoplePanel
+          title="Falha ao carregar relatórios"
+          description="Não foi possível sincronizar os dados do painel administrativo."
+        >
+          <p className="text-sm text-danger">
+            {response?.error ||
+              (error instanceof Error ? error.message : "Erro inesperado")}
           </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {relatorios.map((relatorio) => (
-              <div
-                key={relatorio.id}
-                className="rounded-2xl border border-white/10 bg-white/5 p-4"
-              >
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex-1">
-                    <h3 className="text-sm font-semibold text-white mb-1">
-                      {relatorio.nome}
-                    </h3>
-                    <p className="text-xs text-default-400 mb-2">
-                      {relatorio.descricao}
-                    </p>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge
-                        color={getCategoriaColor(relatorio.categoria) as any}
-                        size="sm"
-                        variant="flat"
-                      >
-                        {relatorio.categoria}
-                      </Badge>
-                      <Badge
-                        color={getStatusColor(relatorio.status) as any}
-                        size="sm"
-                        variant="flat"
-                      >
-                        {relatorio.status}
-                      </Badge>
+        </PeoplePanel>
+      ) : null}
+
+      {isLoading && !data ? (
+        <PeoplePanel
+          title="Sincronizando dados"
+          description="Coletando indicadores globais do sistema."
+        >
+          <div className="flex items-center gap-2 text-sm text-default-400">
+            <Spinner size="sm" />
+            Carregando relatórios...
+          </div>
+        </PeoplePanel>
+      ) : null}
+
+      {data ? (
+        <>
+          <PeoplePanel
+            title="Tendência dos últimos 6 meses"
+            description="Receita, novos tenants e novos usuários por mês."
+          >
+            <div className="grid gap-3 lg:grid-cols-3">
+              {data.revenueSeries.map((point, index) => (
+                <div
+                  key={point.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
+                    {point.label}
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-success">
+                    {formatCurrency(point.value)}
+                  </p>
+                  <p className="mt-2 text-xs text-default-400">
+                    Tenants: {data.tenantGrowthSeries[index]?.value ?? 0} •
+                    Usuários: {data.userGrowthSeries[index]?.value ?? 0}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </PeoplePanel>
+
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+            <PeoplePanel
+              title="Tenants de maior impacto"
+              description="Escritórios com maior contribuição financeira recente."
+            >
+              <div className="space-y-3">
+                {data.topTenants.length === 0 ? (
+                  <p className="text-sm text-default-400">
+                    Sem registros de receita no período.
+                  </p>
+                ) : (
+                  data.topTenants.map((tenant) => (
+                    <div
+                      key={tenant.id}
+                      className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {tenant.name}
+                        </p>
+                        <Chip
+                          color={tenant.status === "ACTIVE" ? "success" : "warning"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {tenant.status === "ACTIVE" ? "Ativo" : tenant.status}
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-400">
+                        {tenant.clientes} clientes • {tenant.processos} processos •{" "}
+                        {tenant.users} usuários
+                      </p>
+                      <p className="text-sm font-semibold text-success">
+                        90 dias: {formatCurrency(tenant.revenue90d)}
+                      </p>
                     </div>
-                  </div>
+                  ))
+                )}
+              </div>
+            </PeoplePanel>
+
+            <PeoplePanel
+              title="Alertas e auditoria"
+              description="Riscos ativos e últimas ações administrativas."
+            >
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
+                    Alertas
+                  </p>
+                  {data.alerts.length === 0 ? (
+                    <p className="text-sm text-success">Nenhum alerta crítico no momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {data.alerts.slice(0, 4).map((alert) => (
+                        <div
+                          key={alert.id}
+                          className="rounded-xl border border-warning/20 bg-warning/10 p-3"
+                        >
+                          <p className="text-sm font-semibold text-warning">{alert.title}</p>
+                          <p className="text-xs text-default-300">{alert.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-default-400">Frequência:</span>
-                    <span className="text-white">{relatorio.frequencia}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-default-400">Última execução:</span>
-                    <span className="text-white">
-                      {relatorio.ultimaExecucao}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    color="primary"
-                    size="sm"
-                    variant="flat"
-                  >
-                    ▶️ Executar
-                  </Button>
-                  <Button size="sm" variant="light">
-                    ⚙️
-                  </Button>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
+                    Últimas ações
+                  </p>
+                  {data.auditLog.length === 0 ? (
+                    <p className="text-sm text-default-400">Sem registros recentes.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {data.auditLog.slice(0, 5).map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                        >
+                          <p className="text-sm font-medium text-foreground">{entry.action}</p>
+                          <p className="text-xs text-default-400">
+                            {entry.entity || "—"} • {formatDate(entry.createdAt)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+            </PeoplePanel>
           </div>
-        </CardBody>
-      </Card>
 
-      {/* Dashboards Rápidos */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            📊 Dashboards Rápidos
-          </h2>
-          <p className="text-sm text-default-400">
-            Acesso rápido aos principais indicadores
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button
-              className="h-20 flex-col gap-2"
-              color="primary"
-              variant="flat"
-            >
-              <span className="text-2xl">🏢</span>
-              <span className="text-sm">Dashboard Tenants</span>
-            </Button>
-            <Button
-              className="h-20 flex-col gap-2"
-              color="success"
-              variant="flat"
-            >
-              <span className="text-2xl">💰</span>
-              <span className="text-sm">Dashboard Financeiro</span>
-            </Button>
-            <Button
-              className="h-20 flex-col gap-2"
-              color="warning"
-              variant="flat"
-            >
-              <span className="text-2xl">👥</span>
-              <span className="text-sm">Dashboard Usuários</span>
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
+          <PeoplePanel
+            title="Exportação e governança"
+            description="Ações rápidas para análise detalhada e trilha formal."
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button as={NextLink} href="/admin/auditoria" size="sm" variant="flat">
+                <FileText className="h-4 w-4" />
+                Logs completos
+              </Button>
+              <Button as={NextLink} href="/admin/tenants" size="sm" variant="flat">
+                Tenants
+              </Button>
+              <Button as={NextLink} href="/admin/financeiro" size="sm" variant="flat">
+                Financeiro global
+              </Button>
+            </div>
+          </PeoplePanel>
+        </>
+      ) : null}
     </section>
   );
 }

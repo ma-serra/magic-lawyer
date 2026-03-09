@@ -3,8 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Divider } from "@heroui/divider";
 import { Input } from "@heroui/input";
 
 import { Checkbox } from "@heroui/checkbox";
@@ -12,6 +10,7 @@ import { addToast } from "@heroui/toast";
 
 import { createTenant, type CreateTenantData } from "@/app/actions/admin";
 import { Select, SelectItem } from "@heroui/react";
+import { PeoplePageHeader, PeoplePanel } from "@/components/people-ui";
 
 const timezoneOptions = [
   "America/Sao_Paulo",
@@ -80,7 +79,10 @@ export function TenantCreateContent() {
   const [form, setForm] = useState(initialFormState);
   const [isCreating, startCreating] = useTransition();
 
-  const handleChange = (field: keyof TenantCreateFormState, value: string) => {
+  const handleChange = <K extends keyof TenantCreateFormState>(
+    field: K,
+    value: TenantCreateFormState[K],
+  ) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -181,19 +183,18 @@ export function TenantCreateContent() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardHeader className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold text-white">
-            Cadastrar novo tenant
-          </h1>
-          <p className="text-sm text-default-400">
-            Preencha as informações básicas do escritório e os dados do
-            administrador inicial.
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="space-y-6">
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Cadastrar novo tenant"
+        description="Crie um novo escritório na plataforma e já configure o administrador inicial."
+      />
+
+      <PeoplePanel
+        title="Dados de provisionamento"
+        description="Preencha identificação do escritório, usuário administrador e integrações iniciais."
+      >
+        <div className="space-y-6">
           <section className="space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-default-500">
               Dados do tenant
@@ -316,7 +317,7 @@ export function TenantCreateContent() {
               <Checkbox
                 isSelected={form.configurarAsaas}
                 onValueChange={(checked) =>
-                  handleChange("configurarAsaas", checked.toString())
+                  handleChange("configurarAsaas", checked)
                 }
               >
                 <span className="text-sm font-semibold">
@@ -369,13 +370,12 @@ export function TenantCreateContent() {
                   <Select
                     label="Ambiente"
                     placeholder="Selecione o ambiente"
-                    selectedKeys={[form.asaasAmbiente]}
+                    selectedKeys={new Set([form.asaasAmbiente])}
                     onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0] as
-                        | "SANDBOX"
-                        | "PRODUCAO";
-
-                      handleChange("asaasAmbiente", value);
+                      const [value] = Array.from(keys);
+                      if (value === "SANDBOX" || value === "PRODUCAO") {
+                        handleChange("asaasAmbiente", value);
+                      }
                     }}
                   >
                     <SelectItem key="SANDBOX" textValue="Sandbox (Teste)">Sandbox (Teste)</SelectItem>
@@ -404,8 +404,8 @@ export function TenantCreateContent() {
               Criar tenant
             </Button>
           </div>
-        </CardBody>
-      </Card>
-    </div>
+        </div>
+      </PeoplePanel>
+    </section>
   );
 }

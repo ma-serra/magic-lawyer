@@ -69,110 +69,117 @@ model CategoriaTarefa {
 }
 
 model Tenant {
-  id                       String                   @id @default(cuid())
-  name                     String
-  slug                     String                   @unique
-  domain                   String?                  @unique
-  timezone                 String                   @default("America/Sao_Paulo")
-  status                   TenantStatus             @default(ACTIVE)
-  statusReason             String?
-  statusChangedAt          DateTime?
-  sessionVersion           Int                      @default(1)
-  planRevision             Int                      @default(1)
-  tenantSoftVersion        Int                      @default(1)
-  digitalCertificatePolicy DigitalCertificatePolicy @default(OFFICE)
-  tipoPessoa               TipoPessoa               @default(JURIDICA)
-  documento                String?                  @unique
-  razaoSocial              String?
-  nomeFantasia             String?
-  inscricaoEstadual        String?
-  inscricaoMunicipal       String?
-  email                    String?
-  telefone                 String?
-  createdAt                DateTime                 @default(now())
-  updatedAt                DateTime                 @updatedAt
-  superAdminId             String?
-  acessosJuiz              AcessoJuiz[]
-  autoridadeContribuicoes  AutoridadeContribuicao[]
-  autoridadeUnlocks        AutoridadeTenantUnlock[]
-  advogados                Advogado[]
-  advogadoClientes         AdvogadoCliente[]
-  analisesJuiz             AnaliseJuiz[]
-  areasProcesso            AreaProcesso[]
-  assinaturasPacoteJuiz    AssinaturaPacoteJuiz[]   @relation("TenantAssinaturaPacote")
-  auditLogs                AuditLog[]
-  categoriasTarefa         CategoriaTarefa[]
-  clientes                 Cliente[]
-  contratos                Contrato[]
-  contratoDocumentos       ContratoDocumento[]
-  documentos               Documento[]
-  documentoAssinaturas     DocumentoAssinatura[]
-  eventos                  Evento[]
-  eventoParticipantes      EventoParticipante[]
-  agendaDisponibilidades   AgendaDisponibilidade[]
-  faturas                  Fatura[]
-  favoritosJuiz            FavoritoJuiz[]
-  julgamentos              Julgamento[]
-  modelosContrato          ModeloContrato[]
-  modelosPeticao           ModeloPeticao[]
-  tiposPeticao             TipoPeticao[]
-  modelosProcuracao        ModeloProcuracao[]
-  modelosProcuracaoVersoes ModeloProcuracaoVersao[]
-  movimentacoes            MovimentacaoProcesso[]
-  autosProcessuais         AutoProcessual[]
-  causas                   Causa[]
-  inpiDossies              InpiDossie[]
-  inpiBuscaLogs            InpiBuscaLog[]
-  inpiDossieColisoes       InpiDossieColisao[]
-  inpiDossieSnapshots      InpiDossieSnapshot[]
-  diligencias              Diligencia[]
-  regimesPrazo             RegimePrazo[]
-  peticoes                 Peticao[]
-  assinaturasPeticao       AssinaturaPeticao[]
-  notificacoes             Notificacao[]
-  notificacoesUsuarios     NotificacaoUsuario[]
-  pagamentos               Pagamento[]
-  pagamentoComissoes       PagamentoComissao[]
-  processos                Processo[]
-  processoDocumentos       ProcessoDocumento[]
-  processoPartes           ProcessoParte[]
-  processoPrazos           ProcessoPrazo[]
-  procuracoes              Procuracao[]
-  procuracaoAdvogados      ProcuracaoAdvogado[]
-  procuracaoAssinaturas    ProcuracaoAssinatura[]
-  procuracaoPoderes        ProcuracaoPoder[]
-  procuracaoProcessos      ProcuracaoProcesso[]
-  documentosProcuracao     DocumentoProcuracao[]
-  tarefas                  Tarefa[]
-  emailCredentials         TenantEmailCredential[]
-  superAdmin               SuperAdmin?              @relation("SuperAdminTenant", fields: [superAdminId], references: [id])
-  branding                 TenantBranding?
-  enderecos                Endereco[]
-  enderecosLegacy          TenantEndereco[]         @relation("TenantEnderecoLegacy")
-  subscription             TenantSubscription?
-  tiposContrato            TipoContrato[]
-  tribunais                Tribunal[]
-  usuarios                 Usuario[]
-  usuarioPermissoes        UsuarioPermissao[]
-  documentoVersoes         DocumentoVersao[]
-  contratoHonorarios       ContratoHonorario[]
-  contratoParcelas         ContratoParcela[]
-  tickets                  Ticket[]                 @relation("TenantTickets")
-  ProcessoCausa            ProcessoCausa[]
-  boards                   Board[]
-  boardColumns             BoardColumn[]
-  tarefaChecklists         TarefaChecklist[]
-  tarefaComentarios        TarefaComentario[]
-  tarefaAnexos             TarefaAnexo[]
-  tarefaTags               TarefaTag[]
-  tarefaAtividades         TarefaAtividade[]
-  tarefaTagRelacoes        TarefaTagRelacao[]
-  TarefaWatcher            TarefaWatcher[]
-  feriados                 Feriado[]
-  dadosBancarios           DadosBancarios[]
-  planos                   Plano[]
-  asaasConfig              TenantAsaasConfig?
-  advogadoHistorico        AdvogadoHistorico[]
+  id                        String                     @id @default(cuid())
+  name                      String
+  slug                      String                     @unique
+  domain                    String?                    @unique
+  timezone                  String                     @default("America/Sao_Paulo")
+  status                    TenantStatus               @default(ACTIVE)
+  statusReason              String?
+  statusChangedAt           DateTime?
+  sessionVersion            Int                        @default(1)
+  planRevision              Int                        @default(1)
+  tenantSoftVersion         Int                        @default(1)
+  digitalCertificatePolicy  DigitalCertificatePolicy   @default(OFFICE)
+  tipoPessoa                TipoPessoa                 @default(JURIDICA)
+  documento                 String?                    @unique
+  razaoSocial               String?
+  nomeFantasia              String?
+  inscricaoEstadual         String?
+  inscricaoMunicipal        String?
+  email                     String?
+  telefone                  String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  superAdminId              String?
+  acessosJuiz               AcessoJuiz[]
+  autoridadeContribuicoes   AutoridadeContribuicao[]
+  autoridadeUnlocks         AutoridadeTenantUnlock[]
+  advogados                 Advogado[]
+  advogadoClientes          AdvogadoCliente[]
+  analisesJuiz              AnaliseJuiz[]
+  areasProcesso             AreaProcesso[]
+  assinaturasPacoteJuiz     AssinaturaPacoteJuiz[]     @relation("TenantAssinaturaPacote")
+  auditLogs                 AuditLog[]
+  categoriasTarefa          CategoriaTarefa[]
+  clientes                  Cliente[]
+  contratos                 Contrato[]
+  contratoDocumentos        ContratoDocumento[]
+  documentos                Documento[]
+  documentoAssinaturas      DocumentoAssinatura[]
+  eventos                   Evento[]
+  eventoParticipantes       EventoParticipante[]
+  agendaDisponibilidades    AgendaDisponibilidade[]
+  faturas                   Fatura[]
+  favoritosJuiz             FavoritoJuiz[]
+  julgamentos               Julgamento[]
+  modelosContrato           ModeloContrato[]
+  modelosPeticao            ModeloPeticao[]
+  tiposPeticao              TipoPeticao[]
+  modelosProcuracao         ModeloProcuracao[]
+  modelosProcuracaoVersoes  ModeloProcuracaoVersao[]
+  movimentacoes             MovimentacaoProcesso[]
+  autosProcessuais          AutoProcessual[]
+  causas                    Causa[]
+  inpiDossies               InpiDossie[]
+  inpiBuscaLogs             InpiBuscaLog[]
+  inpiDossieColisoes        InpiDossieColisao[]
+  inpiDossieSnapshots       InpiDossieSnapshot[]
+  diligencias               Diligencia[]
+  regimesPrazo              RegimePrazo[]
+  peticoes                  Peticao[]
+  assinaturasPeticao        AssinaturaPeticao[]
+  notificacoes              Notificacao[]
+  notificacoesUsuarios      NotificacaoUsuario[]
+  pagamentos                Pagamento[]
+  pagamentoComissoes        PagamentoComissao[]
+  processos                 Processo[]
+  processoDocumentos        ProcessoDocumento[]
+  processoPartes            ProcessoParte[]
+  processoPrazos            ProcessoPrazo[]
+  procuracoes               Procuracao[]
+  procuracaoAdvogados       ProcuracaoAdvogado[]
+  procuracaoAssinaturas     ProcuracaoAssinatura[]
+  procuracaoPoderes         ProcuracaoPoder[]
+  procuracaoProcessos       ProcuracaoProcesso[]
+  documentosProcuracao      DocumentoProcuracao[]
+  tarefas                   Tarefa[]
+  emailCredentials          TenantEmailCredential[]
+  superAdmin                SuperAdmin?                @relation("SuperAdminTenant", fields: [superAdminId], references: [id])
+  branding                  TenantBranding?
+  enderecos                 Endereco[]
+  enderecosLegacy           TenantEndereco[]           @relation("TenantEnderecoLegacy")
+  subscription              TenantSubscription?
+  tiposContrato             TipoContrato[]
+  tribunais                 Tribunal[]
+  usuarios                  Usuario[]
+  usuarioPermissoes         UsuarioPermissao[]
+  documentoVersoes          DocumentoVersao[]
+  contratoHonorarios        ContratoHonorario[]
+  contratoParcelas          ContratoParcela[]
+  planoReajusteComunicacoes PlanoReajusteComunicacao[]
+  tickets                   Ticket[]                   @relation("TenantTickets")
+  ProcessoCausa             ProcessoCausa[]
+  boards                    Board[]
+  boardColumns              BoardColumn[]
+  tarefaChecklists          TarefaChecklist[]
+  tarefaComentarios         TarefaComentario[]
+  tarefaAnexos              TarefaAnexo[]
+  tarefaTags                TarefaTag[]
+  tarefaAtividades          TarefaAtividade[]
+  tarefaTagRelacoes         TarefaTagRelacao[]
+  TarefaWatcher             TarefaWatcher[]
+  feriados                  Feriado[]
+  dadosBancarios            DadosBancarios[]
+  planos                    Plano[]
+  asaasConfig               TenantAsaasConfig?
+  clicksignConfig           ClicksignTenantConfig?
+  channelProviders          TenantChannelProvider[]
+  channelTemplates          TenantChannelTemplate[]
+  messageThreads            MessageThread[]
+  messages                  Message[]
+  messageDeliveries         MessageDelivery[]
+  advogadoHistorico         AdvogadoHistorico[]
 
   // Sistema de Gestão de Equipe
   cargos                       Cargo[]
@@ -240,26 +247,151 @@ model Endereco {
 // ============================================
 
 model TenantAsaasConfig {
-  id               String        @id @default(cuid())
-  tenantId         String        @unique
-  asaasApiKey      String        @db.Text // Criptografado
-  webhookAccessToken String?     @db.Text // Criptografado
-  asaasAccountId   String
-  asaasWalletId    String?
-  ambiente         AsaasAmbiente @default(SANDBOX)
-  integracaoAtiva  Boolean       @default(false)
-  dataConfiguracao DateTime      @default(now())
+  id                  String        @id @default(cuid())
+  tenantId            String        @unique
+  asaasApiKey         String        @db.Text // Criptografado
+  webhookAccessToken  String?       @db.Text // Criptografado
+  asaasAccountId      String
+  asaasWalletId       String?
+  ambiente            AsaasAmbiente @default(SANDBOX)
+  integracaoAtiva     Boolean       @default(false)
+  dataConfiguracao    DateTime      @default(now())
   webhookConfiguredAt DateTime?
-  lastWebhookAt    DateTime?
-  lastWebhookEvent String?
-  ultimaValidacao  DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  lastWebhookAt       DateTime?
+  lastWebhookEvent    String?
+  ultimaValidacao     DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([ambiente])
+  @@schema("magiclawyer")
+}
+
+model ClicksignTenantConfig {
+  id                   String            @id @default(cuid())
+  tenantId             String            @unique
+  apiBase              String
+  accessTokenEncrypted String            @db.Text // Criptografado
+  ambiente             ClicksignAmbiente @default(SANDBOX)
+  integracaoAtiva      Boolean           @default(true)
+  dataConfiguracao     DateTime          @default(now())
+  ultimaValidacao      DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([ambiente, integracaoAtiva])
+  @@schema("magiclawyer")
+}
+
+model TenantChannelProvider {
+  id                   String                            @id @default(cuid())
+  tenantId             String
+  channel              NotificacaoCanal
+  provider             TenantChannelProviderType
+  displayName          String?
+  credentialsEncrypted String?                           @db.Text
+  configuration        Json?
+  active               Boolean                           @default(false)
+  healthStatus         TenantChannelProviderHealthStatus @default(NOT_CONFIGURED)
+  dataConfiguracao     DateTime                          @default(now())
+  lastValidatedAt      DateTime?
+  lastValidationMode   TenantChannelValidationMode?
+  lastErrorAt          DateTime?
+  lastErrorMessage     String?
+  createdAt            DateTime                          @default(now())
+  updatedAt            DateTime                          @updatedAt
+  tenant               Tenant                            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel])
+  @@index([tenantId, channel, active])
+  @@index([tenantId, healthStatus])
+  @@schema("magiclawyer")
+}
+
+model TenantChannelTemplate {
+  id        String           @id @default(cuid())
+  tenantId  String
+  channel   NotificacaoCanal
+  slug      String
+  title     String
+  body      String           @db.Text
+  variables Json?
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel, slug])
+  @@index([tenantId, channel, active])
+  @@schema("magiclawyer")
+}
+
+model MessageThread {
+  id            String                  @id @default(cuid())
+  tenantId      String
+  entityType    MessageThreadEntityType
+  entityId      String
+  subject       String?
+  status        MessageThreadStatus     @default(OPEN)
+  metadata      Json?
+  lastMessageAt DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, status, lastMessageAt])
+  @@schema("magiclawyer")
+}
+
+model Message {
+  id                String                     @id @default(cuid())
+  tenantId          String
+  threadId          String
+  direction         MessageDirection
+  channel           NotificacaoCanal
+  provider          TenantChannelProviderType?
+  providerMessageId String?
+  body              String                     @db.Text
+  metadata          Json?
+  sentAt            DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  tenant            Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread            MessageThread              @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  deliveries        MessageDelivery[]
+
+  @@index([tenantId, channel, createdAt])
+  @@index([threadId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model MessageDelivery {
+  id                String                     @id @default(cuid())
+  tenantId          String
+  messageId         String
+  channel           NotificacaoCanal
+  provider          TenantChannelProviderType?
+  providerMessageId String?
+  status            MessageDeliveryStatus      @default(PENDING)
+  errorCode         String?
+  errorMessage      String?
+  metadata          Json?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  tenant            Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message           Message                    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, channel, status])
+  @@index([messageId, status])
   @@schema("magiclawyer")
 }
 
@@ -430,28 +562,30 @@ model Usuario {
 }
 
 model SuperAdmin {
-  id                String               @id @default(cuid())
-  email             String               @unique
-  firstName         String
-  lastName          String
-  passwordHash      String?
-  image             String?
-  emailVerified     DateTime?
-  status            String               @default("ACTIVE")
-  lastLoginAt       DateTime?
-  lastLoginIp       String?
-  preferences       Json?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  configuracoes     ConfiguracaoPreco[]  @relation("SuperAdminConfiguracao")
-  juizesCriados     Juiz[]               @relation("SuperAdminJuiz")
-  pacotesJuiz       PacoteJuiz[]         @relation("SuperAdminPacoteJuiz")
-  logsAuditoria     SuperAdminAuditLog[]
-  tenantGerenciados Tenant[]             @relation("SuperAdminTenant")
-  supportTicketsAssigned Ticket[]        @relation("SupportTicketAssignee")
-  supportTicketsClosed Ticket[]          @relation("SupportTicketCloser")
-  supportTicketMessages TicketMessage[]  @relation("SupportTicketMessageAuthor")
-  supportTicketAttachments TicketAttachment[] @relation("SupportTicketAttachmentUploader")
+  id                       String               @id @default(cuid())
+  email                    String               @unique
+  firstName                String
+  lastName                 String
+  passwordHash             String?
+  image                    String?
+  emailVerified            DateTime?
+  status                   String               @default("ACTIVE")
+  lastLoginAt              DateTime?
+  lastLoginIp              String?
+  preferences              Json?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  configuracoes            ConfiguracaoPreco[]  @relation("SuperAdminConfiguracao")
+  juizesCriados            Juiz[]               @relation("SuperAdminJuiz")
+  pacotesJuiz              PacoteJuiz[]         @relation("SuperAdminPacoteJuiz")
+  logsAuditoria            SuperAdminAuditLog[]
+  tenantGerenciados        Tenant[]             @relation("SuperAdminTenant")
+  supportTicketsAssigned   Ticket[]             @relation("SupportTicketAssignee")
+  supportTicketsClosed     Ticket[]             @relation("SupportTicketCloser")
+  supportTicketMessages    TicketMessage[]      @relation("SupportTicketMessageAuthor")
+  supportTicketAttachments TicketAttachment[]   @relation("SupportTicketAttachmentUploader")
+  leadsAssigned            Lead[]               @relation("LeadAssignee")
+  leadNotes                LeadNote[]           @relation("LeadNoteAuthor")
 
   @@schema("magiclawyer")
 }
@@ -473,6 +607,56 @@ model SuperAdminAuditLog {
   @@index([acao])
   @@index([entidade])
   @@index([createdAt])
+  @@schema("magiclawyer")
+}
+
+model Lead {
+  id                     String      @id @default(cuid())
+  nome                   String
+  email                  String
+  telefone               String?
+  empresa                String?
+  cargo                  String?
+  interessePlano         String?
+  tamanhoEquipe          String?
+  horizonteContratacao   String?
+  objetivoPrincipal      String?
+  mensagem               String?     @db.Text
+  status                 LeadStatus  @default(NEW)
+  source                 LeadSource  @default(PRICING_CHAT)
+  transcript             Json?
+  metadata               Json?
+  assignedToSuperAdminId String?
+  createdByIp            String?
+  createdByUserAgent     String?
+  firstContactAt         DateTime?
+  lastInteractionAt      DateTime?
+  convertedAt            DateTime?
+  closedAt               DateTime?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  assignedToSuperAdmin   SuperAdmin? @relation("LeadAssignee", fields: [assignedToSuperAdminId], references: [id], onDelete: SetNull)
+  notes                  LeadNote[]
+
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@index([assignedToSuperAdminId])
+  @@index([email])
+  @@schema("magiclawyer")
+}
+
+model LeadNote {
+  id           String     @id @default(cuid())
+  leadId       String
+  superAdminId String
+  conteudo     String     @db.Text
+  createdAt    DateTime   @default(now())
+  lead         Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  superAdmin   SuperAdmin @relation("LeadNoteAuthor", fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+  @@index([superAdminId, createdAt])
   @@schema("magiclawyer")
 }
 
@@ -513,21 +697,21 @@ model Advogado {
   podeGerenciarClientes Boolean @default(true)
   podeAcessarFinanceiro Boolean @default(false)
 
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  usuario              Usuario               @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  clientes             AdvogadoCliente[]
-  contratos            Contrato[]            @relation("ContratoAdvogado")
-  honorarios           ContratoHonorario[]
-  historico            AdvogadoHistorico[]
-  documentoAssinaturas DocumentoAssinatura[]
-  eventos              Evento[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario                Usuario                 @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  clientes               AdvogadoCliente[]
+  contratos              Contrato[]              @relation("ContratoAdvogado")
+  honorarios             ContratoHonorario[]
+  historico              AdvogadoHistorico[]
+  documentoAssinaturas   DocumentoAssinatura[]
+  eventos                Evento[]
   agendaDisponibilidades AgendaDisponibilidade[]
-  pagamentoComissoes   PagamentoComissao[]
-  processos            Processo[]            @relation("ProcessoAdvogadoResponsavel")
-  procuracoes          ProcuracaoAdvogado[]
-  ProcessoParte        ProcessoParte[]
+  pagamentoComissoes     PagamentoComissao[]
+  processos              Processo[]              @relation("ProcessoAdvogadoResponsavel")
+  procuracoes            ProcuracaoAdvogado[]
+  ProcessoParte          ProcessoParte[]
 
   // Sistema de Gestão de Equipe
   vinculacoesServidas UsuarioVinculacao[] @relation("UsuarioAdvogado")
@@ -1895,6 +2079,7 @@ model Plano {
   subscriptions   TenantSubscription[]
   modulos         PlanoModulo[]
   versoes         PlanoVersao[]
+  reajustes       PlanoReajuste[]
   tenants         Tenant[]
 
   @@schema("magiclawyer")
@@ -1975,12 +2160,14 @@ model PlanoModulo {
   planoId    String
   moduloId   String
   habilitado Boolean  @default(true)
+  ordem      Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   plano      Plano    @relation(fields: [planoId], references: [id], onDelete: Cascade)
   modulo     Modulo   @relation(fields: [moduloId], references: [id])
 
   @@unique([planoId, moduloId])
+  @@index([planoId, ordem])
   @@index([moduloId])
   @@schema("magiclawyer")
 }
@@ -2012,10 +2199,12 @@ model PlanoVersaoModulo {
   planoVersaoId String
   moduloId      String
   habilitado    Boolean     @default(true)
+  ordem         Int         @default(0)
   planoVersao   PlanoVersao @relation(fields: [planoVersaoId], references: [id], onDelete: Cascade)
   modulo        Modulo      @relation(fields: [moduloId], references: [id])
 
   @@unique([planoVersaoId, moduloId])
+  @@index([planoVersaoId, ordem])
   @@index([moduloId])
   @@schema("magiclawyer")
 }
@@ -2025,6 +2214,10 @@ model TenantSubscription {
   tenantId               String             @unique
   planoId                String?
   planoVersaoId          String?
+  valorMensalContratado  Decimal?           @db.Decimal(10, 2)
+  valorAnualContratado   Decimal?           @db.Decimal(10, 2)
+  moedaContratada        String             @default("BRL")
+  precoCongelado         Boolean            @default(true)
   planRevision           Int                @default(1)
   status                 SubscriptionStatus @default(TRIAL)
   dataInicio             DateTime           @default(now())
@@ -2048,6 +2241,52 @@ model TenantSubscription {
   @@index([asaasCustomerId])
   @@index([planoVersaoId])
   @@index([asaasSubscriptionId])
+  @@schema("magiclawyer")
+}
+
+model PlanoReajuste {
+  id                       String                     @id @default(cuid())
+  planoId                  String
+  valorMensalAnterior      Decimal?                   @db.Decimal(10, 2)
+  valorMensalNovo          Decimal?                   @db.Decimal(10, 2)
+  valorAnualAnterior       Decimal?                   @db.Decimal(10, 2)
+  valorAnualNovo           Decimal?                   @db.Decimal(10, 2)
+  moeda                    String                     @default("BRL")
+  vigenciaEm               DateTime
+  avisoDiasAntes           Int                        @default(7)
+  avisoDiasDepois          Int                        @default(3)
+  aplicarAssinaturasAtivas Boolean                    @default(false)
+  status                   PlanoReajusteStatus        @default(SCHEDULED)
+  aplicadoEm               DateTime?
+  canceladoEm              DateTime?
+  motivoCancelamento       String?
+  observacoes              String?
+  criadoPorEmail           String?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  plano                    Plano                      @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  comunicacoes             PlanoReajusteComunicacao[]
+
+  @@index([planoId, status])
+  @@index([vigenciaEm])
+  @@schema("magiclawyer")
+}
+
+model PlanoReajusteComunicacao {
+  id            String                       @id @default(cuid())
+  reajusteId    String
+  tenantId      String
+  fase          PlanoReajusteFaseComunicacao
+  referenciaDia DateTime
+  emailEnviado  Boolean                      @default(false)
+  inAppCriado   Boolean                      @default(false)
+  canais        Json?
+  createdAt     DateTime                     @default(now())
+  reajuste      PlanoReajuste                @relation(fields: [reajusteId], references: [id], onDelete: Cascade)
+  tenant        Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([reajusteId, tenantId, fase, referenciaDia])
+  @@index([tenantId, fase, referenciaDia])
   @@schema("magiclawyer")
 }
 
@@ -2160,19 +2399,19 @@ model AuditLog {
 }
 
 model AgendaDisponibilidade {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   tenantId        String
   usuarioId       String
   advogadoId      String?
   diaSemana       Int
-  ativo           Boolean  @default(true)
-  horaInicio      String   @default("08:00")
-  horaFim         String   @default("18:00")
+  ativo           Boolean   @default(true)
+  horaInicio      String    @default("08:00")
+  horaFim         String    @default("18:00")
   intervaloInicio String?
   intervaloFim    String?
   observacoes     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   advogado        Advogado? @relation(fields: [advogadoId], references: [id], onDelete: SetNull)
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   usuario         Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -2530,35 +2769,35 @@ model ConfiguracaoPreco {
 }
 
 model Ticket {
-  id          String             @id @default(cuid())
-  title       String
-  description String?
-  status      TicketStatus       @default(OPEN)
-  priority    TicketPriority     @default(MEDIUM)
-  category    TicketCategory     @default(GENERAL)
-  supportLevel TicketSupportLevel @default(N1)
-  userId      String
-  tenantId    String
+  id                     String                   @id @default(cuid())
+  title                  String
+  description            String?
+  status                 TicketStatus             @default(OPEN)
+  priority               TicketPriority           @default(MEDIUM)
+  category               TicketCategory           @default(GENERAL)
+  supportLevel           TicketSupportLevel       @default(N1)
+  userId                 String
+  tenantId               String
   assignedToSuperAdminId String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  closedAt    DateTime?
-  closureCategory TicketCategory?
-  resolutionOutcome TicketResolutionOutcome?
-  closureSummary String?
-  closedBySuperAdminId String?
-  requesterRating Int?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  closedAt               DateTime?
+  closureCategory        TicketCategory?
+  resolutionOutcome      TicketResolutionOutcome?
+  closureSummary         String?
+  closedBySuperAdminId   String?
+  requesterRating        Int?
   requesterRatingComment String?
-  requesterRatedAt DateTime?
-  firstResponseAt DateTime?
-  requesterLastViewedAt DateTime?
-  supportLastViewedAt DateTime?
-  attachments TicketAttachment[]
-  messages    TicketMessage[]
-  tenant      Tenant             @relation("TenantTickets", fields: [tenantId], references: [id], onDelete: Cascade)
-  user        Usuario            @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
-  assignedToSuperAdmin SuperAdmin? @relation("SupportTicketAssignee", fields: [assignedToSuperAdminId], references: [id], onDelete: SetNull)
-  closedBySuperAdmin SuperAdmin? @relation("SupportTicketCloser", fields: [closedBySuperAdminId], references: [id], onDelete: SetNull)
+  requesterRatedAt       DateTime?
+  firstResponseAt        DateTime?
+  requesterLastViewedAt  DateTime?
+  supportLastViewedAt    DateTime?
+  attachments            TicketAttachment[]
+  messages               TicketMessage[]
+  tenant                 Tenant                   @relation("TenantTickets", fields: [tenantId], references: [id], onDelete: Cascade)
+  user                   Usuario                  @relation("UserTickets", fields: [userId], references: [id], onDelete: Cascade)
+  assignedToSuperAdmin   SuperAdmin?              @relation("SupportTicketAssignee", fields: [assignedToSuperAdminId], references: [id], onDelete: SetNull)
+  closedBySuperAdmin     SuperAdmin?              @relation("SupportTicketCloser", fields: [closedBySuperAdminId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([tenantId])
@@ -2573,21 +2812,21 @@ model Ticket {
 }
 
 model TicketMessage {
-  id         String   @id @default(cuid())
-  content    String
-  isInternal Boolean  @default(false)
-  authorType TicketMessageAuthorType @default(TENANT_USER)
-  ticketId   String
-  userId     String?
-  superAdminId String?
+  id                String                  @id @default(cuid())
+  content           String
+  isInternal        Boolean                 @default(false)
+  authorType        TicketMessageAuthorType @default(TENANT_USER)
+  ticketId          String
+  userId            String?
+  superAdminId      String?
   readByRequesterAt DateTime?
-  readBySupportAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  attachments TicketAttachment[] @relation("TicketMessageAttachments")
-  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user       Usuario?  @relation("UserMessages", fields: [userId], references: [id], onDelete: SetNull)
-  superAdmin SuperAdmin? @relation("SupportTicketMessageAuthor", fields: [superAdminId], references: [id], onDelete: SetNull)
+  readBySupportAt   DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  attachments       TicketAttachment[]      @relation("TicketMessageAttachments")
+  ticket            Ticket                  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user              Usuario?                @relation("UserMessages", fields: [userId], references: [id], onDelete: SetNull)
+  superAdmin        SuperAdmin?             @relation("SupportTicketMessageAuthor", fields: [superAdminId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
   @@index([userId])
@@ -2600,21 +2839,21 @@ model TicketMessage {
 }
 
 model TicketAttachment {
-  id           String   @id @default(cuid())
-  filename     String
-  originalName String
-  mimeType     String
-  size         Int
-  url          String
-  ticketId     String
+  id              String         @id @default(cuid())
+  filename        String
+  originalName    String
+  mimeType        String
+  size            Int
+  url             String
+  ticketId        String
   ticketMessageId String?
-  userId       String?
-  superAdminId String?
-  createdAt    DateTime @default(now())
-  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  message      TicketMessage? @relation("TicketMessageAttachments", fields: [ticketMessageId], references: [id], onDelete: SetNull)
-  user         Usuario? @relation("UserAttachments", fields: [userId], references: [id], onDelete: SetNull)
-  superAdmin   SuperAdmin? @relation("SupportTicketAttachmentUploader", fields: [superAdminId], references: [id], onDelete: SetNull)
+  userId          String?
+  superAdminId    String?
+  createdAt       DateTime       @default(now())
+  ticket          Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  message         TicketMessage? @relation("TicketMessageAttachments", fields: [ticketMessageId], references: [id], onDelete: SetNull)
+  user            Usuario?       @relation("UserAttachments", fields: [userId], references: [id], onDelete: SetNull)
+  superAdmin      SuperAdmin?    @relation("SupportTicketAttachmentUploader", fields: [superAdminId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
   @@index([ticketMessageId])
@@ -2961,6 +3200,21 @@ enum PlanoVersaoStatus {
   @@schema("magiclawyer")
 }
 
+enum PlanoReajusteStatus {
+  SCHEDULED
+  ACTIVE
+  CANCELED
+
+  @@schema("magiclawyer")
+}
+
+enum PlanoReajusteFaseComunicacao {
+  PRE_VIGENCIA
+  POS_VIGENCIA
+
+  @@schema("magiclawyer")
+}
+
 enum InvoiceStatus {
   RASCUNHO
   ABERTA
@@ -3022,6 +3276,26 @@ enum TicketPriority {
   MEDIUM
   HIGH
   URGENT
+
+  @@schema("magiclawyer")
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  CONTACTED
+  NEGOTIATION
+  WON
+  LOST
+  SPAM
+
+  @@schema("magiclawyer")
+}
+
+enum LeadSource {
+  PRICING_CHAT
+  MANUAL_ADMIN
+  IMPORT
 
   @@schema("magiclawyer")
 }
@@ -3266,6 +3540,81 @@ enum BoardVisibilidade {
 enum AsaasAmbiente {
   SANDBOX
   PRODUCAO
+
+  @@schema("magiclawyer")
+}
+
+enum ClicksignAmbiente {
+  SANDBOX
+  PRODUCAO
+
+  @@schema("magiclawyer")
+}
+
+enum TenantChannelProviderType {
+  INTERNAL_MOCK
+  META_CLOUD_API
+  EVOLUTION_API
+  TWILIO_WHATSAPP
+  TELEGRAM_BOT
+  TWILIO_SMS
+
+  @@schema("magiclawyer")
+}
+
+enum TenantChannelProviderHealthStatus {
+  NOT_CONFIGURED
+  INACTIVE
+  PENDING
+  HEALTHY
+  ERROR
+
+  @@schema("magiclawyer")
+}
+
+enum TenantChannelValidationMode {
+  MOCK
+  STRUCTURAL
+  NETWORK
+
+  @@schema("magiclawyer")
+}
+
+enum MessageThreadEntityType {
+  CLIENTE
+  USUARIO
+  TICKET
+  LEAD
+  TENANT
+
+  @@schema("magiclawyer")
+}
+
+enum MessageThreadStatus {
+  OPEN
+  PENDING
+  CLOSED
+  ARCHIVED
+  AUTOMATED
+
+  @@schema("magiclawyer")
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+  INTERNAL
+
+  @@schema("magiclawyer")
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+  CANCELED
 
   @@schema("magiclawyer")
 }

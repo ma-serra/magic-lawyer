@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction, } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import useSWR from "swr";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -21,7 +28,9 @@ import { Tabs, Tab } from "@heroui/tabs";
 import { addToast } from "@heroui/toast";
 import {
   Building2,
+  Copy,
   CreditCard,
+  FileSignature,
   Users2,
   Palette,
   FileText,
@@ -43,7 +52,14 @@ import {
   Clock,
   Users,
   Zap,
+  LifeBuoy,
+  MessageSquare,
+  PlugZap,
+  Send,
+  Smartphone,
 } from "lucide-react";
+import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import NextLink from "next/link";
 
 import {
   getTenantManagementData,
@@ -64,6 +80,11 @@ import {
   testTenantEmailConnection,
   logApiKeyView,
 } from "@/app/actions/tenant-email-credentials";
+import {
+  testTenantAsaasConnectionAsSuperAdmin,
+  testTenantClicksignConnectionAsSuperAdmin,
+  testTenantChannelProviderAsSuperAdmin,
+} from "@/app/actions/admin-integrations";
 import { UserManagementModal } from "@/components/user-management-modal";
 import {
   InvoiceStatus,
@@ -129,6 +150,74 @@ const timezoneOptions = [
   "America/New_York",
   "Europe/Lisbon",
 ];
+
+const TENANT_ADMIN_INTEGRATION_KEYS = [
+  "email",
+  "clicksign",
+  "certificates",
+  "asaas",
+  "whatsapp",
+  "telegram",
+  "sms",
+] as const;
+
+type TenantAdminIntegrationKey = (typeof TENANT_ADMIN_INTEGRATION_KEYS)[number];
+
+const TENANT_ADMIN_INTEGRATION_OPTIONS: Array<{
+  key: TenantAdminIntegrationKey;
+  label: string;
+  description: string;
+  icon: ReactNode;
+}> = [
+  {
+    key: "email",
+    label: "Email",
+    description: "Credenciais de envio usadas pelo tenant em notificações e mensagens transacionais.",
+    icon: <Mail className="h-4 w-4" />,
+  },
+  {
+    key: "clicksign",
+    label: "ClickSign",
+    description: "Assinatura digital por tenant com fallback controlado e isolamento de credenciais.",
+    icon: <FileSignature className="h-4 w-4" />,
+  },
+  {
+    key: "certificates",
+    label: "Certificados e PJe",
+    description: "Política de certificado do escritório e integrações PJe por tenant.",
+    icon: <Shield className="h-4 w-4" />,
+  },
+  {
+    key: "asaas",
+    label: "Asaas",
+    description: "Billing e cobrança do escritório com configuração segregada por tenant.",
+    icon: <CreditCard className="h-4 w-4" />,
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    description: "Provider omnichannel do tenant para mensagens operacionais e automações.",
+    icon: <MessageSquare className="h-4 w-4" />,
+  },
+  {
+    key: "telegram",
+    label: "Telegram",
+    description: "Bot ou provider alternativo do tenant para mensagens inbound/outbound.",
+    icon: <Send className="h-4 w-4" />,
+  },
+  {
+    key: "sms",
+    label: "SMS",
+    description: "Canal de contingência do tenant para avisos críticos e fallback transacional.",
+    icon: <Smartphone className="h-4 w-4" />,
+  },
+] as const;
+
+function isTenantAdminIntegrationKey(
+  value: string,
+): value is TenantAdminIntegrationKey {
+  return (TENANT_ADMIN_INTEGRATION_KEYS as readonly string[]).includes(value);
+}
 
 const fetchTenant = async (
   _key: string,
@@ -225,9 +314,29 @@ export function TenantManagementContent({
   const [isSavingSubscription, setIsSavingSubscription] = useState(false);
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+  const [showInternalData, setShowInternalData] = useState(false);
+  const [selectedIntegration, setSelectedIntegration] =
+    useState<TenantAdminIntegrationKey>("email");
   const [tenantStatusState, setTenantStatusState] = useState<TenantStatus>(
     tenantData.tenant.status,
   );
+
+  const handleCopy = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      addToast({
+        title: `${label} copiado`,
+        description: "Valor copiado para a área de transferência.",
+        color: "success",
+      });
+    } catch {
+      addToast({
+        title: "Falha ao copiar",
+        description: "Não foi possível copiar agora. Tente novamente.",
+        color: "danger",
+      });
+    }
+  };
 
   useEffect(() => {
     setDetailsForm({
@@ -502,52 +611,126 @@ export function TenantManagementContent({
   }));
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card className="border border-primary/20 bg-primary/5">
-        <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <Building2 className="h-5 w-5 text-primary" />
-              <p className="text-lg font-semibold text-primary">
-                {tenantData.tenant.name}
-              </p>
-              <Chip
-                color={statusChipColor(tenantStatusState)}
-                size="sm"
-                variant="flat"
-              >
-                {statusLabel(tenantStatusState)}
-              </Chip>
-            </div>
-            <p className="text-xs text-primary/80">
-              Slug: {tenantData.tenant.slug}
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title={`Tenant · ${tenantData.tenant.name}`}
+        description={`Visão operacional do escritório (${tenantData.tenant.slug}) para atendimento de suporte, assinatura, usuários e auditoria.`}
+        actions={
+          <>
+            <Chip color={statusChipColor(tenantStatusState)} size="sm" variant="flat">
+              {statusLabel(tenantStatusState)}
+            </Chip>
+            <Chip color="secondary" size="sm" variant="flat">
+              Plano: {tenantData.subscription.planName ?? "Custom"}
+            </Chip>
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          label="Usuários"
+          value={numberFormatter.format(tenantData.metrics.usuarios)}
+          helper="Base ativa do tenant"
+          tone="primary"
+        />
+        <PeopleMetricCard
+          label="Processos"
+          value={numberFormatter.format(tenantData.metrics.processos)}
+          helper="Carteira processual"
+          tone="secondary"
+        />
+        <PeopleMetricCard
+          label="Clientes"
+          value={numberFormatter.format(tenantData.metrics.clientes)}
+          helper="Clientes cadastrados"
+          tone="success"
+        />
+        <PeopleMetricCard
+          label="Receita 90 dias"
+          value={formatCurrency(tenantData.metrics.revenue90d)}
+          helper={`Em aberto: ${numberFormatter.format(tenantData.metrics.outstandingInvoices)} fatura(s)`}
+          tone="warning"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+        <Button
+          as={NextLink}
+          href={`/admin/suporte?tenantId=${tenantId}`}
+          radius="full"
+          size="sm"
+          startContent={<LifeBuoy className="h-4 w-4" />}
+          variant="flat"
+        >
+          Atender no suporte
+        </Button>
+        <Button
+          radius="full"
+          size="sm"
+          startContent={<Copy className="h-4 w-4" />}
+          variant="bordered"
+          onPress={() => handleCopy(tenantData.tenant.id, "ID do tenant")}
+        >
+          Copiar ID
+        </Button>
+        <Button
+          radius="full"
+          size="sm"
+          startContent={<Copy className="h-4 w-4" />}
+          variant="bordered"
+          onPress={() => handleCopy(tenantData.tenant.slug, "Slug")}
+        >
+          Copiar slug
+        </Button>
+        <Button
+          radius="full"
+          size="sm"
+          variant="light"
+          onPress={() => setShowInternalData((prev) => !prev)}
+        >
+          {showInternalData ? "Ocultar dados internos" : "Dados internos"}
+        </Button>
+      </div>
+
+      {showInternalData ? (
+        <Card className="border border-warning/30 bg-warning/5">
+          <CardBody className="space-y-2 text-xs text-default-500">
+            <p className="font-semibold uppercase tracking-[0.2em] text-warning">
+              Uso interno do suporte (não compartilhar)
             </p>
-            <div className="flex flex-wrap gap-2 text-xs text-primary/70">
-              {tenantData.tenant.domain ? (
-                <span>Domínio: {tenantData.tenant.domain}</span>
-              ) : null}
-              <span>Timezone: {tenantData.tenant.timezone}</span>
-              <span>Criado em: {formatDate(tenantData.tenant.createdAt)}</span>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <span>ID do tenant: {tenantData.tenant.id}</span>
+              <span>Slug: {tenantData.tenant.slug}</span>
+              <span>Status: {statusLabel(tenantStatusState)}</span>
+              <span>
+                Subscription ID: {tenantData.subscription.id ?? "Não possui"}
+              </span>
+              <span>Plan ID: {tenantData.subscription.planId ?? "Não possui"}</span>
+              <span>Atualizado em: {formatDateTime(tenantData.tenant.updatedAt)}</span>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-3 text-xs text-primary/70">
-            <Chip color="secondary" size="sm" variant="flat">
-              Plano atual: {tenantData.subscription.planName ?? "Custom"}
-            </Chip>
-            <Chip color="secondary" size="sm" variant="flat">
-              Receita 90d: {formatCurrency(tenantData.metrics.revenue90d)}
-            </Chip>
-          </div>
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-xs text-default-400">
+        <div className="flex flex-wrap gap-3">
+          <span>Slug: {tenantData.tenant.slug}</span>
+          {tenantData.tenant.domain ? <span>• Domínio: {tenantData.tenant.domain}</span> : null}
+          <span>• Fuso: {tenantData.tenant.timezone}</span>
+          <span>• Criado em: {formatDate(tenantData.tenant.createdAt)}</span>
+          <span>• Atualizado em: {formatDateTime(tenantData.tenant.updatedAt)}</span>
+        </div>
+      </div>
 
       <div className="w-full">
         <Tabs
           aria-label="Painel de gerenciamento do tenant"
           classNames={{
             base: "w-full",
-            tabList: "gap-2 justify-center w-full",
-            tab: "min-w-[180px] px-8 py-4 text-base font-medium",
+            tabList: "w-full gap-2 overflow-x-auto justify-start lg:justify-center",
+            tab: "min-w-[150px] px-4 py-3 text-sm font-medium md:min-w-[180px] md:px-8 md:py-4 md:text-base",
             panel: "w-full",
           }}
           color="primary"
@@ -574,15 +757,21 @@ export function TenantManagementContent({
           </Tab>
 
           <Tab
-            key="email"
+            key="integracoes"
             title={
               <TabTitle
-                icon={<Mail className="h-4 w-4" />}
-                label="Envio de Email"
+                icon={<PlugZap className="h-4 w-4" />}
+                label="Integrações"
               />
             }
           >
-            <EmailTab tenantId={tenantId} />
+            <IntegrationsTab
+              integrations={tenantData.integrations}
+              selectedIntegration={selectedIntegration}
+              tenantId={tenantId}
+              onRefresh={() => revalidateWithErrorHandling("integracoes")}
+              onIntegrationChange={setSelectedIntegration}
+            />
           </Tab>
 
           <Tab
@@ -669,7 +858,7 @@ export function TenantManagementContent({
         onClose={handleCloseUserModal}
         onSuccess={handleUserModalSuccess}
       />
-    </div>
+    </section>
   );
 }
 
@@ -696,7 +885,7 @@ function OverviewTab({
     <div className="flex flex-col gap-6">
       <Card className="border border-white/10 bg-background/70 backdrop-blur">
         <CardHeader className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-foreground">
             Informações gerais
           </h2>
           <p className="text-sm text-default-400">
@@ -815,7 +1004,7 @@ function OverviewTab({
 
       <Card className="border border-white/10 bg-background/70 backdrop-blur">
         <CardHeader className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-white">Status do tenant</h2>
+          <h2 className="text-lg font-semibold text-foreground">Status do tenant</h2>
           <p className="text-sm text-default-400">
             Controle de acesso global do tenant à plataforma.
           </p>
@@ -839,7 +1028,7 @@ function OverviewTab({
               >
                 <CardBody className="space-y-3">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-white">
+                    <p className="text-sm font-semibold text-foreground">
                       {option.label}
                     </p>
                     <p className="text-xs text-default-400">
@@ -900,7 +1089,7 @@ function FinanceTab({
       <Card className="border border-white/10 bg-background/70 backdrop-blur">
         <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-foreground">
               Plano e assinatura
             </h2>
             <p className="text-sm text-default-400">
@@ -998,7 +1187,7 @@ function FinanceTab({
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <Card className="border border-white/10 bg-background/70 backdrop-blur">
           <CardHeader className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-white">Indicadores</h2>
+            <h2 className="text-lg font-semibold text-foreground">Indicadores</h2>
             <p className="text-sm text-default-400">
               Métricas resumidas dos últimos 90 dias.
             </p>
@@ -1031,7 +1220,7 @@ function FinanceTab({
         </Card>
         <Card className="border border-white/10 bg-background/70 backdrop-blur">
           <CardHeader className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-foreground">
               Faturas recentes
             </h2>
             <p className="text-sm text-default-400">
@@ -1046,7 +1235,7 @@ function FinanceTab({
                   key={invoice.id}
                   className="rounded-xl border border-white/10 bg-background/60 p-3"
                 >
-                  <div className="flex items-center justify-between text-sm font-medium text-white">
+                  <div className="flex items-center justify-between text-sm font-medium text-foreground">
                     <span>
                       {invoice.numero ?? `Fatura ${invoice.id.slice(0, 6)}`}
                     </span>
@@ -1094,7 +1283,7 @@ function UsersTab({
     <Card className="border border-white/10 bg-background/70 backdrop-blur">
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-foreground">
             Usuários do tenant
           </h2>
           <p className="text-sm text-default-400">
@@ -1229,7 +1418,7 @@ function BrandingTab({
   return (
     <Card className="border border-white/10 bg-background/70 backdrop-blur">
       <CardHeader className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-white">Identidade visual</h2>
+        <h2 className="text-lg font-semibold text-foreground">Identidade visual</h2>
         <p className="text-sm text-default-400">
           Ajuste cores e ativos visuais do tenant.
         </p>
@@ -1303,6 +1492,793 @@ function BrandingTab({
     </Card>
   );
 }
+
+function IntegrationStatCard({
+  label,
+  value,
+  helper,
+  chipColor = "default",
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  chipColor?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+        {label}
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-base font-semibold text-foreground">{value}</span>
+        <Chip color={chipColor} size="sm" variant="flat">
+          {value}
+        </Chip>
+      </div>
+      <p className="mt-2 text-sm text-default-400">{helper}</p>
+    </div>
+  );
+}
+
+function resolveChannelHealthColor(
+  healthStatus: TenantManagementData["integrations"]["whatsapp"]["healthStatus"],
+): "default" | "primary" | "secondary" | "success" | "warning" | "danger" {
+  switch (healthStatus) {
+    case "HEALTHY":
+      return "success";
+    case "PENDING":
+      return "warning";
+    case "ERROR":
+      return "danger";
+    case "INACTIVE":
+      return "secondary";
+    default:
+      return "default";
+  }
+}
+
+function resolveChannelHealthLabel(
+  healthStatus: TenantManagementData["integrations"]["whatsapp"]["healthStatus"],
+) {
+  switch (healthStatus) {
+    case "HEALTHY":
+      return "Saudável";
+    case "PENDING":
+      return "Estrutural";
+    case "ERROR":
+      return "Erro";
+    case "INACTIVE":
+      return "Inativo";
+    default:
+      return "Não configurado";
+  }
+}
+
+function ChannelProviderAdminPanel({
+  title,
+  description,
+  summary,
+  isTesting,
+  onTestConnection,
+}: {
+  title: string;
+  description: string;
+  summary: TenantManagementData["integrations"]["whatsapp"];
+  isTesting: boolean;
+  onTestConnection: () => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+              <p className="text-sm text-default-400">{description}</p>
+            </div>
+            <Button
+              color="primary"
+              isDisabled={!summary.id}
+              isLoading={isTesting}
+              radius="full"
+              startContent={!isTesting ? <Zap className="h-4 w-4" /> : null}
+              onPress={onTestConnection}
+            >
+              {isTesting ? "Validando..." : "Validar"}
+            </Button>
+          </div>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <IntegrationStatCard
+              chipColor={resolveChannelHealthColor(summary.healthStatus)}
+              helper="Leitura administrativa do estado operacional atual"
+              label="Saúde"
+              value={resolveChannelHealthLabel(summary.healthStatus)}
+            />
+            <IntegrationStatCard
+              chipColor={summary.active ? "success" : "secondary"}
+              helper="Canal salvo pelo tenant como ativo ou inativo"
+              label="Ativação"
+              value={summary.active ? "Ativo" : "Inativo"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.hasCredentials ? "success" : "danger"}
+              helper="Painel admin só indica presença da credencial"
+              label="Credencial"
+              value={summary.hasCredentials ? "Presente" : "Ausente"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.lastValidatedAt ? "success" : "default"}
+              helper="Última validação registrada para o provider"
+              label="Validação"
+              value={
+                summary.lastValidatedAt
+                  ? formatDateTime(summary.lastValidatedAt.toISOString())
+                  : "Não validado"
+              }
+            />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Provider: <strong>{summary.providerLabel ?? "Não configurado"}</strong>
+              </p>
+              <p>
+                Nome operacional:{" "}
+                <strong>{summary.displayName ?? "Não informado"}</strong>
+              </p>
+              <p>
+                Data de configuração:{" "}
+                <strong>
+                  {summary.dataConfiguracao
+                    ? formatDateTime(summary.dataConfiguracao.toISOString())
+                    : "Não informado"}
+                </strong>
+              </p>
+              <p>
+                Modo de validação:{" "}
+                <strong>{summary.lastValidationMode ?? "Não executado"}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Identificadores públicos</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              {summary.configSummary.length > 0 ? (
+                summary.configSummary.map((item) => (
+                  <p key={item.key}>
+                    {item.label}: <strong>{item.value}</strong>
+                  </p>
+                ))
+              ) : (
+                <p>Nenhum identificador público salvo para este canal.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Readiness operacional</p>
+            <p className="mt-2">{summary.healthHint}</p>
+            {summary.lastErrorMessage ? (
+              <p className="mt-2 text-danger-300">
+                Último erro: <strong>{summary.lastErrorMessage}</strong>
+              </p>
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function ClicksignAdminPanel({
+  summary,
+  isTesting,
+  onTestConnection,
+}: {
+  summary: TenantManagementData["integrations"]["clicksign"];
+  isTesting: boolean;
+  onTestConnection: () => Promise<void>;
+}) {
+  const sourceTone =
+    summary.effectiveSource === "TENANT"
+      ? "success"
+      : summary.effectiveSource === "GLOBAL"
+        ? "warning"
+        : summary.effectiveSource === "MOCK"
+          ? "secondary"
+          : summary.effectiveSource === "DISABLED"
+            ? "danger"
+            : "default";
+
+  const sourceLabel =
+    summary.effectiveSource === "TENANT"
+      ? "Configuração do tenant"
+      : summary.effectiveSource === "GLOBAL"
+        ? "Fallback global"
+        : summary.effectiveSource === "MOCK"
+          ? "Mock local"
+          : summary.effectiveSource === "DISABLED"
+            ? "Desativada"
+            : "Não configurada";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                ClickSign do tenant
+              </h2>
+              <p className="text-sm text-default-400">
+                Leitura administrativa da integração de assinatura digital sem expor
+                token. O tenant continua responsável pela edição da credencial.
+              </p>
+            </div>
+            <Button
+              color="primary"
+              isDisabled={
+                summary.effectiveSource === "DISABLED" ||
+                summary.effectiveSource === "NONE"
+              }
+              isLoading={isTesting}
+              radius="full"
+              startContent={!isTesting ? <Zap className="h-4 w-4" /> : null}
+              onPress={onTestConnection}
+            >
+              {isTesting ? "Testando..." : "Testar conexão"}
+            </Button>
+          </div>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <IntegrationStatCard
+              chipColor={sourceTone}
+              helper="Origem efetiva usada pelo fluxo de assinatura"
+              label="Origem"
+              value={sourceLabel}
+            />
+            <IntegrationStatCard
+              chipColor={summary.ambiente === "PRODUCAO" ? "warning" : "secondary"}
+              helper="Ambiente salvo ou inferido para a integração"
+              label="Ambiente"
+              value={summary.ambiente === "PRODUCAO" ? "Produção" : "Sandbox"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.hasAccessToken ? "success" : "danger"}
+              helper="Super admin só enxerga presença da credencial, não o segredo"
+              label="Credencial"
+              value={summary.hasAccessToken ? "Presente" : "Ausente"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.ultimaValidacao ? "success" : "default"}
+              helper="Última validação executada pelo tenant"
+              label="Validação"
+              value={
+                summary.ultimaValidacao
+                  ? formatDateTime(summary.ultimaValidacao.toISOString())
+                  : "Não validado"
+              }
+            />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Configuração salva:{" "}
+                <strong>{summary.hasTenantConfig ? "Sim" : "Não"}</strong>
+              </p>
+              <p>
+                Integração ativa:{" "}
+                <strong>{summary.integracaoAtiva ? "Sim" : "Não"}</strong>
+              </p>
+              <p>
+                API base do tenant:{" "}
+                <span className="font-mono text-xs">
+                  {summary.apiBase ?? "Não configurada"}
+                </span>
+              </p>
+              <p>
+                Data de configuração:{" "}
+                <strong>
+                  {summary.dataConfiguracao
+                    ? formatDateTime(summary.dataConfiguracao.toISOString())
+                    : "Não informado"}
+                </strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Fallback disponível</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Fallback ativo:{" "}
+                <strong>{summary.fallbackAvailable ? "Sim" : "Não"}</strong>
+              </p>
+              <p>
+                Tipo: <strong>{summary.fallbackSource}</strong>
+              </p>
+              <p>
+                Base do fallback:{" "}
+                <span className="font-mono text-xs">{summary.fallbackApiBase}</span>
+              </p>
+              <p>
+                Ambiente do fallback:{" "}
+                <strong>
+                  {summary.fallbackAmbiente === "PRODUCAO"
+                    ? "Produção"
+                    : "Sandbox"}
+                </strong>
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function AsaasAdminPanel({
+  summary,
+  isTesting,
+  onTestConnection,
+}: {
+  summary: TenantManagementData["integrations"]["asaas"];
+  isTesting: boolean;
+  onTestConnection: () => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Asaas do tenant
+              </h2>
+              <p className="text-sm text-default-400">
+                Visão operacional da integração financeira do escritório, incluindo
+                ambiente, proteção de webhook e último sinal recebido.
+              </p>
+            </div>
+            <Button
+              color="primary"
+              isDisabled={!summary.id || !summary.integracaoAtiva}
+              isLoading={isTesting}
+              radius="full"
+              startContent={!isTesting ? <Zap className="h-4 w-4" /> : null}
+              onPress={onTestConnection}
+            >
+              {isTesting ? "Testando..." : "Testar conexão"}
+            </Button>
+          </div>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <IntegrationStatCard
+              chipColor={summary.integracaoAtiva ? "success" : "warning"}
+              helper="Status operacional salvo no tenant"
+              label="Integração"
+              value={summary.integracaoAtiva ? "Ativa" : "Pendente"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.ambiente === "PRODUCAO" ? "warning" : "secondary"}
+              helper="Ambiente financeiro em uso"
+              label="Ambiente"
+              value={summary.ambiente === "PRODUCAO" ? "Produção" : "Sandbox"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.hasApiKey ? "success" : "danger"}
+              helper="Leitura administrativa não expõe a API key"
+              label="API key"
+              value={summary.hasApiKey ? "Presente" : "Ausente"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.isWebhookProtected ? "success" : "warning"}
+              helper="Proteção por token do tenant ou segredo global"
+              label="Webhook"
+              value={summary.isWebhookProtected ? "Protegido" : "Pendente"}
+            />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Conta Asaas: <strong>{summary.asaasAccountId ?? "Não informada"}</strong>
+              </p>
+              <p>
+                Wallet ID: <strong>{summary.asaasWalletId ?? "Não informado"}</strong>
+              </p>
+              <p>
+                Data de configuração:{" "}
+                <strong>
+                  {summary.dataConfiguracao
+                    ? formatDateTime(summary.dataConfiguracao.toISOString())
+                    : "Não informado"}
+                </strong>
+              </p>
+              <p>
+                Última validação:{" "}
+                <strong>
+                  {summary.ultimaValidacao
+                    ? formatDateTime(summary.ultimaValidacao.toISOString())
+                    : "Não validada"}
+                </strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Webhook</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                URL: <span className="font-mono text-xs">{summary.webhookUrl}</span>
+              </p>
+              <p>
+                Token por tenant:{" "}
+                <strong>{summary.hasWebhookAccessToken ? "Sim" : "Não"}</strong>
+              </p>
+              <p>
+                Segredo global:{" "}
+                <strong>
+                  {summary.globalWebhookSecretConfigured ? "Configurado" : "Ausente"}
+                </strong>
+              </p>
+              <p>
+                Webhook configurado em:{" "}
+                <strong>
+                  {summary.webhookConfiguredAt
+                    ? formatDateTime(summary.webhookConfiguredAt.toISOString())
+                    : "Não informado"}
+                </strong>
+              </p>
+              <p>
+                Último webhook:{" "}
+                <strong>
+                  {summary.lastWebhookAt
+                    ? formatDateTime(summary.lastWebhookAt.toISOString())
+                    : "Nenhum"}
+                </strong>
+              </p>
+              <p>
+                Último evento: <strong>{summary.lastWebhookEvent ?? "Nenhum"}</strong>
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function CertificatesAdminPanel({
+  summary,
+}: {
+  summary: TenantManagementData["integrations"]["certificates"];
+}) {
+  const policyLabel =
+    summary.policy === "OFFICE"
+      ? "Escritório"
+      : summary.policy === "LAWYER"
+        ? "Advogado"
+        : "Híbrida";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-foreground">
+            Certificados e PJe
+          </h2>
+          <p className="text-sm text-default-400">
+            Visão resumida da política do tenant, volume de certificados e sinais
+            de risco operacional para integrações PJe.
+          </p>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <IntegrationStatCard
+              chipColor="secondary"
+              helper="Política ativa de uso de certificados"
+              label="Política"
+              value={policyLabel}
+            />
+            <IntegrationStatCard
+              chipColor={summary.activeCertificates > 0 ? "success" : "warning"}
+              helper="Certificados ativos disponíveis no tenant"
+              label="Ativos"
+              value={String(summary.activeCertificates)}
+            />
+            <IntegrationStatCard
+              chipColor={summary.expiredCertificates > 0 ? "danger" : "success"}
+              helper="Certificados expirados que merecem atenção"
+              label="Expirados"
+              value={String(summary.expiredCertificates)}
+            />
+            <IntegrationStatCard
+              chipColor={summary.hasActiveOfficeCertificate ? "success" : "warning"}
+              helper="Presença de certificado ativo no escopo OFFICE"
+              label="Escopo office"
+              value={summary.hasActiveOfficeCertificate ? "Coberto" : "Sem ativo"}
+            />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Distribuição</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Total de certificados: <strong>{summary.totalCertificates}</strong>
+              </p>
+              <p>
+                Escopo escritório: <strong>{summary.officeCertificates}</strong>
+              </p>
+              <p>
+                Escopo advogado: <strong>{summary.lawyerCertificates}</strong>
+              </p>
+              <p>
+                Última validação:{" "}
+                <strong>
+                  {summary.latestValidationAt
+                    ? formatDateTime(summary.latestValidationAt.toISOString())
+                    : "Nenhuma"}
+                </strong>
+              </p>
+              <p>
+                Último uso:{" "}
+                <strong>
+                  {summary.latestUseAt
+                    ? formatDateTime(summary.latestUseAt.toISOString())
+                    : "Nenhum"}
+                </strong>
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function IntegrationsTab({
+  tenantId,
+  integrations,
+  selectedIntegration,
+  onRefresh,
+  onIntegrationChange,
+}: {
+  tenantId: string;
+  integrations: TenantManagementData["integrations"];
+  selectedIntegration: TenantAdminIntegrationKey;
+  onRefresh: () => Promise<void>;
+  onIntegrationChange: Dispatch<SetStateAction<TenantAdminIntegrationKey>>;
+}) {
+  const selectedOption =
+    TENANT_ADMIN_INTEGRATION_OPTIONS.find(
+      (option) => option.key === selectedIntegration,
+    ) ?? TENANT_ADMIN_INTEGRATION_OPTIONS[0];
+  const [isTestingClicksign, setIsTestingClicksign] = useState(false);
+  const [isTestingAsaas, setIsTestingAsaas] = useState(false);
+  const [testingChannel, setTestingChannel] = useState<
+    "WHATSAPP" | "TELEGRAM" | "SMS" | null
+  >(null);
+
+  const handleTestClicksign = async () => {
+    setIsTestingClicksign(true);
+
+    try {
+      const result = await testTenantClicksignConnectionAsSuperAdmin(tenantId);
+
+      if (!result.success) {
+        addToast({
+          title: "Falha ao testar ClickSign",
+          description: result.error || "Não foi possível validar a integração",
+          color: "danger",
+        });
+        return;
+      }
+
+      addToast({
+        title: "ClickSign validado",
+        description: `Conexão confirmada via ${result.data?.source?.toLowerCase() ?? "tenant"}.`,
+        color: "success",
+      });
+      await onRefresh();
+    } finally {
+      setIsTestingClicksign(false);
+    }
+  };
+
+  const handleTestAsaas = async () => {
+    setIsTestingAsaas(true);
+
+    try {
+      const result = await testTenantAsaasConnectionAsSuperAdmin(tenantId);
+
+      if (!result.success) {
+        addToast({
+          title: "Falha ao testar Asaas",
+          description: result.error || "Não foi possível validar a integração",
+          color: "danger",
+        });
+        return;
+      }
+
+      addToast({
+        title: "Asaas validado",
+        description: "Conexão administrativa confirmada com sucesso.",
+        color: "success",
+      });
+      await onRefresh();
+    } finally {
+      setIsTestingAsaas(false);
+    }
+  };
+
+  const handleTestChannelProvider = async (
+    channel: "WHATSAPP" | "TELEGRAM" | "SMS",
+    label: string,
+  ) => {
+    setTestingChannel(channel);
+
+    try {
+      const result = await testTenantChannelProviderAsSuperAdmin(tenantId, channel);
+
+      if (!result.success) {
+        addToast({
+          title: `Falha ao validar ${label}`,
+          description: result.error || "Não foi possível validar o provider",
+          color: "danger",
+        });
+        return;
+      }
+
+      addToast({
+        title: `${label} validado`,
+        description:
+          result.data?.validationMode === "MOCK"
+            ? "Provider mock validado com sucesso."
+            : "Configuração estrutural do provider validada.",
+        color: result.data?.validationMode === "MOCK" ? "success" : "primary",
+      });
+      await onRefresh();
+    } finally {
+      setTestingChannel(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <PlugZap className="h-5 w-5 text-primary" />
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Integrações do tenant
+              </h2>
+              <p className="text-sm text-default-400">
+                Mesmo princípio aplicado ao tenant final: tudo que fala com
+                serviços externos fica centralizado em um único domínio.
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="grid gap-4 lg:grid-cols-[320px_1fr]">
+          <div className="space-y-3">
+            <Select
+              label="Integração"
+              selectedKeys={[selectedIntegration]}
+              variant="bordered"
+              onSelectionChange={(keys) => {
+                if (keys === "all") return;
+                const value = String(Array.from(keys)[0]);
+                if (isTenantAdminIntegrationKey(value)) {
+                  onIntegrationChange(value);
+                }
+              }}
+            >
+              {TENANT_ADMIN_INTEGRATION_OPTIONS.map((item) => (
+                <SelectItem key={item.key} textValue={item.label}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-default-500">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </Select>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
+                Integração selecionada
+              </p>
+              <div className="mt-2 flex items-center gap-2 text-foreground">
+                <span className="text-primary">{selectedOption.icon}</span>
+                <span className="text-base font-semibold">
+                  {selectedOption.label}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-default-400">
+                {selectedOption.description}
+              </p>
+            </div>
+          </div>
+
+          <div className="min-w-0">
+            {selectedIntegration === "email" ? <EmailTab tenantId={tenantId} /> : null}
+
+            {selectedIntegration === "clicksign" ? (
+              <ClicksignAdminPanel
+                isTesting={isTestingClicksign}
+                summary={integrations.clicksign}
+                onTestConnection={handleTestClicksign}
+              />
+            ) : null}
+
+            {selectedIntegration === "certificates" ? (
+              <CertificatesAdminPanel summary={integrations.certificates} />
+            ) : null}
+
+            {selectedIntegration === "asaas" ? (
+              <AsaasAdminPanel
+                isTesting={isTestingAsaas}
+                summary={integrations.asaas}
+                onTestConnection={handleTestAsaas}
+              />
+            ) : null}
+
+            {selectedIntegration === "whatsapp" ? (
+              <ChannelProviderAdminPanel
+                description="Leitura administrativa do provider omnichannel de WhatsApp do tenant, sem expor segredos."
+                isTesting={testingChannel === "WHATSAPP"}
+                summary={integrations.whatsapp}
+                title="WhatsApp omnichannel"
+                onTestConnection={() =>
+                  handleTestChannelProvider("WHATSAPP", "WhatsApp")
+                }
+              />
+            ) : null}
+
+            {selectedIntegration === "telegram" ? (
+              <ChannelProviderAdminPanel
+                description="Leitura administrativa do bot ou provider de Telegram configurado pelo tenant."
+                isTesting={testingChannel === "TELEGRAM"}
+                summary={integrations.telegram}
+                title="Telegram omnichannel"
+                onTestConnection={() =>
+                  handleTestChannelProvider("TELEGRAM", "Telegram")
+                }
+              />
+            ) : null}
+
+            {selectedIntegration === "sms" ? (
+              <ChannelProviderAdminPanel
+                description="Leitura administrativa do canal SMS de contingência, pronto para suporte operacional."
+                isTesting={testingChannel === "SMS"}
+                summary={integrations.sms}
+                title="SMS transacional"
+                onTestConnection={() => handleTestChannelProvider("SMS", "SMS")}
+              />
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
 function EmailTab({ tenantId }: { tenantId: string }) {
   const { data, mutate, isLoading } = useSWR(
     ["tenant-email-creds", tenantId],
@@ -1465,7 +2441,7 @@ function EmailTab({ tenantId }: { tenantId: string }) {
               <Server className="h-5 w-5 text-default-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Credenciais de Envio de Email
               </h2>
               <p className="text-sm text-default-400">
@@ -1605,7 +2581,7 @@ function EmailTab({ tenantId }: { tenantId: string }) {
               <CheckCircle2 className="h-5 w-5 text-success" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Credenciais cadastradas
               </h2>
               <p className="text-sm text-default-400">

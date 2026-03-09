@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+
 import type {
   DashboardActivity,
   DashboardAlert,
@@ -78,6 +80,60 @@ const toneStyles: Record<
   },
 };
 
+const activityToneStyles: Record<
+  Tone,
+  {
+    card: string;
+    badge: string;
+    iconWrap: string;
+    timePill: string;
+    rail: string;
+  }
+> = {
+  primary: {
+    card: "border-primary/20 bg-primary/5",
+    badge: "border-primary/20 bg-primary/10 text-primary",
+    iconWrap: "border-primary/20 bg-primary/10 text-primary",
+    timePill: "border-primary/15 bg-primary/10 text-primary/80",
+    rail: "bg-primary/20",
+  },
+  success: {
+    card: "border-success/20 bg-success/5",
+    badge: "border-success/20 bg-success/10 text-success",
+    iconWrap: "border-success/20 bg-success/10 text-success",
+    timePill: "border-success/15 bg-success/10 text-success/80",
+    rail: "bg-success/20",
+  },
+  warning: {
+    card: "border-warning/20 bg-warning/5",
+    badge: "border-warning/20 bg-warning/10 text-warning",
+    iconWrap: "border-warning/20 bg-warning/10 text-warning",
+    timePill: "border-warning/15 bg-warning/10 text-warning/80",
+    rail: "bg-warning/20",
+  },
+  secondary: {
+    card: "border-secondary/20 bg-secondary/5",
+    badge: "border-secondary/20 bg-secondary/10 text-secondary",
+    iconWrap: "border-secondary/20 bg-secondary/10 text-secondary",
+    timePill: "border-secondary/15 bg-secondary/10 text-secondary/80",
+    rail: "bg-secondary/20",
+  },
+  danger: {
+    card: "border-danger/20 bg-danger/5",
+    badge: "border-danger/20 bg-danger/10 text-danger",
+    iconWrap: "border-danger/20 bg-danger/10 text-danger",
+    timePill: "border-danger/15 bg-danger/10 text-danger/80",
+    rail: "bg-danger/20",
+  },
+  default: {
+    card: "border-white/10 bg-background/60",
+    badge: "border-white/10 bg-white/5 text-default-300",
+    iconWrap: "border-white/10 bg-white/5 text-default-300",
+    timePill: "border-white/10 bg-white/5 text-default-500",
+    rail: "bg-white/10",
+  },
+};
+
 const trendChartPalette = [
   { stroke: "#38bdf8", fill: "rgba(56, 189, 248, 0.2)" },
   { stroke: "#34d399", fill: "rgba(52, 211, 153, 0.2)" },
@@ -97,6 +153,12 @@ interface TrendChartSeries {
   points: TrendChartPoint[];
   latestValue: number;
   deltaPercent?: number;
+}
+
+interface ActivityPresentation {
+  label: string;
+  pluralLabel: string;
+  tone: Tone;
 }
 
 function formatStatValue(value: number | string, format?: StatFormat) {
@@ -151,6 +213,116 @@ function formatListDate(date?: string) {
   });
 }
 
+function formatActivityTime(date?: string) {
+  if (!date) return null;
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatActivityDayLabel(dateKey: string) {
+  const parsed = new Date(`${dateKey}T00:00:00`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return dateKey;
+  }
+
+  const today = new Date();
+  const yesterday = new Date();
+
+  yesterday.setDate(today.getDate() - 1);
+
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  const yesterdayKey = [
+    yesterday.getFullYear(),
+    String(yesterday.getMonth() + 1).padStart(2, "0"),
+    String(yesterday.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  if (dateKey === todayKey) {
+    return "Hoje";
+  }
+
+  if (dateKey === yesterdayKey) {
+    return "Ontem";
+  }
+
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getActivityDateKey(date?: string) {
+  if (!date) {
+    return "sem-data";
+  }
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "sem-data";
+  }
+
+  return [
+    parsed.getFullYear(),
+    String(parsed.getMonth() + 1).padStart(2, "0"),
+    String(parsed.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function getActivityPresentation(
+  item: DashboardActivity,
+): ActivityPresentation {
+  if (item.icon === "📁") {
+    return { label: "Documento", pluralLabel: "Documentos", tone: "secondary" };
+  }
+
+  if (item.icon === "⚖️") {
+    return {
+      label: "Movimentação",
+      pluralLabel: "Movimentações",
+      tone: "warning",
+    };
+  }
+
+  if (item.icon === "🗓️" || item.icon === "📅") {
+    return { label: "Agenda", pluralLabel: "Agenda", tone: "primary" };
+  }
+
+  if (item.icon === "🗂️") {
+    return { label: "Tarefa", pluralLabel: "Tarefas", tone: "primary" };
+  }
+
+  if (
+    item.icon === "💳" ||
+    item.icon === "📄" ||
+    item.icon === "🧾" ||
+    item.icon === "✅" ||
+    item.icon === "⏳"
+  ) {
+    return { label: "Financeiro", pluralLabel: "Financeiro", tone: "success" };
+  }
+
+  return {
+    label: "Registro",
+    pluralLabel: "Registros",
+    tone: item.tone ?? "default",
+  };
+}
+
 function getActivityActionLabel(href: string) {
   if (href.startsWith("/processos/")) return "Ver processo";
   if (href === "/processos") return "Ir para processos";
@@ -167,6 +339,33 @@ function getActivityActionLabel(href: string) {
   }
 
   return "Abrir registro";
+}
+
+function buildActivityGroups(items: DashboardActivity[]) {
+  const grouped = new Map<
+    string,
+    { key: string; label: string; items: DashboardActivity[] }
+  >();
+
+  items.forEach((item) => {
+    const key = getActivityDateKey(item.date);
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.items.push(item);
+      return;
+    }
+
+    grouped.set(key, {
+      key,
+      label: formatActivityDayLabel(key),
+      items: [item],
+    });
+  });
+
+  return Array.from(grouped.values()).sort((a, b) =>
+    b.key.localeCompare(a.key),
+  );
 }
 
 function buildQuickActions(
@@ -509,7 +708,9 @@ function buildTrendChartSeries(trends: DashboardTrend[]): TrendChartSeries[] {
     });
     existing.format = existing.format || trend.format;
     existing.latestPrevious =
-      typeof trend.previous === "number" ? trend.previous : existing.latestPrevious;
+      typeof trend.previous === "number"
+        ? trend.previous
+        : existing.latestPrevious;
   });
 
   return Array.from(grouped.values())
@@ -579,8 +780,16 @@ function renderTrendChartCard(series: TrendChartSeries, index: number) {
           >
             <defs>
               <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-                <stop offset="5%" stopColor={palette.stroke} stopOpacity={0.7} />
-                <stop offset="95%" stopColor={palette.stroke} stopOpacity={0.05} />
+                <stop
+                  offset="5%"
+                  stopColor={palette.stroke}
+                  stopOpacity={0.7}
+                />
+                <stop
+                  offset="95%"
+                  stopColor={palette.stroke}
+                  stopOpacity={0.05}
+                />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -654,45 +863,72 @@ function renderAlertCard(alert: DashboardAlert) {
   );
 }
 
-function renderActivityItem(item: DashboardActivity) {
-  const styles = item.tone
-    ? (toneStyles[item.tone] ?? toneStyles.default)
-    : toneStyles.default;
+function renderActivityItem(item: DashboardActivity, isLast: boolean) {
+  const presentation = getActivityPresentation(item);
+  const styles =
+    activityToneStyles[presentation.tone] ?? activityToneStyles.default;
   const formattedDate = formatListDate(item.date);
+  const formattedTime = formatActivityTime(item.date);
   const actionLabel = item.href ? getActivityActionLabel(item.href) : null;
 
   return (
-    <li
-      key={item.id}
-      className={`rounded-2xl border px-4 py-3 ${styles.container}`}
-    >
-      <div className="flex items-center gap-3">
-        <span aria-hidden className="text-xl">
-          {item.icon ?? "📝"}
-        </span>
-        <div className="min-w-0">
-          <p className={`truncate font-semibold ${styles.title}`}>
-            {item.title}
-          </p>
-          <p className="text-xs text-default-400 truncate">
-            {item.description}
-          </p>
-          {formattedDate ? (
-            <p className="text-xs text-default-500">{formattedDate}</p>
-          ) : null}
+    <li key={item.id} className="relative pl-16">
+      {!isLast ? (
+        <span
+          aria-hidden
+          className={`absolute left-[1.45rem] top-14 h-[calc(100%-2rem)] w-px ${styles.rail}`}
+        />
+      ) : null}
+      <span
+        aria-hidden
+        className={`absolute left-0 top-1 flex h-12 w-12 items-center justify-center rounded-2xl border text-xl shadow-sm ${styles.iconWrap}`}
+      >
+        {item.icon ?? "📝"}
+      </span>
+      <div className={`rounded-3xl border px-4 py-4 sm:px-5 ${styles.card}`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${styles.badge}`}
+              >
+                {presentation.label}
+              </span>
+              {formattedDate ? (
+                <span className="text-xs text-default-500">
+                  {formattedDate}
+                </span>
+              ) : null}
+            </div>
+            <p className="text-sm font-semibold leading-6 text-foreground sm:text-base">
+              {item.title}
+            </p>
+            <p className="text-sm leading-6 text-default-400">
+              {item.description}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-2 lg:min-w-[152px] lg:items-end">
+            {formattedTime ? (
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${styles.timePill}`}
+              >
+                {formattedTime}
+              </span>
+            ) : null}
+            {item.href ? (
+              <Button
+                as={NextLink}
+                className="px-0 text-xs text-primary"
+                href={item.href}
+                size="sm"
+                variant="light"
+              >
+                {actionLabel ?? "Abrir registro"}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
-      {item.href ? (
-        <Button
-          as={NextLink}
-          className="mt-3 text-xs text-primary"
-          href={item.href}
-          size="sm"
-          variant="light"
-        >
-          {actionLabel ?? "Abrir registro"}
-        </Button>
-      ) : null}
     </li>
   );
 }
@@ -727,6 +963,31 @@ export function DashboardContent() {
   const showAlertsSkeleton = isLoading && alerts.length === 0;
   const showActivitySkeleton = isLoading && activity.length === 0;
   const trendSeries = buildTrendChartSeries(trends);
+  const activityGroups = useMemo(
+    () => buildActivityGroups(activity),
+    [activity],
+  );
+  const activitySummary = useMemo(() => {
+    const counts = new Map<string, { count: number; pluralLabel: string }>();
+
+    activity.forEach((item) => {
+      const { label, pluralLabel } = getActivityPresentation(item);
+      const current = counts.get(label);
+
+      counts.set(label, {
+        count: (current?.count ?? 0) + 1,
+        pluralLabel,
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([label, value]) => ({
+        label,
+        count: value.count,
+        pluralLabel: value.pluralLabel,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [activity]);
   const primaryQuickActions = quickActions.slice(0, 6);
   const urgentAlertCount = alerts.filter(
     (alert) => alert.tone === "danger" || alert.tone === "warning",
@@ -770,16 +1031,19 @@ export function DashboardContent() {
         title={getDashboardTitle()}
       />
 
-      <PeoplePanel
-        title="Boas-vindas"
-      >
+      <PeoplePanel title="Boas-vindas">
         <p className="text-sm text-default-400">{getWelcomeMessage()}</p>
       </PeoplePanel>
 
       {isError ? (
         <PeoplePanel
           actions={
-            <Button color="danger" size="sm" variant="flat" onPress={() => refresh()}>
+            <Button
+              color="danger"
+              size="sm"
+              variant="flat"
+              onPress={() => refresh()}
+            >
               Tentar novamente
             </Button>
           }
@@ -797,12 +1061,19 @@ export function DashboardContent() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.6fr]">
-        <PeoplePanel description="O que precisa de atenção agora." title="Central de comando">
+        <PeoplePanel
+          description="O que precisa de atenção agora."
+          title="Central de comando"
+        >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {commandCenterItems.map((item) => (
               <PeopleMetricCard
                 helper={item.helper}
-                icon={<span aria-hidden>{item.label.slice(0, 1).toUpperCase()}</span>}
+                icon={
+                  <span aria-hidden>
+                    {item.label.slice(0, 1).toUpperCase()}
+                  </span>
+                }
                 key={item.id}
                 label={item.label}
                 tone={item.tone}
@@ -812,7 +1083,10 @@ export function DashboardContent() {
           </div>
         </PeoplePanel>
 
-        <PeoplePanel description="Rotas de maior uso para o seu perfil." title="Atalhos estratégicos">
+        <PeoplePanel
+          description="Rotas de maior uso para o seu perfil."
+          title="Atalhos estratégicos"
+        >
           {primaryQuickActions.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {primaryQuickActions.map((action) => {
@@ -1025,7 +1299,44 @@ export function DashboardContent() {
             ))}
           </ul>
         ) : activity.length > 0 ? (
-          <ul className="space-y-3">{activity.map(renderActivityItem)}</ul>
+          <div className="space-y-5">
+            {activitySummary.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {activitySummary.map((item) => (
+                  <span
+                    key={`activity-summary-${item.label}`}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-default-300"
+                  >
+                    {item.count}{" "}
+                    {item.count > 1
+                      ? item.pluralLabel.toLowerCase()
+                      : item.label.toLowerCase()}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="space-y-5">
+              {activityGroups.map((group) => (
+                <section key={group.key} className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                      {group.label}
+                    </p>
+                    <span className="h-px flex-1 bg-white/10" />
+                  </div>
+                  <ul className="space-y-4">
+                    {group.items.map((item, index) =>
+                      renderActivityItem(
+                        item,
+                        index === group.items.length - 1,
+                      ),
+                    )}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </div>
         ) : (
           <p className="text-sm text-default-500">
             Nenhuma atividade recente registrada.

@@ -15,7 +15,7 @@ import {
 } from "@heroui/table";
 import useSWR from "swr";
 
-import { title, subtitle } from "@/components/primitives";
+import { PeoplePageHeader } from "@/components/people-ui";
 import {
   getEstatisticasFinanceiras,
   getResumoMensal,
@@ -106,30 +106,22 @@ export function FinanceiroContent() {
   };
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              Controle Financeiro
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Acompanhe receitas, assinaturas, faturas e comissões do sistema
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button color="primary" variant="flat">
-              📊 Relatórios
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Financeiro global"
+        description="Acompanhe receita, assinaturas, faturas, pagamentos e comissões da plataforma."
+        actions={
+          <>
+            <Button color="primary" size="sm" variant="flat">
+              Relatórios
             </Button>
-            <Button color="secondary" variant="flat">
-              💳 Cobrança
+            <Button color="secondary" size="sm" variant="flat">
+              Cobrança
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Métricas Principais */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -137,8 +129,8 @@ export function FinanceiroContent() {
           <CardBody className="flex items-center">
             <span className="text-3xl text-green-600 mr-4">💰</span>
             <div>
-              <p className="text-sm font-medium text-gray-500">Receita Total</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-default-500">Receita Total</p>
+              <p className="text-2xl font-bold text-foreground">
                 {loadingStats
                   ? "..."
                   : formatCurrency(estatisticas.receitaTotal)}
@@ -152,10 +144,10 @@ export function FinanceiroContent() {
           <CardBody className="flex items-center">
             <span className="text-3xl text-blue-600 mr-4">📈</span>
             <div>
-              <p className="text-sm font-medium text-gray-500">
+              <p className="text-sm font-medium text-default-500">
                 Receita Mensal
               </p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-2xl font-bold text-foreground">
                 {loadingStats
                   ? "..."
                   : formatCurrency(estatisticas.receitaMensal)}
@@ -169,10 +161,10 @@ export function FinanceiroContent() {
           <CardBody className="flex items-center">
             <span className="text-3xl text-purple-600 mr-4">👥</span>
             <div>
-              <p className="text-sm font-medium text-gray-500">
+              <p className="text-sm font-medium text-default-500">
                 Assinaturas Ativas
               </p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-2xl font-bold text-foreground">
                 {loadingStats ? "..." : estatisticas.assinaturasAtivas}
               </p>
               <p className="text-sm text-purple-600">
@@ -186,8 +178,8 @@ export function FinanceiroContent() {
           <CardBody className="flex items-center">
             <span className="text-3xl text-yellow-600 mr-4">💳</span>
             <div>
-              <p className="text-sm font-medium text-gray-500">Faturas Pagas</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-default-500">Faturas Pagas</p>
+              <p className="text-2xl font-bold text-foreground">
                 {loadingStats ? "..." : estatisticas.faturasPagas}
               </p>
               <p className="text-sm text-yellow-600">

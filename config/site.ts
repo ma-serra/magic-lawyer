@@ -8,10 +8,7 @@ export const siteConfig = {
     "Sistema para advogados - Controle seu escritório com facilidade.",
   navItemsPublic: [
     { label: "Início", href: "/" },
-    { label: "Recursos", href: "/docs" },
     { label: "Planos", href: "/precos" },
-    { label: "Blog", href: "/blog" },
-    { label: "Contato", href: "/about" },
   ],
   navItemsAuthenticated: [
     { label: "Painel", href: "/dashboard" },
@@ -23,7 +20,6 @@ export const siteConfig = {
     { label: "Relatórios", href: "/relatorios" },
   ],
   navMenuItemsPublic: [
-    { label: "Entrar", href: "/login" },
     { label: "Portal do Cliente", href: "/login?view=cliente" },
     { label: "Suporte", href: "/help" },
     { label: "Termos & Políticas", href: "/docs" },

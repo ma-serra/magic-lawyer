@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import prisma from "@/app/lib/prisma";
 import {
   EspecialidadeJuridica,
+  DigitalCertificatePolicy,
   InvoiceStatus,
   PaymentStatus,
   SubscriptionStatus,
@@ -17,6 +18,13 @@ import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 import { ensureDefaultCargosForTenant } from "@/app/lib/default-cargos";
 import { enviarEmailPrimeiroAcesso, maskEmail } from "@/app/lib/first-access-email";
+import { getGlobalClicksignFallbackSummary } from "@/app/lib/clicksign";
+import {
+  buildAdminAsaasSummary,
+  buildAdminCertificatesSummary,
+  buildAdminClicksignSummary,
+  buildAdminTenantChannelProviderSummary,
+} from "@/app/lib/admin-integration-summaries";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -153,6 +161,24 @@ export interface TenantManagementData {
     lastLoginAt: string | null;
   }>;
   availableRoles: UserRole[];
+  integrations: {
+    clicksign: ReturnType<typeof buildAdminClicksignSummary>;
+    asaas: ReturnType<typeof buildAdminAsaasSummary>;
+    certificates: ReturnType<typeof buildAdminCertificatesSummary>;
+    whatsapp: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
+    telegram: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
+    sms: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
+  };
+}
+
+function resolveAdminAsaasWebhookUrl() {
+  const envBase =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "").trim() ||
+    "http://localhost:9192";
+
+  return `${envBase.replace(/\/$/, "")}/api/webhooks/asaas`;
 }
 
 // Criar novo tenant
@@ -635,6 +661,10 @@ export async function getTenantManagementData(
       revenue90Agg,
       revenue30Agg,
       outstandingInvoices,
+      clicksignConfig,
+      asaasConfig,
+      digitalCertificates,
+      tenantChannelProviders,
     ] = await Promise.all([
       prisma.plano.findMany({
         where: { ativo: true },
@@ -674,7 +704,73 @@ export async function getTenantManagementData(
           status: { in: [InvoiceStatus.ABERTA, InvoiceStatus.VENCIDA] },
         },
       }),
+      prisma.clicksignTenantConfig.findUnique({
+        where: { tenantId },
+        select: {
+          id: true,
+          apiBase: true,
+          ambiente: true,
+          integracaoAtiva: true,
+          dataConfiguracao: true,
+          ultimaValidacao: true,
+          accessTokenEncrypted: true,
+        },
+      }),
+      prisma.tenantAsaasConfig.findUnique({
+        where: { tenantId },
+        select: {
+          id: true,
+          asaasApiKey: true,
+          webhookAccessToken: true,
+          asaasAccountId: true,
+          asaasWalletId: true,
+          ambiente: true,
+          integracaoAtiva: true,
+          dataConfiguracao: true,
+          webhookConfiguredAt: true,
+          lastWebhookAt: true,
+          lastWebhookEvent: true,
+          ultimaValidacao: true,
+        },
+      }),
+      prisma.digitalCertificate.findMany({
+        where: { tenantId },
+        select: {
+          scope: true,
+          isActive: true,
+          validUntil: true,
+          lastValidatedAt: true,
+          lastUsedAt: true,
+        },
+      }),
+      prisma.tenantChannelProvider.findMany({
+        where: {
+          tenantId,
+          channel: {
+            in: ["WHATSAPP", "TELEGRAM", "SMS"],
+          },
+        },
+        select: {
+          id: true,
+          channel: true,
+          provider: true,
+          displayName: true,
+          credentialsEncrypted: true,
+          configuration: true,
+          active: true,
+          healthStatus: true,
+          dataConfiguracao: true,
+          lastValidatedAt: true,
+          lastValidationMode: true,
+          lastErrorAt: true,
+          lastErrorMessage: true,
+        },
+      }),
     ]);
+
+    const omnichannelProviders = new Map(
+      tenantChannelProviders.map((provider) => [provider.channel, provider]),
+    );
 
     const data: TenantManagementData = {
       tenant: {
@@ -771,6 +867,35 @@ export async function getTenantManagementData(
           : null,
       })),
       availableRoles: Object.values(UserRole),
+      integrations: {
+        clicksign: buildAdminClicksignSummary(
+          clicksignConfig,
+          getGlobalClicksignFallbackSummary(),
+        ),
+        asaas: buildAdminAsaasSummary(asaasConfig, {
+          webhookUrl: resolveAdminAsaasWebhookUrl(),
+          globalWebhookSecretConfigured: Boolean(
+            process.env.ASAAS_WEBHOOK_SECRET?.trim(),
+          ),
+        }),
+        certificates: buildAdminCertificatesSummary({
+          policy:
+            tenant.digitalCertificatePolicy ?? DigitalCertificatePolicy.OFFICE,
+          certificates: digitalCertificates,
+        }),
+        whatsapp: buildAdminTenantChannelProviderSummary(
+          "WHATSAPP",
+          omnichannelProviders.get("WHATSAPP") ?? null,
+        ),
+        telegram: buildAdminTenantChannelProviderSummary(
+          "TELEGRAM",
+          omnichannelProviders.get("TELEGRAM") ?? null,
+        ),
+        sms: buildAdminTenantChannelProviderSummary(
+          "SMS",
+          omnichannelProviders.get("SMS") ?? null,
+        ),
+      },
     };
 
     return {

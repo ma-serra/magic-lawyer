@@ -4,11 +4,91 @@ import type { SearchResult } from "@/components/searchbar";
 
 import prisma from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
+import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
 import logger from "@/lib/logger";
-import { UserRole } from "@/generated/prisma";
+import { UserRole, type Prisma } from "@/generated/prisma";
 
 interface SearchOptions {
   tenantId?: string | null;
+}
+
+function buildScopedAdvogadoProcessOrConditions(
+  accessibleAdvogados: string[],
+  role: UserRole,
+  userId: string,
+): Prisma.ProcessoWhereInput[] {
+  const conditions: Prisma.ProcessoWhereInput[] = [
+    {
+      advogadoResponsavelId: {
+        in: accessibleAdvogados,
+      },
+    },
+    {
+      procuracoesVinculadas: {
+        some: {
+          procuracao: {
+            outorgados: {
+              some: {
+                advogadoId: {
+                  in: accessibleAdvogados,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      partes: {
+        some: {
+          advogadoId: {
+            in: accessibleAdvogados,
+          },
+        },
+      },
+    },
+    {
+      cliente: {
+        advogadoClientes: {
+          some: {
+            advogadoId: {
+              in: accessibleAdvogados,
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  if (role === UserRole.ADVOGADO) {
+    conditions.push({
+      cliente: {
+        usuario: {
+          createdById: userId,
+        },
+      },
+    });
+  }
+
+  return conditions;
+}
+
+async function getClienteIdFromSession(
+  userId: string,
+  tenantId: string,
+): Promise<string | null> {
+  const cliente = await prisma.cliente.findFirst({
+    where: {
+      usuarioId: userId,
+      tenantId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return cliente?.id ?? null;
 }
 
 export async function searchContent(
@@ -16,18 +96,26 @@ export async function searchContent(
   options: SearchOptions = {},
 ): Promise<SearchResult[]> {
   const session = await getSession();
+  const user = session?.user as
+    | {
+        id?: string;
+        tenantId?: string | null;
+        role?: UserRole;
+      }
+    | undefined;
+  const userId = user?.id ?? null;
+  const sessionTenantId = user?.tenantId ?? null;
+  const userRole = user?.role;
+  const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
+  const isAdmin = userRole === UserRole.ADMIN || isSuperAdmin;
+  const requestedTenantId = options.tenantId ?? sessionTenantId;
 
   logger.info("[search] searchContent chamado", {
-    query,
     optionsTenantId: options.tenantId,
     hasSession: !!session,
-    userId: session?.user?.id,
+    userId,
+    userRole,
   });
-
-  const sessionTenantId = session?.user?.tenantId ?? options.tenantId ?? null;
-  const userRole = (session?.user as any)?.role as UserRole | undefined;
-  const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
-  const requestedTenantId = options.tenantId ?? sessionTenantId;
 
   logger.info("[search] contexto determinado", {
     sessionTenantId,
@@ -40,10 +128,10 @@ export async function searchContent(
   const searchTerm = rawQuery.toLowerCase();
   const normalizedDigits = rawQuery.replace(/\D/g, "");
 
-  const isQueryTooShort = !query.trim() || query.length < 2;
+  const isQueryTooShort = !rawQuery || rawQuery.length < 2;
 
   logger.info("[search] validação de query", {
-    rawQuery,
+    queryLength: rawQuery.length,
     isQueryTooShort,
     isSuperAdmin,
     allowEmpty: isSuperAdmin,
@@ -57,6 +145,10 @@ export async function searchContent(
   // Para Super Admin: permitir busca sem tenant específico (retorna agregados)
   // Para usuários normais: obrigatório ter tenantId da sessão
   if (!isSuperAdmin) {
+    if (!session || !userId) {
+      logger.warn("[search] sessão inválida para usuário não super admin");
+      return [];
+    }
     if (!requestedTenantId) {
       logger.warn("[search] usuário normal sem tenantId");
       return [];
@@ -163,7 +255,7 @@ export async function searchContent(
           type: "tenant",
           title: tenant.name,
           description: tenant.domain ?? tenant.slug,
-          href: `/admin/tenants/${tenant.slug}`,
+          href: `/admin/tenants/${tenant.id}`,
           status: `${tenant._count.processos} processos · ${tenant._count.clientes} clientes`,
           statusColor: "primary",
         });
@@ -176,33 +268,175 @@ export async function searchContent(
       return results.slice(0, 10);
     }
 
+    if (!userId || !requestedTenantId || !userRole) {
+      logger.warn("[search] contexto insuficiente para busca");
+      return [];
+    }
+
+    const clienteId =
+      userRole === UserRole.CLIENTE
+        ? await getClienteIdFromSession(userId, requestedTenantId)
+        : null;
+    const accessibleAdvogados =
+      isAdmin || userRole === UserRole.CLIENTE
+        ? []
+        : await getAccessibleAdvogadoIds(session as any);
+
+    const advogadoProcessOrConditions =
+      accessibleAdvogados.length > 0
+        ? buildScopedAdvogadoProcessOrConditions(
+            accessibleAdvogados,
+            userRole,
+            userId,
+          )
+        : [];
+
+    const processoScopeFilter: Prisma.ProcessoWhereInput = clienteId
+      ? { clienteId }
+      : !isAdmin && advogadoProcessOrConditions.length > 0
+        ? { OR: advogadoProcessOrConditions }
+        : {};
+
+    const clienteScopeFilter: Prisma.ClienteWhereInput = clienteId
+      ? { id: clienteId }
+      : !isAdmin && accessibleAdvogados.length > 0
+        ? {
+            OR: [
+              {
+                advogadoClientes: {
+                  some: {
+                    advogadoId: {
+                      in: accessibleAdvogados,
+                    },
+                  },
+                },
+              },
+              ...(userRole === UserRole.ADVOGADO
+                ? [
+                    {
+                      usuario: {
+                        createdById: userId,
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {};
+
+    const documentoScopeFilter: Prisma.DocumentoWhereInput = clienteId
+      ? {
+          OR: [{ clienteId }, { processo: { clienteId } }],
+        }
+      : !isAdmin && accessibleAdvogados.length > 0
+        ? {
+            OR: [
+              {
+                cliente: {
+                  advogadoClientes: {
+                    some: {
+                      advogadoId: {
+                        in: accessibleAdvogados,
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                processo: {
+                  AND: [
+                    {
+                      tenantId: requestedTenantId,
+                      deletedAt: null,
+                    },
+                    {
+                      OR: advogadoProcessOrConditions,
+                    },
+                  ],
+                },
+              },
+            ],
+          }
+        : {};
+
+    const juizScopeFilter: Prisma.JuizWhereInput = clienteId
+      ? {
+          processos: {
+            some: {
+              tenantId: requestedTenantId,
+              deletedAt: null,
+              clienteId,
+            },
+          },
+        }
+      : !isAdmin && accessibleAdvogados.length > 0
+        ? {
+            processos: {
+              some: {
+                AND: [
+                  {
+                    tenantId: requestedTenantId,
+                    deletedAt: null,
+                  },
+                  {
+                    OR: advogadoProcessOrConditions,
+                  },
+                ],
+              },
+            },
+          }
+        : {
+            processos: {
+              some: {
+                tenantId: requestedTenantId,
+                deletedAt: null,
+              },
+            },
+          };
+
     // Buscar processos
     logger.info("[search] processos query", {
-      tenantId: requestedTenantId ?? undefined,
-      rawQuery,
-      searchTerm,
-      normalizedDigits,
+      tenantId: requestedTenantId,
+      userRole,
+      hasClienteScope: Boolean(clienteId),
+      hasAdvScope: accessibleAdvogados.length > 0,
     });
 
     const processos = await prisma.processo.findMany({
       where: {
-        tenantId: requestedTenantId ?? undefined,
-        deletedAt: null,
-        OR: [
-          { numero: { contains: searchTerm, mode: "insensitive" as const } },
-          // Permitir busca por dígitos apenas (caso o formato salvo seja diferente)
-          ...(normalizedDigits.length >= 4
-            ? [
-                {
-                  numero: {
-                    contains: normalizedDigits,
-                    mode: "insensitive" as const,
-                  },
+        AND: [
+          {
+            tenantId: requestedTenantId,
+            deletedAt: null,
+          },
+          processoScopeFilter,
+          {
+            OR: [
+              { numero: { contains: searchTerm, mode: "insensitive" as const } },
+              ...(normalizedDigits.length >= 4
+                ? [
+                    {
+                      numero: {
+                        contains: normalizedDigits,
+                        mode: "insensitive" as const,
+                      },
+                    },
+                  ]
+                : []),
+              {
+                titulo: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
                 },
-              ]
-            : []),
-          { titulo: { contains: searchTerm, mode: "insensitive" as const } },
-          { descricao: { contains: searchTerm, mode: "insensitive" as const } },
+              },
+              {
+                descricao: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          },
         ],
       },
       take: 5,
@@ -221,7 +455,7 @@ export async function searchContent(
     });
 
     logger.info("[search] processos encontrados", {
-      tenantId: requestedTenantId ?? undefined,
+      tenantId: requestedTenantId,
       total: processos.length,
     });
 
@@ -243,11 +477,24 @@ export async function searchContent(
     // Buscar clientes
     const clientes = await prisma.cliente.findMany({
       where: {
-        tenantId: requestedTenantId ?? undefined,
-        OR: [
-          { nome: { contains: searchTerm, mode: "insensitive" as const } },
-          { email: { contains: searchTerm, mode: "insensitive" as const } },
-          { documento: { contains: searchTerm, mode: "insensitive" as const } },
+        AND: [
+          {
+            tenantId: requestedTenantId,
+            deletedAt: null,
+          },
+          clienteScopeFilter,
+          {
+            OR: [
+              { nome: { contains: searchTerm, mode: "insensitive" as const } },
+              { email: { contains: searchTerm, mode: "insensitive" as const } },
+              {
+                documento: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          },
         ],
       },
       take: 5,
@@ -277,10 +524,23 @@ export async function searchContent(
     // Buscar documentos
     const documentos = await prisma.documento.findMany({
       where: {
-        tenantId: requestedTenantId ?? undefined,
-        OR: [
-          { nome: { contains: searchTerm, mode: "insensitive" as const } },
-          { descricao: { contains: searchTerm, mode: "insensitive" as const } },
+        AND: [
+          {
+            tenantId: requestedTenantId,
+            deletedAt: null,
+          },
+          documentoScopeFilter,
+          {
+            OR: [
+              { nome: { contains: searchTerm, mode: "insensitive" as const } },
+              {
+                descricao: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          },
         ],
       },
       take: 5,
@@ -321,17 +581,29 @@ export async function searchContent(
     // Buscar juízes
     const juizes = await prisma.juiz.findMany({
       where: {
-        ...(requestedTenantId
-          ? { processos: { some: { tenantId: requestedTenantId } } }
-          : {}),
-        OR: [
-          { nome: { contains: searchTerm, mode: "insensitive" as const } },
-          { nomeCompleto: { contains: searchTerm, mode: "insensitive" as const } },
-          { cpf: { contains: searchTerm, mode: "insensitive" as const } },
-          { oab: { contains: searchTerm, mode: "insensitive" as const } },
-          { email: { contains: searchTerm, mode: "insensitive" as const } },
-          { vara: { contains: searchTerm, mode: "insensitive" as const } },
-          { comarca: { contains: searchTerm, mode: "insensitive" as const } },
+        AND: [
+          juizScopeFilter,
+          {
+            OR: [
+              { nome: { contains: searchTerm, mode: "insensitive" as const } },
+              {
+                nomeCompleto: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+              { cpf: { contains: searchTerm, mode: "insensitive" as const } },
+              { oab: { contains: searchTerm, mode: "insensitive" as const } },
+              { email: { contains: searchTerm, mode: "insensitive" as const } },
+              { vara: { contains: searchTerm, mode: "insensitive" as const } },
+              {
+                comarca: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          },
         ],
       },
       take: 5,
@@ -359,24 +631,36 @@ export async function searchContent(
     });
 
     // Buscar usuários (apenas se for admin)
-    const usuarios = await prisma.usuario.findMany({
-      where: {
-        tenantId: requestedTenantId ?? undefined,
-        OR: [
-          { firstName: { contains: searchTerm, mode: "insensitive" as const } },
-          { lastName: { contains: searchTerm, mode: "insensitive" as const } },
-          { email: { contains: searchTerm, mode: "insensitive" as const } },
-        ],
-      },
-      take: 3,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        role: true,
-      },
-    });
+    const usuarios = isAdmin
+      ? await prisma.usuario.findMany({
+          where: {
+            tenantId: requestedTenantId,
+            OR: [
+              {
+                firstName: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                lastName: {
+                  contains: searchTerm,
+                  mode: "insensitive" as const,
+                },
+              },
+              { email: { contains: searchTerm, mode: "insensitive" as const } },
+            ],
+          },
+          take: 3,
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        })
+      : [];
 
     usuarios.forEach((usuario) => {
       const fullName =
@@ -408,9 +692,9 @@ export async function searchContent(
       logger.info("[search] Nenhum resultado", {
         query: rawQuery,
         tenant: requestedTenantId,
-        userId: session?.user?.id,
+        userId,
         role: userRole,
-        scope: "tenant-aggregated",
+        scope: "tenant-role-scoped",
       });
     }
 

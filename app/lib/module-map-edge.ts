@@ -1,6 +1,8 @@
 // ==================== EDGE RUNTIME MODULE MAP ====================
 // Busca o mapeamento de rotas a partir da API interna (dinâmica)
 
+import { moduleRequiredForPath } from "./module-route-matcher";
+
 type ModuleRouteMap = Record<string, string[]>;
 
 type ModuleMapCache = {
@@ -98,18 +100,9 @@ export async function moduleRequiredForRouteEdge(
   pathname: string,
   origin?: string,
 ): Promise<string | null> {
-  const normalizedPath = pathname.replace(/\/$/, "");
   const moduleMap = await getModuleRouteMapEdge(origin);
 
-  for (const [module, routes] of Object.entries(moduleMap)) {
-    const matches = routes.some((route) => normalizedPath.startsWith(route));
-
-    if (matches) {
-      return module;
-    }
-  }
-
-  return null;
+  return moduleRequiredForPath(moduleMap, pathname);
 }
 
 export async function isRouteAllowedByModulesEdge(

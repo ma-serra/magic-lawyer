@@ -601,6 +601,7 @@ const navIconMap: Record<string, ReactElement> = {
   Equipe: <PeopleIcon />,
   Tenants: <PeopleIcon />,
   Advogados: <UsersIcon />,
+  Leads: <UsersIcon />,
   "Meu Perfil": <UserIcon />,
   "Configurações do escritório": <SettingsIcon />,
   Configurações: <SettingsIcon />,

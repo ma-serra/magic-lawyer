@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
@@ -53,6 +54,7 @@ export interface ModuloListResponse {
       cor: string | null;
       icone: string | null;
       ativo: boolean;
+      totalModulos: number;
     }>;
   };
   error?: string;
@@ -77,6 +79,65 @@ export interface ModuloDetailResponse {
     }>;
   };
   error?: string;
+}
+
+export interface ModuloCatalogDiagnosticsResponse {
+  success: boolean;
+  data?: {
+    filesystemModules: number;
+    filesystemRoutes: number;
+    databaseModules: number;
+    databaseRoutes: number;
+    activeModules: number;
+    activeRoutes: number;
+    needsCatalogSync: boolean;
+    lastDetection: Date | null;
+    cacheStrategy: {
+      mode: "dynamic-cache";
+      nodeCacheWindowSeconds: number;
+      edgeCacheWindowSeconds: number;
+    };
+    missingInDatabase: string[];
+    missingInCode: Array<{
+      slug: string;
+      planCount: number;
+    }>;
+    routeDiffs: Array<{
+      slug: string;
+      missingInDatabase: string[];
+      staleInDatabase: string[];
+    }>;
+  };
+  error?: string;
+}
+
+function normalizeGroupingName(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function toGroupingSlug(value: string) {
+  return normalizeGroupingName(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+async function requireSuperAdmin() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    throw new Error("Não autorizado");
+  }
+
+  const user = session.user as any;
+
+  if (user.role !== "SUPER_ADMIN") {
+    throw new Error("Acesso negado");
+  }
+
+  return user;
 }
 
 // ==================== LISTAR MÓDULOS ====================
@@ -165,6 +226,11 @@ export async function listModulos(params?: {
           cor: true,
           icone: true,
           ativo: true,
+          _count: {
+            select: {
+              modulos: true,
+            },
+          },
         },
         orderBy: [{ ordem: "asc" }, { nome: "asc" }],
       }),
@@ -209,7 +275,15 @@ export async function listModulos(params?: {
       data: {
         modulos,
         total,
-        categorias,
+        categorias: categorias.map((categoria) => ({
+          id: categoria.id,
+          nome: categoria.nome,
+          slug: categoria.slug,
+          cor: categoria.cor,
+          icone: categoria.icone,
+          ativo: categoria.ativo,
+          totalModulos: categoria._count.modulos,
+        })),
       },
     };
   } catch (error) {
@@ -326,16 +400,7 @@ export async function updateModuloCategoria(
   categoriaId: string | null,
 ): Promise<ActionResponse<{ success: boolean }>> {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.id) {
-      return { success: false, error: "Não autorizado" };
-    }
-
-    // Verificar se o usuário é super admin
-    if (session.user.role !== "SUPER_ADMIN") {
-      return { success: false, error: "Acesso negado" };
-    }
+    await requireSuperAdmin();
 
     // Verificar se o módulo existe
     const modulo = await prisma.modulo.findUnique({
@@ -363,6 +428,9 @@ export async function updateModuloCategoria(
       data: { categoriaId },
     });
 
+    revalidatePath("/admin/modulos");
+    revalidatePath("/admin/planos");
+
     logger.info(
       `Categoria do módulo ${modulo.slug} atualizada para ${categoriaId || "sem categoria"}`,
     );
@@ -378,6 +446,121 @@ export async function updateModuloCategoria(
   }
 }
 
+export async function updateModuloGrouping(
+  moduloId: string,
+  groupingName: string | null,
+): Promise<
+  ActionResponse<{
+    success: boolean;
+    categoriaId: string | null;
+    categoriaNome: string | null;
+  }>
+> {
+  try {
+    const user = await requireSuperAdmin();
+
+    const modulo = await prisma.modulo.findUnique({
+      where: { id: moduloId },
+      select: { id: true, slug: true },
+    });
+
+    if (!modulo) {
+      return { success: false, error: "Módulo não encontrado" };
+    }
+
+    const normalizedName = normalizeGroupingName(groupingName ?? "");
+
+    if (!normalizedName) {
+      await prisma.modulo.update({
+        where: { id: moduloId },
+        data: { categoriaId: null },
+      });
+
+      revalidatePath("/admin/modulos");
+      revalidatePath("/admin/planos");
+
+      logger.info(
+        `Agrupamento removido do módulo ${modulo.slug} por ${user.email}`,
+      );
+
+      return {
+        success: true,
+        data: {
+          success: true,
+          categoriaId: null,
+          categoriaNome: null,
+        },
+      };
+    }
+
+    const slug = toGroupingSlug(normalizedName);
+
+    const existingCategory = await prisma.moduloCategoria.findFirst({
+      where: {
+        OR: [
+          { slug },
+          { nome: { equals: normalizedName, mode: "insensitive" } },
+        ],
+      },
+      select: {
+        id: true,
+        nome: true,
+      },
+    });
+
+    let categoriaId = existingCategory?.id ?? null;
+    let categoriaNome = existingCategory?.nome ?? normalizedName;
+
+    if (!existingCategory) {
+      const highestOrder = await prisma.moduloCategoria.findFirst({
+        orderBy: { ordem: "desc" },
+        select: { ordem: true },
+      });
+
+      const createdCategory = await prisma.moduloCategoria.create({
+        data: {
+          slug,
+          nome: normalizedName,
+          ordem: (highestOrder?.ordem ?? 0) + 1,
+          ativo: true,
+        },
+        select: {
+          id: true,
+          nome: true,
+        },
+      });
+
+      categoriaId = createdCategory.id;
+      categoriaNome = createdCategory.nome;
+    }
+
+    await prisma.modulo.update({
+      where: { id: moduloId },
+      data: { categoriaId },
+    });
+
+    revalidatePath("/admin/modulos");
+    revalidatePath("/admin/planos");
+
+    logger.info(
+      `Agrupamento do módulo ${modulo.slug} atualizado para ${categoriaNome} por ${user.email}`,
+    );
+
+    return {
+      success: true,
+      data: {
+        success: true,
+        categoriaId,
+        categoriaNome,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao atualizar agrupamento do módulo:", error);
+
+    return { success: false, error: "Erro interno do servidor" };
+  }
+}
+
 // ==================== CRIAR MÓDULO ====================
 
 export async function getDashboardModulos(): Promise<{
@@ -387,6 +570,8 @@ export async function getDashboardModulos(): Promise<{
     ativos: number;
     inativos: number;
     categorias: number;
+    agrupamentosEmUso: number;
+    totalRotas: number;
     maisUsados: Array<{
       id: string;
       nome: string;
@@ -409,12 +594,13 @@ export async function getDashboardModulos(): Promise<{
       return { success: false, error: "Acesso negado" };
     }
 
-    const [total, ativos, inativos, categorias, maisUsados] = await Promise.all(
-      [
+    const [total, ativos, inativos, categorias, totalRotas, maisUsados] =
+      await Promise.all([
         prisma.modulo.count(),
         prisma.modulo.count({ where: { ativo: true } }),
         prisma.modulo.count({ where: { ativo: false } }),
         prisma.moduloCategoria.count(),
+        prisma.moduloRota.count({ where: { ativo: true } }),
         prisma.modulo.findMany({
           select: {
             id: true,
@@ -433,8 +619,15 @@ export async function getDashboardModulos(): Promise<{
           },
           take: 5,
         }),
-      ],
-    );
+      ]);
+
+    const agrupamentosEmUso = await prisma.moduloCategoria.count({
+      where: {
+        modulos: {
+          some: {},
+        },
+      },
+    });
 
     return {
       success: true,
@@ -443,6 +636,8 @@ export async function getDashboardModulos(): Promise<{
         ativos,
         inativos,
         categorias,
+        agrupamentosEmUso,
+        totalRotas,
         maisUsados: maisUsados.map((m) => ({
           id: m.id,
           nome: m.nome,
@@ -453,6 +648,141 @@ export async function getDashboardModulos(): Promise<{
     };
   } catch (error) {
     logger.error("Erro ao obter dashboard de módulos:", error);
+
+    return { success: false, error: "Erro interno do servidor" };
+  }
+}
+
+export async function getModuloCatalogDiagnostics(): Promise<ModuloCatalogDiagnosticsResponse> {
+  try {
+    await requireSuperAdmin();
+
+    const [{ scanProtectedModules }, latestDetection, databaseModules] =
+      await Promise.all([
+        import("@/lib/module-detection-core"),
+        prisma.moduleDetectionLog.findFirst({
+          orderBy: { detectedAt: "desc" },
+          select: {
+            detectedAt: true,
+            filesystemHash: true,
+          },
+        }),
+        prisma.modulo.findMany({
+          select: {
+            slug: true,
+            ativo: true,
+            rotas: {
+              where: { ativo: true },
+              select: { rota: true },
+            },
+            _count: {
+              select: {
+                planoModulos: true,
+              },
+            },
+          },
+          orderBy: { slug: "asc" },
+        }),
+      ]);
+
+    const filesystem = await scanProtectedModules();
+    const filesystemBySlug = new Map(
+      filesystem.detectedModules.map((module) => [module.slug, module]),
+    );
+    const databaseBySlug = new Map(
+      databaseModules.map((module) => [module.slug, module]),
+    );
+
+    const missingInDatabase = filesystem.detectedModules
+      .filter((module) => !databaseBySlug.has(module.slug))
+      .map((module) => module.slug);
+
+    const missingInCode = databaseModules
+      .filter((module) => !filesystemBySlug.has(module.slug))
+      .map((module) => ({
+        slug: module.slug,
+        planCount: module._count.planoModulos,
+      }));
+
+    const routeDiffs = filesystem.detectedModules
+      .map((module) => {
+        const databaseModule = databaseBySlug.get(module.slug);
+
+        if (!databaseModule) {
+          return null;
+        }
+
+        const databaseRoutes = new Set(
+          databaseModule.rotas.map((route) => route.rota),
+        );
+        const filesystemRoutes = new Set(module.rotas);
+        const missingDatabaseRoutes = module.rotas.filter(
+          (route) => !databaseRoutes.has(route),
+        );
+        const staleDatabaseRoutes = databaseModule.rotas
+          .map((route) => route.rota)
+          .filter((route) => !filesystemRoutes.has(route));
+
+        if (
+          missingDatabaseRoutes.length === 0 &&
+          staleDatabaseRoutes.length === 0
+        ) {
+          return null;
+        }
+
+        return {
+          slug: module.slug,
+          missingInDatabase: missingDatabaseRoutes,
+          staleInDatabase: staleDatabaseRoutes,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is NonNullable<
+          ModuloCatalogDiagnosticsResponse["data"]
+        >["routeDiffs"][number] => Boolean(item),
+      );
+
+    const activeModules = databaseModules.filter(
+      (module) => module.ativo,
+    ).length;
+    const activeRoutes = databaseModules.reduce((total, module) => {
+      if (!module.ativo) {
+        return total;
+      }
+
+      return total + module.rotas.length;
+    }, 0);
+
+    return {
+      success: true,
+      data: {
+        filesystemModules: filesystem.detectedModules.length,
+        filesystemRoutes: filesystem.totalRoutes,
+        databaseModules: databaseModules.length,
+        databaseRoutes: databaseModules.reduce(
+          (total, module) => total + module.rotas.length,
+          0,
+        ),
+        activeModules,
+        activeRoutes,
+        needsCatalogSync:
+          !latestDetection ||
+          latestDetection.filesystemHash !== filesystem.filesystemHash,
+        lastDetection: latestDetection?.detectedAt ?? null,
+        cacheStrategy: {
+          mode: "dynamic-cache",
+          nodeCacheWindowSeconds: 300,
+          edgeCacheWindowSeconds: 60,
+        },
+        missingInDatabase,
+        missingInCode,
+        routeDiffs,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao montar diagnóstico do catálogo de módulos:", error);
 
     return { success: false, error: "Erro interno do servidor" };
   }

@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Divider } from "@heroui/divider";
 import { Chip } from "@heroui/chip";
 import { Button } from "@heroui/button";
+import { Select, SelectItem } from "@heroui/react";
 import NextLink from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -17,12 +18,17 @@ import {
   FileText,
   Landmark,
   Mail,
+  MessageSquare,
+  PlugZap,
   Palette,
   Scale,
+  Send,
+  Smartphone,
   Shield,
 } from "lucide-react";
 
 import { EmailCredentialsCard } from "./email-credentials-card";
+import { TenantChannelProviderCard } from "./tenant-channel-provider-card";
 import { TenantSettingsForm } from "./tenant-settings-form";
 import { TenantBrandingForm } from "./tenant-branding-form";
 import { DigitalCertificatesPanel } from "./digital-certificates-panel";
@@ -62,26 +68,112 @@ const AsaasSettingsTab = dynamic(() => import("./asaas/page"), {
   ssr: false,
   loading: () => <SettingsTabLoader />,
 });
+const ClicksignSettingsTab = dynamic(() => import("./clicksign/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
 
 const SETTINGS_TAB_KEYS = [
   "overview",
   "tenant",
   "branding",
-  "email",
-  "certificates",
+  "integracoes",
   "billing",
   "tribunais",
   "tipos-peticao",
   "tipos-contrato",
   "areas-processo",
-  "asaas",
 ] as const;
 
 type SettingsTabKey = (typeof SETTINGS_TAB_KEYS)[number];
 
+const INTEGRATION_SECTION_KEYS = [
+  "email",
+  "clicksign",
+  "certificates",
+  "asaas",
+  "whatsapp",
+  "telegram",
+  "sms",
+] as const;
+
+type IntegrationSectionKey = (typeof INTEGRATION_SECTION_KEYS)[number];
+
+const INTEGRATION_OPTIONS: Array<{
+  key: IntegrationSectionKey;
+  label: string;
+  description: string;
+  icon: ReactNode;
+}> = [
+  {
+    key: "email",
+    label: "Email",
+    description: "Credenciais de envio do escritório para notificações e comunicações.",
+    icon: <Mail className="h-4 w-4" />,
+  },
+  {
+    key: "clicksign",
+    label: "ClickSign",
+    description: "Assinatura digital por tenant, com fallback controlado e mock local.",
+    icon: <FileSignature className="h-4 w-4" />,
+  },
+  {
+    key: "certificates",
+    label: "Certificados e PJe",
+    description: "Certificados A1 e política do escritório para integrações PJe.",
+    icon: <Shield className="h-4 w-4" />,
+  },
+  {
+    key: "asaas",
+    label: "Asaas",
+    description: "Cobrança, billing e sincronização financeira do tenant.",
+    icon: <CreditCard className="h-4 w-4" />,
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    description: "Canal omnichannel do escritório para mensagens operacionais e automações.",
+    icon: <MessageSquare className="h-4 w-4" />,
+  },
+  {
+    key: "telegram",
+    label: "Telegram",
+    description: "Canal alternativo para notificações, campanhas e inbox bidirecional.",
+    icon: <Send className="h-4 w-4" />,
+  },
+  {
+    key: "sms",
+    label: "SMS",
+    description: "Fallback transacional para avisos críticos e recuperações operacionais.",
+    icon: <Smartphone className="h-4 w-4" />,
+  },
+] as const;
+
 function isSettingsTabKey(value: string | null): value is SettingsTabKey {
   if (!value) return false;
   return (SETTINGS_TAB_KEYS as readonly string[]).includes(value);
+}
+
+function isIntegrationSectionKey(
+  value: string | null,
+): value is IntegrationSectionKey {
+  if (!value) return false;
+  return (INTEGRATION_SECTION_KEYS as readonly string[]).includes(value);
+}
+
+function resolveIntegrationSection(
+  tab: string | null,
+  integration: string | null,
+): IntegrationSectionKey {
+  if (isIntegrationSectionKey(tab)) {
+    return tab;
+  }
+
+  if (isIntegrationSectionKey(integration)) {
+    return integration;
+  }
+
+  return "email";
 }
 
 function EmbeddedSettingsPanel({ children }: { children: ReactNode }) {
@@ -250,6 +342,165 @@ interface DigitalCertificatesProps {
   certificatePolicy: DigitalCertificatePolicy;
 }
 
+function IntegracoesTabContent({
+  selectedIntegration,
+  onIntegrationChange,
+  certificates,
+  certificatePolicy,
+}: {
+  selectedIntegration: IntegrationSectionKey;
+  onIntegrationChange: (integration: IntegrationSectionKey) => void;
+  certificates?: DigitalCertificatesProps["certificates"];
+  certificatePolicy: DigitalCertificatePolicy;
+}) {
+  const selectedIntegrationOption =
+    INTEGRATION_OPTIONS.find((option) => option.key === selectedIntegration) ??
+    INTEGRATION_OPTIONS[0];
+
+  const selectedKeys = [selectedIntegration];
+
+  return (
+    <div className="mt-6 space-y-6">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="flex flex-col gap-2 pb-2">
+          <div className="flex items-center gap-2">
+            <PlugZap className="h-4 w-4 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Integrações</h2>
+          </div>
+          <p className="text-sm text-default-400">
+            Tudo que for integração do escritório fica centralizado aqui. As abas
+            gerais permanecem focadas em operação interna.
+          </p>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="grid gap-4 lg:grid-cols-[320px_1fr]">
+          <div className="space-y-3">
+            <Select
+              label="Integração"
+              selectedKeys={selectedKeys}
+              variant="bordered"
+              onSelectionChange={(keys) => {
+                if (keys === "all") return;
+                const selected = Array.from(keys)[0];
+                const selectedKey = String(selected);
+                if (isIntegrationSectionKey(selectedKey)) {
+                  onIntegrationChange(selectedKey);
+                }
+              }}
+            >
+              {INTEGRATION_OPTIONS.map((item) => (
+                <SelectItem key={item.key} textValue={item.label}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-default-500">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </Select>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
+                Seleção atual
+              </p>
+              <p className="mt-2 text-base font-semibold text-foreground">
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-primary">{selectedIntegrationOption.icon}</span>
+                  <span>{selectedIntegrationOption.label}</span>
+                </span>
+              </p>
+              <p className="mt-2 text-sm leading-6 text-default-400">
+                {selectedIntegrationOption.description}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {INTEGRATION_OPTIONS.map((item) => (
+                  <Chip
+                    key={item.key}
+                    color={item.key === selectedIntegration ? "primary" : "default"}
+                    size="sm"
+                    variant={item.key === selectedIntegration ? "solid" : "flat"}
+                  >
+                    {item.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="min-w-0">
+            {selectedIntegration === "email" ? (
+              <div className="space-y-4">
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardBody className="space-y-2 text-sm text-default-300">
+                    <p className="font-medium text-foreground">
+                      Email do escritório
+                    </p>
+                    <p>
+                      Configure aqui o provedor usado nas notificações e mensagens
+                      transacionais do tenant.
+                    </p>
+                  </CardBody>
+                </Card>
+                <EmailCredentialsCard />
+              </div>
+            ) : null}
+
+            {selectedIntegration === "clicksign" ? (
+              <EmbeddedSettingsPanel>
+                <ClicksignSettingsTab />
+              </EmbeddedSettingsPanel>
+            ) : null}
+
+            {selectedIntegration === "certificates" ? (
+              <div className="space-y-6">
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardBody className="space-y-2 text-sm text-default-300">
+                    <p className="font-medium text-foreground">
+                      Escopo desta integração
+                    </p>
+                    <p>
+                      Esta área controla a política e os certificados A1 do{" "}
+                      <strong>tenant</strong>, usados em integrações PJe para toda a
+                      operação.
+                    </p>
+                    <p>
+                      Certificado <strong>pessoal</strong> de advogado fica em{" "}
+                      <strong>Perfil do usuário → Certificado pessoal (PJe)</strong>.
+                    </p>
+                  </CardBody>
+                </Card>
+                <DigitalCertificatePolicyCard initialPolicy={certificatePolicy} />
+                <DigitalCertificatesPanel
+                  certificates={certificates ?? []}
+                  mode="office"
+                  policy={certificatePolicy}
+                />
+              </div>
+            ) : null}
+
+            {selectedIntegration === "asaas" ? (
+              <EmbeddedSettingsPanel>
+                <AsaasSettingsTab />
+              </EmbeddedSettingsPanel>
+            ) : null}
+
+            {selectedIntegration === "whatsapp" ? (
+              <TenantChannelProviderCard channel="WHATSAPP" />
+            ) : null}
+
+            {selectedIntegration === "telegram" ? (
+              <TenantChannelProviderCard channel="TELEGRAM" />
+            ) : null}
+
+            {selectedIntegration === "sms" ? (
+              <TenantChannelProviderCard channel="SMS" />
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
 export function ConfiguracoesTabs({
   tenant,
   branding,
@@ -271,12 +522,22 @@ export function ConfiguracoesTabs({
   const searchParams = useSearchParams();
 
   const tabFromUrl = searchParams.get("tab");
+  const integrationFromUrl = searchParams.get("integration");
+  const isLegacyIntegrationTab = isIntegrationSectionKey(tabFromUrl);
   const normalizedTabFromUrl = isSettingsTabKey(tabFromUrl)
     ? tabFromUrl
+    : isLegacyIntegrationTab
+      ? "integracoes"
     : ("overview" as SettingsTabKey);
+  const normalizedIntegrationFromUrl = resolveIntegrationSection(
+    tabFromUrl,
+    integrationFromUrl,
+  );
   const [isClientReady, setIsClientReady] = useState(false);
   const [selectedTab, setSelectedTab] =
     useState<SettingsTabKey>(normalizedTabFromUrl);
+  const [selectedIntegration, setSelectedIntegration] =
+    useState<IntegrationSectionKey>(normalizedIntegrationFromUrl);
 
   useEffect(() => {
     setIsClientReady(true);
@@ -301,6 +562,50 @@ export function ConfiguracoesTabs({
     setSelectedTab(normalizedTabFromUrl);
   }, [normalizedTabFromUrl]);
 
+  useEffect(() => {
+    setSelectedIntegration(normalizedIntegrationFromUrl);
+  }, [normalizedIntegrationFromUrl]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const expectedTab =
+      isLegacyIntegrationTab || normalizedTabFromUrl === "integracoes"
+        ? "integracoes"
+        : normalizedTabFromUrl === "overview"
+          ? null
+          : normalizedTabFromUrl;
+    const expectedIntegration =
+      expectedTab === "integracoes" ? normalizedIntegrationFromUrl : null;
+
+    if (expectedTab) {
+      params.set("tab", expectedTab);
+    } else {
+      params.delete("tab");
+    }
+
+    if (expectedIntegration) {
+      params.set("integration", expectedIntegration);
+    } else {
+      params.delete("integration");
+    }
+
+    const query = params.toString();
+    const currentQuery = searchParams.toString();
+
+    if (query !== currentQuery) {
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    }
+  }, [
+    isLegacyIntegrationTab,
+    normalizedIntegrationFromUrl,
+    normalizedTabFromUrl,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
   const handleTabChange = (key: Key) => {
     const nextTab = String(key);
     if (!isSettingsTabKey(nextTab)) return;
@@ -310,9 +615,28 @@ export function ConfiguracoesTabs({
     const params = new URLSearchParams(searchParams.toString());
     if (nextTab === "overview") {
       params.delete("tab");
+      params.delete("integration");
     } else {
       params.set("tab", nextTab);
+      if (nextTab === "integracoes") {
+        params.set("integration", selectedIntegration);
+      } else {
+        params.delete("integration");
+      }
     }
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
+
+  const handleIntegrationChange = (integration: IntegrationSectionKey) => {
+    setSelectedIntegration(integration);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "integracoes");
+    params.set("integration", integration);
 
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, {
@@ -671,56 +995,21 @@ export function ConfiguracoesTabs({
         </div>
       </Tab>
 
-      {/* Tab 4: Email */}
       <Tab
-        key="email"
+        key="integracoes"
         title={
           <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            <span>Email</span>
+            <PlugZap className="h-4 w-4" />
+            <span>Integrações</span>
           </div>
         }
       >
-        <div className="mt-6">
-          <EmailCredentialsCard />
-        </div>
-      </Tab>
-
-      {/* Tab 5: Integrações PJe */}
-      <Tab
-        key="certificates"
-        title={
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            <span>Integrações PJe</span>
-          </div>
-        }
-      >
-        <div className="mt-6">
-          <div className="space-y-6">
-            <Card className="border border-primary/20 bg-primary/5">
-              <CardBody className="space-y-2 text-sm text-default-300">
-                <p className="font-medium text-foreground">Escopo desta aba: certificado do escritório</p>
-                <p>
-                  Esta área controla a política e os certificados A1 do <strong>tenant</strong>,
-                  usados em integrações PJe para toda a operação.
-                </p>
-                <p>
-                  Certificado <strong>pessoal</strong> de advogado fica em{" "}
-                  <strong>Perfil do usuário → Certificado pessoal (PJe)</strong>.
-                </p>
-              </CardBody>
-            </Card>
-            <DigitalCertificatePolicyCard
-              initialPolicy={certificatePolicy}
-            />
-            <DigitalCertificatesPanel
-              certificates={certificates ?? []}
-              mode="office"
-              policy={certificatePolicy}
-            />
-          </div>
-        </div>
+        <IntegracoesTabContent
+          certificatePolicy={certificatePolicy}
+          certificates={certificates}
+          selectedIntegration={selectedIntegration}
+          onIntegrationChange={handleIntegrationChange}
+        />
       </Tab>
 
       <Tab
@@ -793,19 +1082,6 @@ export function ConfiguracoesTabs({
         </EmbeddedSettingsPanel>
       </Tab>
 
-      <Tab
-        key="asaas"
-        title={
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4" />
-            <span>Asaas</span>
-          </div>
-        }
-      >
-        <EmbeddedSettingsPanel>
-          <AsaasSettingsTab />
-        </EmbeddedSettingsPanel>
-      </Tab>
     </Tabs>
   );
 }

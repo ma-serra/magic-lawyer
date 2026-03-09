@@ -67,8 +67,8 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
           onOpenSidebar={openSidebarMobile}
         />
         <BreadcrumbNav />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-10 pt-3 sm:px-4 sm:pt-6 md:px-6 md:pt-8">
-          <div className="mx-auto w-full max-w-full xl:max-w-6xl space-y-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-10 pt-3 sm:px-5 sm:pt-6 md:px-8 md:pt-8">
+          <div className="mx-auto w-full max-w-[1600px] space-y-6">
             {children}
           </div>
         </main>

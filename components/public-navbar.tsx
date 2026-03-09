@@ -16,7 +16,6 @@ import clsx from "clsx";
 import NextLink from "next/link";
 
 import { siteConfig } from "@/config/site";
-import { SignInOut } from "@/components/signinout";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Logo } from "@/components/icons";
 
@@ -88,10 +87,20 @@ export function PublicNavbar() {
 
         <NavbarContent className="flex-shrink-0" justify="end">
           <ThemeSwitch />
-          <div className="hidden sm:flex">
-            <SignInOut />
-          </div>
-          <NavbarMenuToggle aria-label="Abrir menu" className="lg:hidden" />
+          <Button
+            as={NextLink}
+            className="hidden sm:inline-flex"
+            color="primary"
+            href="/precos#lead-chat"
+            radius="full"
+            size="sm"
+          >
+            Falar com especialista
+          </Button>
+          <NavbarMenuToggle
+            aria-label="Abrir menu"
+            className="hidden sm:inline-flex lg:hidden"
+          />
         </NavbarContent>
 
         <NavbarContent
@@ -116,22 +125,19 @@ export function PublicNavbar() {
             ))}
           </div>
           <div className="mx-2 mt-6 flex flex-col gap-3 border-t pt-4">
-            <NavbarMenuItem className="pt-2">
-              <SignInOut />
-            </NavbarMenuItem>
             <div className="flex items-center justify-between border px-4 py-3">
               <div className="flex flex-col text-xs">
-                <span>Precisa ver uma demonstração?</span>
-                <span className="font-semibold">Fale com nossa equipe</span>
+                <span>Quer receber uma proposta?</span>
+                <span className="font-semibold">Converse com vendas agora</span>
               </div>
               <Button
                 as={NextLink}
                 color="primary"
-                href="/about"
+                href="/precos#lead-chat"
                 radius="none"
                 size="sm"
               >
-                Agendar demo
+                Iniciar chat
               </Button>
             </div>
           </div>

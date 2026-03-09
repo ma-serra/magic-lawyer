@@ -1,300 +1,373 @@
 "use client";
 
-import React from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Divider } from "@heroui/divider";
-import { Button } from "@heroui/button";
-import { Switch } from "@heroui/switch";
-import { Input } from "@heroui/input";
+import NextLink from "next/link";
+import useSWR from "swr";
+import { Button, Chip, Spinner } from "@heroui/react";
+import {
+  Building2,
+  CreditCard,
+  FileSignature,
+  Landmark,
+  Layers,
+  LifeBuoy,
+  Mail,
+  MessageSquare,
+  PlugZap,
+  Puzzle,
+  Send,
+  ShieldCheck,
+  Shield,
+  Smartphone,
+} from "lucide-react";
 
-import { title, subtitle } from "@/components/primitives";
+import { getSuperAdminDashboardData } from "@/app/actions/admin-dashboard";
+import { getDashboardBancos } from "@/app/actions/bancos";
+import { getDashboardModulos } from "@/app/actions/modulos";
+import { getEstatisticasPlanos } from "@/app/actions/planos";
+import { PeopleMetricCard, PeoplePageHeader, PeoplePanel } from "@/components/people-ui";
+
+const CHECK_INTERVAL_MS = 60000;
 
 export function ConfiguracoesContent() {
-  const [settings, setSettings] = React.useState({
-    sistema: {
-      nome: "Magic Lawyer",
-      versao: "2025.3.0",
-      ambiente: "Produção",
-      manutencao: false,
+  const { data: dashboardResponse, isLoading: loadingDashboard } = useSWR(
+    "admin-settings-dashboard-overview",
+    getSuperAdminDashboardData,
+    {
+      revalidateOnFocus: false,
+      refreshInterval: CHECK_INTERVAL_MS,
     },
-    email: {
-      provider: "Resend",
-      fromAddress: "noreply@magiclawyer.com",
-      apiKey: "re_xxxxxxxxxxxxxxxxxx",
-      ativo: true,
-    },
-    pagamentos: {
-      stripeAtivo: true,
-      pagarmeAtivo: false,
-      webhookUrl: "https://api.magiclawyer.com/webhooks/pagamento",
-    },
-    seguranca: {
-      loginDuploFator: true,
-      sessoesSimultaneas: 3,
-      tempoSessao: 8, // horas
-    },
-  });
+  );
 
-  const handleSave = () => {
-    // TODO: Implementar salvamento das configurações
-  };
+  const { data: planosResponse, isLoading: loadingPlanos } = useSWR(
+    "admin-settings-planos-overview",
+    getEstatisticasPlanos,
+    {
+      revalidateOnFocus: false,
+      refreshInterval: CHECK_INTERVAL_MS,
+    },
+  );
+
+  const { data: modulosResponse, isLoading: loadingModulos } = useSWR(
+    "admin-settings-modulos-overview",
+    getDashboardModulos,
+    {
+      revalidateOnFocus: false,
+      refreshInterval: CHECK_INTERVAL_MS,
+    },
+  );
+
+  const { data: bancosResponse, isLoading: loadingBancos } = useSWR(
+    "admin-settings-bancos-overview",
+    getDashboardBancos,
+    {
+      revalidateOnFocus: false,
+      refreshInterval: CHECK_INTERVAL_MS,
+    },
+  );
+
+  const dashboard = dashboardResponse?.success ? dashboardResponse.data : undefined;
+  const planos = planosResponse?.success ? planosResponse.data : undefined;
+  const modulos = modulosResponse?.success ? modulosResponse.data : undefined;
+  const bancos = bancosResponse?.success ? bancosResponse.dashboard : undefined;
+
+  const statusCore: Array<{
+    label: string;
+    ok: boolean;
+    detail: string;
+  }> = [
+    {
+      label: "Painel executivo",
+      ok: Boolean(dashboardResponse?.success),
+      detail: dashboardResponse?.success
+        ? "Métricas globais operacionais"
+        : dashboardResponse?.error || "Falha ao carregar",
+    },
+    {
+      label: "Gestão de planos",
+      ok: Boolean(planosResponse?.success),
+      detail: planosResponse?.success
+        ? `${planos?.totalPlanos ?? 0} plano(s) monitorados`
+        : planosResponse?.error || "Falha ao carregar",
+    },
+    {
+      label: "Catálogo de módulos",
+      ok: Boolean(modulosResponse?.success),
+      detail: modulosResponse?.success
+        ? `${modulos?.ativos ?? 0} módulo(s) ativo(s)`
+        : modulosResponse?.error || "Falha ao carregar",
+    },
+    {
+      label: "Catálogo de bancos",
+      ok: Boolean(bancosResponse?.success),
+      detail: bancosResponse?.success
+        ? `${bancos?.bancosAtivos ?? 0} banco(s) ativo(s)`
+        : bancosResponse?.error || "Falha ao carregar",
+    },
+  ];
+
+  const isLoading =
+    loadingDashboard || loadingPlanos || loadingModulos || loadingBancos;
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              Configurações do Sistema
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Gerencie as configurações gerais da plataforma
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Configurações globais da plataforma"
+        description="Central de governança para regras de negócio do sistema inteiro. Aqui você acompanha saúde do core e acessa os módulos responsáveis por cada configuração."
+        actions={
+          <>
+            <Button as={NextLink} color="primary" href="/admin/dashboard" size="sm">
+              Painel executivo
+            </Button>
+            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="bordered">
+              Auditoria
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          label="Tenants ativos"
+          value={dashboard?.totals.activeTenants ?? 0}
+          helper={`${dashboard?.totals.totalTenants ?? 0} tenant(s) total`}
+          tone="primary"
+          icon={<Building2 className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Planos ativos"
+          value={planos?.planosAtivos ?? 0}
+          helper={`${planos?.totalPlanos ?? 0} plano(s) cadastrado(s)`}
+          tone="success"
+          icon={<Layers className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Módulos ativos"
+          value={modulos?.ativos ?? 0}
+          helper={`${modulos?.categorias ?? 0} categoria(s)`}
+          tone="secondary"
+          icon={<Puzzle className="h-4 w-4" />}
+        />
+        <PeopleMetricCard
+          label="Bancos ativos"
+          value={bancos?.bancosAtivos ?? 0}
+          helper={`${bancos?.totalBancos ?? 0} banco(s) no catálogo`}
+          tone="warning"
+          icon={<Landmark className="h-4 w-4" />}
+        />
+      </div>
+
+      <PeoplePanel
+        title="Mapa de configuração"
+        description="Cada domínio administrativo tem tela própria. Esta central evita configuração fake e concentra governança real."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {[
+            {
+              title: "Planos comerciais",
+              description:
+                "Define limites, preço e habilitação de módulos por plano.",
+              href: "/admin/planos",
+              icon: <Layers className="h-4 w-4" />,
+            },
+            {
+              title: "Módulos e categorias",
+              description:
+                "Controla arquitetura funcional do produto e organização de features.",
+              href: "/admin/modulos",
+              icon: <Puzzle className="h-4 w-4" />,
+            },
+            {
+              title: "Financeiro global",
+              description:
+                "Métricas de receita, assinaturas, faturas e pagamentos da plataforma.",
+              href: "/admin/financeiro",
+              icon: <CreditCard className="h-4 w-4" />,
+            },
+            {
+              title: "Bancos",
+              description:
+                "Catálogo oficial compartilhado para dados bancários dos escritórios.",
+              href: "/admin/bancos",
+              icon: <Landmark className="h-4 w-4" />,
+            },
+            {
+              title: "Suporte",
+              description:
+                "Fila de tickets/chats, atribuição e fechamento operacional.",
+              href: "/admin/suporte",
+              icon: <LifeBuoy className="h-4 w-4" />,
+            },
+            {
+              title: "Auditoria",
+              description:
+                "Rastreabilidade de ações críticas do super admin e tenants.",
+              href: "/admin/auditoria",
+              icon: <ShieldCheck className="h-4 w-4" />,
+            },
+          ].map((item) => (
+            <div
+              key={item.href}
+              className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            >
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                {item.icon}
+                {item.title}
+              </div>
+              <p className="mb-4 text-sm text-default-400">{item.description}</p>
+              <Button as={NextLink} href={item.href} size="sm" variant="flat">
+                Abrir
+              </Button>
+            </div>
+          ))}
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Integrações da Plataforma"
+        description="No super admin, integrações ficam agrupadas como domínio próprio. O core da plataforma não deve se misturar com provedores externos e operações por tenant."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {[
+            {
+              title: "Email transacional",
+              description:
+                "Operação por tenant. O super admin entra aqui para suporte e governança das credenciais de envio.",
+              icon: <Mail className="h-4 w-4" />,
+              scope: "Por tenant",
+              href: "/admin/tenants",
+              cta: "Abrir tenants",
+            },
+            {
+              title: "ClickSign",
+              description:
+                "Base multi-tenant em evolução. O próximo passo é observabilidade e inspeção operacional sem expor segredos.",
+              icon: <FileSignature className="h-4 w-4" />,
+              scope: "Assinatura",
+              href: "/admin/tenants",
+              cta: "Ver tenants",
+            },
+            {
+              title: "Certificados e PJe",
+              description:
+                "Integração sensível por tenant, com política e validade que o super admin precisa monitorar.",
+              icon: <Shield className="h-4 w-4" />,
+              scope: "PJe",
+              href: "/admin/tenants",
+              cta: "Inspecionar tenants",
+            },
+            {
+              title: "Asaas",
+              description:
+                "Billing e cobrança seguem separados do core e precisam de leitura administrativa por tenant e por receita global.",
+              icon: <CreditCard className="h-4 w-4" />,
+              scope: "Financeiro",
+              href: "/admin/financeiro",
+              cta: "Abrir financeiro",
+            },
+            {
+              title: "WhatsApp / Telegram / SMS",
+              description:
+                "Bloco omnichannel planejado. A navegação já está sendo organizada para receber esses canais sem multiplicar telas.",
+              icon: <PlugZap className="h-4 w-4" />,
+              scope: "Roadmap",
+              href: null,
+              cta: null,
+            },
+            {
+              title: "Canais futuros",
+              description:
+                "Fallback por canal, automações e trilha de entrega serão tratados dentro do mesmo domínio de integrações.",
+              icon: (
+                <div className="flex items-center gap-1">
+                  <MessageSquare className="h-4 w-4" />
+                  <Send className="h-4 w-4" />
+                  <Smartphone className="h-4 w-4" />
+                </div>
+              ),
+              scope: "Omnichannel",
+              href: null,
+              cta: null,
+            },
+          ].map((item) => (
+            <div
+              key={item.title}
+              className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            >
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                {item.icon}
+                {item.title}
+              </div>
+              <div className="mb-3">
+                <Chip color="secondary" size="sm" variant="flat">
+                  {item.scope}
+                </Chip>
+              </div>
+              <p className="mb-4 text-sm text-default-400">{item.description}</p>
+              {item.href && item.cta ? (
+                <Button as={NextLink} href={item.href} size="sm" variant="flat">
+                  {item.cta}
+                </Button>
+              ) : (
+                <Chip color="warning" size="sm" variant="flat">
+                  Estrutura preparada
+                </Chip>
+              )}
+            </div>
+          ))}
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Regra de negócio do admin"
+        description="Escopo do super admin para evitar confusão com admin de tenant."
+      >
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-2xl border border-success/20 bg-success/10 p-4">
+            <p className="text-sm font-semibold text-success">Super admin pode</p>
+            <p className="mt-2 text-sm text-default-200">
+              Gerenciar tenant, plano, módulo, bancos, suporte global e auditoria
+              completa da plataforma.
             </p>
           </div>
-          <Button color="primary" variant="solid" onPress={handleSave}>
-            💾 Salvar Configurações
-          </Button>
+          <div className="rounded-2xl border border-warning/20 bg-warning/10 p-4">
+            <p className="text-sm font-semibold text-warning">Admin de tenant não pode</p>
+            <p className="mt-2 text-sm text-default-200">
+              Alterar configurações globais do SaaS. Ele opera apenas dados internos
+              do próprio escritório.
+            </p>
+          </div>
         </div>
-      </header>
+      </PeoplePanel>
 
-      {/* Informações do Sistema */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            ℹ️ Informações do Sistema
-          </h2>
-          <p className="text-sm text-default-400">
-            Configurações básicas da plataforma
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Nome do Sistema"
-              value={settings.sistema.nome}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  sistema: { ...settings.sistema, nome: e.target.value },
-                })
-              }
-            />
-            <Input isReadOnly label="Versão" value={settings.sistema.versao} />
-            <Input
-              isReadOnly
-              label="Ambiente"
-              value={settings.sistema.ambiente}
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
-                Modo Manutenção
-              </span>
-              <Switch
-                isSelected={settings.sistema.manutencao}
-                onValueChange={(checked) =>
-                  setSettings({
-                    ...settings,
-                    sistema: { ...settings.sistema, manutencao: checked },
-                  })
-                }
-              />
-            </div>
+      <PeoplePanel
+        title="Saúde operacional do core"
+        description="Validação rápida da malha administrativa principal."
+      >
+        {isLoading ? (
+          <div className="flex items-center gap-2 py-2 text-sm text-default-400">
+            <Spinner size="sm" />
+            Sincronizando estado operacional...
           </div>
-        </CardBody>
-      </Card>
-
-      {/* Configurações de Email */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            📧 Configurações de Email
-          </h2>
-          <p className="text-sm text-default-400">
-            Configuração do provedor Resend para envio de notificações
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Provedor"
-              value={settings.email.provider}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  email: { ...settings.email, provider: e.target.value },
-                })
-              }
-            />
-            <Input
-              label="Remetente (From Address)"
-              value={settings.email.fromAddress}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  email: { ...settings.email, fromAddress: e.target.value },
-                })
-              }
-            />
-            <Input
-              label="API Key"
-              value={settings.email.apiKey}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  email: { ...settings.email, apiKey: e.target.value },
-                })
-              }
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
-                Email Ativo
-              </span>
-              <Switch
-                isSelected={settings.email.ativo}
-                onValueChange={(checked) =>
-                  setSettings({
-                    ...settings,
-                    email: { ...settings.email, ativo: checked },
-                  })
-                }
-              />
-            </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {statusCore.map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{item.label}</p>
+                  <p className="text-xs text-default-400">{item.detail}</p>
+                </div>
+                <Chip color={item.ok ? "success" : "danger"} size="sm" variant="flat">
+                  {item.ok ? "Operacional" : "Falha"}
+                </Chip>
+              </div>
+            ))}
           </div>
-        </CardBody>
-      </Card>
-
-      {/* Configurações de Pagamento */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            💳 Configurações de Pagamento
-          </h2>
-          <p className="text-sm text-default-400">
-            Integrações com gateways de pagamento
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
-                Stripe Ativo
-              </span>
-              <Switch
-                isSelected={settings.pagamentos.stripeAtivo}
-                onValueChange={(checked) =>
-                  setSettings({
-                    ...settings,
-                    pagamentos: {
-                      ...settings.pagamentos,
-                      stripeAtivo: checked,
-                    },
-                  })
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
-                Pagarme Ativo
-              </span>
-              <Switch
-                isSelected={settings.pagamentos.pagarmeAtivo}
-                onValueChange={(checked) =>
-                  setSettings({
-                    ...settings,
-                    pagamentos: {
-                      ...settings.pagamentos,
-                      pagarmeAtivo: checked,
-                    },
-                  })
-                }
-              />
-            </div>
-            <div className="md:col-span-2">
-              <Input
-                label="Webhook URL"
-                value={settings.pagamentos.webhookUrl}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    pagamentos: {
-                      ...settings.pagamentos,
-                      webhookUrl: e.target.value,
-                    },
-                  })
-                }
-              />
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Configurações de Segurança */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            🔒 Configurações de Segurança
-          </h2>
-          <p className="text-sm text-default-400">
-            Políticas de segurança e autenticação
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-white">
-                Login Duplo Fator
-              </span>
-              <Switch
-                isSelected={settings.seguranca.loginDuploFator}
-                onValueChange={(checked) =>
-                  setSettings({
-                    ...settings,
-                    seguranca: {
-                      ...settings.seguranca,
-                      loginDuploFator: checked,
-                    },
-                  })
-                }
-              />
-            </div>
-            <Input
-              label="Sessões Simultâneas"
-              type="number"
-              value={settings.seguranca.sessoesSimultaneas.toString()}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  seguranca: {
-                    ...settings.seguranca,
-                    sessoesSimultaneas: parseInt(e.target.value) || 3,
-                  },
-                })
-              }
-            />
-            <Input
-              label="Tempo de Sessão (horas)"
-              type="number"
-              value={settings.seguranca.tempoSessao.toString()}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  seguranca: {
-                    ...settings.seguranca,
-                    tempoSessao: parseInt(e.target.value) || 8,
-                  },
-                })
-              }
-            />
-          </div>
-        </CardBody>
-      </Card>
+        )}
+      </PeoplePanel>
     </section>
   );
 }

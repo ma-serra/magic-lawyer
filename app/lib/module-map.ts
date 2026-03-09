@@ -3,6 +3,7 @@
 // NÃO EDITE MANUALMENTE - Use a interface de administração
 
 import prisma from "./prisma";
+import { moduleRequiredForPath } from "./module-route-matcher";
 
 // Cache para performance
 let moduleMapCache: Record<string, string[]> | null = null;
@@ -78,20 +79,10 @@ export async function isRouteAllowedByModules(
 export async function moduleRequiredForRoute(
   pathname: string,
 ): Promise<string | null> {
-  const normalizedPath = pathname.replace(/\/$/, "");
-
   try {
     const moduleMap = await getModuleRouteMap();
 
-    for (const [module, routes] of Object.entries(moduleMap)) {
-      const matches = routes.some((route) => normalizedPath.startsWith(route));
-
-      if (matches) {
-        return module;
-      }
-    }
-
-    return null;
+    return moduleRequiredForPath(moduleMap, pathname);
   } catch (error) {
     console.error("Erro ao verificar módulo necessário para rota:", error);
 

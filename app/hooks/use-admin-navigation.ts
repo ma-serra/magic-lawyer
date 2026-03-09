@@ -27,31 +27,16 @@ export function useAdminNavigation() {
         description: "Gerenciar escritórios de advocacia",
       },
       {
-        label: "Planos",
+        label: "Planos e Módulos",
         href: "/admin/planos",
         icon: "Layers",
-        description: "Controle de planos e módulos liberados",
+        description: "Catálogo comercial: planos, módulos, matriz e composição",
       },
       {
-        label: "Gestão de Módulos",
-        href: "/admin/modulos",
-        icon: "Puzzle",
-        description: "Gestão de módulos e categorias do sistema",
-        isAccordion: true,
-        children: [
-          {
-            label: "Módulos",
-            href: "/admin/modulos",
-            icon: "Puzzle",
-            description: "Visualizar e gerenciar módulos",
-          },
-          {
-            label: "Categorias",
-            href: "/admin/modulos/categorias",
-            icon: "Tag",
-            description: "Organizar módulos por categorias",
-          },
-        ],
+        label: "Leads",
+        href: "/admin/leads",
+        icon: "Users",
+        description: "Funil comercial de captação da landing",
       },
       {
         label: "Juízes Globais",

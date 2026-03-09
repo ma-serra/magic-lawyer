@@ -33,6 +33,12 @@ export const createDocumentoAssinatura = async (
     // Verificar se o documento existe
     const documento = await prisma.documento.findUnique({
       where: { id: data.documentoId },
+      select: {
+        id: true,
+        tenantId: true,
+        processoId: true,
+        clienteId: true,
+      },
     });
 
     if (!documento) {
@@ -42,17 +48,111 @@ export const createDocumentoAssinatura = async (
     // Verificar se o cliente existe
     const cliente = await prisma.cliente.findUnique({
       where: { id: data.clienteId },
+      select: {
+        id: true,
+        tenantId: true,
+      },
     });
 
     if (!cliente) {
       return { success: false, error: "Cliente não encontrado" };
     }
 
+    if (documento.tenantId !== cliente.tenantId) {
+      return {
+        success: false,
+        error: "Documento e cliente pertencem a tenants diferentes",
+      };
+    }
+
+    if (documento.clienteId && documento.clienteId !== data.clienteId) {
+      return {
+        success: false,
+        error: "Documento já está vinculado a outro cliente",
+      };
+    }
+
+    const processoId = data.processoId ?? documento.processoId ?? undefined;
+
+    if (
+      data.processoId &&
+      documento.processoId &&
+      documento.processoId !== data.processoId
+    ) {
+      return {
+        success: false,
+        error: "Documento já está vinculado a outro processo",
+      };
+    }
+
+    if (processoId) {
+      const processo = await prisma.processo.findUnique({
+        where: { id: processoId },
+        select: {
+          id: true,
+          tenantId: true,
+        },
+      });
+
+      if (!processo) {
+        return { success: false, error: "Processo não encontrado" };
+      }
+
+      if (processo.tenantId !== documento.tenantId) {
+        return {
+          success: false,
+          error: "Processo pertence a outro tenant",
+        };
+      }
+    }
+
+    if (data.advogadoResponsavelId) {
+      const advogado = await prisma.advogado.findUnique({
+        where: { id: data.advogadoResponsavelId },
+        select: {
+          id: true,
+          tenantId: true,
+        },
+      });
+
+      if (!advogado) {
+        return { success: false, error: "Advogado responsável não encontrado" };
+      }
+
+      if (advogado.tenantId !== documento.tenantId) {
+        return {
+          success: false,
+          error: "Advogado responsável pertence a outro tenant",
+        };
+      }
+    }
+
+    if (data.criadoPorId) {
+      const usuario = await prisma.usuario.findUnique({
+        where: { id: data.criadoPorId },
+        select: {
+          id: true,
+          tenantId: true,
+        },
+      });
+
+      if (!usuario) {
+        return { success: false, error: "Usuário criador não encontrado" };
+      }
+
+      if (usuario.tenantId !== documento.tenantId) {
+        return {
+          success: false,
+          error: "Usuário criador pertence a outro tenant",
+        };
+      }
+    }
+
     const documentoAssinatura = await prisma.documentoAssinatura.create({
       data: {
-        tenantId: data.criadoPorId, // Assumindo que o tenantId vem do usuário logado
+        tenantId: documento.tenantId,
         documentoId: data.documentoId,
-        processoId: data.processoId,
+        processoId,
         clienteId: data.clienteId,
         advogadoResponsavelId: data.advogadoResponsavelId,
         titulo: data.titulo,
@@ -118,6 +218,7 @@ export const enviarDocumentoParaAssinatura = async (
 
     // Enviar para ClickSign
     const clicksignResult = await sendDocumentForSigning({
+      tenantId: documentoAssinatura.tenantId,
       filename,
       fileContent,
       signer: {
@@ -229,6 +330,7 @@ export const verificarStatusAssinatura = async (
     // Verificar status no ClickSign
     const statusResult = await checkDocumentStatus(
       documentoAssinatura.clicksignDocumentId,
+      { tenantId: documentoAssinatura.tenantId },
     );
 
     if (!statusResult.success || !statusResult.data) {
@@ -510,7 +612,9 @@ export const cancelarAssinatura = async (documentoAssinaturaId: string) => {
       try {
         const { cancelDocument } = await import("./clicksign");
 
-        await cancelDocument(documentoAssinatura.clicksignDocumentId);
+        await cancelDocument(documentoAssinatura.clicksignDocumentId, {
+          tenantId: documentoAssinatura.tenantId,
+        });
       } catch (error) {
         logger.error("Erro ao cancelar documento no ClickSign:", error);
         // Continua com o cancelamento local mesmo se falhar no ClickSign
@@ -572,6 +676,7 @@ export const reenviarLinkAssinatura = async (documentoAssinaturaId: string) => {
     const urlResult = await getSigningUrl(
       documentoAssinatura.clicksignDocumentId!,
       documentoAssinatura.clicksignSignerId,
+      { tenantId: documentoAssinatura.tenantId },
     );
 
     if (!urlResult.success || !urlResult.data) {

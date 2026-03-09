@@ -10,11 +10,13 @@ export async function getTenantAccessibleModules(
       planoVersao: {
         include: {
           modulos: {
+            orderBy: { ordem: "asc" },
             include: {
               modulo: {
                 select: {
                   slug: true,
                   ativo: true,
+                  ordem: true,
                 },
               },
             },
@@ -27,9 +29,10 @@ export async function getTenantAccessibleModules(
           nome: true,
           modulos: {
             where: { habilitado: true },
+            orderBy: { ordem: "asc" },
             include: {
               modulo: {
-                select: { slug: true, ativo: true },
+                select: { slug: true, ativo: true, ordem: true },
               },
             },
           },
@@ -55,9 +58,10 @@ export async function getTenantAccessibleModules(
           orderBy: { numero: "desc" },
           include: {
             modulos: {
+              orderBy: { ordem: "asc" },
               include: {
                 modulo: {
-                  select: { slug: true, ativo: true },
+                  select: { slug: true, ativo: true, ordem: true },
                 },
               },
             },
@@ -66,7 +70,13 @@ export async function getTenantAccessibleModules(
       : null);
 
   if (publishedVersion?.modulos?.length) {
-    const slugs = publishedVersion.modulos
+    const slugs = [...publishedVersion.modulos]
+      .sort(
+        (a, b) =>
+          (a.ordem ?? a.modulo?.ordem ?? 999) -
+            (b.ordem ?? b.modulo?.ordem ?? 999) ||
+          (a.modulo?.slug ?? "").localeCompare(b.modulo?.slug ?? ""),
+      )
       .filter((item) => item.modulo?.slug && item.modulo?.ativo)
       .map((item) => item.modulo!.slug);
 
@@ -78,7 +88,13 @@ export async function getTenantAccessibleModules(
     return Array.from(resultSet);
   } else {
     const fallbackSlugs =
-      subscription.plano?.modulos
+      [...(subscription.plano?.modulos ?? [])]
+        .sort(
+          (a, b) =>
+            (a.ordem ?? a.modulo?.ordem ?? 999) -
+              (b.ordem ?? b.modulo?.ordem ?? 999) ||
+            (a.modulo?.slug ?? "").localeCompare(b.modulo?.slug ?? ""),
+        )
         .filter((item) => item.modulo?.slug && item.modulo?.ativo)
         .map((item) => item.modulo!.slug) ?? [];
 

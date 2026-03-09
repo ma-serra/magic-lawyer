@@ -7,17 +7,31 @@ import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
-import { Skeleton, Tooltip } from "@heroui/react";
+import {
+  Skeleton,
+  Tooltip,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Pagination,
+} from "@heroui/react";
+import { addToast } from "@heroui/toast";
 import NextLink from "next/link";
 import Image from "next/image";
 import { Input } from "@heroui/input";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search, Filter, RotateCcw } from "lucide-react";
+import { Search, Filter, RotateCcw, Copy, LifeBuoy } from "lucide-react";
 
 import { getAllTenants, type TenantResponse } from "@/app/actions/admin";
 import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
-import { title, subtitle } from "@/components/primitives";
 import { useRealtimeTenantStatus } from "@/app/hooks/use-realtime-tenant-status";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 import {
   isPollingGloballyEnabled,
   resolvePollingInterval,
@@ -108,10 +122,11 @@ function TenantsSkeleton() {
 
 interface TenantCardProps {
   tenant: any;
-  mutate: () => void;
+  onOpenDetails: (tenant: any) => void;
 }
 
-function TenantCard({ tenant, mutate }: TenantCardProps) {
+function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
+  const [showInternalData, setShowInternalData] = useState(false);
   const { status, statusChanged, isUpdating } = useRealtimeTenantStatus(
     tenant.id,
   );
@@ -125,6 +140,23 @@ function TenantCard({ tenant, mutate }: TenantCardProps) {
     ? "border border-white/10 bg-background/70 backdrop-blur transition hover:border-primary/40 animate-pulse border-green-500/50"
     : "border border-white/10 bg-background/70 backdrop-blur transition hover:border-primary/40";
 
+  const handleCopy = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      addToast({
+        title: `${label} copiado`,
+        description: "Valor copiado para a área de transferência.",
+        color: "success",
+      });
+    } catch {
+      addToast({
+        title: "Falha ao copiar",
+        description: "Não foi possível copiar agora. Tente novamente.",
+        color: "danger",
+      });
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -133,30 +165,62 @@ function TenantCard({ tenant, mutate }: TenantCardProps) {
       transition={{ duration: 0.25, ease: "easeOut" }}
       layout
     >
-      <Card key={tenant.id} className={cardClassName}>
-        <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                {tenant.branding?.logoUrl ? (
-                  <Image
-                    alt={`Logo ${tenant.name}`}
-                    height={56}
-                    src={tenant.branding.logoUrl}
-                    width={56}
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <span className="text-lg font-semibold text-white">
-                    {tenant.name?.charAt(0)?.toUpperCase() ?? "?"}
-                  </span>
-                )}
-              </div>
-              <div className="min-w-0 space-y-1">
-                <p className="text-lg font-semibold text-white">{tenant.name}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {statusReason ? (
-                    <Tooltip content={statusReason}>
+      <Card
+        key={tenant.id}
+        className={`${cardClassName} cursor-pointer`}
+        role="button"
+        tabIndex={0}
+        onClick={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest("[data-stop-card-press='true']")) return;
+          onOpenDetails(tenant);
+        }}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest("[data-stop-card-press='true']")) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpenDetails(tenant);
+          }
+        }}
+      >
+        <CardBody className="space-y-3">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                  {tenant.branding?.logoUrl ? (
+                    <Image
+                      alt={`Logo ${tenant.name}`}
+                      height={56}
+                      src={tenant.branding.logoUrl}
+                      width={56}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold text-foreground">
+                      {tenant.name?.charAt(0)?.toUpperCase() ?? "?"}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-lg font-semibold text-foreground">
+                    {tenant.name}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {statusReason ? (
+                      <Tooltip content={statusReason}>
+                        <Chip
+                          className={statusChanged ? "animate-bounce" : ""}
+                          color={statusTone[tenantStatus] ?? "secondary"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {statusLabel[tenantStatus] ?? tenantStatus}
+                          {isUpdating && <span className="ml-1 text-xs">⟳</span>}
+                        </Chip>
+                      </Tooltip>
+                    ) : (
                       <Chip
                         className={statusChanged ? "animate-bounce" : ""}
                         color={statusTone[tenantStatus] ?? "secondary"}
@@ -166,60 +230,112 @@ function TenantCard({ tenant, mutate }: TenantCardProps) {
                         {statusLabel[tenantStatus] ?? tenantStatus}
                         {isUpdating && <span className="ml-1 text-xs">⟳</span>}
                       </Chip>
-                    </Tooltip>
-                  ) : (
-                    <Chip
-                      className={statusChanged ? "animate-bounce" : ""}
-                      color={statusTone[tenantStatus] ?? "secondary"}
-                      size="sm"
-                      variant="flat"
-                    >
-                      {statusLabel[tenantStatus] ?? tenantStatus}
-                      {isUpdating && <span className="ml-1 text-xs">⟳</span>}
-                    </Chip>
-                  )}
-                  {tenant.plan?.name ? (
-                    <Badge color="primary" variant="flat">
-                      Plano {tenant.plan.name}
-                    </Badge>
-                  ) : null}
+                    )}
+                    {tenant.plan?.name ? (
+                      <Badge color="primary" variant="flat">
+                        Plano {tenant.plan.name}
+                      </Badge>
+                    ) : (
+                      <Chip size="sm" variant="flat">
+                        Sem plano
+                      </Chip>
+                    )}
+                  </div>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-2 text-xs text-default-400">
+                {tenant.email ? <span>Contato: {tenant.email}</span> : null}
+                {tenant.telefone ? <span>• {tenant.telefone}</span> : null}
+                {tenant.domain ? <span>• {tenant.domain}</span> : null}
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-default-500">
+                <span>{tenant.counts.usuarios} usuários</span>
+                <span>• {tenant.counts.processos} processos</span>
+                <span>• {tenant.counts.clientes} clientes</span>
+                <span>
+                  • Atualizado{" "}
+                  {new Date(tenant.updatedAt).toLocaleDateString("pt-BR")}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 text-xs text-default-400">
-              <span>Slug: {tenant.slug}</span>
-              {tenant.domain ? <span>• Domínio: {tenant.domain}</span> : null}
-              {tenant.email ? <span>• Email: {tenant.email}</span> : null}
-              {tenant.telefone ? (
-                <span>• Telefone: {tenant.telefone}</span>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-3 text-xs text-default-500">
-              <span>{tenant.counts.usuarios} usuários</span>
-              <span>• {tenant.counts.processos} processos</span>
-              <span>• {tenant.counts.clientes} clientes</span>
-              <span>
-                • Criado em{" "}
-                {new Date(tenant.createdAt).toLocaleDateString("pt-BR")}
-              </span>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                as={NextLink}
+                color="primary"
+                data-stop-card-press="true"
+                href={`/admin/tenants/${tenant.id}`}
+                radius="full"
+                size="sm"
+                variant="flat"
+              >
+                Gerenciar
+              </Button>
+              <Button
+                as={NextLink}
+                data-stop-card-press="true"
+                href={`/admin/suporte?tenantId=${tenant.id}`}
+                radius="full"
+                size="sm"
+                startContent={<LifeBuoy className="h-4 w-4" />}
+                variant="bordered"
+              >
+                Suporte
+              </Button>
+              <Tooltip content="Copiar ID do tenant">
+                <Button
+                  isIconOnly
+                  data-stop-card-press="true"
+                  radius="full"
+                  size="sm"
+                  variant="light"
+                  onPress={() => handleCopy(tenant.id, "ID do tenant")}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </Tooltip>
+              <Button
+                data-stop-card-press="true"
+                radius="full"
+                size="sm"
+                variant="light"
+                onPress={() => setShowInternalData((prev) => !prev)}
+              >
+                {showInternalData ? "Ocultar interno" : "Dados internos"}
+              </Button>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <Button
-              as={NextLink}
-              color="primary"
-              href={`/admin/tenants/${tenant.id}`}
-              radius="full"
-              size="sm"
-              variant="flat"
-            >
-              Gerenciar
-            </Button>
-            <p className="text-xs text-default-400">
-              Última atualização em{" "}
-              {new Date(tenant.updatedAt).toLocaleString("pt-BR")}
-            </p>
-          </div>
+
+          <AnimatePresence initial={false}>
+            {showInternalData ? (
+              <motion.div
+                key={`internal-${tenant.id}`}
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="rounded-xl border border-warning/30 bg-warning/5 p-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-warning">
+                    Uso interno de suporte
+                  </p>
+                  <div className="grid gap-2 text-xs text-default-400 sm:grid-cols-2 lg:grid-cols-3">
+                    <span>ID: {tenant.id}</span>
+                    <span>Slug: {tenant.slug}</span>
+                    <span>Fuso: {tenant.timezone}</span>
+                    <span>Criado: {new Date(tenant.createdAt).toLocaleString("pt-BR")}</span>
+                    <span>Atualizado: {new Date(tenant.updatedAt).toLocaleString("pt-BR")}</span>
+                    {tenant.superAdmin?.email ? (
+                      <span>Owner: {tenant.superAdmin.email}</span>
+                    ) : (
+                      <span>Owner: não definido</span>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </CardBody>
       </Card>
     </motion.div>
@@ -242,7 +358,7 @@ export function TenantsContent() {
     minimumMs: REALTIME_POLLING.TENANT_STATUS_FALLBACK_MS,
   });
 
-  const { data, error, isLoading, mutate } = useSWR(
+  const { data, error, isLoading } = useSWR(
     "admin-tenants",
     () =>
       tracePollingAttempt(
@@ -269,6 +385,9 @@ export function TenantsContent() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [planFilter, setPlanFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
+  const [selectedTenant, setSelectedTenant] = useState<any | null>(null);
+  const pageSize = 8;
 
   const planOptions = useMemo(() => {
     const options = tenants
@@ -305,6 +424,21 @@ export function TenantsContent() {
     });
   }, [tenants, searchTerm, statusFilter, planFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredTenants.length / pageSize));
+  const paginatedTenants = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    return filteredTenants.slice(start, end);
+  }, [filteredTenants, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, planFilter]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
   const statusOptions = [
     { value: "all", label: "Todos" },
     { value: "ACTIVE", label: "Ativos" },
@@ -319,36 +453,29 @@ export function TenantsContent() {
   };
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              🏢 Gerenciar tenants
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Controle centralizado de todos os escritórios white label da
-              plataforma
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              as={NextLink}
-              color="primary"
-              href="/admin/tenants/new"
-              radius="full"
-            >
-              ➕ Criar novo tenant
-            </Button>
-          </div>
-        </div>
-      </header>
+    <section className="space-y-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Gestão de tenants"
+        description="Operação de suporte dos escritórios com acesso rápido a status, plano, contato e diagnóstico interno."
+        actions={
+          <Button
+            as={NextLink}
+            color="primary"
+            href="/admin/tenants/new"
+            radius="full"
+            size="sm"
+          >
+            Criar tenant
+          </Button>
+        }
+      />
 
-      <Card className="border border-white/10 bg-background/70 backdrop-blur">
-        <CardBody className="space-y-4">
+      <PeoplePanel
+        title="Busca e filtros"
+        description="Filtre por status e plano para localizar rapidamente um escritório."
+      >
+        <div className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Input
               className="w-full md:max-w-lg"
@@ -454,15 +581,15 @@ export function TenantsContent() {
 
           <p className="text-xs text-default-500">
             Mostrando{" "}
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-foreground">
               {filteredTenants.length}
             </span>{" "}
             de{" "}
-            <span className="font-semibold text-white">{tenants.length}</span>{" "}
-            tenants
+            <span className="font-semibold text-foreground">{tenants.length}</span>{" "}
+            tenants · página {page} de {totalPages}
           </p>
-        </CardBody>
-      </Card>
+        </div>
+      </PeoplePanel>
 
       {error ? (
         <Card className="border border-danger/30 bg-danger/10 text-danger">
@@ -483,55 +610,48 @@ export function TenantsContent() {
         <TenantsSkeleton />
       ) : (
         <div className="space-y-6">
-          <Card className="border border-white/10 bg-background/70 backdrop-blur">
-            <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
-                📊 Estatísticas dos tenants
-              </h2>
-              <p className="text-sm text-default-400">
-                Visão geral dos escritórios cadastrados na Magic Lawyer.
-              </p>
-            </CardHeader>
-            <Divider className="border-white/10" />
-            <CardBody className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <p className="text-xs uppercase text-primary/70">Total</p>
-                <p className="text-2xl font-semibold text-primary">
-                  {totals.total}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-success/20 bg-success/5 p-4">
-                <p className="text-xs uppercase text-success/70">Ativos</p>
-                <p className="text-2xl font-semibold text-success">
-                  {totals.active}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4">
-                <p className="text-xs uppercase text-warning/70">Suspensos</p>
-                <p className="text-2xl font-semibold text-warning">
-                  {totals.suspended}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-danger/20 bg-danger/5 p-4">
-                <p className="text-xs uppercase text-danger/70">Cancelados</p>
-                <p className="text-2xl font-semibold text-danger">
-                  {totals.cancelled}
-                </p>
-              </div>
-            </CardBody>
-          </Card>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <PeopleMetricCard
+              label="Total de tenants"
+              value={totals.total}
+              helper="Base completa"
+              tone="primary"
+            />
+            <PeopleMetricCard
+              label="Ativos"
+              value={totals.active}
+              helper="Operação normal"
+              tone="success"
+            />
+            <PeopleMetricCard
+              label="Suspensos"
+              value={totals.suspended}
+              helper="Requer acompanhamento"
+              tone="warning"
+            />
+            <PeopleMetricCard
+              label="Cancelados"
+              value={totals.cancelled}
+              helper="Encerrados"
+              tone="danger"
+            />
+          </div>
 
           {filteredTenants.length ? (
             <motion.div layout className="space-y-4">
-              {filteredTenants.map((tenant) => (
-                <TenantCard key={tenant.id} mutate={mutate} tenant={tenant} />
+              {paginatedTenants.map((tenant) => (
+                <TenantCard
+                  key={tenant.id}
+                  tenant={tenant}
+                  onOpenDetails={setSelectedTenant}
+                />
               ))}
             </motion.div>
           ) : (
             <Card className="border border-white/10 bg-background/70 backdrop-blur">
               <CardBody className="py-12 text-center">
                 <div className="mb-4 text-5xl">🏢</div>
-                <h3 className="text-lg font-medium text-white mb-1">
+                <h3 className="text-lg font-medium text-foreground mb-1">
                   Nenhum tenant localizado
                 </h3>
                 <p className="text-sm text-default-400">
@@ -553,8 +673,112 @@ export function TenantsContent() {
               </CardBody>
             </Card>
           )}
+
+          {filteredTenants.length > pageSize ? (
+            <div className="mt-2 flex justify-center">
+              <Pagination page={page} total={totalPages} onChange={setPage} />
+            </div>
+          ) : null}
         </div>
       )}
+
+      <Modal
+        isOpen={Boolean(selectedTenant)}
+        scrollBehavior="inside"
+        size="3xl"
+        onClose={() => setSelectedTenant(null)}
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <p className="text-base font-semibold text-foreground">
+              {selectedTenant?.name ?? "Detalhes do tenant"}
+            </p>
+            <p className="text-xs text-default-500">
+              Visão rápida para suporte e operação.
+            </p>
+          </ModalHeader>
+          <ModalBody className="space-y-4">
+            {selectedTenant ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
+                      Status
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {statusLabel[selectedTenant.status] ?? selectedTenant.status}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
+                      Plano
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {selectedTenant.plan?.name ?? "Sem plano"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
+                      Contato
+                    </p>
+                    <p className="mt-1 text-sm text-default-300">
+                      {selectedTenant.email ?? "Sem e-mail"}
+                    </p>
+                    <p className="text-sm text-default-500">
+                      {selectedTenant.telefone ?? "Sem telefone"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
+                      Volume
+                    </p>
+                    <p className="mt-1 text-sm text-default-300">
+                      {selectedTenant.counts.usuarios} usuários •{" "}
+                      {selectedTenant.counts.processos} processos •{" "}
+                      {selectedTenant.counts.clientes} clientes
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-warning/30 bg-warning/5 p-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-warning">
+                    Dados internos (suporte)
+                  </p>
+                  <div className="grid gap-2 text-xs text-default-500 sm:grid-cols-2">
+                    <span>ID: {selectedTenant.id}</span>
+                    <span>Slug: {selectedTenant.slug}</span>
+                    <span>Timezone: {selectedTenant.timezone}</span>
+                    <span>
+                      Atualizado:{" "}
+                      {new Date(selectedTenant.updatedAt).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              radius="full"
+              variant="light"
+              onPress={() => setSelectedTenant(null)}
+            >
+              Fechar
+            </Button>
+            {selectedTenant ? (
+              <Button
+                as={NextLink}
+                color="primary"
+                href={`/admin/tenants/${selectedTenant.id}`}
+                radius="full"
+                onPress={() => setSelectedTenant(null)}
+              >
+                Ir para gestão completa
+              </Button>
+            ) : null}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </section>
   );
 }

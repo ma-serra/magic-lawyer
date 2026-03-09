@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
+import { authOptions } from "@/auth";
+import { UserRole } from "@/generated/prisma";
+import logger from "@/lib/logger";
 
 // ============================================
 // INTERFACES
@@ -35,12 +39,45 @@ export interface BancoListFilters {
   limit?: number;
 }
 
+async function requireAuthenticated() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return { success: false as const, error: "Não autorizado" };
+  }
+
+  return { success: true as const, user: session.user as any };
+}
+
+async function requireSuperAdmin() {
+  const auth = await requireAuthenticated();
+
+  if (!auth.success) {
+    return auth;
+  }
+
+  if (auth.user.role !== UserRole.SUPER_ADMIN) {
+    return {
+      success: false as const,
+      error: "Acesso negado. Apenas Super Admin pode executar esta ação.",
+    };
+  }
+
+  return auth;
+}
+
 // ============================================
 // CRUD OPERATIONS
 // ============================================
 
 export async function listBancos(filters: BancoListFilters = {}) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const { search, ativo, page = 1, limit = 50 } = filters;
     const skip = (page - 1) * limit;
 
@@ -100,7 +137,7 @@ export async function listBancos(filters: BancoListFilters = {}) {
       },
     };
   } catch (error) {
-    console.error("Erro ao listar bancos:", error);
+    logger.error("Erro ao listar bancos:", error);
 
     return {
       success: false,
@@ -111,6 +148,12 @@ export async function listBancos(filters: BancoListFilters = {}) {
 
 export async function getBanco(codigo: string) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const banco = await prisma.banco.findUnique({
       where: {
         codigo,
@@ -137,7 +180,7 @@ export async function getBanco(codigo: string) {
       banco,
     };
   } catch (error) {
-    console.error("Erro ao buscar banco:", error);
+    logger.error("Erro ao buscar banco:", error);
 
     return {
       success: false,
@@ -148,6 +191,12 @@ export async function getBanco(codigo: string) {
 
 export async function createBanco(data: BancoCreateInput) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     // Verificar se o código já existe
     const bancoExistente = await prisma.banco.findUnique({
       where: { codigo: data.codigo },
@@ -175,7 +224,7 @@ export async function createBanco(data: BancoCreateInput) {
       banco,
     };
   } catch (error) {
-    console.error("Erro ao criar banco:", error);
+    logger.error("Erro ao criar banco:", error);
 
     return {
       success: false,
@@ -186,6 +235,12 @@ export async function createBanco(data: BancoCreateInput) {
 
 export async function updateBanco(codigo: string, data: BancoUpdateInput) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const banco = await prisma.banco.update({
       where: { codigo },
       data: {
@@ -203,7 +258,7 @@ export async function updateBanco(codigo: string, data: BancoUpdateInput) {
       banco,
     };
   } catch (error) {
-    console.error("Erro ao atualizar banco:", error);
+    logger.error("Erro ao atualizar banco:", error);
 
     return {
       success: false,
@@ -214,6 +269,12 @@ export async function updateBanco(codigo: string, data: BancoUpdateInput) {
 
 export async function deleteBanco(codigo: string) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     // Verificar se há dados bancários vinculados
     const dadosBancariosCount = await prisma.dadosBancarios.count({
       where: { bancoCodigo: codigo },
@@ -243,7 +304,7 @@ export async function deleteBanco(codigo: string) {
       success: true,
     };
   } catch (error) {
-    console.error("Erro ao excluir banco:", error);
+    logger.error("Erro ao excluir banco:", error);
 
     return {
       success: false,
@@ -254,6 +315,12 @@ export async function deleteBanco(codigo: string) {
 
 export async function toggleBancoStatus(codigo: string) {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const banco = await prisma.banco.findUnique({
       where: { codigo },
     });
@@ -282,7 +349,7 @@ export async function toggleBancoStatus(codigo: string) {
       banco: bancoAtualizado,
     };
   } catch (error) {
-    console.error("Erro ao alternar status do banco:", error);
+    logger.error("Erro ao alternar status do banco:", error);
 
     return {
       success: false,
@@ -297,6 +364,12 @@ export async function toggleBancoStatus(codigo: string) {
 
 export async function getBancosAtivos() {
   try {
+    const auth = await requireAuthenticated();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const bancos = await prisma.banco.findMany({
       where: {
         ativo: true,
@@ -315,7 +388,7 @@ export async function getBancosAtivos() {
       bancos,
     };
   } catch (error) {
-    console.error("Erro ao buscar bancos ativos:", error);
+    logger.error("Erro ao buscar bancos ativos:", error);
 
     return {
       success: false,
@@ -326,6 +399,12 @@ export async function getBancosAtivos() {
 
 export async function getDashboardBancos() {
   try {
+    const auth = await requireSuperAdmin();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const [totalBancos, bancosAtivos, bancosInativos, bancoMaisUsado] =
       await Promise.all([
         prisma.banco.count({
@@ -366,7 +445,7 @@ export async function getDashboardBancos() {
       },
     };
   } catch (error) {
-    console.error("Erro ao buscar dashboard de bancos:", error);
+    logger.error("Erro ao buscar dashboard de bancos:", error);
 
     return {
       success: false,
@@ -377,6 +456,12 @@ export async function getDashboardBancos() {
 
 export async function buscarBancoPorCodigo(codigo: string) {
   try {
+    const auth = await requireAuthenticated();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const banco = await prisma.banco.findUnique({
       where: {
         codigo,
@@ -395,7 +480,7 @@ export async function buscarBancoPorCodigo(codigo: string) {
       banco,
     };
   } catch (error) {
-    console.error("Erro ao buscar banco por código:", error);
+    logger.error("Erro ao buscar banco por código:", error);
 
     return {
       success: false,
@@ -406,6 +491,12 @@ export async function buscarBancoPorCodigo(codigo: string) {
 
 export async function getBancosDisponiveis() {
   try {
+    const auth = await requireAuthenticated();
+
+    if (!auth.success) {
+      return auth;
+    }
+
     const bancos = await prisma.banco.findMany({
       where: {
         ativo: true,
@@ -424,7 +515,7 @@ export async function getBancosDisponiveis() {
       bancos,
     };
   } catch (error) {
-    console.error("Erro ao buscar bancos disponíveis:", error);
+    logger.error("Erro ao buscar bancos disponíveis:", error);
 
     return {
       success: false,

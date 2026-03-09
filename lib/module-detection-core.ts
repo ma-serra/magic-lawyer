@@ -81,12 +81,21 @@ const MODULE_CATEGORIES: Record<string, string> = {
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
-  Core: "ShieldIcon",
-  Produtividade: "ZapIcon",
-  Financeiro: "DollarSignIcon",
-  Documentos: "FileTextIcon",
-  Jurídico: "ScaleIcon",
-  Sistema: "SettingsIcon",
+  Core: "Shield",
+  Produtividade: "Zap",
+  Financeiro: "DollarSign",
+  Documentos: "FileText",
+  Jurídico: "Scale",
+  Sistema: "Settings",
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Core: "#3B82F6",
+  Produtividade: "#10B981",
+  Financeiro: "#F59E0B",
+  Documentos: "#8B5CF6",
+  Jurídico: "#EF4444",
+  Sistema: "#6B7280",
 };
 
 const MODULE_DESCRIPTIONS: Record<string, string> = {
@@ -133,6 +142,45 @@ function formatModuleName(slug: string): string {
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function toCategorySlug(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+async function ensureDetectedCategory(nome: string) {
+  const slug = toCategorySlug(nome);
+  const icone = CATEGORY_ICONS[nome] || "Puzzle";
+  const cor = CATEGORY_COLORS[nome] || "#6B7280";
+  const ordem = CATEGORY_ORDER[nome] || 99;
+
+  const existing = await prisma.moduloCategoria.findFirst({
+    where: {
+      OR: [{ slug }, { nome: { equals: nome, mode: "insensitive" } }],
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  return prisma.moduloCategoria.create({
+    data: {
+      slug,
+      nome,
+      icone,
+      cor,
+      ordem,
+      ativo: true,
+    },
+    select: { id: true },
+  });
 }
 
 function getModuleRoutes(slug: string): string[] {
@@ -292,12 +340,9 @@ export async function autoDetectModulesCore(): Promise<AutoDetectModulesCoreResu
 
   for (const module of detectedModules) {
     const existing = existingModules.find((m) => m.slug === module.slug);
+    const categoria = await ensureDetectedCategory(module.categoria);
 
     if (existing) {
-      const categoria = await prisma.moduloCategoria.findFirst({
-        where: { nome: module.categoria },
-      });
-
       await prisma.modulo.update({
         where: { id: existing.id },
         data: {
@@ -311,10 +356,6 @@ export async function autoDetectModulesCore(): Promise<AutoDetectModulesCoreResu
       });
       updated++;
     } else {
-      const categoria = await prisma.moduloCategoria.findFirst({
-        where: { nome: module.categoria },
-      });
-
       await prisma.modulo.create({
         data: {
           slug: module.slug,

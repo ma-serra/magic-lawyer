@@ -55,9 +55,14 @@ export async function syncModuleMap(): Promise<{
 
     // Limpar cache do module-map dinâmico
     try {
-      const { clearModuleMapCache } = await import("../lib/module-map");
+      const [{ clearModuleMapCache }, { clearModuleMapCacheEdge }] =
+        await Promise.all([
+          import("../lib/module-map"),
+          import("../lib/module-map-edge"),
+        ]);
 
       clearModuleMapCache();
+      clearModuleMapCacheEdge();
     } catch (error) {
       console.warn("Erro ao limpar cache do module-map:", error);
     }
@@ -177,6 +182,9 @@ export async function getModuleMapStatus(): Promise<{
     totalModules: number;
     totalRoutes: number;
     needsSync: boolean;
+    mode: "dynamic-cache";
+    nodeCacheWindowSeconds: number;
+    edgeCacheWindowSeconds: number;
   };
   error?: string;
 }> {
@@ -205,15 +213,7 @@ export async function getModuleMapStatus(): Promise<{
       select: { detectedAt: true },
     });
 
-    let lastSync: Date | null = lastSyncLog?.detectedAt || null;
-    let needsSync = true;
-
-    if (lastSync) {
-      // Verificar se precisa sincronizar (última detecção mais antiga que 5 minutos)
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-
-      needsSync = lastSync < fiveMinutesAgo;
-    }
+    const lastSync: Date | null = lastSyncLog?.detectedAt || null;
 
     return {
       success: true,
@@ -221,7 +221,10 @@ export async function getModuleMapStatus(): Promise<{
         lastSync,
         totalModules,
         totalRoutes,
-        needsSync,
+        needsSync: false,
+        mode: "dynamic-cache",
+        nodeCacheWindowSeconds: 300,
+        edgeCacheWindowSeconds: 60,
       },
     };
   } catch (error) {

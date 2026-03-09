@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma";
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
+import { emailService } from "@/app/lib/email-service";
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 
@@ -31,6 +32,17 @@ const PLANO_VERSAO_STATUS = {
   REVIEW: "REVIEW",
   PUBLISHED: "PUBLISHED",
   ARCHIVED: "ARCHIVED",
+} as const;
+
+const PLANO_REAJUSTE_STATUS = {
+  SCHEDULED: "SCHEDULED",
+  ACTIVE: "ACTIVE",
+  CANCELED: "CANCELED",
+} as const;
+
+const PLANO_REAJUSTE_FASE = {
+  PRE_VIGENCIA: "PRE_VIGENCIA",
+  POS_VIGENCIA: "POS_VIGENCIA",
 } as const;
 
 export type PlanoVersaoStatusValue =
@@ -82,12 +94,14 @@ export type PlanoModuloConfig = {
   descricao?: string | null;
   icone?: string | null;
   ordem?: number | null;
+  ordemNoPlano?: number | null;
   habilitado: boolean;
 };
 
 export type PlanoModuloUpdateInput = {
   moduloId: string;
   habilitado: boolean;
+  ordem?: number | null;
 };
 
 export type DefaultActionResponse = {
@@ -99,6 +113,7 @@ export type PlanoMatrixModuleRow = {
   moduloId: string;
   slug: string;
   nome: string;
+  descricao?: string | null;
   categoria?: string | null;
   categoriaInfo?: {
     id: string;
@@ -139,6 +154,51 @@ export type GetPlanoMatrixResponse = {
   error?: string;
 };
 
+export type PlanoReajusteStatusValue =
+  (typeof PLANO_REAJUSTE_STATUS)[keyof typeof PLANO_REAJUSTE_STATUS];
+
+export type PlanoReajusteFaseValue =
+  (typeof PLANO_REAJUSTE_FASE)[keyof typeof PLANO_REAJUSTE_FASE];
+
+export type PlanoReajusteResumo = {
+  id: string;
+  planoId: string;
+  status: PlanoReajusteStatusValue;
+  vigenciaEm: Date;
+  avisoDiasAntes: number;
+  avisoDiasDepois: number;
+  aplicarAssinaturasAtivas: boolean;
+  valorMensalAnterior?: number | null;
+  valorMensalNovo?: number | null;
+  valorAnualAnterior?: number | null;
+  valorAnualNovo?: number | null;
+  moeda: string;
+  aplicadoEm?: Date | null;
+  canceladoEm?: Date | null;
+  motivoCancelamento?: string | null;
+  observacoes?: string | null;
+  criadoPorEmail?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type AgendarPlanoReajusteInput = {
+  valorMensalNovo?: number | null;
+  valorAnualNovo?: number | null;
+  vigenciaEm: string;
+  avisoDiasAntes?: number;
+  avisoDiasDepois?: number;
+  aplicarAssinaturasAtivas?: boolean;
+  observacoes?: string;
+};
+
+type PlanoNotificacaoDestinatario = {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+};
+
 function toPlanoVersaoResumo(versao: {
   id: string;
   numero: number;
@@ -161,6 +221,128 @@ function toPlanoVersaoResumo(versao: {
   };
 }
 
+function toPlanoReajusteResumo(reajuste: {
+  id: string;
+  planoId: string;
+  status: string;
+  vigenciaEm: Date;
+  avisoDiasAntes: number;
+  avisoDiasDepois: number;
+  aplicarAssinaturasAtivas: boolean;
+  valorMensalAnterior: Prisma.Decimal | null;
+  valorMensalNovo: Prisma.Decimal | null;
+  valorAnualAnterior: Prisma.Decimal | null;
+  valorAnualNovo: Prisma.Decimal | null;
+  moeda: string;
+  aplicadoEm: Date | null;
+  canceladoEm: Date | null;
+  motivoCancelamento: string | null;
+  observacoes: string | null;
+  criadoPorEmail: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): PlanoReajusteResumo {
+  return {
+    id: reajuste.id,
+    planoId: reajuste.planoId,
+    status: reajuste.status as PlanoReajusteStatusValue,
+    vigenciaEm: reajuste.vigenciaEm,
+    avisoDiasAntes: reajuste.avisoDiasAntes,
+    avisoDiasDepois: reajuste.avisoDiasDepois,
+    aplicarAssinaturasAtivas: reajuste.aplicarAssinaturasAtivas,
+    valorMensalAnterior: reajuste.valorMensalAnterior
+      ? Number(reajuste.valorMensalAnterior)
+      : null,
+    valorMensalNovo: reajuste.valorMensalNovo
+      ? Number(reajuste.valorMensalNovo)
+      : null,
+    valorAnualAnterior: reajuste.valorAnualAnterior
+      ? Number(reajuste.valorAnualAnterior)
+      : null,
+    valorAnualNovo: reajuste.valorAnualNovo
+      ? Number(reajuste.valorAnualNovo)
+      : null,
+    moeda: reajuste.moeda,
+    aplicadoEm: reajuste.aplicadoEm,
+    canceladoEm: reajuste.canceladoEm,
+    motivoCancelamento: reajuste.motivoCancelamento,
+    observacoes: reajuste.observacoes,
+    criadoPorEmail: reajuste.criadoPorEmail,
+    createdAt: reajuste.createdAt,
+    updatedAt: reajuste.updatedAt,
+  };
+}
+
+function getStartOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number): Date {
+  const copy = new Date(date);
+
+  copy.setDate(copy.getDate() + days);
+
+  return copy;
+}
+
+function diffInCalendarDays(a: Date, b: Date): number {
+  const aStart = getStartOfDay(a).getTime();
+  const bStart = getStartOfDay(b).getTime();
+
+  return Math.round((aStart - bStart) / (24 * 60 * 60 * 1000));
+}
+
+function formatMoney(value?: number | null, moeda = "BRL") {
+  if (value == null) {
+    return "N/I";
+  }
+
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: moeda,
+    maximumFractionDigits: 2,
+  });
+}
+
+function parseDateAtStartOfDay(value: string): Date | null {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const [year, month, day] = normalized.split("-").map(Number);
+
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
+  }
+
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  parsed.setHours(0, 0, 0, 0);
+
+  return parsed;
+}
+
+function normalizeMoneyInput(
+  input: number | null | undefined,
+  fallback: Prisma.Decimal | null,
+): Prisma.Decimal | null {
+  if (input === undefined) {
+    return fallback;
+  }
+
+  if (input === null) {
+    return null;
+  }
+
+  return new Prisma.Decimal(input);
+}
+
 async function createPlanoVersaoSnapshotTx(
   tx: Prisma.TransactionClient,
   params: {
@@ -175,11 +357,21 @@ async function createPlanoVersaoSnapshotTx(
   const { plano, status, usuarioId, titulo, descricao, requireActiveModules } =
     params;
 
-  const modulosAtivos: Array<{ moduloId: string }> =
-    await tx.planoModulo.findMany({
-      where: { planoId: plano.id, habilitado: true },
-      select: { moduloId: true },
-    });
+  const modulosAtivos: Array<{
+    moduloId: string;
+    ordem: number;
+    modulo: { ordem: number | null; nome: string };
+  }> = await tx.planoModulo.findMany({
+    where: { planoId: plano.id, habilitado: true },
+    include: {
+      modulo: {
+        select: {
+          ordem: true,
+          nome: true,
+        },
+      },
+    },
+  });
 
   if (
     (requireActiveModules ?? status === PLANO_VERSAO_STATUS.PUBLISHED) &&
@@ -205,17 +397,27 @@ async function createPlanoVersaoSnapshotTx(
         ? `${plano.nome} · Rascunho ${proximoNumero}`
         : `${plano.nome} · Versão ${proximoNumero}`);
 
-  const modulosData = modulosAtivos.map(
-    (
-      modulo,
-    ): {
-      moduloId: string;
-      habilitado: boolean;
-    } => ({
-      moduloId: modulo.moduloId,
-      habilitado: true,
-    }),
-  );
+  const modulosData = [...modulosAtivos]
+    .sort(
+      (a, b) =>
+        a.ordem - b.ordem ||
+        (a.modulo.ordem ?? 999) - (b.modulo.ordem ?? 999) ||
+        a.modulo.nome.localeCompare(b.modulo.nome),
+    )
+    .map(
+      (
+        modulo,
+        ordem,
+      ): {
+        moduloId: string;
+        habilitado: boolean;
+        ordem: number;
+      } => ({
+        moduloId: modulo.moduloId,
+        habilitado: true,
+        ordem,
+      }),
+    );
 
   const now = new Date();
 
@@ -303,6 +505,31 @@ export type GetEstatisticasPlanosResponse = {
   error?: string;
 };
 
+export type GetPlanoReajustesResponse = {
+  success: boolean;
+  data?: PlanoReajusteResumo[];
+  error?: string;
+};
+
+export type AgendarPlanoReajusteResponse = {
+  success: boolean;
+  data?: {
+    reajuste: PlanoReajusteResumo;
+    impacto: {
+      assinaturasAtivas: number;
+      tenantsAtivosComAssinatura: number;
+      adminsNotificaveis: number;
+    };
+  };
+  error?: string;
+};
+
+export type CancelarPlanoReajusteResponse = {
+  success: boolean;
+  data?: PlanoReajusteResumo;
+  error?: string;
+};
+
 // ==================== FUNÇÕES AUXILIARES ====================
 
 async function ensureSuperAdmin() {
@@ -333,11 +560,449 @@ async function ensureSuperAdmin() {
   return superAdmin.id;
 }
 
+async function ensureSuperAdminContext() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id || !session.user.email) {
+    throw new Error("Não autenticado");
+  }
+
+  const userRole = (session.user as any)?.role;
+
+  if (userRole !== "SUPER_ADMIN") {
+    throw new Error(
+      "Acesso negado. Apenas Super Admins podem gerenciar planos.",
+    );
+  }
+
+  const superAdmin = await prisma.superAdmin.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, email: true },
+  });
+
+  if (!superAdmin) {
+    throw new Error("Super Admin não encontrado");
+  }
+
+  return {
+    superAdminId: superAdmin.id,
+    email: superAdmin.email,
+  };
+}
+
+async function notifyTenantAdminsAboutPlanoReajuste(params: {
+  tenantId: string;
+  tenantName: string;
+  planoNome: string;
+  reajusteId: string;
+  fase: PlanoReajusteFaseValue;
+  vigenciaEm: Date;
+  valorMensalNovo?: number | null;
+  valorAnualNovo?: number | null;
+  moeda: string;
+  aplicarAssinaturasAtivas: boolean;
+}) {
+  const {
+    tenantId,
+    tenantName,
+    planoNome,
+    reajusteId,
+    fase,
+    vigenciaEm,
+    valorMensalNovo,
+    valorAnualNovo,
+    moeda,
+    aplicarAssinaturasAtivas,
+  } = params;
+
+  const destinatarios: PlanoNotificacaoDestinatario[] =
+    await prisma.usuario.findMany({
+      where: {
+        tenantId,
+        role: "ADMIN",
+        active: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+      take: 20,
+    });
+
+  if (!destinatarios.length) {
+    return { emailEnviado: false, inAppCriado: false };
+  }
+
+  const valorMensalLabel = formatMoney(valorMensalNovo, moeda);
+  const valorAnualLabel = formatMoney(valorAnualNovo, moeda);
+  const vigenciaLabel = vigenciaEm.toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  const titulo =
+    fase === PLANO_REAJUSTE_FASE.PRE_VIGENCIA
+      ? `Reajuste programado do plano ${planoNome}`
+      : `Reajuste aplicado no plano ${planoNome}`;
+  const mensagem =
+    fase === PLANO_REAJUSTE_FASE.PRE_VIGENCIA
+      ? `O plano ${planoNome} terá novo valor em ${vigenciaLabel}. Mensal: ${valorMensalLabel}. Anual: ${valorAnualLabel}.`
+      : `O plano ${planoNome} foi reajustado em ${vigenciaLabel}. Mensal: ${valorMensalLabel}. Anual: ${valorAnualLabel}.`;
+  const observacaoContratual = aplicarAssinaturasAtivas
+    ? "Assinaturas ativas também foram atualizadas para este novo valor."
+    : "Assinaturas ativas permanecem no valor contratado atual (somente novas assinaturas usam o novo preço).";
+
+  const notificacao = await prisma.notificacao.create({
+    data: {
+      tenantId,
+      titulo,
+      mensagem: `${mensagem} ${observacaoContratual}`,
+      tipo: "FINANCEIRO",
+      prioridade: fase === PLANO_REAJUSTE_FASE.PRE_VIGENCIA ? "ALTA" : "MEDIA",
+      canais: ["IN_APP", "EMAIL"],
+      referenciaTipo: "PLANO_REAJUSTE",
+      referenciaId: reajusteId,
+      dados: {
+        plano: planoNome,
+        vigenciaEm,
+        valorMensalNovo,
+        valorAnualNovo,
+        moeda,
+        fase,
+        aplicarAssinaturasAtivas,
+      },
+      createdById: null,
+    },
+    select: { id: true },
+  });
+
+  await prisma.notificacaoUsuario.createMany({
+    data: destinatarios.map((destinatario) => ({
+      notificacaoId: notificacao.id,
+      tenantId,
+      usuarioId: destinatario.id,
+      canal: "IN_APP",
+    })),
+    skipDuplicates: true,
+  });
+
+  let emailEnviado = false;
+
+  for (const destinatario of destinatarios) {
+    if (!destinatario.email) {
+      continue;
+    }
+
+    const nome =
+      [destinatario.firstName, destinatario.lastName]
+        .filter(Boolean)
+        .join(" ") || destinatario.email;
+
+    const html = `
+      <h2>${titulo}</h2>
+      <p>Olá ${nome},</p>
+      <p>${mensagem}</p>
+      <p><strong>Regra contratual:</strong> ${observacaoContratual}</p>
+      <p>Escritório: ${tenantName}</p>
+      <p>Este aviso foi gerado automaticamente pelo Magic Lawyer.</p>
+    `;
+
+    const envio = await emailService.sendEmailPerTenant(tenantId, {
+      to: destinatario.email,
+      subject: `Magic Lawyer · ${titulo}`,
+      html,
+      text: `${titulo}\n\n${mensagem}\n\nRegra contratual: ${observacaoContratual}\n\nEscritório: ${tenantName}`,
+      credentialType: "ADMIN",
+      fromNameFallback: "Magic Lawyer",
+    });
+
+    if (envio.success) {
+      emailEnviado = true;
+    }
+  }
+
+  return { emailEnviado, inAppCriado: true };
+}
+
+async function processPlanoPriceRollouts() {
+  const now = new Date();
+  const today = getStartOfDay(now);
+
+  const reajustes = await prisma.planoReajuste.findMany({
+    where: {
+      status: {
+        in: [PLANO_REAJUSTE_STATUS.SCHEDULED, PLANO_REAJUSTE_STATUS.ACTIVE],
+      },
+    },
+    include: {
+      plano: {
+        select: {
+          id: true,
+          nome: true,
+          valorMensal: true,
+          valorAnual: true,
+          moeda: true,
+        },
+      },
+    },
+    orderBy: [{ vigenciaEm: "asc" }],
+    take: 50,
+  });
+
+  for (const reajuste of reajustes) {
+    if (
+      reajuste.status === PLANO_REAJUSTE_STATUS.SCHEDULED &&
+      reajuste.vigenciaEm <= now
+    ) {
+      await prisma.$transaction(async (tx) => {
+        const current = await tx.planoReajuste.findUnique({
+          where: { id: reajuste.id },
+          select: {
+            id: true,
+            planoId: true,
+            status: true,
+            valorMensalNovo: true,
+            valorAnualNovo: true,
+            valorMensalAnterior: true,
+            valorAnualAnterior: true,
+            moeda: true,
+            aplicarAssinaturasAtivas: true,
+            criadoPorEmail: true,
+          },
+        });
+
+        if (!current || current.status !== PLANO_REAJUSTE_STATUS.SCHEDULED) {
+          return;
+        }
+
+        // "Trava" de idempotência: só uma transação pode ativar o reajuste.
+        const lock = await tx.planoReajuste.updateMany({
+          where: {
+            id: current.id,
+            status: PLANO_REAJUSTE_STATUS.SCHEDULED,
+          },
+          data: {
+            status: PLANO_REAJUSTE_STATUS.ACTIVE,
+            aplicadoEm: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+        if (lock.count === 0) {
+          return;
+        }
+
+        if (current.aplicarAssinaturasAtivas) {
+          await tx.tenantSubscription.updateMany({
+            where: {
+              planoId: current.planoId,
+              status: {
+                in: ["ATIVA", "TRIAL"],
+              },
+            },
+            data: {
+              valorMensalContratado: current.valorMensalNovo,
+              valorAnualContratado: current.valorAnualNovo,
+              moedaContratada: current.moeda,
+              precoCongelado: false,
+              updatedAt: new Date(),
+            },
+          });
+        } else {
+          // Mantém assinaturas já ativas no valor contratado anterior.
+          await tx.tenantSubscription.updateMany({
+            where: {
+              planoId: current.planoId,
+              status: {
+                in: ["ATIVA", "TRIAL"],
+              },
+            },
+            data: {
+              valorMensalContratado: current.valorMensalAnterior,
+              valorAnualContratado: current.valorAnualAnterior,
+              moedaContratada: current.moeda,
+              precoCongelado: true,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        await tx.plano.update({
+          where: { id: current.planoId },
+          data: {
+            valorMensal: current.valorMensalNovo,
+            valorAnual: current.valorAnualNovo,
+            moeda: current.moeda,
+            updatedAt: new Date(),
+          },
+        });
+
+        if (current.criadoPorEmail) {
+          const superAdmin = await tx.superAdmin.findUnique({
+            where: { email: current.criadoPorEmail },
+            select: { id: true },
+          });
+
+          if (superAdmin?.id) {
+            await tx.superAdminAuditLog.create({
+              data: {
+                superAdminId: superAdmin.id,
+                acao: "APPLY_PLANO_REAJUSTE",
+                entidade: "PLANO_REAJUSTE",
+                entidadeId: current.id,
+                dadosNovos: {
+                  planoId: current.planoId,
+                  valorMensalNovo: current.valorMensalNovo,
+                  valorAnualNovo: current.valorAnualNovo,
+                  moeda: current.moeda,
+                  aplicarAssinaturasAtivas: current.aplicarAssinaturasAtivas,
+                },
+              },
+            });
+          }
+        }
+      });
+    }
+
+    const current = await prisma.planoReajuste.findUnique({
+      where: { id: reajuste.id },
+      include: {
+        plano: {
+          select: {
+            nome: true,
+          },
+        },
+      },
+    });
+
+    if (!current || current.status === PLANO_REAJUSTE_STATUS.CANCELED) {
+      continue;
+    }
+
+    const daysUntilVigencia = diffInCalendarDays(current.vigenciaEm, now);
+    const daysSinceApplied =
+      current.aplicadoEm != null
+        ? diffInCalendarDays(now, current.aplicadoEm)
+        : null;
+
+    const shouldNotifyPre =
+      current.status === PLANO_REAJUSTE_STATUS.SCHEDULED &&
+      daysUntilVigencia >= 0 &&
+      daysUntilVigencia <= current.avisoDiasAntes;
+    const shouldNotifyPost =
+      current.status === PLANO_REAJUSTE_STATUS.ACTIVE &&
+      current.aplicadoEm != null &&
+      daysSinceApplied != null &&
+      daysSinceApplied >= 0 &&
+      daysSinceApplied <= current.avisoDiasDepois;
+
+    const fase: PlanoReajusteFaseValue | null = shouldNotifyPre
+      ? PLANO_REAJUSTE_FASE.PRE_VIGENCIA
+      : shouldNotifyPost
+        ? PLANO_REAJUSTE_FASE.POS_VIGENCIA
+        : null;
+
+    if (!fase) {
+      continue;
+    }
+
+    const assinaturasAtivas = await prisma.tenantSubscription.findMany({
+      where: {
+        planoId: current.planoId,
+        status: {
+          in: ["ATIVA", "TRIAL"],
+        },
+        tenant: {
+          status: "ACTIVE",
+        },
+      },
+      select: {
+        tenantId: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    for (const assinatura of assinaturasAtivas) {
+      const referenciaDia = today;
+      let createdCommunication = false;
+
+      try {
+        await prisma.planoReajusteComunicacao.create({
+          data: {
+            reajusteId: current.id,
+            tenantId: assinatura.tenantId,
+            fase,
+            referenciaDia,
+          },
+        });
+        createdCommunication = true;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          createdCommunication = false;
+        } else {
+          throw error;
+        }
+      }
+
+      if (!createdCommunication) {
+        continue;
+      }
+
+      const notificacaoResult = await notifyTenantAdminsAboutPlanoReajuste({
+        tenantId: assinatura.tenantId,
+        tenantName: assinatura.tenant.name,
+        planoNome: current.plano.nome,
+        reajusteId: current.id,
+        fase,
+        vigenciaEm: current.vigenciaEm,
+        valorMensalNovo: current.valorMensalNovo
+          ? Number(current.valorMensalNovo)
+          : null,
+        valorAnualNovo: current.valorAnualNovo
+          ? Number(current.valorAnualNovo)
+          : null,
+        moeda: current.moeda,
+        aplicarAssinaturasAtivas: current.aplicarAssinaturasAtivas,
+      });
+
+      await prisma.planoReajusteComunicacao.update({
+        where: {
+          reajusteId_tenantId_fase_referenciaDia: {
+            reajusteId: current.id,
+            tenantId: assinatura.tenantId,
+            fase,
+            referenciaDia,
+          },
+        },
+        data: {
+          emailEnviado: notificacaoResult.emailEnviado,
+          inAppCriado: notificacaoResult.inAppCriado,
+          canais: {
+            inApp: notificacaoResult.inAppCriado,
+            email: notificacaoResult.emailEnviado,
+          },
+        },
+      });
+    }
+  }
+}
+
 // ==================== CRUD PLANOS ====================
 
 export async function getPlanos(): Promise<GetPlanosResponse> {
   try {
     await ensureSuperAdmin();
+    await processPlanoPriceRollouts();
 
     const planos = await prisma.plano.findMany({
       orderBy: [{ valorMensal: "asc" }, { nome: "asc" }],
@@ -509,6 +1174,7 @@ export async function getPlanoConfiguracao(
 ): Promise<GetPlanoConfiguracaoResponse> {
   try {
     await ensureSuperAdmin();
+    await processPlanoPriceRollouts();
 
     const [plano, catalogo, configuracaoAtual, versoes] = await Promise.all([
       prisma.plano.findUnique({ where: { id: planoId } }),
@@ -527,6 +1193,11 @@ export async function getPlanoConfiguracao(
       }),
       prisma.planoModulo.findMany({
         where: { planoId },
+        select: {
+          moduloId: true,
+          habilitado: true,
+          ordem: true,
+        },
       }),
       prisma.planoVersao.findMany({
         where: { planoId },
@@ -542,8 +1213,14 @@ export async function getPlanoConfiguracao(
       };
     }
 
-    const modulosHabilitados = new Map(
-      configuracaoAtual.map((modulo) => [modulo.moduloId, modulo.habilitado]),
+    const configuracaoAtualMap = new Map(
+      configuracaoAtual.map((modulo) => [
+        modulo.moduloId,
+        {
+          habilitado: modulo.habilitado,
+          ordem: modulo.ordem,
+        },
+      ]),
     );
 
     const catalogModules = catalogo as CatalogModule[];
@@ -557,7 +1234,8 @@ export async function getPlanoConfiguracao(
       descricao: modulo.descricao ?? undefined,
       icone: modulo.icone ?? undefined,
       ordem: modulo.ordem ?? undefined,
-      habilitado: modulosHabilitados.get(modulo.id) ?? false,
+      ordemNoPlano: configuracaoAtualMap.get(modulo.id)?.ordem ?? undefined,
+      habilitado: configuracaoAtualMap.get(modulo.id)?.habilitado ?? false,
     }));
 
     const versoesResumo: PlanoVersaoResumo[] = versoes.map((versao) =>
@@ -581,6 +1259,363 @@ export async function getPlanoConfiguracao(
     };
   } catch (error) {
     logger.error("Erro ao carregar configuração do plano:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getPlanoReajustes(
+  planoId: string,
+): Promise<GetPlanoReajustesResponse> {
+  try {
+    await ensureSuperAdmin();
+    await processPlanoPriceRollouts();
+
+    if (!planoId?.trim()) {
+      return {
+        success: false,
+        error: "Plano inválido para buscar reajustes.",
+      };
+    }
+
+    const reajustes = await prisma.planoReajuste.findMany({
+      where: { planoId },
+      orderBy: [{ vigenciaEm: "desc" }, { createdAt: "desc" }],
+      take: 50,
+    });
+
+    return {
+      success: true,
+      data: reajustes.map(toPlanoReajusteResumo),
+    };
+  } catch (error) {
+    logger.error("Erro ao listar reajustes de plano:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function agendarPlanoReajuste(
+  planoId: string,
+  input: AgendarPlanoReajusteInput,
+): Promise<AgendarPlanoReajusteResponse> {
+  try {
+    const { superAdminId, email } = await ensureSuperAdminContext();
+    await processPlanoPriceRollouts();
+
+    if (!planoId?.trim()) {
+      return {
+        success: false,
+        error: "Plano inválido para agendar reajuste.",
+      };
+    }
+
+    const vigenciaEm = parseDateAtStartOfDay(input.vigenciaEm);
+
+    if (!vigenciaEm) {
+      return {
+        success: false,
+        error: "Informe uma data de vigência válida.",
+      };
+    }
+
+    const dataMinimaVigencia = addDays(getStartOfDay(new Date()), 1);
+
+    if (vigenciaEm < dataMinimaVigencia) {
+      return {
+        success: false,
+        error: "A vigência deve ser a partir de amanhã.",
+      };
+    }
+
+    const avisoDiasAntes = Math.max(
+      0,
+      Math.min(30, Math.trunc(input.avisoDiasAntes ?? 7)),
+    );
+    const avisoDiasDepois = Math.max(
+      0,
+      Math.min(30, Math.trunc(input.avisoDiasDepois ?? 3)),
+    );
+    const aplicarAssinaturasAtivas = Boolean(input.aplicarAssinaturasAtivas);
+    const observacoes = input.observacoes?.trim()
+      ? input.observacoes.trim().slice(0, 2000)
+      : null;
+
+    const plano = await prisma.plano.findUnique({
+      where: { id: planoId },
+      select: {
+        id: true,
+        nome: true,
+        valorMensal: true,
+        valorAnual: true,
+        moeda: true,
+      },
+    });
+
+    if (!plano) {
+      return {
+        success: false,
+        error: "Plano não encontrado.",
+      };
+    }
+
+    const hasMensalInPayload = Object.prototype.hasOwnProperty.call(
+      input,
+      "valorMensalNovo",
+    );
+    const hasAnualInPayload = Object.prototype.hasOwnProperty.call(
+      input,
+      "valorAnualNovo",
+    );
+
+    if (
+      hasMensalInPayload &&
+      input.valorMensalNovo != null &&
+      input.valorMensalNovo < 0
+    ) {
+      return {
+        success: false,
+        error: "Valor mensal não pode ser negativo.",
+      };
+    }
+
+    if (
+      hasAnualInPayload &&
+      input.valorAnualNovo != null &&
+      input.valorAnualNovo < 0
+    ) {
+      return {
+        success: false,
+        error: "Valor anual não pode ser negativo.",
+      };
+    }
+
+    const valorMensalNovo = normalizeMoneyInput(
+      hasMensalInPayload ? input.valorMensalNovo : undefined,
+      plano.valorMensal,
+    );
+    const valorAnualNovo = normalizeMoneyInput(
+      hasAnualInPayload ? input.valorAnualNovo : undefined,
+      plano.valorAnual,
+    );
+
+    const mensalAlterado =
+      (plano.valorMensal?.toString() ?? null) !==
+      (valorMensalNovo?.toString() ?? null);
+    const anualAlterado =
+      (plano.valorAnual?.toString() ?? null) !==
+      (valorAnualNovo?.toString() ?? null);
+
+    if (!mensalAlterado && !anualAlterado) {
+      return {
+        success: false,
+        error:
+          "Informe ao menos um novo valor diferente do preço atual do plano.",
+      };
+    }
+
+    const reajusteProgramado = await prisma.planoReajuste.findFirst({
+      where: {
+        planoId,
+        status: PLANO_REAJUSTE_STATUS.SCHEDULED,
+        vigenciaEm: { gte: getStartOfDay(new Date()) },
+      },
+      orderBy: { vigenciaEm: "asc" },
+      select: {
+        id: true,
+        vigenciaEm: true,
+      },
+    });
+
+    if (reajusteProgramado) {
+      return {
+        success: false,
+        error: `Já existe reajuste programado para ${reajusteProgramado.vigenciaEm.toLocaleDateString(
+          "pt-BR",
+        )}. Cancele o atual antes de criar um novo.`,
+      };
+    }
+
+    const assinaturasAtivas = await prisma.tenantSubscription.findMany({
+      where: {
+        planoId,
+        status: { in: ["ATIVA", "TRIAL"] },
+        tenant: { status: "ACTIVE" },
+      },
+      select: {
+        tenantId: true,
+      },
+    });
+
+    const tenantIdsAtivos = Array.from(
+      new Set(assinaturasAtivas.map((item) => item.tenantId)),
+    );
+
+    const adminsNotificaveis =
+      tenantIdsAtivos.length > 0
+        ? await prisma.usuario.count({
+            where: {
+              tenantId: { in: tenantIdsAtivos },
+              role: "ADMIN",
+              active: true,
+            },
+          })
+        : 0;
+
+    const reajuste = await prisma.planoReajuste.create({
+      data: {
+        planoId: plano.id,
+        valorMensalAnterior: plano.valorMensal,
+        valorMensalNovo,
+        valorAnualAnterior: plano.valorAnual,
+        valorAnualNovo,
+        moeda: plano.moeda,
+        vigenciaEm,
+        avisoDiasAntes,
+        avisoDiasDepois,
+        aplicarAssinaturasAtivas,
+        observacoes,
+        criadoPorEmail: email,
+      },
+    });
+
+    await prisma.superAdminAuditLog.create({
+      data: {
+        superAdminId,
+        acao: "SCHEDULE_PLANO_REAJUSTE",
+        entidade: "PLANO",
+        entidadeId: plano.id,
+        dadosAntigos: {
+          valorMensal: plano.valorMensal,
+          valorAnual: plano.valorAnual,
+          moeda: plano.moeda,
+        },
+        dadosNovos: {
+          reajusteId: reajuste.id,
+          vigenciaEm,
+          valorMensalNovo,
+          valorAnualNovo,
+          avisoDiasAntes,
+          avisoDiasDepois,
+          aplicarAssinaturasAtivas,
+          observacoes,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        reajuste: toPlanoReajusteResumo(reajuste),
+        impacto: {
+          assinaturasAtivas: assinaturasAtivas.length,
+          tenantsAtivosComAssinatura: tenantIdsAtivos.length,
+          adminsNotificaveis,
+        },
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao agendar reajuste de plano:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function cancelarPlanoReajuste(
+  reajusteId: string,
+  motivoCancelamento?: string,
+): Promise<CancelarPlanoReajusteResponse> {
+  try {
+    const { superAdminId } = await ensureSuperAdminContext();
+
+    if (!reajusteId?.trim()) {
+      return {
+        success: false,
+        error: "Reajuste inválido para cancelamento.",
+      };
+    }
+
+    const reajuste = await prisma.planoReajuste.findUnique({
+      where: { id: reajusteId },
+      include: {
+        plano: {
+          select: {
+            id: true,
+            nome: true,
+          },
+        },
+      },
+    });
+
+    if (!reajuste) {
+      return {
+        success: false,
+        error: "Reajuste não encontrado.",
+      };
+    }
+
+    if (reajuste.status !== PLANO_REAJUSTE_STATUS.SCHEDULED) {
+      return {
+        success: false,
+        error:
+          "Só é possível cancelar reajustes com status Programado (ainda não aplicados).",
+      };
+    }
+
+    const motivo = motivoCancelamento?.trim()
+      ? motivoCancelamento.trim().slice(0, 1000)
+      : "Cancelado manualmente no painel administrativo";
+
+    const reajusteCancelado = await prisma.planoReajuste.update({
+      where: { id: reajuste.id },
+      data: {
+        status: PLANO_REAJUSTE_STATUS.CANCELED,
+        canceladoEm: new Date(),
+        motivoCancelamento: motivo,
+        updatedAt: new Date(),
+      },
+    });
+
+    await prisma.superAdminAuditLog.create({
+      data: {
+        superAdminId,
+        acao: "CANCEL_PLANO_REAJUSTE",
+        entidade: "PLANO_REAJUSTE",
+        entidadeId: reajuste.id,
+        dadosAntigos: {
+          status: reajuste.status,
+          vigenciaEm: reajuste.vigenciaEm,
+          valorMensalNovo: reajuste.valorMensalNovo,
+          valorAnualNovo: reajuste.valorAnualNovo,
+          planoId: reajuste.planoId,
+          planoNome: reajuste.plano.nome,
+        },
+        dadosNovos: {
+          status: PLANO_REAJUSTE_STATUS.CANCELED,
+          canceladoEm: reajusteCancelado.canceladoEm,
+          motivoCancelamento: motivo,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      data: toPlanoReajusteResumo(reajusteCancelado),
+    };
+  } catch (error) {
+    logger.error("Erro ao cancelar reajuste de plano:", error);
 
     return {
       success: false,
@@ -639,6 +1674,7 @@ export async function getPlanosMatrix(): Promise<GetPlanoMatrixResponse> {
       moduloId: modulo.id,
       slug: modulo.slug,
       nome: modulo.nome,
+      descricao: modulo.descricao,
       categoria: modulo.categoria?.nome ?? undefined,
       categoriaInfo: modulo.categoria,
       planos: planos.map((plano) => ({
@@ -692,12 +1728,37 @@ export async function setPlanoModulos(
         select: { id: true },
       });
 
+      const relacoesAtuais = await tx.planoModulo.findMany({
+        where: { planoId },
+        select: {
+          moduloId: true,
+          habilitado: true,
+          ordem: true,
+        },
+      });
+
       const modulosValidos = new Set(modulosExistentes.map((item) => item.id));
+      const relacoesAtuaisMap = new Map(
+        relacoesAtuais.map((item) => [item.moduloId, item]),
+      );
+      let proximaOrdem =
+        relacoesAtuais
+          .filter((item) => item.habilitado)
+          .reduce((max, item) => Math.max(max, item.ordem), -1) + 1;
 
       for (const update of updates) {
         if (!modulosValidos.has(update.moduloId)) {
           throw new Error(`Módulo inválido: ${update.moduloId}`);
         }
+
+        const relacaoAtual = relacoesAtuaisMap.get(update.moduloId);
+        const ordemAtualizada = update.habilitado
+          ? update.ordem != null
+            ? Math.max(0, Math.trunc(update.ordem))
+            : relacaoAtual?.habilitado
+              ? relacaoAtual.ordem
+              : proximaOrdem++
+          : (relacaoAtual?.ordem ?? 0);
 
         await tx.planoModulo.upsert({
           where: {
@@ -708,12 +1769,14 @@ export async function setPlanoModulos(
           },
           update: {
             habilitado: update.habilitado,
+            ordem: ordemAtualizada,
             updatedAt: new Date(),
           },
           create: {
             planoId,
             moduloId: update.moduloId,
             habilitado: update.habilitado,
+            ordem: ordemAtualizada,
           },
         });
       }
@@ -745,7 +1808,8 @@ export async function syncPlanoModulos(
   try {
     await ensureSuperAdmin();
 
-    const activeSet = new Set(activeModuloIds);
+    const orderedModuloIds = Array.from(new Set(activeModuloIds));
+    const activeSet = new Set(orderedModuloIds);
 
     await prisma.$transaction(async (tx) => {
       const plano = await tx.plano.findUnique({
@@ -761,41 +1825,37 @@ export async function syncPlanoModulos(
         select: {
           moduloId: true,
           habilitado: true,
+          ordem: true,
         },
       });
 
-      const modulosAtuaisSet = new Set(
-        modulosAtuais.filter((m) => m.habilitado).map((m) => m.moduloId),
-      );
-
-      const modulosParaHabilitar = activeModuloIds.filter(
-        (moduloId) => !modulosAtuaisSet.has(moduloId),
-      );
+      for (const [ordem, moduloId] of orderedModuloIds.entries()) {
+        await tx.planoModulo.upsert({
+          where: {
+            planoId_moduloId: {
+              planoId,
+              moduloId,
+            },
+          },
+          update: {
+            habilitado: true,
+            ordem,
+            updatedAt: new Date(),
+          },
+          create: {
+            planoId,
+            moduloId,
+            habilitado: true,
+            ordem,
+          },
+        });
+      }
 
       const modulosParaDesabilitar = modulosAtuais
         .filter(
           (modulo) => modulo.habilitado && !activeSet.has(modulo.moduloId),
         )
         .map((modulo) => modulo.moduloId);
-
-      if (modulosParaHabilitar.length > 0) {
-        await tx.planoModulo.createMany({
-          data: modulosParaHabilitar.map((moduloId) => ({
-            planoId,
-            moduloId,
-            habilitado: true,
-          })),
-          skipDuplicates: true,
-        });
-
-        await tx.planoModulo.updateMany({
-          where: {
-            planoId,
-            moduloId: { in: modulosParaHabilitar },
-          },
-          data: { habilitado: true, updatedAt: new Date() },
-        });
-      }
 
       if (modulosParaDesabilitar.length > 0) {
         await tx.planoModulo.updateMany({
@@ -1078,6 +2138,7 @@ export async function createPlano(
             },
           ],
         },
+        orderBy: [{ ordem: "asc" }, { nome: "asc" }],
         select: {
           id: true,
         },
@@ -1085,10 +2146,11 @@ export async function createPlano(
 
       if (modulosDisponiveis.length > 0) {
         await tx.planoModulo.createMany({
-          data: modulosDisponiveis.map((modulo) => ({
+          data: modulosDisponiveis.map((modulo, ordem) => ({
             planoId: planoCriado.id,
             moduloId: modulo.id,
             habilitado: true,
+            ordem,
           })),
           skipDuplicates: true,
         });
@@ -1105,9 +2167,10 @@ export async function createPlano(
             publicadoEm: new Date(),
             modulos: {
               createMany: {
-                data: modulosDisponiveis.map((modulo) => ({
+                data: modulosDisponiveis.map((modulo, ordem) => ({
                   moduloId: modulo.id,
                   habilitado: true,
+                  ordem,
                 })),
               },
             },
@@ -1222,6 +2285,7 @@ export async function duplicatePlano(
 export async function getEstatisticasPlanos(): Promise<GetEstatisticasPlanosResponse> {
   try {
     await ensureSuperAdmin();
+    await processPlanoPriceRollouts();
 
     const [
       totalPlanos,
@@ -1278,6 +2342,7 @@ export async function getEstatisticasPlanos(): Promise<GetEstatisticasPlanosResp
 export async function getAssinaturas() {
   try {
     await ensureSuperAdmin();
+    await processPlanoPriceRollouts();
 
     const assinaturas = await prisma.tenantSubscription.findMany({
       include: {
