@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
+const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
+
 const nextConfig = {
-  output: "standalone",
+  output: isVercel ? undefined : "standalone",
   productionBrowserSourceMaps: false,
   serverExternalPackages: ["bullmq", "ioredis"],
   images: {
@@ -20,6 +22,9 @@ const nextConfig = {
       bodySizeLimit: "10mb", // Aumentar limite para 10MB (padrão é 1MB)
     },
     webpackMemoryOptimizations: true,
+    staticGenerationRetryCount: 1,
+    staticGenerationMaxConcurrency: isVercel ? 1 : 8,
+    staticGenerationMinPagesPerWorker: isVercel ? 100 : 25,
   },
 };
 
