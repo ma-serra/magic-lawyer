@@ -94,22 +94,24 @@ const STATUS_OPTIONS: Array<{ key: TicketStatus | "ALL"; label: string }> = [
   { key: TicketStatus.CLOSED, label: "Encerrado" },
 ];
 
-const PRIORITY_OPTIONS: Array<{ key: TicketPriority | "ALL"; label: string }> = [
-  { key: "ALL", label: "Todas as prioridades" },
-  { key: TicketPriority.LOW, label: "Baixa" },
-  { key: TicketPriority.MEDIUM, label: "Média" },
-  { key: TicketPriority.HIGH, label: "Alta" },
-  { key: TicketPriority.URGENT, label: "Urgente" },
-];
+const PRIORITY_OPTIONS: Array<{ key: TicketPriority | "ALL"; label: string }> =
+  [
+    { key: "ALL", label: "Todas as prioridades" },
+    { key: TicketPriority.LOW, label: "Baixa" },
+    { key: TicketPriority.MEDIUM, label: "Média" },
+    { key: TicketPriority.HIGH, label: "Alta" },
+    { key: TicketPriority.URGENT, label: "Urgente" },
+  ];
 
-const CATEGORY_OPTIONS: Array<{ key: TicketCategory | "ALL"; label: string }> = [
-  { key: "ALL", label: "Todas as categorias" },
-  { key: TicketCategory.TECHNICAL, label: "Técnico" },
-  { key: TicketCategory.BILLING, label: "Financeiro" },
-  { key: TicketCategory.FEATURE_REQUEST, label: "Solicitação de melhoria" },
-  { key: TicketCategory.BUG_REPORT, label: "Bug" },
-  { key: TicketCategory.GENERAL, label: "Geral" },
-];
+const CATEGORY_OPTIONS: Array<{ key: TicketCategory | "ALL"; label: string }> =
+  [
+    { key: "ALL", label: "Todas as categorias" },
+    { key: TicketCategory.TECHNICAL, label: "Técnico" },
+    { key: TicketCategory.BILLING, label: "Financeiro" },
+    { key: TicketCategory.FEATURE_REQUEST, label: "Solicitação de melhoria" },
+    { key: TicketCategory.BUG_REPORT, label: "Bug" },
+    { key: TicketCategory.GENERAL, label: "Geral" },
+  ];
 
 const SUPPORT_LEVEL_OPTIONS: Array<{
   key: TicketSupportLevel | "ALL";
@@ -126,15 +128,24 @@ const SUPPORT_POLL_INTERVAL_MS = 4000;
 const THREAD_POLL_INTERVAL_MS = 2500;
 const SUPPORT_MAX_IMAGES_PER_BATCH = 5;
 const STATUS_TRANSITION_GUIDE: Array<{ title: string; description: string }> = [
-  { title: "Aberto", description: "Ticket recém-criado, sem tratativa iniciada." },
+  {
+    title: "Aberto",
+    description: "Ticket recém-criado, sem tratativa iniciada.",
+  },
   { title: "Em andamento", description: "Atendimento ativo pelo suporte." },
-  { title: "Aguardando cliente", description: "Depende de retorno do solicitante." },
+  {
+    title: "Aguardando cliente",
+    description: "Depende de retorno do solicitante.",
+  },
   {
     title: "Aguardando terceiro",
     description:
       "Depende de agente externo (tribunal/integrador/fornecedor). Motivo obrigatório.",
   },
-  { title: "Resolvido", description: "Solução aplicada, aguardando confirmação final." },
+  {
+    title: "Resolvido",
+    description: "Solução aplicada, aguardando confirmação final.",
+  },
   { title: "Encerrado", description: "Ciclo finalizado sem pendências." },
 ];
 const SUPPORT_REPLY_MACROS: Array<{
@@ -192,8 +203,7 @@ function getCategoryLabel(category: TicketCategory) {
 
 function getSupportLevelLabel(level: TicketSupportLevel) {
   return (
-    SUPPORT_LEVEL_OPTIONS.find((option) => option.key === level)?.label ??
-    level
+    SUPPORT_LEVEL_OPTIONS.find((option) => option.key === level)?.label ?? level
   );
 }
 
@@ -309,11 +319,7 @@ function isSupportMessage(authorType: string) {
   return authorType === "SUPER_ADMIN" || authorType === "SYSTEM";
 }
 
-type SupportAvailability =
-  | "AVAILABLE"
-  | "BUSY"
-  | "LUNCH_BREAK"
-  | "OFFLINE";
+type SupportAvailability = "AVAILABLE" | "BUSY" | "LUNCH_BREAK" | "OFFLINE";
 
 function getSaoPauloHour(date: Date): number {
   const hourPart = new Intl.DateTimeFormat("pt-BR", {
@@ -454,15 +460,15 @@ export function SuporteContent() {
     assignedOnly,
   ]);
 
-  const { data: stats, isLoading: isLoadingStats, mutate: mutateStats } = useSWR(
-    "global-support-stats",
-    () => getGlobalSupportStats(),
-    {
-      revalidateOnFocus: true,
-      refreshInterval: SUPPORT_POLL_INTERVAL_MS,
-      dedupingInterval: 1000,
-    },
-  );
+  const {
+    data: stats,
+    isLoading: isLoadingStats,
+    mutate: mutateStats,
+  } = useSWR("global-support-stats", () => getGlobalSupportStats(), {
+    revalidateOnFocus: true,
+    refreshInterval: SUPPORT_POLL_INTERVAL_MS,
+    dedupingInterval: 1000,
+  });
 
   const {
     data: listData,
@@ -522,13 +528,21 @@ export function SuporteContent() {
     },
   );
 
-  const { data: tenants } = useSWR("support-tenants", () => getSupportTenantOptions(), {
-    revalidateOnFocus: false,
-  });
+  const { data: tenants } = useSWR(
+    "support-tenants",
+    () => getSupportTenantOptions(),
+    {
+      revalidateOnFocus: false,
+    },
+  );
 
-  const { data: agents } = useSWR("support-agents", () => getSupportSuperAdminAgents(), {
-    revalidateOnFocus: false,
-  });
+  const { data: agents } = useSWR(
+    "support-agents",
+    () => getSupportSuperAdminAgents(),
+    {
+      revalidateOnFocus: false,
+    },
+  );
 
   const tenantSelectItems = useMemo(
     () => [
@@ -684,11 +698,7 @@ export function SuporteContent() {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
-            <Button
-              size="sm"
-              variant="flat"
-              onPress={() => toast.dismiss(id)}
-            >
+            <Button size="sm" variant="flat" onPress={() => toast.dismiss(id)}>
               Dispensar
             </Button>
             <Button
@@ -762,10 +772,23 @@ export function SuporteContent() {
     [supportAvailability],
   );
 
+  const queueInsights = useMemo(
+    () => ({
+      unassigned: queueTickets.length,
+      assignedToMe: assignedToMeTickets.length,
+      breachedInView: tickets.filter((ticket) => ticket.slaBreached).length,
+      unreadInView: tickets.filter((ticket) => ticket.hasUnreadForSupport)
+        .length,
+    }),
+    [assignedToMeTickets.length, queueTickets.length, tickets],
+  );
+
   useEffect(() => {
     if (!queueNotifierReadyRef.current) {
       queueNotifierReadyRef.current = true;
-      seenQueueTicketIdsRef.current = new Set(queueTickets.map((ticket) => ticket.id));
+      seenQueueTicketIdsRef.current = new Set(
+        queueTickets.map((ticket) => ticket.id),
+      );
       return;
     }
 
@@ -864,7 +887,10 @@ export function SuporteContent() {
 
     if (!incoming.length) return;
 
-    const merged = [...current, ...incoming].slice(0, SUPPORT_MAX_IMAGES_PER_BATCH);
+    const merged = [...current, ...incoming].slice(
+      0,
+      SUPPORT_MAX_IMAGES_PER_BATCH,
+    );
 
     if (current.length + incoming.length > SUPPORT_MAX_IMAGES_PER_BATCH) {
       toast.warning(
@@ -978,7 +1004,9 @@ export function SuporteContent() {
     if (!selectedTicket?.id || !routingLevelDraft) return;
 
     if (selectedTicket.status === TicketStatus.CLOSED) {
-      toast.error("Chat finalizado. Reabra o ticket antes de alterar roteamento.");
+      toast.error(
+        "Chat finalizado. Reabra o ticket antes de alterar roteamento.",
+      );
       return;
     }
 
@@ -1042,7 +1070,9 @@ export function SuporteContent() {
       toast.success("Atendimento finalizado e chat bloqueado.");
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Erro ao finalizar atendimento";
+        error instanceof Error
+          ? error.message
+          : "Erro ao finalizar atendimento";
       toast.error(message);
     } finally {
       setIsFinalizing(false);
@@ -1116,9 +1146,7 @@ export function SuporteContent() {
     }
   };
 
-  const applyReplyMacro = (
-    macro: (typeof SUPPORT_REPLY_MACROS)[number],
-  ) => {
+  const applyReplyMacro = (macro: (typeof SUPPORT_REPLY_MACROS)[number]) => {
     setReply(macro.content);
     setIsInternalReply(macro.isInternal);
   };
@@ -1128,7 +1156,7 @@ export function SuporteContent() {
       <PeoplePageHeader
         tag="Administração"
         title="Suporte operacional"
-        description="Fila global de tickets por tenant, com chat em tempo real e monitoramento de SLA."
+        description="Fila global de tickets por tenant, com foco em SLA, retenção e resposta operacional em tempo real."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Chip
@@ -1160,6 +1188,61 @@ export function SuporteContent() {
       />
 
       <PeoplePanel
+        title="Leitura de retenção"
+        description="Antes de abrir a fila, veja onde a operação pode perder tempo, receita ou confiança do tenant."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Chats sem dono
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-warning">
+              {queueInsights.unassigned}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              Conversas aguardando alguém assumir.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Em atendimento por você
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-primary">
+              {queueInsights.assignedToMe}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              Tickets ativos sob sua responsabilidade.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              SLA em risco na visão atual
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-danger">
+              {queueInsights.breachedInView}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              Tickets filtrados já fora do tempo ideal.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Mensagens novas
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-success">
+              {queueInsights.unreadInView}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              Tickets no filtro atual com resposta pendente do suporte.
+            </p>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
         title="Disponibilidade"
         description={supportAvailabilityMeta.description}
       >
@@ -1179,9 +1262,13 @@ export function SuporteContent() {
             Em atendimento
           </Chip>
           <Chip
-            color={supportAvailability === "LUNCH_BREAK" ? "default" : "default"}
+            color={
+              supportAvailability === "LUNCH_BREAK" ? "default" : "default"
+            }
             size="sm"
-            variant={supportAvailability === "LUNCH_BREAK" ? "flat" : "bordered"}
+            variant={
+              supportAvailability === "LUNCH_BREAK" ? "flat" : "bordered"
+            }
           >
             Pausa para almoço
           </Chip>
@@ -1198,28 +1285,32 @@ export function SuporteContent() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <PeopleMetricCard
           label="Backlog total"
-          value={isLoadingStats ? "..." : stats?.total ?? 0}
+          value={isLoadingStats ? "..." : (stats?.total ?? 0)}
           helper="Chamados em base"
           tone="primary"
           icon={<LifeBuoy className="h-4 w-4" />}
         />
         <PeopleMetricCard
           label="Aguardando suporte"
-          value={isLoadingStats ? "..." : stats?.pendingSupport ?? 0}
+          value={isLoadingStats ? "..." : (stats?.pendingSupport ?? 0)}
           helper="Fila de espera aguardando suporte"
           tone="warning"
           icon={<Clock3 className="h-4 w-4" />}
         />
         <PeopleMetricCard
           label="SLA estourado"
-          value={isLoadingStats ? "..." : stats?.slaBreached ?? 0}
+          value={isLoadingStats ? "..." : (stats?.slaBreached ?? 0)}
           helper="Escalonar imediatamente"
           tone="danger"
           icon={<ShieldAlert className="h-4 w-4" />}
         />
         <PeopleMetricCard
           label="1ª resposta média"
-          value={isLoadingStats ? "..." : formatDuration(stats?.avgFirstResponseMinutes ?? 0)}
+          value={
+            isLoadingStats
+              ? "..."
+              : formatDuration(stats?.avgFirstResponseMinutes ?? 0)
+          }
           helper="Tempo médio global"
           tone="success"
           icon={<Timer className="h-4 w-4" />}
@@ -1258,6 +1349,7 @@ export function SuporteContent() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
           <Input
             className="lg:col-span-2"
+            classNames={{ inputWrapper: "min-h-12" }}
             placeholder="Buscar por ticket, tenant, e-mail ou título"
             startContent={<Search className="h-4 w-4 text-default-400" />}
             value={query}
@@ -1265,6 +1357,7 @@ export function SuporteContent() {
           />
 
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label="Tenant"
             items={tenantSelectItems}
             selectedKeys={[tenantFilter]}
@@ -1280,10 +1373,13 @@ export function SuporteContent() {
           </Select>
 
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label="Status"
             selectedKeys={[statusFilter]}
             onSelectionChange={(keys) =>
-              setStatusFilter((Array.from(keys)[0] as TicketStatus | "ALL") || "ALL")
+              setStatusFilter(
+                (Array.from(keys)[0] as TicketStatus | "ALL") || "ALL",
+              )
             }
           >
             {STATUS_OPTIONS.map((option) => (
@@ -1294,6 +1390,7 @@ export function SuporteContent() {
           </Select>
 
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label="Prioridade"
             selectedKeys={[priorityFilter]}
             onSelectionChange={(keys) =>
@@ -1310,6 +1407,7 @@ export function SuporteContent() {
           </Select>
 
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label="Categoria"
             selectedKeys={[categoryFilter]}
             onSelectionChange={(keys) =>
@@ -1328,6 +1426,7 @@ export function SuporteContent() {
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label="Fila de atendimento"
             selectedKeys={[supportLevelFilter]}
             onSelectionChange={(keys) =>
@@ -1344,10 +1443,18 @@ export function SuporteContent() {
           </Select>
 
           <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-background/40 px-3 py-2 lg:col-span-2">
-            <Switch isSelected={assignedToMe} size="sm" onValueChange={setAssignedToMe}>
+            <Switch
+              isSelected={assignedToMe}
+              size="sm"
+              onValueChange={setAssignedToMe}
+            >
               Atribuídos a mim
             </Switch>
-            <Switch isSelected={assignedOnly} size="sm" onValueChange={setAssignedOnly}>
+            <Switch
+              isSelected={assignedOnly}
+              size="sm"
+              onValueChange={setAssignedOnly}
+            >
               Apenas atribuídos
             </Switch>
           </div>
@@ -1356,6 +1463,7 @@ export function SuporteContent() {
             <span className="text-xs text-default-400">Por página</span>
             <Select
               className="w-28"
+              classNames={{ trigger: "min-h-12" }}
               selectedKeys={[String(pageSize)]}
               onSelectionChange={(keys) => {
                 const next = Number(Array.from(keys)[0] ?? pageSize);
@@ -1398,16 +1506,26 @@ export function SuporteContent() {
                 >
                   <PeopleEntityCardHeader className="items-start justify-between gap-2">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-white">{ticket.title}</p>
+                      <p className="text-sm font-semibold text-white">
+                        {ticket.title}
+                      </p>
                       <p className="text-xs text-default-400">
                         #{ticket.id.slice(-8)} · {ticket.tenant.name}
                       </p>
                     </div>
                     <div className="flex flex-wrap justify-end gap-1">
-                      <Chip color={getStatusColor(ticket.status)} size="sm" variant="flat">
+                      <Chip
+                        color={getStatusColor(ticket.status)}
+                        size="sm"
+                        variant="flat"
+                      >
                         {getStatusLabel(ticket.status)}
                       </Chip>
-                      <Chip color={getPriorityColor(ticket.priority)} size="sm" variant="flat">
+                      <Chip
+                        color={getPriorityColor(ticket.priority)}
+                        size="sm"
+                        variant="flat"
+                      >
                         {getPriorityLabel(ticket.priority)}
                       </Chip>
                       <Chip size="sm" variant="bordered">
@@ -1423,16 +1541,24 @@ export function SuporteContent() {
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-default-400 sm:grid-cols-4">
                       <div>
-                        <p className="uppercase tracking-[0.12em]">Solicitante</p>
-                        <p className="truncate text-default-200">{ticket.requester.name}</p>
+                        <p className="uppercase tracking-[0.12em]">
+                          Solicitante
+                        </p>
+                        <p className="truncate text-default-200">
+                          {ticket.requester.name}
+                        </p>
                       </div>
                       <div>
                         <p className="uppercase tracking-[0.12em]">Categoria</p>
-                        <p className="text-default-200">{getCategoryLabel(ticket.category)}</p>
+                        <p className="text-default-200">
+                          {getCategoryLabel(ticket.category)}
+                        </p>
                       </div>
                       <div>
                         <p className="uppercase tracking-[0.12em]">Fila</p>
-                        <p className="text-default-200">{getQueueLabel(ticket)}</p>
+                        <p className="text-default-200">
+                          {getQueueLabel(ticket)}
+                        </p>
                       </div>
                       <div>
                         <p className="uppercase tracking-[0.12em]">Atribuído</p>
@@ -1466,7 +1592,8 @@ export function SuporteContent() {
                           Em atendimento por você
                         </Chip>
                       ) : null}
-                      {ticket.waitingFor === "SUPPORT" && ticket.assignedTo === null ? (
+                      {ticket.waitingFor === "SUPPORT" &&
+                      ticket.assignedTo === null ? (
                         <Button
                           color="primary"
                           data-stop-card-press="true"
@@ -1484,17 +1611,28 @@ export function SuporteContent() {
 
             {listData && listData.totalPages > 1 ? (
               <div className="mt-4 flex justify-center">
-                <Pagination page={page} total={listData.totalPages} onChange={setPage} />
+                <Pagination
+                  page={page}
+                  total={listData.totalPages}
+                  onChange={setPage}
+                />
               </div>
             ) : null}
           </>
         )}
       </PeoplePanel>
 
-      <Modal isOpen={isQueueOpen} scrollBehavior="inside" size="4xl" onClose={onQueueClose}>
+      <Modal
+        isOpen={isQueueOpen}
+        scrollBehavior="inside"
+        size="4xl"
+        onClose={onQueueClose}
+      >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
-            <p className="text-base font-semibold text-white">Painel de chats de suporte</p>
+            <p className="text-base font-semibold text-white">
+              Painel de chats de suporte
+            </p>
             <p className="text-xs text-default-400">
               Clientes aguardando resposta e tickets já assumidos por você.
             </p>
@@ -1502,14 +1640,22 @@ export function SuporteContent() {
           <ModalBody className="space-y-4">
             <div className="rounded-xl border border-white/10 bg-background/40 p-3">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-white">Aguardando suporte</p>
-                <Chip color={queueTotal > 0 ? "danger" : "default"} size="sm" variant="flat">
+                <p className="text-sm font-semibold text-white">
+                  Aguardando suporte
+                </p>
+                <Chip
+                  color={queueTotal > 0 ? "danger" : "default"}
+                  size="sm"
+                  variant="flat"
+                >
                   {queueTotal}
                 </Chip>
               </div>
 
               {queueTickets.length === 0 ? (
-                <p className="text-sm text-default-400">Nenhum cliente aguardando neste momento.</p>
+                <p className="text-sm text-default-400">
+                  Nenhum cliente aguardando neste momento.
+                </p>
               ) : (
                 <div className="space-y-2">
                   {queueTickets.map((ticket) => (
@@ -1522,7 +1668,8 @@ export function SuporteContent() {
                           {ticket.tenant.name} · {ticket.title}
                         </p>
                         <p className="truncate text-xs text-default-400">
-                          {ticket.requester.name} · {formatDateTime(ticket.updatedAt)}
+                          {ticket.requester.name} ·{" "}
+                          {formatDateTime(ticket.updatedAt)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1554,7 +1701,9 @@ export function SuporteContent() {
 
             <div className="rounded-xl border border-white/10 bg-background/40 p-3">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-white">Assumidos por você</p>
+                <p className="text-sm font-semibold text-white">
+                  Assumidos por você
+                </p>
                 <Chip
                   color={assignedToMeTickets.length > 0 ? "success" : "default"}
                   size="sm"
@@ -1580,7 +1729,8 @@ export function SuporteContent() {
                           {ticket.tenant.name} · {ticket.title}
                         </p>
                         <p className="truncate text-xs text-default-400">
-                          {ticket.requester.name} · {formatDateTime(ticket.updatedAt)}
+                          {ticket.requester.name} ·{" "}
+                          {formatDateTime(ticket.updatedAt)}
                         </p>
                       </div>
                       <Button
@@ -1608,7 +1758,12 @@ export function SuporteContent() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isThreadOpen} scrollBehavior="inside" size="5xl" onClose={closeThread}>
+      <Modal
+        isOpen={isThreadOpen}
+        scrollBehavior="inside"
+        size="5xl"
+        onClose={closeThread}
+      >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1618,10 +1773,18 @@ export function SuporteContent() {
               <div className="flex flex-wrap items-center gap-1">
                 {selectedTicket ? (
                   <>
-                    <Chip color={getStatusColor(selectedTicket.status)} size="sm" variant="flat">
+                    <Chip
+                      color={getStatusColor(selectedTicket.status)}
+                      size="sm"
+                      variant="flat"
+                    >
                       {getStatusLabel(selectedTicket.status)}
                     </Chip>
-                    <Chip color={getPriorityColor(selectedTicket.priority)} size="sm" variant="flat">
+                    <Chip
+                      color={getPriorityColor(selectedTicket.priority)}
+                      size="sm"
+                      variant="flat"
+                    >
                       {getPriorityLabel(selectedTicket.priority)}
                     </Chip>
                     <Chip size="sm" variant="bordered">
@@ -1641,7 +1804,8 @@ export function SuporteContent() {
             </div>
             {selectedTicket ? (
               <p className="text-xs text-default-400">
-                #{selectedTicket.id} · {selectedTicket.tenant.name} · {selectedTicket.requester.email}
+                #{selectedTicket.id} · {selectedTicket.tenant.name} ·{" "}
+                {selectedTicket.requester.email}
               </p>
             ) : null}
           </ModalHeader>
@@ -1655,15 +1819,21 @@ export function SuporteContent() {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-background/40 p-3 text-xs text-default-300 sm:grid-cols-5">
                   <div>
-                    <p className="uppercase tracking-[0.16em] text-default-500">Abertura</p>
+                    <p className="uppercase tracking-[0.16em] text-default-500">
+                      Abertura
+                    </p>
                     <p>{formatDateTime(selectedTicket.createdAt)}</p>
                   </div>
                   <div>
-                    <p className="uppercase tracking-[0.16em] text-default-500">1ª resposta</p>
+                    <p className="uppercase tracking-[0.16em] text-default-500">
+                      1ª resposta
+                    </p>
                     <p>{formatDuration(selectedTicket.firstResponseMinutes)}</p>
                   </div>
                   <div>
-                    <p className="uppercase tracking-[0.16em] text-default-500">Tempo de atendimento</p>
+                    <p className="uppercase tracking-[0.16em] text-default-500">
+                      Tempo de atendimento
+                    </p>
                     <p key={threadClockTick}>
                       {formatElapsedTime(
                         selectedTicket.createdAt,
@@ -1672,11 +1842,15 @@ export function SuporteContent() {
                     </p>
                   </div>
                   <div>
-                    <p className="uppercase tracking-[0.16em] text-default-500">SLA</p>
+                    <p className="uppercase tracking-[0.16em] text-default-500">
+                      SLA
+                    </p>
                     <p>{formatDateTime(selectedTicket.firstResponseDueAt)}</p>
                   </div>
                   <div>
-                    <p className="uppercase tracking-[0.16em] text-default-500">Atualizado</p>
+                    <p className="uppercase tracking-[0.16em] text-default-500">
+                      Atualizado
+                    </p>
                     <p>{formatDateTime(selectedTicket.updatedAt)}</p>
                   </div>
                 </div>
@@ -1687,8 +1861,8 @@ export function SuporteContent() {
                       Atendimento encerrado
                     </p>
                     <p className="mt-1 text-xs text-success-200">
-                      Finalizado em {formatDateTime(selectedTicket.closedAt)} por{" "}
-                      {selectedTicket.closedBy?.name ?? "suporte"}.
+                      Finalizado em {formatDateTime(selectedTicket.closedAt)}{" "}
+                      por {selectedTicket.closedBy?.name ?? "suporte"}.
                     </p>
                     {selectedTicket.resolutionOutcome ? (
                       <p className="mt-1 text-xs text-success-200">
@@ -1727,7 +1901,8 @@ export function SuporteContent() {
                     }
                     onSelectionChange={(keys) => {
                       const nextStatus =
-                        (Array.from(keys)[0] as TicketStatus) ?? selectedTicket.status;
+                        (Array.from(keys)[0] as TicketStatus) ??
+                        selectedTicket.status;
                       setStatusDraft(nextStatus);
                       if (nextStatus !== TicketStatus.WAITING_EXTERNAL) {
                         setStatusReasonDraft("");
@@ -1736,14 +1911,13 @@ export function SuporteContent() {
                   >
                     {STATUS_OPTIONS.filter(
                       (option) =>
-                        option.key !== "ALL" && option.key !== TicketStatus.CLOSED,
-                    ).map(
-                      (option) => (
-                        <SelectItem key={option.key} textValue={option.label}>
-                          {option.label}
-                        </SelectItem>
-                      ),
-                    )}
+                        option.key !== "ALL" &&
+                        option.key !== TicketStatus.CLOSED,
+                    ).map((option) => (
+                      <SelectItem key={option.key} textValue={option.label}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </Select>
                   {statusDraft === TicketStatus.WAITING_EXTERNAL ? (
                     <Textarea
@@ -1768,13 +1942,13 @@ export function SuporteContent() {
                       )
                     }
                   >
-                    {SUPPORT_LEVEL_OPTIONS.filter((option) => option.key !== "ALL").map(
-                      (option) => (
-                        <SelectItem key={option.key} textValue={option.label}>
-                          {option.label}
-                        </SelectItem>
-                      ),
-                    )}
+                    {SUPPORT_LEVEL_OPTIONS.filter(
+                      (option) => option.key !== "ALL",
+                    ).map((option) => (
+                      <SelectItem key={option.key} textValue={option.label}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </Select>
 
                   <Select
@@ -1783,7 +1957,8 @@ export function SuporteContent() {
                     items={assigneeSelectItems}
                     selectedKeys={[routingAssigneeDraft || "unassigned"]}
                     onSelectionChange={(keys) => {
-                      const selected = (Array.from(keys)[0] as string) || "unassigned";
+                      const selected =
+                        (Array.from(keys)[0] as string) || "unassigned";
 
                       setRoutingAssigneeDraft(
                         selected === "unassigned" ? "" : selected,
@@ -1830,7 +2005,8 @@ export function SuporteContent() {
                         selectedTicket.status === TicketStatus.CLOSED ||
                         !routingLevelDraft ||
                         (routingLevelDraft === selectedTicket.supportLevel &&
-                          routingAssigneeDraft === (selectedTicket.assignedTo?.id ?? ""))
+                          routingAssigneeDraft ===
+                            (selectedTicket.assignedTo?.id ?? ""))
                       }
                       isLoading={isSavingRouting}
                       startContent={<UserRoundCheck className="h-4 w-4" />}
@@ -1854,7 +2030,9 @@ export function SuporteContent() {
                         !currentSuperAdminId
                       }
                       variant="flat"
-                      onPress={() => setRoutingAssigneeDraft(currentSuperAdminId)}
+                      onPress={() =>
+                        setRoutingAssigneeDraft(currentSuperAdminId)
+                      }
                     >
                       Atribuir para mim
                     </Button>
@@ -1865,9 +2043,13 @@ export function SuporteContent() {
                     </p>
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                       <Select
-                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        isDisabled={
+                          selectedTicket.status === TicketStatus.CLOSED
+                        }
                         label="Categoria de fechamento"
-                        selectedKeys={closureCategoryDraft ? [closureCategoryDraft] : []}
+                        selectedKeys={
+                          closureCategoryDraft ? [closureCategoryDraft] : []
+                        }
                         onSelectionChange={(keys) =>
                           setClosureCategoryDraft(
                             (Array.from(keys)[0] as TicketCategory) ??
@@ -1875,16 +2057,18 @@ export function SuporteContent() {
                           )
                         }
                       >
-                        {CATEGORY_OPTIONS.filter((option) => option.key !== "ALL").map(
-                          (option) => (
-                            <SelectItem key={option.key} textValue={option.label}>
-                              {option.label}
-                            </SelectItem>
-                          ),
-                        )}
+                        {CATEGORY_OPTIONS.filter(
+                          (option) => option.key !== "ALL",
+                        ).map((option) => (
+                          <SelectItem key={option.key} textValue={option.label}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </Select>
                       <Select
-                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        isDisabled={
+                          selectedTicket.status === TicketStatus.CLOSED
+                        }
                         label="Desfecho"
                         selectedKeys={[resolutionOutcomeDraft]}
                         onSelectionChange={(keys) =>
@@ -1903,7 +2087,9 @@ export function SuporteContent() {
                       <Button
                         className="self-end"
                         color="success"
-                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        isDisabled={
+                          selectedTicket.status === TicketStatus.CLOSED
+                        }
                         isLoading={isFinalizing}
                         onPress={handleFinalizeTicket}
                       >
@@ -1928,7 +2114,9 @@ export function SuporteContent() {
                     <div className="space-y-1">
                       {STATUS_TRANSITION_GUIDE.map((item) => (
                         <p key={item.title}>
-                          <span className="font-semibold text-default-100">{item.title}:</span>{" "}
+                          <span className="font-semibold text-default-100">
+                            {item.title}:
+                          </span>{" "}
                           {item.description}
                         </p>
                       ))}
@@ -2009,7 +2197,9 @@ export function SuporteContent() {
                     className="hidden"
                     multiple
                     type="file"
-                    onChange={(event) => appendImages(replyImages, event, setReplyImages)}
+                    onChange={(event) =>
+                      appendImages(replyImages, event, setReplyImages)
+                    }
                   />
                   <Textarea
                     isDisabled={selectedTicket.status === TicketStatus.CLOSED}
@@ -2040,7 +2230,9 @@ export function SuporteContent() {
                     {SUPPORT_REPLY_MACROS.map((macro) => (
                       <Button
                         key={macro.key}
-                        isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                        isDisabled={
+                          selectedTicket.status === TicketStatus.CLOSED
+                        }
                         size="sm"
                         variant="flat"
                         onPress={() => applyReplyMacro(macro)}
@@ -2056,14 +2248,18 @@ export function SuporteContent() {
                           key={`${file.name}-${index}`}
                           className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-background/60 px-2 py-1"
                         >
-                          <p className="truncate text-xs text-default-300">{file.name}</p>
+                          <p className="truncate text-xs text-default-300">
+                            {file.name}
+                          </p>
                           <Button
                             isIconOnly
                             size="sm"
                             variant="light"
                             onPress={() =>
                               setReplyImages((previous) =>
-                                previous.filter((_, currentIndex) => currentIndex !== index),
+                                previous.filter(
+                                  (_, currentIndex) => currentIndex !== index,
+                                ),
                               )
                             }
                           >
@@ -2087,7 +2283,9 @@ export function SuporteContent() {
                       isDisabled={selectedTicket.status === TicketStatus.CLOSED}
                       isLoading={isSendingReply}
                       startContent={
-                        isSendingReply ? undefined : <MessageSquare className="h-4 w-4" />
+                        isSendingReply ? undefined : (
+                          <MessageSquare className="h-4 w-4" />
+                        )
                       }
                       onPress={handleSendReply}
                     >
@@ -2112,7 +2310,8 @@ export function SuporteContent() {
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
             <p>
-              {stats.pendingSupport} ticket(s) aguardando atendimento da operação.
+              {stats.pendingSupport} ticket(s) aguardando atendimento da
+              operação.
             </p>
           </div>
         </div>

@@ -5,15 +5,25 @@ import type { RangeValue } from "@react-types/shared";
 import React, { useMemo, useState } from "react";
 import useSWR from "swr";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Divider } from "@heroui/divider";
 import { Badge } from "@heroui/badge";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 
 import {
-  Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, } from "@heroui/table";
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@heroui/table";
 import {
-  Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, } from "@heroui/modal";
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from "@heroui/modal";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 import { RangeCalendar, Tooltip, Select, SelectItem } from "@heroui/react";
 import { CalendarDate, getLocalTimeZone } from "@internationalized/date";
@@ -21,9 +31,9 @@ import {
   CalendarRange,
   ClipboardList,
   CirclePlus,
+  AlertTriangle,
   Download,
   Edit3,
-  Filter,
   Info,
   Search,
   Settings2,
@@ -34,7 +44,12 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 
-import { title, subtitle } from "@/components/primitives";
+import {
+  PeopleEmptyState,
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 import {
   exportSystemAuditLogs,
   getAuditLogContext,
@@ -62,7 +77,6 @@ function formatJson(data: unknown) {
   try {
     return JSON.stringify(data, null, 2);
   } catch (error) {
-
     return String(data);
   }
 }
@@ -76,7 +90,6 @@ function formatValue(value: unknown) {
     try {
       return JSON.stringify(value, null, 2);
     } catch (error) {
-
       return String(value);
     }
   }
@@ -124,7 +137,7 @@ export function AuditoriaContent() {
     ["system-audit-logs", filters],
     ([, params]) => getSystemAuditLogs(params),
     {
-      revalidateOnFocus: false,
+      revalidateOnFocus: true,
       refreshInterval: 0,
     },
   );
@@ -252,77 +265,95 @@ export function AuditoriaContent() {
   };
 
   return (
-    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
-      <header className="space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Administração
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              Auditoria do Sistema
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Logs de todas as ações administrativas realizadas
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button
-              color="primary"
-              isLoading={isExporting}
-              startContent={<Download className="h-4 w-4" />}
-              variant="flat"
-              onPress={async () => {
-                try {
-                  setIsExporting(true);
-                  const response = await exportSystemAuditLogs(filters);
+    <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
+      <PeoplePageHeader
+        tag="Administração"
+        title="Auditoria do sistema"
+        description="Trilha consolidada de ações administrativas para investigação, governança e rastreabilidade operacional."
+        actions={
+          <Button
+            color="primary"
+            isLoading={isExporting}
+            radius="full"
+            size="sm"
+            startContent={<Download className="h-4 w-4" />}
+            variant="flat"
+            onPress={async () => {
+              try {
+                setIsExporting(true);
+                const response = await exportSystemAuditLogs(filters);
 
-                  if (
-                    !response.success ||
-                    !response.data ||
-                    !response.filename
-                  ) {
-                    throw new Error(response.error ?? "Falha ao exportar logs");
-                  }
-
-                  const blob = new Blob([response.data], {
-                    type: "text/csv;charset=utf-8",
-                  });
-                  const url = URL.createObjectURL(blob);
-                  const link = document.createElement("a");
-
-                  link.href = url;
-                  link.download = response.filename;
-                  document.body.appendChild(link);
-                  link.click();
-                  link.remove();
-                  URL.revokeObjectURL(url);
-                  toast.success("Logs exportados com sucesso");
-                } catch (err) {
-                  toast.error(
-                    err instanceof Error
-                      ? err.message
-                      : "Não foi possível exportar os logs",
-                  );
-                } finally {
-                  setIsExporting(false);
+                if (!response.success || !response.data || !response.filename) {
+                  throw new Error(response.error ?? "Falha ao exportar logs");
                 }
-              }}
-            >
-              Exportar Logs
-            </Button>
-          </div>
-        </div>
-      </header>
 
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex items-center gap-2 pb-2">
-          <Filter className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold text-white">Filtros</h2>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+                const blob = new Blob([response.data], {
+                  type: "text/csv;charset=utf-8",
+                });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+
+                link.href = url;
+                link.download = response.filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                toast.success("Logs exportados com sucesso");
+              } catch (err) {
+                toast.error(
+                  err instanceof Error
+                    ? err.message
+                    : "Não foi possível exportar os logs",
+                );
+              } finally {
+                setIsExporting(false);
+              }
+            }}
+          >
+            Exportar CSV
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Base consolidada da trilha administrativa"
+          icon={<ClipboardList className="h-4 w-4" />}
+          label="Total de logs"
+          tone="primary"
+          value={totalLogs}
+        />
+        <PeopleMetricCard
+          helper="Criação de novos registros"
+          icon={<CirclePlus className="h-4 w-4" />}
+          label="Criações"
+          tone="success"
+          value={totalCreates}
+        />
+        <PeopleMetricCard
+          helper="Mudanças em entidades existentes"
+          icon={<Edit3 className="h-4 w-4" />}
+          label="Atualizações"
+          tone="warning"
+          value={totalUpdates}
+        />
+        <PeopleMetricCard
+          helper="Ações destrutivas registradas"
+          icon={<Trash2 className="h-4 w-4" />}
+          label="Exclusões"
+          tone="danger"
+          value={totalDeletes}
+        />
+      </div>
+
+      <PeoplePanel
+        title="Filtros de investigação"
+        description="Refine por origem, entidade, ação e período para reduzir ruído e acelerar análise."
+      >
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
           <Input
+            classNames={{ inputWrapper: "min-h-12" }}
             label={
               <div className="flex items-center gap-2">
                 <Search className="h-4 w-4 text-default-400" />
@@ -341,6 +372,7 @@ export function AuditoriaContent() {
             onChange={(event) => setSearchTerm(event.target.value)}
           />
           <Select
+            classNames={{ trigger: "min-h-12" }}
             label={
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4 text-default-400" />
@@ -363,11 +395,18 @@ export function AuditoriaContent() {
               setFonteFiltro(value ?? "ALL");
             }}
           >
-            <SelectItem key="ALL" textValue="Todas">Todas</SelectItem>
-            <SelectItem key="SUPER_ADMIN" textValue="Super Admin">Super Admin</SelectItem>
-            <SelectItem key="TENANT" textValue="Tenant">Tenant</SelectItem>
+            <SelectItem key="ALL" textValue="Todas">
+              Todas
+            </SelectItem>
+            <SelectItem key="SUPER_ADMIN" textValue="Super Admin">
+              Super Admin
+            </SelectItem>
+            <SelectItem key="TENANT" textValue="Tenant">
+              Tenant
+            </SelectItem>
           </Select>
           <Select
+            classNames={{ trigger: "min-h-12" }}
             items={entidadeOptions}
             label={
               <div className="flex items-center gap-2">
@@ -389,9 +428,14 @@ export function AuditoriaContent() {
               setEntidadeFiltro(value ?? "ALL");
             }}
           >
-            {(item) => <SelectItem key={item.key} textValue={item.label}>{item.label}</SelectItem>}
+            {(item) => (
+              <SelectItem key={item.key} textValue={item.label}>
+                {item.label}
+              </SelectItem>
+            )}
           </Select>
           <Select
+            classNames={{ trigger: "min-h-12" }}
             items={acaoOptions}
             label={
               <div className="flex items-center gap-2">
@@ -413,7 +457,11 @@ export function AuditoriaContent() {
               setAcaoFiltro(value ?? "ALL");
             }}
           >
-            {(item) => <SelectItem key={item.key} textValue={item.label}>{item.label}</SelectItem>}
+            {(item) => (
+              <SelectItem key={item.key} textValue={item.label}>
+                {item.label}
+              </SelectItem>
+            )}
           </Select>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm text-default-400">
@@ -428,7 +476,7 @@ export function AuditoriaContent() {
             </div>
             <Popover offset={10} placement="bottom">
               <PopoverTrigger>
-                <Button className="justify-start" variant="flat">
+                <Button className="justify-start" radius="full" variant="flat">
                   <CalendarRange className="mr-2 h-4 w-4" />
                   {formatCalendarRange(calendarRange)}
                 </Button>
@@ -451,6 +499,7 @@ export function AuditoriaContent() {
             {calendarRange ? (
               <Tooltip color="danger" content="Remover intervalo selecionado">
                 <Button
+                  radius="full"
                   size="sm"
                   startContent={<XCircle className="h-4 w-4" />}
                   variant="light"
@@ -461,221 +510,142 @@ export function AuditoriaContent() {
               </Tooltip>
             ) : null}
           </div>
-        </CardBody>
-      </Card>
+        </div>
+      </PeoplePanel>
 
-      {/* Estatísticas */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/10">
-              <ClipboardList className="h-6 w-6 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total de Logs</p>
-              <p className="text-2xl font-bold text-gray-100">{totalLogs}</p>
-              <p className="text-sm text-blue-400">Últimos 30 dias</p>
-            </div>
-          </CardBody>
-        </Card>
+      <PeoplePanel
+        title="Logs de auditoria"
+        description="Histórico detalhado de ações administrativas, com contexto por entidade e diff por evento."
+      >
+        {error ? (
+          <PeopleEmptyState
+            description={
+              (error as Error)?.message ||
+              "Tente atualizar a consulta ou refinar o escopo da investigação."
+            }
+            icon={<AlertTriangle className="h-6 w-6" />}
+            title="Não foi possível carregar os logs"
+          />
+        ) : isLoading ? (
+          <div className="flex min-h-56 items-center justify-center">
+            <p className="text-sm text-default-400">
+              Buscando os registros de auditoria mais recentes.
+            </p>
+          </div>
+        ) : logs.length > 0 ? (
+          <Table removeWrapper aria-label="Tabela de Logs de Auditoria">
+            <TableHeader>
+              <TableColumn>Data/Hora</TableColumn>
+              <TableColumn>Ação</TableColumn>
+              <TableColumn>Entidade</TableColumn>
+              <TableColumn>Origem</TableColumn>
+              <TableColumn>IP</TableColumn>
+              <TableColumn>Detalhes</TableColumn>
+            </TableHeader>
+            <TableBody>
+              {logs.map((log) => {
+                const origemLabel =
+                  log.fonte === "SUPER_ADMIN" ? "Super Admin" : "Tenant";
+                const origemDescricao =
+                  log.fonte === "SUPER_ADMIN"
+                    ? log.superAdmin?.nome || log.superAdmin?.email || "—"
+                    : log.tenant?.nome || log.usuario?.nome || "—";
+                const camposAlterados = log.changedFields ?? [];
 
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10">
-              <CirclePlus className="h-6 w-6 text-green-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Criações</p>
-              <p className="text-2xl font-bold text-green-400">
-                {totalCreates}
-              </p>
-              <p className="text-sm text-gray-500">Novos registros</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-500/10">
-              <Edit3 className="h-6 w-6 text-yellow-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Atualizações</p>
-              <p className="text-2xl font-bold text-yellow-400">
-                {totalUpdates}
-              </p>
-              <p className="text-sm text-gray-500">Modificações</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
-              <Trash2 className="h-6 w-6 text-red-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Exclusões</p>
-              <p className="text-2xl font-bold text-red-400">{totalDeletes}</p>
-              <p className="text-sm text-gray-500">Registros removidos</p>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Tabela de Logs */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            Logs de Auditoria
-          </h2>
-          <p className="text-sm text-default-400">
-            Histórico detalhado de todas as ações administrativas
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {error ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⚠️</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Não foi possível carregar os logs
-              </h3>
-              <p className="text-default-400">
-                {(error as Error)?.message ||
-                  "Tente atualizar a página ou tente novamente mais tarde."}
-              </p>
-            </div>
-          ) : isLoading ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando logs...
-              </h3>
-              <p className="text-default-400">
-                Buscando os registros de auditoria mais recentes.
-              </p>
-            </div>
-          ) : logs.length > 0 ? (
-            <Table aria-label="Tabela de Logs de Auditoria">
-              <TableHeader>
-                <TableColumn>Data/Hora</TableColumn>
-                <TableColumn>Ação</TableColumn>
-                <TableColumn>Entidade</TableColumn>
-                <TableColumn>Origem</TableColumn>
-                <TableColumn>IP</TableColumn>
-                <TableColumn>Detalhes</TableColumn>
-              </TableHeader>
-              <TableBody>
-                {logs.map((log) => {
-                  const origemLabel =
-                    log.fonte === "SUPER_ADMIN" ? "Super Admin" : "Tenant";
-                  const origemDescricao =
-                    log.fonte === "SUPER_ADMIN"
-                      ? log.superAdmin?.nome || log.superAdmin?.email || "—"
-                      : log.tenant?.nome || log.usuario?.nome || "—";
-                  const camposAlterados = log.changedFields ?? [];
-
-                  return (
-                    <TableRow key={log.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-white">
-                            {formatDate(log.createdAt)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className="capitalize"
-                          color={getActionColor(log.acao) as any}
-                          variant="flat"
-                        >
-                          {log.acao.replace(/_/g, " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-white">
-                            {log.entidade.replace(/_/g, " ")}
-                          </span>
-                          {log.entidadeId && (
-                            <span className="text-xs text-default-400">
-                              ID: {log.entidadeId}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm text-white">
-                            {origemLabel}
-                          </span>
-                          <span className="text-xs text-default-400">
-                            {origemDescricao}
-                          </span>
-                          {log.tenant?.slug && log.fonte !== "SUPER_ADMIN" && (
-                            <span className="text-xs text-primary">
-                              {log.tenant.slug}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-default-400">
-                          {log.ipAddress || "—"}
+                return (
+                  <TableRow key={log.id}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-white">
+                          {formatDate(log.createdAt)}
                         </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-2">
-                          {camposAlterados.length > 0 ? (
-                            <span className="text-xs text-default-400">
-                              Campos alterados:{" "}
-                              {camposAlterados.slice(0, 3).join(", ")}
-                              {camposAlterados.length > 3
-                                ? ` +${camposAlterados.length - 3}`
-                                : ""}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-default-400">
-                              {log.dadosNovos
-                                ? "Dados atualizados"
-                                : "Sem alterações registradas"}
-                            </span>
-                          )}
-                          <Button
-                            color="primary"
-                            size="sm"
-                            startContent={<Info className="h-3.5 w-3.5" />}
-                            variant="light"
-                            onPress={() => {
-                              setSelectedLog(log);
-                              setIsDetailsOpen(true);
-                            }}
-                          >
-                            Ver Detalhes
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📝</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhum log encontrado
-              </h3>
-              <p className="text-default-400 mb-4">
-                Os logs de auditoria aparecerão aqui conforme as ações forem
-                registradas no sistema.
-              </p>
-            </div>
-          )}
-        </CardBody>
-      </Card>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        className="capitalize"
+                        color={getActionColor(log.acao) as any}
+                        variant="flat"
+                      >
+                        {log.acao.replace(/_/g, " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-white">
+                          {log.entidade.replace(/_/g, " ")}
+                        </span>
+                        {log.entidadeId && (
+                          <span className="text-xs text-default-400">
+                            ID: {log.entidadeId}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm text-white">
+                          {origemLabel}
+                        </span>
+                        <span className="text-xs text-default-400">
+                          {origemDescricao}
+                        </span>
+                        {log.tenant?.slug && log.fonte !== "SUPER_ADMIN" && (
+                          <span className="text-xs text-primary">
+                            {log.tenant.slug}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-default-400">
+                        {log.ipAddress || "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-2">
+                        {camposAlterados.length > 0 ? (
+                          <span className="text-xs text-default-400">
+                            Campos alterados:{" "}
+                            {camposAlterados.slice(0, 3).join(", ")}
+                            {camposAlterados.length > 3
+                              ? ` +${camposAlterados.length - 3}`
+                              : ""}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-default-400">
+                            {log.dadosNovos
+                              ? "Dados atualizados"
+                              : "Sem alterações registradas"}
+                          </span>
+                        )}
+                        <Button
+                          color="primary"
+                          size="sm"
+                          startContent={<Info className="h-3.5 w-3.5" />}
+                          variant="light"
+                          onPress={() => {
+                            setSelectedLog(log);
+                            setIsDetailsOpen(true);
+                          }}
+                        >
+                          Ver Detalhes
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : (
+          <PeopleEmptyState
+            description="Os logs de auditoria aparecerão aqui conforme as ações forem registradas no sistema."
+            icon={<ClipboardList className="h-6 w-6" />}
+            title="Nenhum log encontrado"
+          />
+        )}
+      </PeoplePanel>
       <Modal
         isOpen={isDetailsOpen}
         scrollBehavior="inside"

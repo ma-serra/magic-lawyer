@@ -190,7 +190,10 @@ export function PeopleEntityCardHeader({
   );
 }
 
-type PeopleEntityCardBodyProps = Omit<ComponentProps<typeof CardBody>, "children"> & {
+type PeopleEntityCardBodyProps = Omit<
+  ComponentProps<typeof CardBody>,
+  "children"
+> & {
   children: ReactNode;
 };
 
@@ -226,7 +229,9 @@ export function PeoplePageHeader({
             {description}
           </p>
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
       </CardBody>
     </Card>
   );
@@ -253,11 +258,15 @@ export function PeopleMetricCard({
     <Card className={`border ${toneStyle.card}`}>
       <CardBody className="flex flex-col gap-2 p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${toneStyle.label}`}>
+          <p
+            className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${toneStyle.label}`}
+          >
             {label}
           </p>
           {icon ? (
-            <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneStyle.iconWrap}`}>
+            <span
+              className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneStyle.iconWrap}`}
+            >
               {icon}
             </span>
           ) : null}
@@ -296,5 +305,41 @@ export function PeoplePanel({
       <Divider className="border-white/10" />
       <CardBody>{children}</CardBody>
     </Card>
+  );
+}
+
+interface PeopleEmptyStateProps {
+  title: string;
+  description: string;
+  icon?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}
+
+export function PeopleEmptyState({
+  title,
+  description,
+  icon,
+  action,
+  className,
+}: PeopleEmptyStateProps) {
+  return (
+    <div
+      className={joinClasses(
+        "flex min-h-44 flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-background/30 px-6 py-10 text-center",
+        className,
+      )}
+    >
+      {icon ? (
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-default-400">
+          {icon}
+        </div>
+      ) : null}
+      <p className="text-base font-semibold text-foreground">{title}</p>
+      <p className="mt-2 max-w-xl text-sm text-default-400">{description}</p>
+      {action ? (
+        <div className="mt-4 flex flex-wrap justify-center gap-2">{action}</div>
+      ) : null}
+    </div>
   );
 }

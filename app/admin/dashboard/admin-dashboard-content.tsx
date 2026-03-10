@@ -75,6 +75,11 @@ function pctLabel(value: number | null) {
   return `${signal}${value.toFixed(1)}%`;
 }
 
+function analyticsSafePercent(value: number | null) {
+  if (value === null || Number.isNaN(value)) return 0;
+  return Number(value.toFixed(1));
+}
+
 function fetchAdminDashboard() {
   return getSuperAdminDashboardData().then((response) => {
     if (!response.success || !response.data) {
@@ -204,7 +209,7 @@ export function AdminDashboardContent() {
     "admin-dashboard-overview",
     fetchAdminDashboard,
     {
-      revalidateOnFocus: false,
+      revalidateOnFocus: true,
     },
   );
 
@@ -238,7 +243,9 @@ export function AdminDashboardContent() {
       0,
     );
     const top1Share =
-      topRevenueSum > 0 ? (data.topTenants[0]?.revenue90d ?? 0) / topRevenueSum * 100 : 0;
+      topRevenueSum > 0
+        ? ((data.topTenants[0]?.revenue90d ?? 0) / topRevenueSum) * 100
+        : 0;
 
     const chartSeries = revenueSeries.map((point, index) => ({
       label: point.label,
@@ -266,7 +273,8 @@ export function AdminDashboardContent() {
     ].filter((item) => item.value > 0);
 
     const topTenantsChart = data.topTenants.map((tenant) => ({
-      name: tenant.name.length > 24 ? `${tenant.name.slice(0, 24)}…` : tenant.name,
+      name:
+        tenant.name.length > 24 ? `${tenant.name.slice(0, 24)}…` : tenant.name,
       receita90d: tenant.revenue90d,
     }));
 
@@ -276,6 +284,40 @@ export function AdminDashboardContent() {
       activeTenantRate,
       top1Share,
     });
+
+    const focusCards = [
+      {
+        label: "Receita do mês",
+        value: pctLabel(revenueMoM),
+        detail:
+          revenueMoM !== null && revenueMoM < 0
+            ? "Atenção imediata em churn, inadimplência e expansão."
+            : "Mantém ritmo de crescimento ou estabilidade saudável.",
+        tone:
+          revenueMoM !== null && revenueMoM < 0
+            ? ("danger" as const)
+            : ("success" as const),
+      },
+      {
+        label: "Pressão de cobrança",
+        value: `${analyticsSafePercent(invoicePressure)}%`,
+        detail:
+          invoicePressure >= 15
+            ? "Cobrança precisa entrar no plano diário do time."
+            : "Nível de cobrança controlado para a base atual.",
+        tone:
+          invoicePressure >= 15 ? ("warning" as const) : ("primary" as const),
+      },
+      {
+        label: "Concentração top-1",
+        value: `${analyticsSafePercent(top1Share)}%`,
+        detail:
+          top1Share >= 45
+            ? "Receita muito dependente de poucas contas."
+            : "Dependência de receita em faixa administrável.",
+        tone: top1Share >= 45 ? ("warning" as const) : ("secondary" as const),
+      },
+    ];
 
     return {
       revenueMoM,
@@ -287,6 +329,7 @@ export function AdminDashboardContent() {
       tenantStatusChart,
       topTenantsChart,
       recommendations,
+      focusCards,
     };
   }, [data]);
 
@@ -311,10 +354,20 @@ export function AdminDashboardContent() {
         description="Foco em poucos indicadores que movem decisão: receita, crescimento, retenção operacional e risco de concentração."
         actions={
           <>
-            <Button as={NextLink} color="primary" href="/admin/tenants" size="sm">
+            <Button
+              as={NextLink}
+              color="primary"
+              href="/admin/tenants"
+              size="sm"
+            >
               Tenants
             </Button>
-            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="bordered">
+            <Button
+              as={NextLink}
+              href="/admin/auditoria"
+              size="sm"
+              variant="bordered"
+            >
               Auditoria
             </Button>
           </>
@@ -376,18 +429,52 @@ export function AdminDashboardContent() {
       </div>
 
       <PeoplePanel
+        title="Onde agir hoje"
+        description="Leitura executiva curta para decidir crescimento, cobrança e redução de risco sem entrar ainda nos gráficos."
+      >
+        <div className="grid gap-3 xl:grid-cols-3">
+          {analytics.focusCards.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border border-white/10 bg-background/30 p-4"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <Chip color={item.tone} size="sm" variant="flat">
+                  {item.label}
+                </Chip>
+                <p className="text-sm font-semibold text-foreground">
+                  {item.value}
+                </p>
+              </div>
+              <p className="text-sm text-default-400">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
         title="Motor de crescimento"
         description="Receita mensal confirmada com entradas de novos tenants e usuários."
       >
         <div className="h-[360px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={analytics.chartSeries}>
-              <CartesianGrid stroke="rgba(148,163,184,0.15)" strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={false} />
+              <CartesianGrid
+                stroke="rgba(148,163,184,0.15)"
+                strokeDasharray="3 3"
+              />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+              />
               <YAxis
                 yAxisId="money"
                 tick={{ fill: "#94a3b8", fontSize: 12 }}
-                tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+                tickFormatter={(value) =>
+                  `${Math.round(Number(value) / 1000)}k`
+                }
                 tickLine={false}
                 axisLine={false}
               />
@@ -432,15 +519,25 @@ export function AdminDashboardContent() {
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Crescimento de receita</p>
-            <p className="text-sm font-semibold text-foreground">{pctLabel(analytics.revenueMoM)}</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">
+              Crescimento de receita
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {pctLabel(analytics.revenueMoM)}
+            </p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Crescimento de novos tenants</p>
-            <p className="text-sm font-semibold text-foreground">{pctLabel(analytics.tenantGrowthMoM)}</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">
+              Crescimento de novos tenants
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {pctLabel(analytics.tenantGrowthMoM)}
+            </p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-default-500">Ticket médio por tenant ativo</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-default-500">
+              Ticket médio por tenant ativo
+            </p>
             <p className="text-sm font-semibold text-foreground">
               {formatCurrency(
                 data.totals.activeTenants > 0
@@ -459,12 +556,21 @@ export function AdminDashboardContent() {
         >
           <div className="h-[320px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analytics.topTenantsChart} layout="vertical" margin={{ left: 10, right: 10 }}>
-                <CartesianGrid stroke="rgba(148,163,184,0.15)" strokeDasharray="3 3" />
+              <BarChart
+                data={analytics.topTenantsChart}
+                layout="vertical"
+                margin={{ left: 10, right: 10 }}
+              >
+                <CartesianGrid
+                  stroke="rgba(148,163,184,0.15)"
+                  strokeDasharray="3 3"
+                />
                 <XAxis
                   type="number"
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
-                  tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+                  tickFormatter={(value) =>
+                    `${Math.round(Number(value) / 1000)}k`
+                  }
                   tickLine={false}
                   axisLine={false}
                 />
@@ -477,7 +583,12 @@ export function AdminDashboardContent() {
                   axisLine={false}
                 />
                 <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="receita90d" name="Receita 90d" radius={[0, 6, 6, 0]} fill={CHART_COLORS.revenue} />
+                <Bar
+                  dataKey="receita90d"
+                  name="Receita 90d"
+                  radius={[0, 6, 6, 0]}
+                  fill={CHART_COLORS.revenue}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -522,7 +633,10 @@ export function AdminDashboardContent() {
                     className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
                   >
                     <div className="flex items-center gap-2 text-sm text-foreground">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ background: item.color }}
+                      />
                       {item.name}
                     </div>
                     <Chip size="sm" variant="flat">
@@ -543,7 +657,9 @@ export function AdminDashboardContent() {
         >
           <div className="space-y-3">
             {analytics.recommendations.length === 0 ? (
-              <p className="text-sm text-default-400">Sem recomendações críticas neste momento.</p>
+              <p className="text-sm text-default-400">
+                Sem recomendações críticas neste momento.
+              </p>
             ) : (
               analytics.recommendations.map((item, idx) => (
                 <div
@@ -560,7 +676,9 @@ export function AdminDashboardContent() {
                             ? "Saudável"
                             : "Estratégico"}
                     </Chip>
-                    <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {item.title}
+                    </p>
                   </div>
                   <p className="text-sm text-default-400">{item.detail}</p>
                 </div>
@@ -573,14 +691,21 @@ export function AdminDashboardContent() {
           title="Auditoria executiva"
           description="Últimos eventos administrativos que impactam governança da plataforma."
           actions={
-            <Button as={NextLink} href="/admin/auditoria" size="sm" variant="flat">
+            <Button
+              as={NextLink}
+              href="/admin/auditoria"
+              size="sm"
+              variant="flat"
+            >
               Ver auditoria completa
             </Button>
           }
         >
           <div className="space-y-3">
             {data.auditLog.length === 0 ? (
-              <p className="text-sm text-default-400">Sem ações administrativas recentes.</p>
+              <p className="text-sm text-default-400">
+                Sem ações administrativas recentes.
+              </p>
             ) : (
               data.auditLog.map((entry) => (
                 <div
@@ -590,7 +715,9 @@ export function AdminDashboardContent() {
                   <p className="text-xs text-default-500">
                     {new Date(entry.createdAt).toLocaleString("pt-BR")}
                   </p>
-                  <p className="text-sm font-semibold text-foreground">{entry.action}</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {entry.action}
+                  </p>
                   <p className="text-xs text-default-400">{entry.summary}</p>
                 </div>
               ))

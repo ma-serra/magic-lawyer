@@ -2,85 +2,431 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Badge } from "@heroui/badge";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
+import { Input } from "@heroui/input";
 import {
-  Skeleton,
-  Tooltip,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
   Pagination,
+  Skeleton,
+  Tooltip,
 } from "@heroui/react";
 import { addToast } from "@heroui/toast";
 import NextLink from "next/link";
 import Image from "next/image";
-import { Input } from "@heroui/input";
-import { AnimatePresence, motion } from "framer-motion";
-import { Search, Filter, RotateCcw, Copy, LifeBuoy } from "lucide-react";
+import {
+  Activity,
+  Building2,
+  CircleOff,
+  Clock3,
+  Copy,
+  Globe2,
+  LifeBuoy,
+  Rocket,
+  RotateCcw,
+  Search,
+  ShieldAlert,
+  Users,
+} from "lucide-react";
 
 import { getAllTenants, type TenantResponse } from "@/app/actions/admin";
 import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
-import { useRealtimeTenantStatus } from "@/app/hooks/use-realtime-tenant-status";
-import {
-  PeopleMetricCard,
-  PeoplePageHeader,
-  PeoplePanel,
-} from "@/components/people-ui";
 import {
   isPollingGloballyEnabled,
   resolvePollingInterval,
   subscribePollingControl,
   tracePollingAttempt,
 } from "@/app/lib/realtime/polling-telemetry";
+import { useRealtimeTenantStatus } from "@/app/hooks/use-realtime-tenant-status";
+import {
+  PeopleEntityCard,
+  PeopleEntityCardBody,
+  PeopleEntityCardHeader,
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 
-const statusLabel: Record<string, string> = {
+type TenantStatusValue = "ACTIVE" | "SUSPENDED" | "CANCELLED";
+type SubscriptionStatusValue =
+  | "TRIAL"
+  | "ATIVA"
+  | "INADIMPLENTE"
+  | "CANCELADA"
+  | "SUSPENSA";
+type TenantLifecycle =
+  | "TRIAL"
+  | "ONBOARDING"
+  | "ACTIVE"
+  | "AT_RISK"
+  | "DELINQUENT"
+  | "SUSPENDED"
+  | "CANCELLED";
+type TenantHealth = "HEALTHY" | "WATCH" | "CRITICAL";
+
+interface TenantSummary {
+  id: string;
+  name: string;
+  slug: string;
+  domain: string | null;
+  email: string | null;
+  telefone: string | null;
+  timezone: string;
+  status: TenantStatusValue;
+  createdAt: string;
+  updatedAt: string;
+  superAdmin: {
+    name: string;
+    email: string;
+  } | null;
+  branding: {
+    primaryColor: string | null;
+    secondaryColor: string | null;
+    accentColor: string | null;
+    logoUrl: string | null;
+    faviconUrl: string | null;
+  } | null;
+  plan: {
+    status: SubscriptionStatusValue;
+    name: string | null;
+    valorMensal: number | null;
+    valorAnual: number | null;
+    moeda: string;
+    trialEndsAt: string | null;
+    renovaEm: string | null;
+  } | null;
+  counts: {
+    usuarios: number;
+    processos: number;
+    clientes: number;
+  };
+}
+
+interface TenantDerivedState {
+  lifecycle: TenantLifecycle;
+  lifecycleLabel: string;
+  lifecycleTone:
+    | "primary"
+    | "success"
+    | "warning"
+    | "danger"
+    | "secondary"
+    | "default";
+  health: TenantHealth;
+  healthLabel: string;
+  healthTone: "success" | "warning" | "danger";
+  healthHint: string;
+  subscriptionLabel: string;
+  subscriptionTone:
+    | "primary"
+    | "success"
+    | "warning"
+    | "danger"
+    | "secondary"
+    | "default";
+  adoptionScore: number;
+  nextMilestoneLabel: string;
+  nextMilestoneValue: string;
+  revenueLabel: string;
+}
+
+interface TenantWithDerived extends TenantSummary {
+  derived: TenantDerivedState;
+}
+
+const statusLabel: Record<TenantStatusValue, string> = {
   ACTIVE: "Ativo",
   SUSPENDED: "Suspenso",
   CANCELLED: "Cancelado",
 };
 
-const statusTone: Record<string, "success" | "warning" | "danger"> = {
-  ACTIVE: "success",
-  SUSPENDED: "warning",
-  CANCELLED: "danger",
-};
+const statusTone: Record<TenantStatusValue, "success" | "warning" | "danger"> =
+  {
+    ACTIVE: "success",
+    SUSPENDED: "warning",
+    CANCELLED: "danger",
+  };
+
+const lifecycleOptions: Array<{
+  value: TenantLifecycle | "all";
+  label: string;
+}> = [
+  { value: "all", label: "Todos" },
+  { value: "TRIAL", label: "Trial" },
+  { value: "ONBOARDING", label: "Onboarding" },
+  { value: "ACTIVE", label: "Ativos" },
+  { value: "AT_RISK", label: "Em risco" },
+  { value: "DELINQUENT", label: "Inadimplentes" },
+  { value: "SUSPENDED", label: "Suspensos" },
+  { value: "CANCELLED", label: "Cancelados" },
+];
+
+const healthOptions: Array<{ value: TenantHealth | "all"; label: string }> = [
+  { value: "all", label: "Saude geral" },
+  { value: "HEALTHY", label: "Saudavel" },
+  { value: "WATCH", label: "Acompanhar" },
+  { value: "CRITICAL", label: "Critico" },
+];
 
 function fetchTenants() {
   return getAllTenants().then((response: TenantResponse) => {
     if (!response.success || !response.data) {
-      throw new Error(response.error ?? "Não foi possível carregar os tenants");
+      throw new Error(response.error ?? "Nao foi possivel carregar os tenants");
     }
 
-    return response.data as any[];
+    return response.data as TenantSummary[];
   });
 }
 
-function useTenantsData(data: any[] | undefined) {
-  const tenants = data ?? [];
+function formatCurrency(value: number | null | undefined, currency = "BRL") {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "Nao definido";
+  }
+
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "Nao definido";
+
+  return new Date(value).toLocaleDateString("pt-BR");
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "Nao definido";
+
+  return new Date(value).toLocaleString("pt-BR");
+}
+
+function daysUntil(value: string | null) {
+  if (!value) return null;
+
+  const target = new Date(value);
+
+  if (Number.isNaN(target.getTime())) {
+    return null;
+  }
+
+  const diff = target.getTime() - Date.now();
+
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+function deriveTenantState(tenant: TenantSummary): TenantDerivedState {
+  const subscriptionStatus = tenant.plan?.status ?? null;
+  const adoptionScore =
+    tenant.counts.usuarios + tenant.counts.processos + tenant.counts.clientes;
+  const trialDays = daysUntil(tenant.plan?.trialEndsAt ?? null);
+  const renewalDays = daysUntil(tenant.plan?.renovaEm ?? null);
+
+  let lifecycle: TenantLifecycle = "ACTIVE";
+
+  if (tenant.status === "CANCELLED" || subscriptionStatus === "CANCELADA") {
+    lifecycle = "CANCELLED";
+  } else if (
+    tenant.status === "SUSPENDED" ||
+    subscriptionStatus === "SUSPENSA"
+  ) {
+    lifecycle = "SUSPENDED";
+  } else if (subscriptionStatus === "INADIMPLENTE") {
+    lifecycle = "DELINQUENT";
+  } else if (!tenant.plan?.name || adoptionScore === 0) {
+    lifecycle = subscriptionStatus === "TRIAL" ? "TRIAL" : "ONBOARDING";
+  } else if (subscriptionStatus === "TRIAL") {
+    lifecycle = "TRIAL";
+  } else if (renewalDays !== null && renewalDays <= 7) {
+    lifecycle = "AT_RISK";
+  }
+
+  let health: TenantHealth = "HEALTHY";
+  let healthHint = "Operacao consistente e sem sinais imediatos de risco.";
+
+  if (["CANCELLED", "SUSPENDED", "DELINQUENT"].includes(lifecycle)) {
+    health = "CRITICAL";
+    healthHint =
+      lifecycle === "DELINQUENT"
+        ? "Requer acao financeira imediata para evitar perda de receita."
+        : "Tenant fora da operacao normal. Necessita tratamento administrativo.";
+  } else if (lifecycle === "TRIAL" && trialDays !== null && trialDays <= 3) {
+    health = "CRITICAL";
+    healthHint =
+      "Trial perto do fim. Janela curta para conversao ou acao comercial.";
+  } else if (
+    lifecycle === "TRIAL" ||
+    lifecycle === "ONBOARDING" ||
+    lifecycle === "AT_RISK" ||
+    adoptionScore <= 2
+  ) {
+    health = "WATCH";
+    healthHint =
+      lifecycle === "AT_RISK"
+        ? "Renovacao proxima ou sinais de friccao operacional."
+        : "Tenant ainda precisa consolidar onboarding e uso recorrente.";
+  }
+
+  const lifecycleMeta: Record<
+    TenantLifecycle,
+    {
+      label: string;
+      tone: TenantDerivedState["lifecycleTone"];
+      milestoneLabel: string;
+      milestoneValue: string;
+    }
+  > = {
+    TRIAL: {
+      label: "Trial",
+      tone: "primary",
+      milestoneLabel: "Fim do trial",
+      milestoneValue:
+        trialDays === null
+          ? formatDate(tenant.plan?.trialEndsAt ?? null)
+          : trialDays < 0
+            ? `Expirou ha ${Math.abs(trialDays)} dia(s)`
+            : `${trialDays} dia(s)`,
+    },
+    ONBOARDING: {
+      label: "Onboarding",
+      tone: "secondary",
+      milestoneLabel: "Ultima atividade",
+      milestoneValue: formatDate(tenant.updatedAt),
+    },
+    ACTIVE: {
+      label: "Ativo",
+      tone: "success",
+      milestoneLabel: "Renovacao",
+      milestoneValue: formatDate(tenant.plan?.renovaEm ?? null),
+    },
+    AT_RISK: {
+      label: "Em risco",
+      tone: "warning",
+      milestoneLabel: "Renovacao critica",
+      milestoneValue:
+        renewalDays === null
+          ? formatDate(tenant.plan?.renovaEm ?? null)
+          : renewalDays < 0
+            ? `Venceu ha ${Math.abs(renewalDays)} dia(s)`
+            : `${renewalDays} dia(s)`,
+    },
+    DELINQUENT: {
+      label: "Inadimplente",
+      tone: "danger",
+      milestoneLabel: "Cobranca",
+      milestoneValue: "Acao imediata",
+    },
+    SUSPENDED: {
+      label: "Suspenso",
+      tone: "warning",
+      milestoneLabel: "Reativacao",
+      milestoneValue: "Aguardando decisao",
+    },
+    CANCELLED: {
+      label: "Cancelado",
+      tone: "danger",
+      milestoneLabel: "Encerramento",
+      milestoneValue: formatDate(tenant.updatedAt),
+    },
+  };
+
+  const subscriptionLabels: Record<SubscriptionStatusValue, string> = {
+    TRIAL: "Assinatura em trial",
+    ATIVA: "Assinatura ativa",
+    INADIMPLENTE: "Financeiro em atraso",
+    CANCELADA: "Assinatura cancelada",
+    SUSPENSA: "Assinatura suspensa",
+  };
+
+  const subscriptionTones: Record<
+    SubscriptionStatusValue,
+    TenantDerivedState["subscriptionTone"]
+  > = {
+    TRIAL: "primary",
+    ATIVA: "success",
+    INADIMPLENTE: "danger",
+    CANCELADA: "default",
+    SUSPENSA: "warning",
+  };
+
+  return {
+    lifecycle,
+    lifecycleLabel: lifecycleMeta[lifecycle].label,
+    lifecycleTone: lifecycleMeta[lifecycle].tone,
+    health,
+    healthLabel:
+      health === "HEALTHY"
+        ? "Saudavel"
+        : health === "WATCH"
+          ? "Acompanhar"
+          : "Critico",
+    healthTone:
+      health === "HEALTHY"
+        ? "success"
+        : health === "WATCH"
+          ? "warning"
+          : "danger",
+    healthHint,
+    subscriptionLabel: subscriptionStatus
+      ? subscriptionLabels[subscriptionStatus]
+      : "Sem assinatura configurada",
+    subscriptionTone: subscriptionStatus
+      ? subscriptionTones[subscriptionStatus]
+      : "default",
+    adoptionScore,
+    nextMilestoneLabel: lifecycleMeta[lifecycle].milestoneLabel,
+    nextMilestoneValue: lifecycleMeta[lifecycle].milestoneValue,
+    revenueLabel: formatCurrency(
+      tenant.plan?.valorMensal ?? null,
+      tenant.plan?.moeda ?? "BRL",
+    ),
+  };
+}
+
+function useTenantsData(data: TenantSummary[] | undefined) {
+  const tenants = useMemo<TenantWithDerived[]>(() => {
+    return (data ?? []).map((tenant) => ({
+      ...tenant,
+      derived: deriveTenantState(tenant),
+    }));
+  }, [data]);
 
   const totals = useMemo(() => {
-    const active = tenants.filter(
-      (tenant) => tenant.status === "ACTIVE",
-    ).length;
-    const suspended = tenants.filter(
-      (tenant) => tenant.status === "SUSPENDED",
-    ).length;
-    const cancelled = tenants.filter(
-      (tenant) => tenant.status === "CANCELLED",
-    ).length;
-
-    return {
+    const summary = {
       total: tenants.length,
-      active,
-      suspended,
-      cancelled,
+      activation: 0,
+      healthy: 0,
+      attention: 0,
+      cancelled: 0,
     };
+
+    tenants.forEach((tenant) => {
+      if (tenant.derived.lifecycle === "CANCELLED") {
+        summary.cancelled += 1;
+        return;
+      }
+
+      if (["TRIAL", "ONBOARDING"].includes(tenant.derived.lifecycle)) {
+        summary.activation += 1;
+      }
+
+      if (tenant.derived.health === "HEALTHY") {
+        summary.healthy += 1;
+      }
+
+      if (tenant.derived.health !== "HEALTHY") {
+        summary.attention += 1;
+      }
+    });
+
+    return summary;
   }, [tenants]);
 
   return { tenants, totals };
@@ -89,256 +435,279 @@ function useTenantsData(data: any[] | undefined) {
 function TenantsSkeleton() {
   return (
     <div className="space-y-6">
-      <Card className="border border-white/10 bg-background/70">
-        <CardHeader className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
-          <Skeleton className="h-6 w-56 rounded-lg" isLoaded={false} />
-          <Skeleton className="h-9 w-36 rounded-full" isLoaded={false} />
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton
-              key={`stat-${index}`}
-              className="h-20 w-full rounded-xl"
-              isLoaded={false}
-            />
-          ))}
-        </CardBody>
-      </Card>
-
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Skeleton
+            key={`tenant-metric-skeleton-${index}`}
+            className="h-28 rounded-2xl"
+            isLoaded={false}
+          />
+        ))}
+      </div>
+      <Skeleton className="h-48 rounded-3xl" isLoaded={false} />
       {Array.from({ length: 3 }).map((_, index) => (
-        <Card
-          key={`tenant-${index}`}
-          className="border border-white/10 bg-background/70"
-        >
-          <CardBody>
-            <Skeleton className="h-16 w-full rounded-xl" isLoaded={false} />
-          </CardBody>
-        </Card>
+        <Skeleton
+          key={`tenant-list-skeleton-${index}`}
+          className="h-60 rounded-3xl"
+          isLoaded={false}
+        />
       ))}
     </div>
   );
 }
 
+function buildCopyLabel(tenant: TenantSummary) {
+  return tenant.domain || tenant.slug || tenant.id;
+}
+
+function getUsageSummary(tenant: TenantWithDerived) {
+  return `${tenant.counts.usuarios} usuarios · ${tenant.counts.processos} processos · ${tenant.counts.clientes} clientes`;
+}
+
+function getIdentityLabel(tenant: TenantSummary) {
+  if (tenant.domain) return tenant.domain;
+  if (tenant.email) return tenant.email;
+  return `${tenant.slug}.localhost`;
+}
+
 interface TenantCardProps {
-  tenant: any;
-  onOpenDetails: (tenant: any) => void;
+  tenant: TenantWithDerived;
+  onOpenDetails: (tenant: TenantWithDerived) => void;
 }
 
 function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
-  const [showInternalData, setShowInternalData] = useState(false);
   const { status, statusChanged, isUpdating } = useRealtimeTenantStatus(
     tenant.id,
   );
-
-  // Se tivermos status em tempo real, usar esse
-  const tenantStatus = status?.status ?? tenant.status;
-  const statusReason = status?.statusReason ?? null;
-
-  // Animação quando o status muda
-  const cardClassName = statusChanged
-    ? "border border-white/10 bg-background/70 backdrop-blur transition hover:border-primary/40 animate-pulse border-green-500/50"
-    : "border border-white/10 bg-background/70 backdrop-blur transition hover:border-primary/40";
+  const effectiveStatus =
+    (status?.status as TenantStatusValue | undefined) ?? tenant.status;
+  const effectiveTenant = useMemo(
+    () => ({
+      ...tenant,
+      status: effectiveStatus,
+      derived: deriveTenantState({ ...tenant, status: effectiveStatus }),
+    }),
+    [tenant, effectiveStatus],
+  );
 
   const handleCopy = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
       addToast({
         title: `${label} copiado`,
-        description: "Valor copiado para a área de transferência.",
+        description: "Valor copiado para a area de transferencia.",
         color: "success",
       });
     } catch {
       addToast({
         title: "Falha ao copiar",
-        description: "Não foi possível copiar agora. Tente novamente.",
+        description: "Nao foi possivel copiar agora. Tente novamente.",
         color: "danger",
       });
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      layout
+    <PeopleEntityCard
+      isPressable
+      onPress={() => onOpenDetails(effectiveTenant)}
     >
-      <Card
-        key={tenant.id}
-        className={`${cardClassName} cursor-pointer`}
-        role="button"
-        tabIndex={0}
-        onClick={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest("[data-stop-card-press='true']")) return;
-          onOpenDetails(tenant);
-        }}
-        onKeyDown={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest("[data-stop-card-press='true']")) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onOpenDetails(tenant);
-          }
-        }}
-      >
-        <CardBody className="space-y-3">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                  {tenant.branding?.logoUrl ? (
-                    <Image
-                      alt={`Logo ${tenant.name}`}
-                      height={56}
-                      src={tenant.branding.logoUrl}
-                      width={56}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-lg font-semibold text-foreground">
-                      {tenant.name?.charAt(0)?.toUpperCase() ?? "?"}
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-lg font-semibold text-foreground">
-                    {tenant.name}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {statusReason ? (
-                      <Tooltip content={statusReason}>
-                        <Chip
-                          className={statusChanged ? "animate-bounce" : ""}
-                          color={statusTone[tenantStatus] ?? "secondary"}
-                          size="sm"
-                          variant="flat"
-                        >
-                          {statusLabel[tenantStatus] ?? tenantStatus}
-                          {isUpdating && <span className="ml-1 text-xs">⟳</span>}
-                        </Chip>
-                      </Tooltip>
-                    ) : (
-                      <Chip
-                        className={statusChanged ? "animate-bounce" : ""}
-                        color={statusTone[tenantStatus] ?? "secondary"}
-                        size="sm"
-                        variant="flat"
-                      >
-                        {statusLabel[tenantStatus] ?? tenantStatus}
-                        {isUpdating && <span className="ml-1 text-xs">⟳</span>}
-                      </Chip>
-                    )}
-                    {tenant.plan?.name ? (
-                      <Badge color="primary" variant="flat">
-                        Plano {tenant.plan.name}
-                      </Badge>
-                    ) : (
-                      <Chip size="sm" variant="flat">
-                        Sem plano
-                      </Chip>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-default-400">
-                {tenant.email ? <span>Contato: {tenant.email}</span> : null}
-                {tenant.telefone ? <span>• {tenant.telefone}</span> : null}
-                {tenant.domain ? <span>• {tenant.domain}</span> : null}
-              </div>
-              <div className="flex flex-wrap gap-3 text-xs text-default-500">
-                <span>{tenant.counts.usuarios} usuários</span>
-                <span>• {tenant.counts.processos} processos</span>
-                <span>• {tenant.counts.clientes} clientes</span>
-                <span>
-                  • Atualizado{" "}
-                  {new Date(tenant.updatedAt).toLocaleDateString("pt-BR")}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                as={NextLink}
-                color="primary"
-                data-stop-card-press="true"
-                href={`/admin/tenants/${tenant.id}`}
-                radius="full"
+      <PeopleEntityCardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-sm">
+            {effectiveTenant.branding?.logoUrl ? (
+              <Image
+                alt={`Logo ${effectiveTenant.name}`}
+                className="h-full w-full object-contain"
+                height={64}
+                src={effectiveTenant.branding.logoUrl}
+                width={64}
+              />
+            ) : (
+              <span className="text-xl font-semibold text-foreground">
+                {effectiveTenant.name?.charAt(0)?.toUpperCase() ?? "?"}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-lg font-semibold text-foreground">
+                {effectiveTenant.name}
+              </p>
+              <Chip
+                className={statusChanged ? "animate-pulse" : ""}
+                color={statusTone[effectiveStatus]}
                 size="sm"
                 variant="flat"
               >
-                Gerenciar
-              </Button>
-              <Button
-                as={NextLink}
-                data-stop-card-press="true"
-                href={`/admin/suporte?tenantId=${tenant.id}`}
-                radius="full"
+                {statusLabel[effectiveStatus]}
+                {isUpdating ? (
+                  <span className="ml-1 text-[10px]">⟳</span>
+                ) : null}
+              </Chip>
+              <Chip
+                color={effectiveTenant.derived.lifecycleTone}
                 size="sm"
-                startContent={<LifeBuoy className="h-4 w-4" />}
+                variant="flat"
+              >
+                {effectiveTenant.derived.lifecycleLabel}
+              </Chip>
+              <Chip
+                color={effectiveTenant.derived.healthTone}
+                size="sm"
                 variant="bordered"
               >
-                Suporte
-              </Button>
-              <Tooltip content="Copiar ID do tenant">
-                <Button
-                  isIconOnly
-                  data-stop-card-press="true"
-                  radius="full"
-                  size="sm"
-                  variant="light"
-                  onPress={() => handleCopy(tenant.id, "ID do tenant")}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </Tooltip>
-              <Button
-                data-stop-card-press="true"
-                radius="full"
-                size="sm"
-                variant="light"
-                onPress={() => setShowInternalData((prev) => !prev)}
-              >
-                {showInternalData ? "Ocultar interno" : "Dados internos"}
-              </Button>
+                {effectiveTenant.derived.healthLabel}
+              </Chip>
+            </div>
+            <p className="text-sm text-default-400">
+              {getIdentityLabel(effectiveTenant)}
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs text-default-500">
+              <span>
+                Owner: {effectiveTenant.superAdmin?.name || "Nao definido"}
+              </span>
+              <span>• {effectiveTenant.timezone}</span>
+              <span>
+                • Atualizado em {formatDate(effectiveTenant.updatedAt)}
+              </span>
             </div>
           </div>
+        </div>
 
-          <AnimatePresence initial={false}>
-            {showInternalData ? (
-              <motion.div
-                key={`internal-${tenant.id}`}
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <Button
+            as={NextLink}
+            color="primary"
+            data-stop-card-press="true"
+            href={`/admin/tenants/${effectiveTenant.id}`}
+            radius="full"
+            size="sm"
+            variant="flat"
+          >
+            Gerenciar tenant
+          </Button>
+          <Button
+            as={NextLink}
+            data-stop-card-press="true"
+            href={`/admin/suporte?tenantId=${effectiveTenant.id}`}
+            radius="full"
+            size="sm"
+            startContent={<LifeBuoy className="h-4 w-4" />}
+            variant="bordered"
+          >
+            Suporte
+          </Button>
+          <Tooltip content="Copiar identificador principal do tenant">
+            <Button
+              isIconOnly
+              data-stop-card-press="true"
+              radius="full"
+              size="sm"
+              variant="light"
+              onPress={() =>
+                handleCopy(buildCopyLabel(effectiveTenant), "Tenant")
+              }
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+        </div>
+      </PeopleEntityCardHeader>
+
+      <PeopleEntityCardBody className="space-y-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Receita base
+            </p>
+            <p className="mt-2 text-base font-semibold text-foreground">
+              {effectiveTenant.derived.revenueLabel}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              {effectiveTenant.plan?.name
+                ? `Plano ${effectiveTenant.plan.name}`
+                : "Sem plano publicado"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Proximo marco
+            </p>
+            <p className="mt-2 text-base font-semibold text-foreground">
+              {effectiveTenant.derived.nextMilestoneValue}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              {effectiveTenant.derived.nextMilestoneLabel}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Saude operacional
+            </p>
+            <p className="mt-2 text-base font-semibold text-foreground">
+              {effectiveTenant.derived.healthLabel}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              {effectiveTenant.derived.healthHint}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Uso atual
+            </p>
+            <p className="mt-2 text-base font-semibold text-foreground">
+              {effectiveTenant.derived.adoptionScore}
+            </p>
+            <p className="mt-1 text-xs text-default-400">
+              {getUsageSummary(effectiveTenant)}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-background/30 p-4">
+            <div className="flex flex-wrap gap-2">
+              <Chip
+                color={effectiveTenant.derived.subscriptionTone}
+                size="sm"
+                variant="flat"
               >
-                <div className="rounded-xl border border-warning/30 bg-warning/5 p-3">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-warning">
-                    Uso interno de suporte
-                  </p>
-                  <div className="grid gap-2 text-xs text-default-400 sm:grid-cols-2 lg:grid-cols-3">
-                    <span>ID: {tenant.id}</span>
-                    <span>Slug: {tenant.slug}</span>
-                    <span>Fuso: {tenant.timezone}</span>
-                    <span>Criado: {new Date(tenant.createdAt).toLocaleString("pt-BR")}</span>
-                    <span>Atualizado: {new Date(tenant.updatedAt).toLocaleString("pt-BR")}</span>
-                    {tenant.superAdmin?.email ? (
-                      <span>Owner: {tenant.superAdmin.email}</span>
-                    ) : (
-                      <span>Owner: não definido</span>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </CardBody>
-      </Card>
-    </motion.div>
+                {effectiveTenant.derived.subscriptionLabel}
+              </Chip>
+              {effectiveTenant.email ? (
+                <Chip size="sm" variant="bordered">
+                  {effectiveTenant.email}
+                </Chip>
+              ) : null}
+              {effectiveTenant.telefone ? (
+                <Chip size="sm" variant="bordered">
+                  {effectiveTenant.telefone}
+                </Chip>
+              ) : null}
+            </div>
+            <p className="text-sm leading-6 text-default-400">
+              {effectiveTenant.derived.healthHint}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Identificacao tecnica
+            </p>
+            <div className="mt-3 grid gap-2 text-xs text-default-400">
+              <span>ID: {effectiveTenant.id}</span>
+              <span>Slug: {effectiveTenant.slug}</span>
+              <span>
+                Dominio: {effectiveTenant.domain || "Nao configurado"}
+              </span>
+              <span>
+                Criado em: {formatDateTime(effectiveTenant.createdAt)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </PeopleEntityCardBody>
+    </PeopleEntityCard>
   );
 }
 
@@ -346,10 +715,18 @@ export function TenantsContent() {
   const [isPollingEnabled, setIsPollingEnabled] = useState(() =>
     isPollingGloballyEnabled(),
   );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState<
+    TenantLifecycle | "all"
+  >("all");
+  const [healthFilter, setHealthFilter] = useState<TenantHealth | "all">("all");
+  const [planFilter, setPlanFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [selectedTenant, setSelectedTenant] =
+    useState<TenantWithDerived | null>(null);
+  const pageSize = 8;
 
-  useEffect(() => {
-    return subscribePollingControl(setIsPollingEnabled);
-  }, []);
+  useEffect(() => subscribePollingControl(setIsPollingEnabled), []);
 
   const pollingInterval = resolvePollingInterval({
     isConnected: false,
@@ -358,7 +735,7 @@ export function TenantsContent() {
     minimumMs: REALTIME_POLLING.TENANT_STATUS_FALLBACK_MS,
   });
 
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR<TenantSummary[]>(
     "admin-tenants",
     () =>
       tracePollingAttempt(
@@ -371,8 +748,7 @@ export function TenantsContent() {
         () => fetchTenants(),
       ),
     {
-      revalidateOnFocus: false,
-      // 5 minutos no fallback sem realtime (ideal para admin com pouca frequência de alteração)
+      revalidateOnFocus: true,
       refreshInterval: isPollingEnabled ? pollingInterval : 0,
       revalidateOnReconnect: false,
       dedupingInterval: 30_000,
@@ -381,120 +757,178 @@ export function TenantsContent() {
 
   const { tenants, totals } = useTenantsData(data);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [planFilter, setPlanFilter] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage] = useState(1);
-  const [selectedTenant, setSelectedTenant] = useState<any | null>(null);
-  const pageSize = 8;
+  const lifecycleCounts = useMemo(() => {
+    const counts = new Map<TenantLifecycle, number>();
+
+    tenants.forEach((tenant) => {
+      counts.set(
+        tenant.derived.lifecycle,
+        (counts.get(tenant.derived.lifecycle) ?? 0) + 1,
+      );
+    });
+
+    return counts;
+  }, [tenants]);
 
   const planOptions = useMemo(() => {
     const options = tenants
       .map((tenant) => tenant.plan?.name)
       .filter((plan): plan is string => Boolean(plan));
 
-    return Array.from(new Set(options));
+    return Array.from(new Set(options)).sort((a, b) => a.localeCompare(b));
   }, [tenants]);
 
   const filteredTenants = useMemo(() => {
     return tenants.filter((tenant) => {
-      if (searchTerm) {
-        const normalized = searchTerm.toLowerCase();
-        const matchesSearch =
-          tenant.name.toLowerCase().includes(normalized) ||
-          tenant.slug.toLowerCase().includes(normalized) ||
-          tenant.email?.toLowerCase().includes(normalized) ||
-          tenant.domain?.toLowerCase().includes(normalized);
+      const normalizedSearch = searchTerm.trim().toLowerCase();
 
-        if (!matchesSearch) return false;
-      }
+      if (normalizedSearch) {
+        const haystack = [
+          tenant.name,
+          tenant.slug,
+          tenant.domain,
+          tenant.email,
+          tenant.superAdmin?.name,
+          tenant.superAdmin?.email,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-      if (statusFilter !== "all" && tenant.status !== statusFilter) {
-        return false;
-      }
-
-      if (planFilter !== "all") {
-        if (!tenant.plan?.name || tenant.plan.name !== planFilter) {
+        if (!haystack.includes(normalizedSearch)) {
           return false;
         }
       }
 
+      if (
+        lifecycleFilter !== "all" &&
+        tenant.derived.lifecycle !== lifecycleFilter
+      ) {
+        return false;
+      }
+
+      if (healthFilter !== "all" && tenant.derived.health !== healthFilter) {
+        return false;
+      }
+
+      if (planFilter !== "all" && tenant.plan?.name !== planFilter) {
+        return false;
+      }
+
       return true;
     });
-  }, [tenants, searchTerm, statusFilter, planFilter]);
+  }, [healthFilter, lifecycleFilter, planFilter, searchTerm, tenants]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTenants.length / pageSize));
   const paginatedTenants = useMemo(() => {
     const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredTenants.slice(start, end);
+    return filteredTenants.slice(start, start + pageSize);
   }, [filteredTenants, page]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, statusFilter, planFilter]);
+  }, [searchTerm, lifecycleFilter, healthFilter, planFilter]);
 
   useEffect(() => {
     setPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
-  const statusOptions = [
-    { value: "all", label: "Todos" },
-    { value: "ACTIVE", label: "Ativos" },
-    { value: "SUSPENDED", label: "Suspensos" },
-    { value: "CANCELLED", label: "Cancelados" },
-  ];
-
   const resetFilters = () => {
     setSearchTerm("");
-    setStatusFilter("all");
+    setLifecycleFilter("all");
+    setHealthFilter("all");
     setPlanFilter("all");
   };
+
+  const filteredLabel = `${filteredTenants.length} de ${tenants.length} escritorio(s)`;
 
   return (
     <section className="space-y-6">
       <PeoplePageHeader
-        tag="Administração"
-        title="Gestão de tenants"
-        description="Operação de suporte dos escritórios com acesso rápido a status, plano, contato e diagnóstico interno."
+        tag="Administracao comercial"
+        title="Tenants"
+        description="Painel de crescimento, ativacao e retencao dos escritorios. Veja lifecycle, saude operacional, risco e acesso rapido a suporte e gestao completa."
         actions={
-          <Button
-            as={NextLink}
-            color="primary"
-            href="/admin/tenants/new"
-            radius="full"
-            size="sm"
-          >
-            Criar tenant
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              color="default"
+              radius="full"
+              size="sm"
+              variant="bordered"
+              onPress={() => mutate()}
+            >
+              Recarregar
+            </Button>
+            <Button
+              as={NextLink}
+              color="primary"
+              href="/admin/tenants/new"
+              radius="full"
+              size="sm"
+            >
+              Criar tenant
+            </Button>
+          </div>
         }
       />
 
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <PeopleMetricCard
+          label="Base total"
+          value={totals.total}
+          helper="Escritorios sob gestao"
+          icon={<Building2 size={16} />}
+          tone="primary"
+        />
+        <PeopleMetricCard
+          label="Em ativacao"
+          value={totals.activation}
+          helper="Trial e onboarding"
+          icon={<Rocket size={16} />}
+          tone="secondary"
+        />
+        <PeopleMetricCard
+          label="Saudaveis"
+          value={totals.healthy}
+          helper="Operacao consistente"
+          icon={<Activity size={16} />}
+          tone="success"
+        />
+        <PeopleMetricCard
+          label="Atencao imediata"
+          value={totals.attention}
+          helper="Risco operacional ou financeiro"
+          icon={<ShieldAlert size={16} />}
+          tone="warning"
+        />
+        <PeopleMetricCard
+          label="Cancelados"
+          value={totals.cancelled}
+          helper="Base perdida ou encerrada"
+          icon={<CircleOff size={16} />}
+          tone="danger"
+        />
+      </div>
+
       <PeoplePanel
-        title="Busca e filtros"
-        description="Filtre por status e plano para localizar rapidamente um escritório."
+        title="Pipeline e filtros"
+        description="Use lifecycle, saude e plano para localizar rapidamente onde agir: converter, ativar, reter ou escalar."
       >
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-5">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_auto] lg:items-center">
             <Input
-              className="w-full md:max-w-lg"
-              placeholder="Buscar por nome, domínio, e-mail ou slug..."
+              classNames={{ inputWrapper: "min-h-12" }}
+              placeholder="Buscar por escritorio, slug, dominio, owner ou e-mail"
               startContent={<Search className="h-4 w-4 text-default-400" />}
               value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
+              onValueChange={setSearchTerm}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
-                startContent={<Filter className="h-4 w-4" />}
-                variant={showFilters ? "solid" : "bordered"}
-                onPress={() => setShowFilters((prev) => !prev)}
-              >
-                {showFilters ? "Ocultar filtros" : "Mostrar filtros"}
-              </Button>
-              <Button
+                radius="full"
+                size="sm"
                 startContent={<RotateCcw className="h-4 w-4" />}
-                variant="light"
+                variant="bordered"
                 onPress={resetFilters}
               >
                 Limpar
@@ -502,143 +936,126 @@ export function TenantsContent() {
             </div>
           </div>
 
-          <AnimatePresence initial={false}>
-            {showFilters ? (
-              <motion.div
-                key="filters"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
-              >
-                <div className="mt-2 grid gap-4 md:grid-cols-2">
-                  <Card className="border border-white/10 bg-white/5">
-                    <CardBody className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-default-500">
-                        Status
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {statusOptions.map((option) => (
-                          <Button
-                            key={option.value}
-                            color={
-                              statusFilter === option.value
-                                ? "primary"
-                                : "default"
-                            }
-                            radius="full"
-                            size="sm"
-                            variant={
-                              statusFilter === option.value
-                                ? "solid"
-                                : "bordered"
-                            }
-                            onPress={() => setStatusFilter(option.value)}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </CardBody>
-                  </Card>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                Lifecycle
+              </p>
+              <p className="text-xs text-default-500">{filteredLabel}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {lifecycleOptions.map((option) => {
+                const count =
+                  option.value === "all"
+                    ? tenants.length
+                    : (lifecycleCounts.get(option.value) ?? 0);
+                const active = lifecycleFilter === option.value;
 
-                  <Card className="border border-white/10 bg-white/5">
-                    <CardBody className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-default-500">
-                        Plano
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          color={planFilter === "all" ? "primary" : "default"}
-                          radius="full"
-                          size="sm"
-                          variant={planFilter === "all" ? "solid" : "bordered"}
-                          onPress={() => setPlanFilter("all")}
-                        >
-                          Todos
-                        </Button>
-                        {planOptions.map((plan) => (
-                          <Button
-                            key={plan}
-                            color={planFilter === plan ? "primary" : "default"}
-                            radius="full"
-                            size="sm"
-                            variant={
-                              planFilter === plan ? "solid" : "bordered"
-                            }
-                            onPress={() => setPlanFilter(plan)}
-                          >
-                            {plan}
-                          </Button>
-                        ))}
-                      </div>
-                    </CardBody>
-                  </Card>
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+                return (
+                  <Button
+                    key={option.value}
+                    color={active ? "primary" : "default"}
+                    radius="full"
+                    size="sm"
+                    variant={active ? "solid" : "bordered"}
+                    onPress={() => setLifecycleFilter(option.value)}
+                  >
+                    {option.label} ({count})
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
 
-          <p className="text-xs text-default-500">
-            Mostrando{" "}
-            <span className="font-semibold text-foreground">
-              {filteredTenants.length}
-            </span>{" "}
-            de{" "}
-            <span className="font-semibold text-foreground">{tenants.length}</span>{" "}
-            tenants · página {page} de {totalPages}
-          </p>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                Saude operacional
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {healthOptions.map((option) => {
+                  const active = healthFilter === option.value;
+                  return (
+                    <Button
+                      key={option.value}
+                      color={active ? "secondary" : "default"}
+                      radius="full"
+                      size="sm"
+                      variant={active ? "solid" : "bordered"}
+                      onPress={() => setHealthFilter(option.value)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                Plano comercial
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  color={planFilter === "all" ? "secondary" : "default"}
+                  radius="full"
+                  size="sm"
+                  variant={planFilter === "all" ? "solid" : "bordered"}
+                  onPress={() => setPlanFilter("all")}
+                >
+                  Todos
+                </Button>
+                {planOptions.map((plan) => (
+                  <Button
+                    key={plan}
+                    color={planFilter === plan ? "secondary" : "default"}
+                    radius="full"
+                    size="sm"
+                    variant={planFilter === plan ? "solid" : "bordered"}
+                    onPress={() => setPlanFilter(plan)}
+                  >
+                    {plan}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </PeoplePanel>
 
       {error ? (
-        <Card className="border border-danger/30 bg-danger/10 text-danger">
-          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <PeoplePanel
+          title="Falha ao carregar tenants"
+          description="A listagem nao pode ser tratada como vazia enquanto a consulta principal falhar."
+        >
+          <div className="flex flex-col gap-4 rounded-2xl border border-danger/30 bg-danger/5 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold">
-                Não foi possível carregar os tenants
+              <p className="text-sm font-semibold text-danger">
+                Nao foi possivel carregar a base de tenants.
               </p>
-              <p className="text-sm text-danger/80">
-                {error instanceof Error ? error.message : "Erro inesperado"}
+              <p className="mt-1 text-sm text-default-400">
+                {error instanceof Error
+                  ? error.message
+                  : "Erro inesperado ao consultar o admin."}
               </p>
             </div>
-          </CardBody>
-        </Card>
+            <Button
+              color="danger"
+              radius="full"
+              variant="flat"
+              onPress={() => mutate()}
+            >
+              Tentar novamente
+            </Button>
+          </div>
+        </PeoplePanel>
       ) : null}
 
       {(!data && isLoading) || !data ? (
         <TenantsSkeleton />
       ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <PeopleMetricCard
-              label="Total de tenants"
-              value={totals.total}
-              helper="Base completa"
-              tone="primary"
-            />
-            <PeopleMetricCard
-              label="Ativos"
-              value={totals.active}
-              helper="Operação normal"
-              tone="success"
-            />
-            <PeopleMetricCard
-              label="Suspensos"
-              value={totals.suspended}
-              helper="Requer acompanhamento"
-              tone="warning"
-            />
-            <PeopleMetricCard
-              label="Cancelados"
-              value={totals.cancelled}
-              helper="Encerrados"
-              tone="danger"
-            />
-          </div>
-
-          {filteredTenants.length ? (
-            <motion.div layout className="space-y-4">
+        <>
+          {filteredTenants.length > 0 ? (
+            <div className="space-y-4">
               {paginatedTenants.map((tenant) => (
                 <TenantCard
                   key={tenant.id}
@@ -646,115 +1063,194 @@ export function TenantsContent() {
                   onOpenDetails={setSelectedTenant}
                 />
               ))}
-            </motion.div>
+            </div>
           ) : (
-            <Card className="border border-white/10 bg-background/70 backdrop-blur">
-              <CardBody className="py-12 text-center">
-                <div className="mb-4 text-5xl">🏢</div>
-                <h3 className="text-lg font-medium text-foreground mb-1">
-                  Nenhum tenant localizado
-                </h3>
-                <p className="text-sm text-default-400">
-                  {tenants.length === 0
-                    ? "Assim que um escritório for criado, você poderá controlá-lo por aqui."
-                    : "Nenhum escritório corresponde aos filtros atuais. Ajuste a busca ou limpe os filtros para ver todos."}
+            <PeoplePanel
+              title="Nenhum tenant encontrado"
+              description="A busca atual nao retornou escritorios. Revise filtros ou volte para a base completa."
+            >
+              <div className="rounded-3xl border border-dashed border-white/10 bg-background/30 px-6 py-12 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-white/5">
+                  <Globe2 className="h-7 w-7 text-default-400" />
+                </div>
+                <p className="text-base font-semibold text-foreground">
+                  Nada corresponde aos filtros atuais.
                 </p>
-                {tenants.length > 0 ? (
-                  <Button
-                    className="mt-4"
-                    radius="full"
-                    size="sm"
-                    variant="bordered"
-                    onPress={resetFilters}
-                  >
-                    Limpar filtros
-                  </Button>
-                ) : null}
-              </CardBody>
-            </Card>
+                <p className="mt-2 text-sm text-default-400">
+                  Limpe a combinacao de lifecycle, saude e plano para
+                  reencontrar a base inteira.
+                </p>
+                <Button
+                  className="mt-4"
+                  radius="full"
+                  variant="bordered"
+                  onPress={resetFilters}
+                >
+                  Limpar filtros
+                </Button>
+              </div>
+            </PeoplePanel>
           )}
 
           {filteredTenants.length > pageSize ? (
-            <div className="mt-2 flex justify-center">
+            <div className="flex justify-center pt-2">
               <Pagination page={page} total={totalPages} onChange={setPage} />
             </div>
           ) : null}
-        </div>
+        </>
       )}
 
       <Modal
         isOpen={Boolean(selectedTenant)}
         scrollBehavior="inside"
-        size="3xl"
+        size="4xl"
         onClose={() => setSelectedTenant(null)}
       >
         <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            <p className="text-base font-semibold text-foreground">
-              {selectedTenant?.name ?? "Detalhes do tenant"}
-            </p>
+          <ModalHeader className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base font-semibold text-foreground">
+                {selectedTenant?.name ?? "Tenant"}
+              </span>
+              {selectedTenant ? (
+                <>
+                  <Chip
+                    color={selectedTenant.derived.lifecycleTone}
+                    size="sm"
+                    variant="flat"
+                  >
+                    {selectedTenant.derived.lifecycleLabel}
+                  </Chip>
+                  <Chip
+                    color={selectedTenant.derived.healthTone}
+                    size="sm"
+                    variant="bordered"
+                  >
+                    {selectedTenant.derived.healthLabel}
+                  </Chip>
+                </>
+              ) : null}
+            </div>
             <p className="text-xs text-default-500">
-              Visão rápida para suporte e operação.
+              Visao rapida para suporte, retencao e operacao do escritorio.
             </p>
           </ModalHeader>
-          <ModalBody className="space-y-4">
+          <ModalBody>
             {selectedTenant ? (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
-                      Status
+              <div className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Status do tenant
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">
-                      {statusLabel[selectedTenant.status] ?? selectedTenant.status}
+                    <p className="mt-2 text-base font-semibold text-foreground">
+                      {statusLabel[selectedTenant.status]}
+                    </p>
+                    <p className="mt-1 text-xs text-default-400">
+                      {selectedTenant.derived.subscriptionLabel}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
+                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                       Plano
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">
+                    <p className="mt-2 text-base font-semibold text-foreground">
                       {selectedTenant.plan?.name ?? "Sem plano"}
                     </p>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
-                      Contato
-                    </p>
-                    <p className="mt-1 text-sm text-default-300">
-                      {selectedTenant.email ?? "Sem e-mail"}
-                    </p>
-                    <p className="text-sm text-default-500">
-                      {selectedTenant.telefone ?? "Sem telefone"}
+                    <p className="mt-1 text-xs text-default-400">
+                      {selectedTenant.derived.revenueLabel}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-background/40 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-default-500">
-                      Volume
+                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Marco critico
                     </p>
-                    <p className="mt-1 text-sm text-default-300">
-                      {selectedTenant.counts.usuarios} usuários •{" "}
-                      {selectedTenant.counts.processos} processos •{" "}
-                      {selectedTenant.counts.clientes} clientes
+                    <p className="mt-2 text-base font-semibold text-foreground">
+                      {selectedTenant.derived.nextMilestoneValue}
+                    </p>
+                    <p className="mt-1 text-xs text-default-400">
+                      {selectedTenant.derived.nextMilestoneLabel}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Uso consolidado
+                    </p>
+                    <p className="mt-2 text-base font-semibold text-foreground">
+                      {selectedTenant.derived.adoptionScore}
+                    </p>
+                    <p className="mt-1 text-xs text-default-400">
+                      {getUsageSummary(selectedTenant)}
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-warning/30 bg-warning/5 p-3">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-warning">
-                    Dados internos (suporte)
-                  </p>
-                  <div className="grid gap-2 text-xs text-default-500 sm:grid-cols-2">
-                    <span>ID: {selectedTenant.id}</span>
-                    <span>Slug: {selectedTenant.slug}</span>
-                    <span>Timezone: {selectedTenant.timezone}</span>
-                    <span>
-                      Atualizado:{" "}
-                      {new Date(selectedTenant.updatedAt).toLocaleString("pt-BR")}
-                    </span>
+                <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-background/30 p-4">
+                    <p className="text-sm font-semibold text-foreground">
+                      Resumo operacional
+                    </p>
+                    <p className="text-sm text-default-400">
+                      {selectedTenant.derived.healthHint}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTenant.email ? (
+                        <Chip size="sm" variant="bordered">
+                          {selectedTenant.email}
+                        </Chip>
+                      ) : null}
+                      {selectedTenant.telefone ? (
+                        <Chip size="sm" variant="bordered">
+                          {selectedTenant.telefone}
+                        </Chip>
+                      ) : null}
+                      <Chip size="sm" variant="flat">
+                        {selectedTenant.timezone}
+                      </Chip>
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-2xl border border-white/10 bg-background/30 p-4 text-sm text-default-400">
+                    <p>
+                      <span className="font-medium text-foreground">
+                        Owner:
+                      </span>{" "}
+                      {selectedTenant.superAdmin?.name || "Nao definido"}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">
+                        Owner e-mail:
+                      </span>{" "}
+                      {selectedTenant.superAdmin?.email || "Nao definido"}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">
+                        Dominio:
+                      </span>{" "}
+                      {selectedTenant.domain || "Nao configurado"}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">Slug:</span>{" "}
+                      {selectedTenant.slug}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">
+                        Criado em:
+                      </span>{" "}
+                      {formatDateTime(selectedTenant.createdAt)}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">
+                        Atualizado em:
+                      </span>{" "}
+                      {formatDateTime(selectedTenant.updatedAt)}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">ID:</span>{" "}
+                      {selectedTenant.id}
+                    </p>
                   </div>
                 </div>
-              </>
+              </div>
             ) : null}
           </ModalBody>
           <ModalFooter>
@@ -766,15 +1262,26 @@ export function TenantsContent() {
               Fechar
             </Button>
             {selectedTenant ? (
-              <Button
-                as={NextLink}
-                color="primary"
-                href={`/admin/tenants/${selectedTenant.id}`}
-                radius="full"
-                onPress={() => setSelectedTenant(null)}
-              >
-                Ir para gestão completa
-              </Button>
+              <>
+                <Button
+                  as={NextLink}
+                  radius="full"
+                  variant="bordered"
+                  href={`/admin/suporte?tenantId=${selectedTenant.id}`}
+                  onPress={() => setSelectedTenant(null)}
+                >
+                  Abrir suporte
+                </Button>
+                <Button
+                  as={NextLink}
+                  color="primary"
+                  href={`/admin/tenants/${selectedTenant.id}`}
+                  radius="full"
+                  onPress={() => setSelectedTenant(null)}
+                >
+                  Ir para gestao completa
+                </Button>
+              </>
             ) : null}
           </ModalFooter>
         </ModalContent>

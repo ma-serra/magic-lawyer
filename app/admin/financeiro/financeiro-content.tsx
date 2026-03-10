@@ -1,58 +1,183 @@
 "use client";
 
-import React from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Divider } from "@heroui/divider";
+import React, { useMemo } from "react";
+import useSWR from "swr";
+import NextLink from "next/link";
 import { Button } from "@heroui/button";
-import { Badge } from "@heroui/badge";
+import { Chip, Spinner } from "@heroui/react";
 import {
   Table,
-  TableHeader,
-  TableColumn,
   TableBody,
-  TableRow,
   TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
 } from "@heroui/table";
-import useSWR from "swr";
-
-import { PeoplePageHeader } from "@/components/people-ui";
 import {
+  AlertTriangle,
+  ArrowRight,
+  BadgeDollarSign,
+  Banknote,
+  Building2,
+  CreditCard,
+  FileClock,
+  HandCoins,
+  Receipt,
+  ShieldAlert,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+
+import {
+  getComissoesPendentes,
   getEstatisticasFinanceiras,
-  getResumoMensal,
-  getTopTenants,
   getFaturasRecentes,
   getPagamentosRecentes,
-  getComissoesPendentes,
+  getResumoMensal,
+  getTopTenants,
+  type ComissaoResumo,
+  type EstatisticasFinanceiras,
+  type FaturaResumo,
+  type PagamentoResumo,
+  type ResumoMensal,
+  type TopTenants,
 } from "@/app/actions/financeiro";
+import {
+  PeopleEmptyState,
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
+
+type ActionResponse<T> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+};
+
+const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  maximumFractionDigits: 2,
+});
+
+const percentFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+function formatCurrency(value: number) {
+  return currencyFormatter.format(value || 0);
+}
+
+function formatDate(date: Date | string | null | undefined) {
+  if (!date) return "Nao definido";
+  return new Date(date).toLocaleDateString("pt-BR");
+}
+
+function formatPercent(value: number) {
+  return percentFormatter.format(Number.isFinite(value) ? value : 0);
+}
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case "ATIVA":
+    case "PAGA":
+    case "PAGO":
+      return "success" as const;
+    case "PENDENTE":
+    case "ABERTA":
+      return "warning" as const;
+    case "VENCIDA":
+    case "INADIMPLENTE":
+      return "danger" as const;
+    case "CANCELADA":
+      return "default" as const;
+    default:
+      return "default" as const;
+  }
+}
+
+function loadActionData<T>(action: () => Promise<ActionResponse<T>>) {
+  return action().then((response) => {
+    if (!response.success) {
+      throw new Error(response.error ?? "Falha ao carregar dados financeiros");
+    }
+
+    return response.data as T;
+  });
+}
+
+function LoadingBlock({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-56 items-center justify-center">
+      <Spinner label={label} />
+    </div>
+  );
+}
 
 export function FinanceiroContent() {
-  // Buscar dados reais do banco
-  const { data: statsResponse, isLoading: loadingStats } = useSWR(
-    "estatisticas-financeiras",
-    getEstatisticasFinanceiras,
-  );
-  const { data: resumoResponse, isLoading: loadingResumo } = useSWR(
-    "resumo-mensal",
-    getResumoMensal,
-  );
-  const { data: topTenantsResponse, isLoading: loadingTopTenants } = useSWR(
-    "top-tenants",
-    getTopTenants,
-  );
-  const { data: faturasResponse, isLoading: loadingFaturas } = useSWR(
-    "faturas-recentes",
-    getFaturasRecentes,
-  );
-  const { data: pagamentosResponse, isLoading: loadingPagamentos } = useSWR(
-    "pagamentos-recentes",
-    getPagamentosRecentes,
-  );
-  const { data: comissoesResponse, isLoading: loadingComissoes } = useSWR(
-    "comissoes-pendentes",
-    getComissoesPendentes,
+  const {
+    data: estatisticas,
+    error: statsError,
+    isLoading: loadingStats,
+  } = useSWR<EstatisticasFinanceiras>(
+    "admin-financeiro-estatisticas",
+    () => loadActionData(getEstatisticasFinanceiras),
+    { revalidateOnFocus: true },
   );
 
-  const estatisticas = statsResponse?.data || {
+  const {
+    data: resumoMensal,
+    error: resumoError,
+    isLoading: loadingResumo,
+  } = useSWR<ResumoMensal[]>(
+    "admin-financeiro-resumo-mensal",
+    () => loadActionData(getResumoMensal),
+    { revalidateOnFocus: true },
+  );
+
+  const {
+    data: topTenants,
+    error: topTenantsError,
+    isLoading: loadingTopTenants,
+  } = useSWR<TopTenants[]>(
+    "admin-financeiro-top-tenants",
+    () => loadActionData(getTopTenants),
+    { revalidateOnFocus: true },
+  );
+
+  const {
+    data: faturasRecentes,
+    error: faturasError,
+    isLoading: loadingFaturas,
+  } = useSWR<FaturaResumo[]>(
+    "admin-financeiro-faturas-recentes",
+    () => loadActionData(getFaturasRecentes),
+    { revalidateOnFocus: true },
+  );
+
+  const {
+    data: pagamentosRecentes,
+    error: pagamentosError,
+    isLoading: loadingPagamentos,
+  } = useSWR<PagamentoResumo[]>(
+    "admin-financeiro-pagamentos-recentes",
+    () => loadActionData(getPagamentosRecentes),
+    { revalidateOnFocus: true },
+  );
+
+  const {
+    data: comissoesPendentes,
+    error: comissoesError,
+    isLoading: loadingComissoes,
+  } = useSWR<ComissaoResumo[]>(
+    "admin-financeiro-comissoes-pendentes",
+    () => loadActionData(getComissoesPendentes),
+    { revalidateOnFocus: true },
+  );
+
+  const data = estatisticas ?? {
     receitaTotal: 0,
     receitaMensal: 0,
     receitaAnual: 0,
@@ -69,151 +194,262 @@ export function FinanceiroContent() {
     comissoesPagas: 0,
   };
 
-  const resumoMensal = resumoResponse?.data || [];
-  const topTenants = topTenantsResponse?.data || [];
-  const faturasRecentes = faturasResponse?.data || [];
-  const pagamentosRecentes = pagamentosResponse?.data || [];
-  const comissoesPendentes = comissoesResponse?.data || [];
+  const financialPulse = useMemo(() => {
+    const collectionRate =
+      data.totalFaturas > 0 ? data.faturasPagas / data.totalFaturas : 0;
+    const delinquencyRate =
+      data.totalAssinaturas > 0
+        ? data.assinaturasInadimplentes / data.totalAssinaturas
+        : 0;
+    const averageRevenuePerActiveTenant =
+      data.assinaturasAtivas > 0
+        ? data.receitaMensal / data.assinaturasAtivas
+        : 0;
+    const revenueRunRate = data.receitaMensal * 12;
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value);
-  };
+    const alerts: Array<{
+      title: string;
+      detail: string;
+      tone: "success" | "warning" | "danger" | "secondary";
+    }> = [];
 
-  const formatDate = (date: Date | string) => {
-    return new Date(date).toLocaleDateString("pt-BR");
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "ATIVA":
-      case "PAGA":
-      case "PAGO":
-        return "success";
-      case "PENDENTE":
-      case "ABERTA":
-        return "warning";
-      case "VENCIDA":
-      case "INADIMPLENTE":
-        return "danger";
-      case "CANCELADA":
-        return "default";
-      default:
-        return "default";
+    if (data.faturasVencidas > 0) {
+      alerts.push({
+        title: "Cobrança vencida em aberto",
+        detail: `${data.faturasVencidas} fatura(s) vencida(s) exigem ação imediata de cobrança.`,
+        tone: "danger",
+      });
     }
-  };
+
+    if (delinquencyRate >= 0.12) {
+      alerts.push({
+        title: "Inadimplência acima do ideal",
+        detail: `A carteira de assinaturas em atraso está em ${formatPercent(delinquencyRate)}.`,
+        tone: "warning",
+      });
+    }
+
+    if (collectionRate >= 0.8) {
+      alerts.push({
+        title: "Conversão de faturas saudável",
+        detail: `A taxa atual de faturas pagas está em ${formatPercent(collectionRate)}.`,
+        tone: "success",
+      });
+    }
+
+    if (alerts.length === 0) {
+      alerts.push({
+        title: "Sem alertas financeiros críticos",
+        detail:
+          "O painel atual não aponta pressão imediata de cobrança ou repasse.",
+        tone: "secondary",
+      });
+    }
+
+    return {
+      collectionRate,
+      delinquencyRate,
+      averageRevenuePerActiveTenant,
+      revenueRunRate,
+      alerts: alerts.slice(0, 3),
+    };
+  }, [data]);
+
+  const errors = [
+    statsError,
+    resumoError,
+    topTenantsError,
+    faturasError,
+    pagamentosError,
+    comissoesError,
+  ].filter(Boolean) as Error[];
 
   return (
     <section className="space-y-6">
       <PeoplePageHeader
         tag="Administração"
-        title="Financeiro global"
-        description="Acompanhe receita, assinaturas, faturas, pagamentos e comissões da plataforma."
+        title="Receita, cobrança e repasse"
+        description="Painel financeiro da plataforma com foco em caixa, pressão de cobrança, saúde da base e repasses pendentes."
         actions={
           <>
-            <Button color="primary" size="sm" variant="flat">
-              Relatórios
+            <Button
+              as={NextLink}
+              color="primary"
+              href="/admin/tenants"
+              radius="full"
+              size="sm"
+            >
+              Operar tenants
             </Button>
-            <Button color="secondary" size="sm" variant="flat">
-              Cobrança
+            <Button
+              as={NextLink}
+              href="/admin/relatorios"
+              radius="full"
+              size="sm"
+              variant="bordered"
+            >
+              Relatórios
             </Button>
           </>
         }
       />
 
-      {/* Métricas Principais */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-green-600 mr-4">💰</span>
-            <div>
-              <p className="text-sm font-medium text-default-500">Receita Total</p>
-              <p className="text-2xl font-bold text-foreground">
-                {loadingStats
-                  ? "..."
-                  : formatCurrency(estatisticas.receitaTotal)}
-              </p>
-              <p className="text-sm text-green-600">Acumulada</p>
-            </div>
-          </CardBody>
-        </Card>
+      {errors.length > 0 ? (
+        <PeoplePanel
+          title="Falha parcial no painel"
+          description="O financeiro não deve parecer vazio quando uma consulta falha. Os blocos abaixo continuam usando os dados que conseguiram carregar."
+        >
+          <div className="space-y-2 rounded-2xl border border-danger/30 bg-danger/5 p-4">
+            {errors.map((error, index) => (
+              <div
+                key={`${error.message}-${index}`}
+                className="flex items-start gap-2 text-sm text-danger"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error.message}</span>
+              </div>
+            ))}
+          </div>
+        </PeoplePanel>
+      ) : null}
 
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-blue-600 mr-4">📈</span>
-            <div>
-              <p className="text-sm font-medium text-default-500">
-                Receita Mensal
-              </p>
-              <p className="text-2xl font-bold text-foreground">
-                {loadingStats
-                  ? "..."
-                  : formatCurrency(estatisticas.receitaMensal)}
-              </p>
-              <p className="text-sm text-blue-600">Este mês</p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-purple-600 mr-4">👥</span>
-            <div>
-              <p className="text-sm font-medium text-default-500">
-                Assinaturas Ativas
-              </p>
-              <p className="text-2xl font-bold text-foreground">
-                {loadingStats ? "..." : estatisticas.assinaturasAtivas}
-              </p>
-              <p className="text-sm text-purple-600">
-                de {estatisticas.totalAssinaturas} total
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-          <CardBody className="flex items-center">
-            <span className="text-3xl text-yellow-600 mr-4">💳</span>
-            <div>
-              <p className="text-sm font-medium text-default-500">Faturas Pagas</p>
-              <p className="text-2xl font-bold text-foreground">
-                {loadingStats ? "..." : estatisticas.faturasPagas}
-              </p>
-              <p className="text-sm text-yellow-600">
-                de {estatisticas.totalFaturas} total
-              </p>
-            </div>
-          </CardBody>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <PeopleMetricCard
+          label="Receita total"
+          value={loadingStats ? "..." : formatCurrency(data.receitaTotal)}
+          helper="Acumulado confirmado pela plataforma"
+          icon={<Wallet className="h-4 w-4" />}
+          tone="success"
+        />
+        <PeopleMetricCard
+          label="Receita mensal"
+          value={loadingStats ? "..." : formatCurrency(data.receitaMensal)}
+          helper="Entrada confirmada no mês corrente"
+          icon={<TrendingUp className="h-4 w-4" />}
+          tone="primary"
+        />
+        <PeopleMetricCard
+          label="Run rate anual"
+          value={
+            loadingStats ? "..." : formatCurrency(financialPulse.revenueRunRate)
+          }
+          helper="Mensal projetado em 12 meses"
+          icon={<BadgeDollarSign className="h-4 w-4" />}
+          tone="secondary"
+        />
+        <PeopleMetricCard
+          label="Assinaturas ativas"
+          value={loadingStats ? "..." : data.assinaturasAtivas}
+          helper={`${data.assinaturasInadimplentes} em atraso financeiro`}
+          icon={<Building2 className="h-4 w-4" />}
+          tone="primary"
+        />
+        <PeopleMetricCard
+          label="Taxa de cobrança"
+          value={
+            loadingStats ? "..." : formatPercent(financialPulse.collectionRate)
+          }
+          helper={`${data.faturasPagas}/${data.totalFaturas} faturas pagas`}
+          icon={<Receipt className="h-4 w-4" />}
+          tone={financialPulse.collectionRate >= 0.8 ? "success" : "warning"}
+        />
       </div>
 
-      {/* Resumo Mensal */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            📊 Resumo dos Últimos 12 Meses
-          </h2>
-          <p className="text-sm text-default-400">
-            Evolução da receita e volume de transações
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {loadingResumo ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando resumo...
-              </h3>
-              <p className="text-default-400">
-                Buscando dados dos últimos 12 meses
+      <PeoplePanel
+        title="Pulso financeiro"
+        description="Leituras rápidas para agir em cobrança, expansão e repasse sem abrir outras telas."
+      >
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Faturas abertas
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">
+                {loadingStats ? "..." : data.faturasPendentes}
+              </p>
+              <p className="mt-1 text-xs text-default-400">
+                Aguardando conversão em caixa
               </p>
             </div>
-          ) : resumoMensal.length > 0 ? (
-            <Table aria-label="Tabela de Resumo Mensal">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Faturas vencidas
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-danger">
+                {loadingStats ? "..." : data.faturasVencidas}
+              </p>
+              <p className="mt-1 text-xs text-default-400">
+                Risco imediato de perda ou atraso
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Ticket mensal por conta ativa
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">
+                {loadingStats
+                  ? "..."
+                  : formatCurrency(
+                      financialPulse.averageRevenuePerActiveTenant,
+                    )}
+              </p>
+              <p className="mt-1 text-xs text-default-400">
+                Receita mensal media por assinatura ativa
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Comissões pendentes
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-warning">
+                {loadingStats ? "..." : data.comissoesPendentes}
+              </p>
+              <p className="mt-1 text-xs text-default-400">
+                Repasse financeiro aguardando ação
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-sm font-semibold text-foreground">
+              Leituras prioritárias
+            </p>
+            {financialPulse.alerts.map((alert) => (
+              <div
+                key={alert.title}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <Chip color={alert.tone} size="sm" variant="flat">
+                    {alert.tone === "danger"
+                      ? "Risco"
+                      : alert.tone === "warning"
+                        ? "Atencao"
+                        : alert.tone === "success"
+                          ? "Saudavel"
+                          : "Leitura"}
+                  </Chip>
+                  <p className="text-sm font-semibold text-foreground">
+                    {alert.title}
+                  </p>
+                </div>
+                <p className="text-sm text-default-400">{alert.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+        <PeoplePanel
+          title="Tração dos últimos 12 meses"
+          description="Receita, volume de assinaturas, faturas e pagamentos em uma leitura única."
+        >
+          {loadingResumo && !resumoMensal ? (
+            <LoadingBlock label="Carregando tração financeira..." />
+          ) : resumoMensal && resumoMensal.length > 0 ? (
+            <Table removeWrapper aria-label="Resumo financeiro mensal">
               <TableHeader>
                 <TableColumn>Mês</TableColumn>
                 <TableColumn>Receita</TableColumn>
@@ -222,10 +458,12 @@ export function FinanceiroContent() {
                 <TableColumn>Pagamentos</TableColumn>
               </TableHeader>
               <TableBody>
-                {resumoMensal.map((mes, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{mes.mes}</TableCell>
-                    <TableCell className="text-green-600 font-semibold">
+                {resumoMensal.map((mes) => (
+                  <TableRow key={mes.mes}>
+                    <TableCell className="font-medium text-foreground">
+                      {mes.mes}
+                    </TableCell>
+                    <TableCell className="font-semibold text-success">
                       {formatCurrency(mes.receita)}
                     </TableCell>
                     <TableCell>{mes.assinaturas}</TableCell>
@@ -236,117 +474,89 @@ export function FinanceiroContent() {
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📊</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhum dado encontrado
-              </h3>
-              <p className="text-default-400">
-                Não há dados financeiros para exibir
-              </p>
-            </div>
+            <PeopleEmptyState
+              title="Sem tração financeira registrada"
+              description="Ainda não existem dados suficientes para montar a série mensal do financeiro."
+              icon={<Banknote className="h-6 w-6" />}
+            />
           )}
-        </CardBody>
-      </Card>
+        </PeoplePanel>
 
-      {/* Top Tenants */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            🏆 Top Tenants por Receita
-          </h2>
-          <p className="text-sm text-default-400">
-            Escritórios com maior faturamento
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {loadingTopTenants ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando tenants...
-              </h3>
-              <p className="text-default-400">
-                Buscando dados dos maiores clientes
-              </p>
+        <PeoplePanel
+          title="Top tenants por receita"
+          description="Contas com maior geração de receita para leitura de concentração e expansão."
+          actions={
+            <Button
+              as={NextLink}
+              href="/admin/tenants"
+              radius="full"
+              size="sm"
+              variant="flat"
+            >
+              Ver base completa
+            </Button>
+          }
+        >
+          {loadingTopTenants && !topTenants ? (
+            <LoadingBlock label="Carregando top tenants..." />
+          ) : topTenants && topTenants.length > 0 ? (
+            <div className="space-y-3">
+              {topTenants.slice(0, 6).map((tenant, index) => (
+                <div
+                  key={tenant.id}
+                  className="grid gap-3 rounded-2xl border border-white/10 bg-background/30 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">
+                      {index + 1}. {tenant.name}
+                    </p>
+                    <p className="text-xs text-default-400">
+                      {tenant.assinaturasAtivas} assinatura(s) ativa(s)
+                    </p>
+                  </div>
+                  <Chip
+                    color={getStatusColor(tenant.status)}
+                    size="sm"
+                    variant="flat"
+                  >
+                    {tenant.status}
+                  </Chip>
+                  <p className="text-sm font-semibold text-success">
+                    {formatCurrency(tenant.receitaTotal)}
+                  </p>
+                </div>
+              ))}
             </div>
-          ) : topTenants.length > 0 ? (
-            <Table aria-label="Tabela de Top Tenants">
-              <TableHeader>
-                <TableColumn>Escritório</TableColumn>
-                <TableColumn>Receita Total</TableColumn>
-                <TableColumn>Assinaturas Ativas</TableColumn>
-                <TableColumn>Status</TableColumn>
-              </TableHeader>
-              <TableBody>
-                {topTenants.map((tenant) => (
-                  <TableRow key={tenant.id}>
-                    <TableCell className="font-medium">{tenant.name}</TableCell>
-                    <TableCell className="text-green-600 font-semibold">
-                      {formatCurrency(tenant.receitaTotal)}
-                    </TableCell>
-                    <TableCell>{tenant.assinaturasAtivas}</TableCell>
-                    <TableCell>
-                      <Badge
-                        color={getStatusColor(tenant.status) as any}
-                        variant="flat"
-                      >
-                        {tenant.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
           ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🏢</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhum tenant encontrado
-              </h3>
-              <p className="text-default-400">
-                Não há dados de receita para exibir
-              </p>
-            </div>
+            <PeopleEmptyState
+              title="Nenhuma conta com receita acumulada"
+              description="Quando houver pagamentos confirmados por tenant, esta lista passa a destacar as maiores contas."
+              icon={<Building2 className="h-6 w-6" />}
+            />
           )}
-        </CardBody>
-      </Card>
+        </PeoplePanel>
+      </div>
 
-      {/* Faturas Recentes */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            📄 Faturas Recentes
-          </h2>
-          <p className="text-sm text-default-400">
-            Últimas faturas emitidas no sistema
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {loadingFaturas ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando faturas...
-              </h3>
-              <p className="text-default-400">Buscando faturas recentes</p>
-            </div>
-          ) : faturasRecentes.length > 0 ? (
-            <Table aria-label="Tabela de Faturas Recentes">
+      <div className="grid gap-6 xl:grid-cols-2">
+        <PeoplePanel
+          title="Cobrança recente"
+          description="Últimas faturas emitidas com foco em vencimento e risco de atraso."
+        >
+          {loadingFaturas && !faturasRecentes ? (
+            <LoadingBlock label="Carregando cobrança..." />
+          ) : faturasRecentes && faturasRecentes.length > 0 ? (
+            <Table removeWrapper aria-label="Faturas recentes">
               <TableHeader>
-                <TableColumn>Número</TableColumn>
+                <TableColumn>Fatura</TableColumn>
                 <TableColumn>Tenant</TableColumn>
                 <TableColumn>Valor</TableColumn>
                 <TableColumn>Status</TableColumn>
                 <TableColumn>Vencimento</TableColumn>
-                <TableColumn>Pago em</TableColumn>
               </TableHeader>
               <TableBody>
                 {faturasRecentes.map((fatura) => (
                   <TableRow key={fatura.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium text-foreground">
                       {fatura.numero}
                     </TableCell>
                     <TableCell>{fatura.tenant.name}</TableCell>
@@ -354,217 +564,175 @@ export function FinanceiroContent() {
                       {formatCurrency(fatura.valor)}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        color={getStatusColor(fatura.status) as any}
+                      <Chip
+                        color={getStatusColor(fatura.status)}
+                        size="sm"
                         variant="flat"
                       >
                         {fatura.status}
-                      </Badge>
+                      </Chip>
                     </TableCell>
-                    <TableCell>
-                      {fatura.vencimento
-                        ? formatDate(fatura.vencimento)
-                        : "N/A"}
-                    </TableCell>
-                    <TableCell>
-                      {fatura.pagoEm ? formatDate(fatura.pagoEm) : "N/A"}
-                    </TableCell>
+                    <TableCell>{formatDate(fatura.vencimento)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📄</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhuma fatura encontrada
-              </h3>
-              <p className="text-default-400">Não há faturas para exibir</p>
-            </div>
+            <PeopleEmptyState
+              title="Nenhuma fatura emitida recentemente"
+              description="A fila de cobrança recente ficará visível aqui assim que novas faturas forem geradas."
+              icon={<FileClock className="h-6 w-6" />}
+            />
           )}
-        </CardBody>
-      </Card>
+        </PeoplePanel>
 
-      {/* Pagamentos Recentes */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            💳 Pagamentos Recentes
-          </h2>
-          <p className="text-sm text-default-400">
-            Últimos pagamentos confirmados
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {loadingPagamentos ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando pagamentos...
-              </h3>
-              <p className="text-default-400">Buscando pagamentos recentes</p>
-            </div>
-          ) : pagamentosRecentes.length > 0 ? (
-            <Table aria-label="Tabela de Pagamentos Recentes">
+        <PeoplePanel
+          title="Pagamentos confirmados"
+          description="Entradas recentes de caixa confirmadas por fatura e tenant."
+        >
+          {loadingPagamentos && !pagamentosRecentes ? (
+            <LoadingBlock label="Carregando pagamentos..." />
+          ) : pagamentosRecentes && pagamentosRecentes.length > 0 ? (
+            <Table removeWrapper aria-label="Pagamentos recentes">
               <TableHeader>
                 <TableColumn>Fatura</TableColumn>
                 <TableColumn>Tenant</TableColumn>
                 <TableColumn>Valor</TableColumn>
                 <TableColumn>Status</TableColumn>
-                <TableColumn>Método</TableColumn>
+                <TableColumn>Metodo</TableColumn>
                 <TableColumn>Confirmado em</TableColumn>
               </TableHeader>
               <TableBody>
                 {pagamentosRecentes.map((pagamento) => (
                   <TableRow key={pagamento.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium text-foreground">
                       {pagamento.fatura.numero}
                     </TableCell>
                     <TableCell>{pagamento.fatura.tenant.name}</TableCell>
-                    <TableCell className="font-semibold">
+                    <TableCell className="font-semibold text-success">
                       {formatCurrency(pagamento.valor)}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        color={getStatusColor(pagamento.status) as any}
+                      <Chip
+                        color={getStatusColor(pagamento.status)}
+                        size="sm"
                         variant="flat"
                       >
                         {pagamento.status}
-                      </Badge>
+                      </Chip>
                     </TableCell>
                     <TableCell>{pagamento.metodo}</TableCell>
-                    <TableCell>
-                      {pagamento.confirmadoEm
-                        ? formatDate(pagamento.confirmadoEm)
-                        : "N/A"}
-                    </TableCell>
+                    <TableCell>{formatDate(pagamento.confirmadoEm)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">💳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhum pagamento encontrado
-              </h3>
-              <p className="text-default-400">Não há pagamentos para exibir</p>
-            </div>
+            <PeopleEmptyState
+              title="Nenhum pagamento confirmado recentemente"
+              description="Assim que o financeiro registrar novas confirmações de pagamento, elas aparecerão aqui."
+              icon={<CreditCard className="h-6 w-6" />}
+            />
           )}
-        </CardBody>
-      </Card>
+        </PeoplePanel>
+      </div>
 
-      {/* Comissões Pendentes */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">
-            ⚖️ Comissões Pendentes
-          </h2>
-          <p className="text-sm text-default-400">
-            Comissões de advogados aguardando pagamento
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          {loadingComissoes ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Carregando comissões...
-              </h3>
-              <p className="text-default-400">Buscando comissões pendentes</p>
-            </div>
-          ) : comissoesPendentes.length > 0 ? (
-            <Table aria-label="Tabela de Comissões Pendentes">
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <PeoplePanel
+          title="Repasse e comissões"
+          description="Pendências de repasse para advogados que já podem virar ação operacional."
+        >
+          {loadingComissoes && !comissoesPendentes ? (
+            <LoadingBlock label="Carregando repasses..." />
+          ) : comissoesPendentes && comissoesPendentes.length > 0 ? (
+            <Table removeWrapper aria-label="Comissoes pendentes">
               <TableHeader>
                 <TableColumn>Advogado</TableColumn>
-                <TableColumn>OAB</TableColumn>
                 <TableColumn>Fatura</TableColumn>
                 <TableColumn>Tenant</TableColumn>
-                <TableColumn>Valor Comissão</TableColumn>
-                <TableColumn>%</TableColumn>
-                <TableColumn>Status</TableColumn>
+                <TableColumn>Valor</TableColumn>
+                <TableColumn>Percentual</TableColumn>
               </TableHeader>
               <TableBody>
                 {comissoesPendentes.map((comissao) => (
                   <TableRow key={comissao.id}>
-                    <TableCell className="font-medium">
-                      {comissao.advogado.nome}
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {comissao.advogado.nome}
+                        </p>
+                        <p className="text-xs text-default-500">
+                          {comissao.advogado.oab}
+                        </p>
+                      </div>
                     </TableCell>
-                    <TableCell>{comissao.advogado.oab}</TableCell>
                     <TableCell>{comissao.pagamento.fatura.numero}</TableCell>
                     <TableCell>
                       {comissao.pagamento.fatura.tenant.name}
                     </TableCell>
-                    <TableCell className="text-green-600 font-semibold">
+                    <TableCell className="font-semibold text-warning">
                       {formatCurrency(comissao.valorComissao)}
                     </TableCell>
                     <TableCell>{comissao.percentualComissao}%</TableCell>
-                    <TableCell>
-                      <Badge
-                        color={getStatusColor(comissao.status) as any}
-                        variant="flat"
-                      >
-                        {comissao.status}
-                      </Badge>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">⚖️</div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Nenhuma comissão pendente
-              </h3>
-              <p className="text-default-400">
-                Todas as comissões estão em dia
+            <PeopleEmptyState
+              title="Nenhum repasse pendente"
+              description="A operação de comissões está limpa neste momento."
+              icon={<HandCoins className="h-6 w-6" />}
+            />
+          )}
+        </PeoplePanel>
+
+        <PeoplePanel
+          title="Playbook financeiro"
+          description="Próximos movimentos recomendados para proteger caixa e acelerar expansão."
+        >
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-danger" />
+                <p className="text-sm font-semibold text-foreground">
+                  Atacar vencidos primeiro
+                </p>
+              </div>
+              <p className="text-sm text-default-400">
+                {data.faturasVencidas > 0
+                  ? `${data.faturasVencidas} fatura(s) vencida(s) precisam entrar no fluxo de cobrança hoje.`
+                  : "Sem vencidos críticos neste momento."}
               </p>
             </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Ações Rápidas */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-lg font-semibold text-white">⚡ Ações Rápidas</h2>
-          <p className="text-sm text-default-400">
-            Operações financeiras frequentes
-          </p>
-        </CardHeader>
-        <Divider className="border-white/10" />
-        <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Button className="h-16" color="primary" variant="solid">
-              <div className="text-center">
-                <div className="text-2xl mb-1">💳</div>
-                <div className="text-sm">Emitir Fatura</div>
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <ArrowRight className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">
+                  Expandir contas saudáveis
+                </p>
               </div>
-            </Button>
-            <Button className="h-16" color="secondary" variant="solid">
-              <div className="text-center">
-                <div className="text-2xl mb-1">📊</div>
-                <div className="text-sm">Relatório Mensal</div>
+              <p className="text-sm text-default-400">
+                Use o ranking de top tenants para identificar contas com
+                potencial de upgrade antes do próximo ciclo de renovação.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-warning" />
+                <p className="text-sm font-semibold text-foreground">
+                  Revisar mix de cobrança
+                </p>
               </div>
-            </Button>
-            <Button className="h-16" color="success" variant="solid">
-              <div className="text-center">
-                <div className="text-2xl mb-1">💰</div>
-                <div className="text-sm">Pagar Comissão</div>
-              </div>
-            </Button>
-            <Button className="h-16" color="warning" variant="solid">
-              <div className="text-center">
-                <div className="text-2xl mb-1">📧</div>
-                <div className="text-sm">Lembrar Cobrança</div>
-              </div>
-            </Button>
+              <p className="text-sm text-default-400">
+                A inadimplência atual está em{" "}
+                {formatPercent(financialPulse.delinquencyRate)}. Cruze esse dado
+                com tenant health e suporte.
+              </p>
+            </div>
           </div>
-        </CardBody>
-      </Card>
+        </PeoplePanel>
+      </div>
     </section>
   );
 }

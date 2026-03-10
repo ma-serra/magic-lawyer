@@ -58,7 +58,11 @@ import {
   Send,
   Smartphone,
 } from "lucide-react";
-import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import {
+  PeopleMetricCard,
+  PeoplePageHeader,
+  PeoplePanel,
+} from "@/components/people-ui";
 import NextLink from "next/link";
 
 import {
@@ -172,43 +176,50 @@ const TENANT_ADMIN_INTEGRATION_OPTIONS: Array<{
   {
     key: "email",
     label: "Email",
-    description: "Credenciais de envio usadas pelo tenant em notificações e mensagens transacionais.",
+    description:
+      "Credenciais de envio usadas pelo tenant em notificações e mensagens transacionais.",
     icon: <Mail className="h-4 w-4" />,
   },
   {
     key: "clicksign",
     label: "ClickSign",
-    description: "Assinatura digital por tenant com fallback controlado e isolamento de credenciais.",
+    description:
+      "Assinatura digital por tenant com fallback controlado e isolamento de credenciais.",
     icon: <FileSignature className="h-4 w-4" />,
   },
   {
     key: "certificates",
     label: "Certificados e PJe",
-    description: "Política de certificado do escritório e integrações PJe por tenant.",
+    description:
+      "Política de certificado do escritório e integrações PJe por tenant.",
     icon: <Shield className="h-4 w-4" />,
   },
   {
     key: "asaas",
     label: "Asaas",
-    description: "Billing e cobrança do escritório com configuração segregada por tenant.",
+    description:
+      "Billing e cobrança do escritório com configuração segregada por tenant.",
     icon: <CreditCard className="h-4 w-4" />,
   },
   {
     key: "whatsapp",
     label: "WhatsApp",
-    description: "Provider omnichannel do tenant para mensagens operacionais e automações.",
+    description:
+      "Provider omnichannel do tenant para mensagens operacionais e automações.",
     icon: <MessageSquare className="h-4 w-4" />,
   },
   {
     key: "telegram",
     label: "Telegram",
-    description: "Bot ou provider alternativo do tenant para mensagens inbound/outbound.",
+    description:
+      "Bot ou provider alternativo do tenant para mensagens inbound/outbound.",
     icon: <Send className="h-4 w-4" />,
   },
   {
     key: "sms",
     label: "SMS",
-    description: "Canal de contingência do tenant para avisos críticos e fallback transacional.",
+    description:
+      "Canal de contingência do tenant para avisos críticos e fallback transacional.",
     icon: <Smartphone className="h-4 w-4" />,
   },
 ] as const;
@@ -248,6 +259,171 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function daysUntil(value: string | null) {
+  if (!value) return null;
+
+  const target = new Date(value);
+
+  if (Number.isNaN(target.getTime())) {
+    return null;
+  }
+
+  return Math.ceil((target.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function formatDaysLabel(value: number | null) {
+  if (value === null) return "Não definido";
+  if (value < 0) return `Expirou há ${Math.abs(value)} dia(s)`;
+  return `${value} dia(s)`;
+}
+
+function subscriptionLabel(status: SubscriptionStatus | null) {
+  switch (status) {
+    case SubscriptionStatus.TRIAL:
+      return "Trial";
+    case SubscriptionStatus.ATIVA:
+      return "Ativa";
+    case SubscriptionStatus.INADIMPLENTE:
+      return "Inadimplente";
+    case SubscriptionStatus.CANCELADA:
+      return "Cancelada";
+    case SubscriptionStatus.SUSPENSA:
+      return "Suspensa";
+    default:
+      return "Sem assinatura";
+  }
+}
+
+function subscriptionChipColor(status: SubscriptionStatus | null) {
+  switch (status) {
+    case SubscriptionStatus.TRIAL:
+      return "primary";
+    case SubscriptionStatus.ATIVA:
+      return "success";
+    case SubscriptionStatus.INADIMPLENTE:
+      return "danger";
+    case SubscriptionStatus.SUSPENSA:
+      return "warning";
+    case SubscriptionStatus.CANCELADA:
+      return "default";
+    default:
+      return "default";
+  }
+}
+
+function deriveTenantExecutiveState(
+  data: TenantManagementData,
+  tenantStatus: TenantStatus,
+) {
+  const trialDays = daysUntil(data.subscription.trialEndsAt);
+  const renewalDays = daysUntil(data.subscription.renovaEm);
+  const adoptionScore =
+    data.metrics.usuarios + data.metrics.processos + data.metrics.clientes;
+
+  let lifecycleLabel = "Ativo";
+  let lifecycleTone:
+    | "primary"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "danger" = "success";
+  let nextMilestoneLabel = "Renovação";
+  let nextMilestoneValue = formatDate(data.subscription.renovaEm);
+
+  if (
+    tenantStatus === TenantStatus.CANCELLED ||
+    data.subscription.status === SubscriptionStatus.CANCELADA
+  ) {
+    lifecycleLabel = "Cancelado";
+    lifecycleTone = "danger";
+    nextMilestoneLabel = "Encerramento";
+    nextMilestoneValue = formatDate(data.tenant.updatedAt);
+  } else if (
+    tenantStatus === TenantStatus.SUSPENDED ||
+    data.subscription.status === SubscriptionStatus.SUSPENSA
+  ) {
+    lifecycleLabel = "Suspenso";
+    lifecycleTone = "warning";
+    nextMilestoneLabel = "Reativação";
+    nextMilestoneValue = "Aguardando decisão";
+  } else if (data.subscription.status === SubscriptionStatus.INADIMPLENTE) {
+    lifecycleLabel = "Inadimplente";
+    lifecycleTone = "danger";
+    nextMilestoneLabel = "Cobrança";
+    nextMilestoneValue = "Ação imediata";
+  } else if (data.subscription.status === SubscriptionStatus.TRIAL) {
+    lifecycleLabel = "Trial";
+    lifecycleTone = "primary";
+    nextMilestoneLabel = "Fim do trial";
+    nextMilestoneValue = formatDaysLabel(trialDays);
+  } else if (!data.subscription.planId || adoptionScore <= 2) {
+    lifecycleLabel = "Onboarding";
+    lifecycleTone = "secondary";
+    nextMilestoneLabel = "Última atividade";
+    nextMilestoneValue = formatDate(data.tenant.updatedAt);
+  } else if (renewalDays !== null && renewalDays <= 7) {
+    lifecycleLabel = "Renovação crítica";
+    lifecycleTone = "warning";
+    nextMilestoneLabel = "Renovação";
+    nextMilestoneValue = formatDaysLabel(renewalDays);
+  }
+
+  let healthLabel = "Saudável";
+  let healthTone: "success" | "warning" | "danger" = "success";
+  let healthHint =
+    "Escritório operando com sinais consistentes de uso, cobrança e evolução.";
+  let nextActionLabel = "Próximo passo";
+  let nextActionValue = "Manter acompanhamento de renovação e expansão.";
+
+  if (
+    lifecycleLabel === "Cancelado" ||
+    lifecycleLabel === "Suspenso" ||
+    lifecycleLabel === "Inadimplente"
+  ) {
+    healthLabel = "Crítico";
+    healthTone = "danger";
+    healthHint =
+      lifecycleLabel === "Inadimplente"
+        ? "Há risco financeiro imediato. O tenant precisa de tratativa de cobrança."
+        : "O tenant está fora da operação normal e exige ação administrativa.";
+    nextActionLabel = "Ação prioritária";
+    nextActionValue =
+      lifecycleLabel === "Inadimplente"
+        ? "Acionar cobrança e revisar continuidade do plano."
+        : "Definir reativação ou encerramento com trilha de auditoria.";
+  } else if (
+    lifecycleLabel === "Trial" ||
+    lifecycleLabel === "Onboarding" ||
+    lifecycleLabel === "Renovação crítica" ||
+    data.metrics.outstandingInvoices > 0 ||
+    adoptionScore <= 4
+  ) {
+    healthLabel = "Acompanhar";
+    healthTone = "warning";
+    healthHint =
+      lifecycleLabel === "Trial"
+        ? "Conversão e ativação ainda não estão consolidadas."
+        : "O tenant precisa de maior adoção ou atenção comercial/financeira.";
+    nextActionLabel = "Ação recomendada";
+    nextActionValue =
+      data.metrics.outstandingInvoices > 0
+        ? `Revisar ${data.metrics.outstandingInvoices} fatura(s) em aberto e confirmar plano de cobrança.`
+        : "Acompanhar onboarding, ativação de equipe e uso dos módulos-chave.";
+  }
+
+  return {
+    lifecycleLabel,
+    lifecycleTone,
+    healthLabel,
+    healthTone,
+    healthHint,
+    nextActionLabel,
+    nextActionValue,
+    nextMilestoneLabel,
+    nextMilestoneValue,
+  };
+}
+
 export function TenantManagementContent({
   tenantId,
   initialData,
@@ -257,7 +433,7 @@ export function TenantManagementContent({
     () => fetchTenant("tenant-management", tenantId),
     {
       fallbackData: initialData,
-      revalidateOnFocus: false,
+      revalidateOnFocus: true,
     },
   );
 
@@ -610,25 +786,58 @@ export function TenantManagementContent({
     label: roleLabel(role),
   }));
 
+  const executiveState = useMemo(
+    () => deriveTenantExecutiveState(tenantData, tenantStatusState),
+    [tenantData, tenantStatusState],
+  );
+
   return (
     <section className="space-y-6">
       <PeoplePageHeader
         tag="Administração"
         title={`Tenant · ${tenantData.tenant.name}`}
-        description={`Visão operacional do escritório (${tenantData.tenant.slug}) para atendimento de suporte, assinatura, usuários e auditoria.`}
+        description={`Cockpit operacional do escritório (${tenantData.tenant.slug}) para retenção, cobrança, suporte e governança administrativa.`}
         actions={
           <>
-            <Chip color={statusChipColor(tenantStatusState)} size="sm" variant="flat">
+            <Chip
+              color={statusChipColor(tenantStatusState)}
+              size="sm"
+              variant="flat"
+            >
               {statusLabel(tenantStatusState)}
             </Chip>
-            <Chip color="secondary" size="sm" variant="flat">
-              Plano: {tenantData.subscription.planName ?? "Custom"}
+            <Chip
+              color={subscriptionChipColor(tenantData.subscription.status)}
+              size="sm"
+              variant="flat"
+            >
+              {subscriptionLabel(tenantData.subscription.status)}
+            </Chip>
+            <Chip color={executiveState.lifecycleTone} size="sm" variant="flat">
+              {executiveState.lifecycleLabel}
+            </Chip>
+            <Chip
+              color={executiveState.healthTone}
+              size="sm"
+              variant="bordered"
+            >
+              {executiveState.healthLabel}
             </Chip>
           </>
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <PeopleMetricCard
+          label="Plano"
+          value={tenantData.subscription.planName ?? "Sem plano"}
+          helper={
+            tenantData.subscription.valorMensal
+              ? formatCurrency(tenantData.subscription.valorMensal)
+              : "Precificação não definida"
+          }
+          tone="primary"
+        />
         <PeopleMetricCard
           label="Usuários"
           value={numberFormatter.format(tenantData.metrics.usuarios)}
@@ -648,88 +857,207 @@ export function TenantManagementContent({
           tone="success"
         />
         <PeopleMetricCard
-          label="Receita 90 dias"
-          value={formatCurrency(tenantData.metrics.revenue90d)}
-          helper={`Em aberto: ${numberFormatter.format(tenantData.metrics.outstandingInvoices)} fatura(s)`}
+          label="Receita 30 dias"
+          value={formatCurrency(tenantData.metrics.revenue30d)}
+          helper={`90 dias: ${formatCurrency(tenantData.metrics.revenue90d)}`}
           tone="warning"
+        />
+        <PeopleMetricCard
+          label={executiveState.nextMilestoneLabel}
+          value={executiveState.nextMilestoneValue}
+          helper={`Faturas em aberto: ${numberFormatter.format(tenantData.metrics.outstandingInvoices)}`}
+          tone={
+            executiveState.healthTone === "danger"
+              ? "danger"
+              : executiveState.healthTone === "warning"
+                ? "warning"
+                : "success"
+          }
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-        <Button
-          as={NextLink}
-          href={`/admin/suporte?tenantId=${tenantId}`}
-          radius="full"
-          size="sm"
-          startContent={<LifeBuoy className="h-4 w-4" />}
-          variant="flat"
-        >
-          Atender no suporte
-        </Button>
-        <Button
-          radius="full"
-          size="sm"
-          startContent={<Copy className="h-4 w-4" />}
-          variant="bordered"
-          onPress={() => handleCopy(tenantData.tenant.id, "ID do tenant")}
-        >
-          Copiar ID
-        </Button>
-        <Button
-          radius="full"
-          size="sm"
-          startContent={<Copy className="h-4 w-4" />}
-          variant="bordered"
-          onPress={() => handleCopy(tenantData.tenant.slug, "Slug")}
-        >
-          Copiar slug
-        </Button>
-        <Button
-          radius="full"
-          size="sm"
-          variant="light"
-          onPress={() => setShowInternalData((prev) => !prev)}
-        >
-          {showInternalData ? "Ocultar dados internos" : "Dados internos"}
-        </Button>
-      </div>
+      <PeoplePanel
+        title="Resumo executivo do tenant"
+        description="Leitura rápida para decidir retenção, cobrança, suporte ou expansão antes de entrar nas tabs operacionais."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              as={NextLink}
+              href={`/admin/suporte?tenantId=${tenantId}`}
+              radius="full"
+              size="sm"
+              startContent={<LifeBuoy className="h-4 w-4" />}
+              variant="flat"
+            >
+              Atender no suporte
+            </Button>
+            <Button
+              radius="full"
+              size="sm"
+              startContent={<Copy className="h-4 w-4" />}
+              variant="bordered"
+              onPress={() => handleCopy(tenantData.tenant.id, "ID do tenant")}
+            >
+              Copiar ID
+            </Button>
+            <Button
+              radius="full"
+              size="sm"
+              startContent={<Copy className="h-4 w-4" />}
+              variant="bordered"
+              onPress={() => handleCopy(tenantData.tenant.slug, "Slug")}
+            >
+              Copiar slug
+            </Button>
+            <Button
+              radius="full"
+              size="sm"
+              variant="light"
+              onPress={() => setShowInternalData((prev) => !prev)}
+            >
+              {showInternalData ? "Ocultar dados internos" : "Dados internos"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Chip
+                  color={executiveState.healthTone}
+                  size="sm"
+                  variant="flat"
+                >
+                  Saúde: {executiveState.healthLabel}
+                </Chip>
+                <Chip
+                  color={executiveState.lifecycleTone}
+                  size="sm"
+                  variant="bordered"
+                >
+                  {executiveState.lifecycleLabel}
+                </Chip>
+              </div>
+              <p className="text-sm text-default-300">
+                {executiveState.healthHint}
+              </p>
+            </div>
 
-      {showInternalData ? (
-        <Card className="border border-warning/30 bg-warning/5">
-          <CardBody className="space-y-2 text-xs text-default-500">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                  {executiveState.nextActionLabel}
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {executiveState.nextActionValue}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                  Marco principal
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {executiveState.nextMilestoneLabel}
+                </p>
+                <p className="mt-1 text-sm text-default-400">
+                  {executiveState.nextMilestoneValue}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4 text-sm text-default-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Identidade operacional
+              </p>
+              <div className="mt-3 space-y-2">
+                <p>
+                  <span className="font-medium text-foreground">Slug:</span>{" "}
+                  {tenantData.tenant.slug}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Domínio:</span>{" "}
+                  {tenantData.tenant.domain ?? "Não configurado"}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Fuso:</span>{" "}
+                  {tenantData.tenant.timezone}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">
+                    Criado em:
+                  </span>{" "}
+                  {formatDate(tenantData.tenant.createdAt)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4 text-sm text-default-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+                Financeiro e cobrança
+              </p>
+              <div className="mt-3 space-y-2">
+                <p>
+                  <span className="font-medium text-foreground">
+                    Assinatura:
+                  </span>{" "}
+                  {subscriptionLabel(tenantData.subscription.status)}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Mensal:</span>{" "}
+                  {tenantData.subscription.valorMensal
+                    ? formatCurrency(tenantData.subscription.valorMensal)
+                    : "Não definido"}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">
+                    Faturas abertas:
+                  </span>{" "}
+                  {tenantData.metrics.outstandingInvoices}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">
+                    Atualizado:
+                  </span>{" "}
+                  {formatDateTime(tenantData.tenant.updatedAt)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {showInternalData ? (
+          <div className="mt-4 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-xs text-default-500">
             <p className="font-semibold uppercase tracking-[0.2em] text-warning">
               Uso interno do suporte (não compartilhar)
             </p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <span>ID do tenant: {tenantData.tenant.id}</span>
               <span>Slug: {tenantData.tenant.slug}</span>
               <span>Status: {statusLabel(tenantStatusState)}</span>
               <span>
                 Subscription ID: {tenantData.subscription.id ?? "Não possui"}
               </span>
-              <span>Plan ID: {tenantData.subscription.planId ?? "Não possui"}</span>
-              <span>Atualizado em: {formatDateTime(tenantData.tenant.updatedAt)}</span>
+              <span>
+                Plan ID: {tenantData.subscription.planId ?? "Não possui"}
+              </span>
+              <span>
+                Atualizado em: {formatDateTime(tenantData.tenant.updatedAt)}
+              </span>
             </div>
-          </CardBody>
-        </Card>
-      ) : null}
-
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-xs text-default-400">
-        <div className="flex flex-wrap gap-3">
-          <span>Slug: {tenantData.tenant.slug}</span>
-          {tenantData.tenant.domain ? <span>• Domínio: {tenantData.tenant.domain}</span> : null}
-          <span>• Fuso: {tenantData.tenant.timezone}</span>
-          <span>• Criado em: {formatDate(tenantData.tenant.createdAt)}</span>
-          <span>• Atualizado em: {formatDateTime(tenantData.tenant.updatedAt)}</span>
-        </div>
-      </div>
+          </div>
+        ) : null}
+      </PeoplePanel>
 
       <div className="w-full">
         <Tabs
           aria-label="Painel de gerenciamento do tenant"
           classNames={{
             base: "w-full",
-            tabList: "w-full gap-2 overflow-x-auto justify-start lg:justify-center",
+            tabList:
+              "w-full gap-2 overflow-x-auto justify-start lg:justify-center",
             tab: "min-w-[150px] px-4 py-3 text-sm font-medium md:min-w-[180px] md:px-8 md:py-4 md:text-base",
             panel: "w-full",
           }}
@@ -940,7 +1268,9 @@ function OverviewTab({
               }}
             >
               {timezoneOptions.map((tz) => (
-                <SelectItem key={tz} textValue={tz}>{tz}</SelectItem>
+                <SelectItem key={tz} textValue={tz}>
+                  {tz}
+                </SelectItem>
               ))}
             </Select>
             <Input
@@ -1004,7 +1334,9 @@ function OverviewTab({
 
       <Card className="border border-white/10 bg-background/70 backdrop-blur">
         <CardHeader className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-foreground">Status do tenant</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            Status do tenant
+          </h2>
           <p className="text-sm text-default-400">
             Controle de acesso global do tenant à plataforma.
           </p>
@@ -1147,7 +1479,9 @@ function FinanceTab({
               }}
             >
               {subscriptionStatusOptions.map((option) => (
-                <SelectItem key={option.value} textValue={option.label}>{option.label}</SelectItem>
+                <SelectItem key={option.value} textValue={option.label}>
+                  {option.label}
+                </SelectItem>
               ))}
             </Select>
             <DateInput
@@ -1159,7 +1493,7 @@ function FinanceTab({
                   trialEndsAt: value ? new Date(value).toISOString() : null,
                 }))
               }
-             />
+            />
             <DateInput
               label="Próxima renovação"
               value={subscriptionForm.renovaEm?.slice(0, 10) ?? ""}
@@ -1169,7 +1503,7 @@ function FinanceTab({
                   renovaEm: value ? new Date(value).toISOString() : null,
                 }))
               }
-             />
+            />
           </div>
           <div className="flex justify-end">
             <Button
@@ -1187,7 +1521,9 @@ function FinanceTab({
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <Card className="border border-white/10 bg-background/70 backdrop-blur">
           <CardHeader className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-foreground">Indicadores</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              Indicadores
+            </h2>
             <p className="text-sm text-default-400">
               Métricas resumidas dos últimos 90 dias.
             </p>
@@ -1418,7 +1754,9 @@ function BrandingTab({
   return (
     <Card className="border border-white/10 bg-background/70 backdrop-blur">
       <CardHeader className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-foreground">Identidade visual</h2>
+        <h2 className="text-lg font-semibold text-foreground">
+          Identidade visual
+        </h2>
         <p className="text-sm text-default-400">
           Ajuste cores e ativos visuais do tenant.
         </p>
@@ -1502,7 +1840,13 @@ function IntegrationStatCard({
   label: string;
   value: string;
   helper: string;
-  chipColor?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+  chipColor?:
+    | "default"
+    | "primary"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "danger";
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -1622,10 +1966,13 @@ function ChannelProviderAdminPanel({
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
-            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <p className="font-medium text-foreground">
+              Configuração do tenant
+            </p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               <p>
-                Provider: <strong>{summary.providerLabel ?? "Não configurado"}</strong>
+                Provider:{" "}
+                <strong>{summary.providerLabel ?? "Não configurado"}</strong>
               </p>
               <p>
                 Nome operacional:{" "}
@@ -1647,7 +1994,9 @@ function ChannelProviderAdminPanel({
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
-            <p className="font-medium text-foreground">Identificadores públicos</p>
+            <p className="font-medium text-foreground">
+              Identificadores públicos
+            </p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               {summary.configSummary.length > 0 ? (
                 summary.configSummary.map((item) => (
@@ -1717,8 +2066,9 @@ function ClicksignAdminPanel({
                 ClickSign do tenant
               </h2>
               <p className="text-sm text-default-400">
-                Leitura administrativa da integração de assinatura digital sem expor
-                token. O tenant continua responsável pela edição da credencial.
+                Leitura administrativa da integração de assinatura digital sem
+                expor token. O tenant continua responsável pela edição da
+                credencial.
               </p>
             </div>
             <Button
@@ -1746,7 +2096,9 @@ function ClicksignAdminPanel({
               value={sourceLabel}
             />
             <IntegrationStatCard
-              chipColor={summary.ambiente === "PRODUCAO" ? "warning" : "secondary"}
+              chipColor={
+                summary.ambiente === "PRODUCAO" ? "warning" : "secondary"
+              }
               helper="Ambiente salvo ou inferido para a integração"
               label="Ambiente"
               value={summary.ambiente === "PRODUCAO" ? "Produção" : "Sandbox"}
@@ -1770,7 +2122,9 @@ function ClicksignAdminPanel({
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
-            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <p className="font-medium text-foreground">
+              Configuração do tenant
+            </p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               <p>
                 Configuração salva:{" "}
@@ -1809,7 +2163,9 @@ function ClicksignAdminPanel({
               </p>
               <p>
                 Base do fallback:{" "}
-                <span className="font-mono text-xs">{summary.fallbackApiBase}</span>
+                <span className="font-mono text-xs">
+                  {summary.fallbackApiBase}
+                </span>
               </p>
               <p>
                 Ambiente do fallback:{" "}
@@ -1846,8 +2202,8 @@ function AsaasAdminPanel({
                 Asaas do tenant
               </h2>
               <p className="text-sm text-default-400">
-                Visão operacional da integração financeira do escritório, incluindo
-                ambiente, proteção de webhook e último sinal recebido.
+                Visão operacional da integração financeira do escritório,
+                incluindo ambiente, proteção de webhook e último sinal recebido.
               </p>
             </div>
             <Button
@@ -1872,7 +2228,9 @@ function AsaasAdminPanel({
               value={summary.integracaoAtiva ? "Ativa" : "Pendente"}
             />
             <IntegrationStatCard
-              chipColor={summary.ambiente === "PRODUCAO" ? "warning" : "secondary"}
+              chipColor={
+                summary.ambiente === "PRODUCAO" ? "warning" : "secondary"
+              }
               helper="Ambiente financeiro em uso"
               label="Ambiente"
               value={summary.ambiente === "PRODUCAO" ? "Produção" : "Sandbox"}
@@ -1892,13 +2250,17 @@ function AsaasAdminPanel({
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
-            <p className="font-medium text-foreground">Configuração do tenant</p>
+            <p className="font-medium text-foreground">
+              Configuração do tenant
+            </p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               <p>
-                Conta Asaas: <strong>{summary.asaasAccountId ?? "Não informada"}</strong>
+                Conta Asaas:{" "}
+                <strong>{summary.asaasAccountId ?? "Não informada"}</strong>
               </p>
               <p>
-                Wallet ID: <strong>{summary.asaasWalletId ?? "Não informado"}</strong>
+                Wallet ID:{" "}
+                <strong>{summary.asaasWalletId ?? "Não informado"}</strong>
               </p>
               <p>
                 Data de configuração:{" "}
@@ -1923,7 +2285,8 @@ function AsaasAdminPanel({
             <p className="font-medium text-foreground">Webhook</p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               <p>
-                URL: <span className="font-mono text-xs">{summary.webhookUrl}</span>
+                URL:{" "}
+                <span className="font-mono text-xs">{summary.webhookUrl}</span>
               </p>
               <p>
                 Token por tenant:{" "}
@@ -1932,7 +2295,9 @@ function AsaasAdminPanel({
               <p>
                 Segredo global:{" "}
                 <strong>
-                  {summary.globalWebhookSecretConfigured ? "Configurado" : "Ausente"}
+                  {summary.globalWebhookSecretConfigured
+                    ? "Configurado"
+                    : "Ausente"}
                 </strong>
               </p>
               <p>
@@ -1952,7 +2317,8 @@ function AsaasAdminPanel({
                 </strong>
               </p>
               <p>
-                Último evento: <strong>{summary.lastWebhookEvent ?? "Nenhum"}</strong>
+                Último evento:{" "}
+                <strong>{summary.lastWebhookEvent ?? "Nenhum"}</strong>
               </p>
             </div>
           </div>
@@ -1982,8 +2348,8 @@ function CertificatesAdminPanel({
             Certificados e PJe
           </h2>
           <p className="text-sm text-default-400">
-            Visão resumida da política do tenant, volume de certificados e sinais
-            de risco operacional para integrações PJe.
+            Visão resumida da política do tenant, volume de certificados e
+            sinais de risco operacional para integrações PJe.
           </p>
         </CardHeader>
         <Divider className="border-white/10" />
@@ -2008,10 +2374,14 @@ function CertificatesAdminPanel({
               value={String(summary.expiredCertificates)}
             />
             <IntegrationStatCard
-              chipColor={summary.hasActiveOfficeCertificate ? "success" : "warning"}
+              chipColor={
+                summary.hasActiveOfficeCertificate ? "success" : "warning"
+              }
               helper="Presença de certificado ativo no escopo OFFICE"
               label="Escopo office"
-              value={summary.hasActiveOfficeCertificate ? "Coberto" : "Sem ativo"}
+              value={
+                summary.hasActiveOfficeCertificate ? "Coberto" : "Sem ativo"
+              }
             />
           </div>
 
@@ -2019,7 +2389,8 @@ function CertificatesAdminPanel({
             <p className="font-medium text-foreground">Distribuição</p>
             <div className="mt-2 grid gap-2 lg:grid-cols-2">
               <p>
-                Total de certificados: <strong>{summary.totalCertificates}</strong>
+                Total de certificados:{" "}
+                <strong>{summary.totalCertificates}</strong>
               </p>
               <p>
                 Escopo escritório: <strong>{summary.officeCertificates}</strong>
@@ -2133,7 +2504,10 @@ function IntegrationsTab({
     setTestingChannel(channel);
 
     try {
-      const result = await testTenantChannelProviderAsSuperAdmin(tenantId, channel);
+      const result = await testTenantChannelProviderAsSuperAdmin(
+        tenantId,
+        channel,
+      );
 
       if (!result.success) {
         addToast({
@@ -2217,7 +2591,9 @@ function IntegrationsTab({
           </div>
 
           <div className="min-w-0">
-            {selectedIntegration === "email" ? <EmailTab tenantId={tenantId} /> : null}
+            {selectedIntegration === "email" ? (
+              <EmailTab tenantId={tenantId} />
+            ) : null}
 
             {selectedIntegration === "clicksign" ? (
               <ClicksignAdminPanel
