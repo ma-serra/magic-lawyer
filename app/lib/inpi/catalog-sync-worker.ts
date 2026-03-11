@@ -18,17 +18,26 @@ import {
   withInpiCatalogSyncProgress,
   withInpiCatalogSyncStatus,
 } from "./catalog-sync-status-store";
+import {
+  INPI_SYNC_BASE_MAX_DURATION_MS,
+  INPI_SYNC_DURATION_STEP_MS,
+  INPI_SYNC_MAX_ATTEMPTS,
+  INPI_SYNC_MAX_DURATION_CEILING_MS,
+} from "./catalog-sync-runtime";
+import {
+  clearInpiCatalogSyncCancellation,
+  INPI_CATALOG_SYNC_CANCELED_ERROR,
+  isInpiCatalogSyncCanceledError,
+  isInpiCatalogSyncCancellationRequested,
+} from "./catalog-sync-control";
 import { normalizeNiceClassCode } from "./nice-classes";
 import { searchInpiOfficialSource } from "./oficial-source";
 
 const INPI_ESTIMATED_TOTAL_ROWS = 9_500_000;
-const INPI_SYNC_BASE_MAX_DURATION_MS = 8 * 60 * 1000; // 8 min
-const INPI_SYNC_MAX_DURATION_CEILING_MS = 18 * 60 * 1000; // 18 min
 const INPI_SYNC_BASE_MAX_SCAN_ROWS = 12_000_000;
 const INPI_SYNC_MAX_SCAN_ROWS_CEILING = 28_000_000;
 const INPI_SYNC_BASE_MAX_MATCHES = 8_000;
 const INPI_SYNC_MAX_MATCHES_CEILING = 30_000;
-const INPI_SYNC_MAX_ATTEMPTS = 3;
 const PERSIST_CHUNK_SIZE = 200;
 const INPI_CATALOG_GLOBAL_FRESH_TTL_SECONDS = 2 * 60;
 
@@ -260,22 +269,59 @@ export class InpiCatalogSyncWorker {
         termo: data.termo,
         classeNice: data.classeNice,
       });
+    let cancelCheckCached = false;
+    let lastCancelCheckAt = 0;
 
-    state = withInpiCatalogSyncStatus(state, "RUNNING", {
-      phase: "SCANNING_BIBLIOGRAPHIC",
-      queueJobId,
-      coordinationKey: coordinationKey || state.coordinationKey,
-      waitForGlobalSync: false,
-      error: undefined,
-      warning: undefined,
-      estimatedTotalRows: INPI_ESTIMATED_TOTAL_ROWS,
-      progressPct: 1,
-      reachedLimit: false,
-      reachedTimeout: false,
-    });
-    await saveInpiCatalogSyncState(state);
+    const hasCancellationBeenRequested = async (force = false) => {
+      if (cancelCheckCached) {
+        return true;
+      }
+
+      const now = Date.now();
+      if (!force && now - lastCancelCheckAt < 500) {
+        return false;
+      }
+
+      lastCancelCheckAt = now;
+      cancelCheckCached = await isInpiCatalogSyncCancellationRequested(data.syncId);
+      return cancelCheckCached;
+    };
+
+    const throwIfCancellationRequested = async (force = false) => {
+      if (await hasCancellationBeenRequested(force)) {
+        throw new Error(INPI_CATALOG_SYNC_CANCELED_ERROR);
+      }
+    };
 
     try {
+      if (await hasCancellationBeenRequested(true)) {
+        state = withInpiCatalogSyncStatus(state, "CANCELED", {
+          phase: "CANCELED",
+          queueJobId,
+          coordinationKey: coordinationKey || state.coordinationKey,
+          waitForGlobalSync: false,
+          progressPct: Math.max(1, Math.min(99, state.progressPct || 0)),
+          warning: "Busca oficial cancelada antes do início da varredura.",
+          error: undefined,
+        });
+        await saveInpiCatalogSyncState(state);
+        return;
+      }
+
+      state = withInpiCatalogSyncStatus(state, "RUNNING", {
+        phase: "SCANNING_BIBLIOGRAPHIC",
+        queueJobId,
+        coordinationKey: coordinationKey || state.coordinationKey,
+        waitForGlobalSync: false,
+        error: undefined,
+        warning: undefined,
+        estimatedTotalRows: INPI_ESTIMATED_TOTAL_ROWS,
+        progressPct: 1,
+        reachedLimit: false,
+        reachedTimeout: false,
+      });
+      await saveInpiCatalogSyncState(state);
+
       let official: Awaited<ReturnType<typeof searchInpiOfficialSource>>;
       let attempts = 0;
       let maxDurationMs = INPI_SYNC_BASE_MAX_DURATION_MS;
@@ -283,6 +329,7 @@ export class InpiCatalogSyncWorker {
       let maxMatches = INPI_SYNC_BASE_MAX_MATCHES;
 
       while (true) {
+        await throwIfCancellationRequested();
         attempts += 1;
 
         if (attempts > 1) {
@@ -303,6 +350,7 @@ export class InpiCatalogSyncWorker {
           maxDurationMs,
           maxScanRows,
           exhaustive: true,
+          shouldCancel: hasCancellationBeenRequested,
           onProgress: async (progress) => {
             const now = Date.now();
             if (
@@ -323,8 +371,11 @@ export class InpiCatalogSyncWorker {
               reachedTimeout: progress.reachedTimeout,
             });
             await saveInpiCatalogSyncState(state);
+            await throwIfCancellationRequested();
           },
         });
+
+        await throwIfCancellationRequested(true);
 
         if (!official.reachedLimit && !official.reachedTimeout) {
           break;
@@ -335,7 +386,7 @@ export class InpiCatalogSyncWorker {
         }
 
         maxDurationMs = Math.min(
-          maxDurationMs + 4 * 60 * 1000,
+          maxDurationMs + INPI_SYNC_DURATION_STEP_MS,
           INPI_SYNC_MAX_DURATION_CEILING_MS,
         );
         maxScanRows = Math.min(
@@ -344,6 +395,8 @@ export class InpiCatalogSyncWorker {
         );
         maxMatches = Math.min(maxMatches + 4_000, INPI_SYNC_MAX_MATCHES_CEILING);
       }
+
+      await throwIfCancellationRequested(true);
 
       state = withInpiCatalogSyncProgress(state, {
         phase: "PERSISTING",
@@ -422,19 +475,33 @@ export class InpiCatalogSyncWorker {
       });
       await saveInpiCatalogSyncState(state);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Erro inesperado no worker.";
+      if (isInpiCatalogSyncCanceledError(error)) {
+        state = withInpiCatalogSyncStatus(state, "CANCELED", {
+          phase: "CANCELED",
+          coordinationKey: coordinationKey || state.coordinationKey,
+          waitForGlobalSync: false,
+          progressPct: Math.max(1, Math.min(99, state.progressPct || 0)),
+          warning: "Busca oficial cancelada pelo usuário.",
+          error: undefined,
+        });
+        await saveInpiCatalogSyncState(state);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Erro inesperado no worker.";
 
-      state = withInpiCatalogSyncStatus(state, "FAILED", {
-        phase: "FAILED",
-        coordinationKey: coordinationKey || state.coordinationKey,
-        waitForGlobalSync: false,
-        progressPct: Math.min(99, state.progressPct || 0),
-        error: message,
-      });
-      await saveInpiCatalogSyncState(state);
-      logger.error("[InpiCatalogSyncWorker] Erro ao processar job", error);
+        state = withInpiCatalogSyncStatus(state, "FAILED", {
+          phase: "FAILED",
+          coordinationKey: coordinationKey || state.coordinationKey,
+          waitForGlobalSync: false,
+          progressPct: Math.min(99, state.progressPct || 0),
+          error: message,
+        });
+        await saveInpiCatalogSyncState(state);
+        logger.error("[InpiCatalogSyncWorker] Erro ao processar job", error);
+      }
     } finally {
+      await clearInpiCatalogSyncCancellation(state.syncId);
+
       if (coordinationKey) {
         const redis = getRedisInstance();
         const freshPayload = JSON.stringify({

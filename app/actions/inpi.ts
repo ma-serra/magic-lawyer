@@ -9,11 +9,17 @@ import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import { INPI_DEFAULT_CATALOG } from "@/app/lib/inpi/default-catalog";
 import { getInpiCatalogSyncQueue } from "@/app/lib/inpi/catalog-sync-queue";
 import {
+  clearInpiCatalogSyncCancellation,
+  requestInpiCatalogSyncCancellation,
+} from "@/app/lib/inpi/catalog-sync-control";
+import { isInpiCatalogSyncStale } from "@/app/lib/inpi/catalog-sync-runtime";
+import {
   buildInitialInpiCatalogSyncState,
   getInpiCatalogSyncState,
   getLatestInpiCatalogSyncState,
   listInpiCatalogSyncStates,
   saveInpiCatalogSyncState,
+  withInpiCatalogSyncProgress,
   withInpiCatalogSyncStatus,
 } from "@/app/lib/inpi/catalog-sync-status-store";
 import {
@@ -37,7 +43,6 @@ const INPI_OFFICIAL_SEARCH_RATE_WINDOW_HOURS = 1;
 const INPI_OFFICIAL_SEARCH_MAX_PER_WINDOW = 12;
 const INPI_OFFICIAL_SEARCH_RATE_WINDOW_MS =
   INPI_OFFICIAL_SEARCH_RATE_WINDOW_HOURS * 60 * 60 * 1000;
-const INPI_CATALOG_SYNC_STALE_MS = 10 * 60 * 1000;
 const INPI_CATALOG_GLOBAL_INFLIGHT_TTL_SECONDS = 25 * 60;
 const INPI_SCHEMA_NOT_READY_MESSAGE =
   "Módulo INPI ainda não foi aplicado neste banco. Execute a atualização de schema em produção (prisma db push ou migrate deploy) e faça novo deploy.";
@@ -354,6 +359,132 @@ function parseInpiCatalogGlobalFreshPayload(raw: string | null): {
   } catch {
     return null;
   }
+}
+
+async function publishInpiCatalogGlobalFreshState(
+  coordinationKey: string,
+  state: InpiCatalogSyncState,
+) {
+  const redis = getRedisInstance();
+  await redis.set(
+    buildInpiCatalogGlobalFreshKey(coordinationKey),
+    JSON.stringify({
+      sourceSyncId: state.syncId,
+      matchedRows: state.matchedRows,
+      scannedRows: state.scannedRows,
+      persistedRows: state.persistedRows,
+      createdCount: state.createdCount,
+      updatedCount: state.updatedCount,
+      reachedLimit: state.reachedLimit,
+      reachedTimeout: state.reachedTimeout,
+      warning: state.warning,
+      status: state.status,
+      updatedAt: state.updatedAt,
+    }),
+    "EX",
+    2 * 60,
+  );
+}
+
+async function releaseInpiCatalogGlobalInflight(coordinationKey: string) {
+  const redis = getRedisInstance();
+  await redis.del(buildInpiCatalogGlobalInflightKey(coordinationKey));
+}
+
+async function refreshReadableInpiCatalogSyncState(
+  state: InpiCatalogSyncState,
+): Promise<InpiCatalogSyncState> {
+  let next = state;
+
+  if (
+    next.waitForGlobalSync &&
+    next.status === "QUEUED" &&
+    next.coordinationKey
+  ) {
+    const redis = getRedisInstance();
+    const inflightExists = await redis.exists(
+      buildInpiCatalogGlobalInflightKey(next.coordinationKey),
+    );
+
+    if (!inflightExists) {
+      const freshPayload = parseInpiCatalogGlobalFreshPayload(
+        await redis.get(buildInpiCatalogGlobalFreshKey(next.coordinationKey)),
+      );
+      if (freshPayload?.status === "FAILED") {
+        next = withInpiCatalogSyncStatus(next, "FAILED", {
+          phase: "FAILED",
+          waitForGlobalSync: false,
+          progressPct: Math.max(1, Math.min(99, next.progressPct || 0)),
+          error:
+            freshPayload.warning ||
+            "Sincronização global finalizou com falha. Tente novamente.",
+        });
+      } else if (freshPayload?.status === "CANCELED") {
+        next = withInpiCatalogSyncStatus(next, "CANCELED", {
+          phase: "CANCELED",
+          waitForGlobalSync: false,
+          progressPct: Math.max(1, Math.min(99, next.progressPct || 0)),
+          warning:
+            freshPayload.warning ||
+            "Sincronização global foi cancelada antes de concluir.",
+          error: undefined,
+        });
+      } else if (freshPayload?.status === "COMPLETED") {
+        next = withInpiCatalogSyncStatus(next, "COMPLETED", {
+          phase: "COMPLETED",
+          waitForGlobalSync: false,
+          progressPct: 100,
+          scannedRows: Math.max(
+            next.scannedRows,
+            Math.max(0, freshPayload?.scannedRows ?? 0),
+          ),
+          matchedRows: Math.max(
+            next.matchedRows,
+            Math.max(0, freshPayload?.matchedRows ?? 0),
+          ),
+          persistedRows: Math.max(
+            next.persistedRows,
+            Math.max(0, freshPayload?.persistedRows ?? 0),
+          ),
+          createdCount: Math.max(
+            next.createdCount,
+            Math.max(0, freshPayload?.createdCount ?? 0),
+          ),
+          updatedCount: Math.max(
+            next.updatedCount,
+            Math.max(0, freshPayload?.updatedCount ?? 0),
+          ),
+          reachedLimit: Boolean(freshPayload?.reachedLimit),
+          reachedTimeout: Boolean(freshPayload?.reachedTimeout),
+          warning:
+            freshPayload?.warning ||
+              "Sincronização global concluída. Resultado reaproveitado para este escritório.",
+        });
+      } else {
+        next = withInpiCatalogSyncStatus(next, "FAILED", {
+          phase: "FAILED",
+          waitForGlobalSync: false,
+          progressPct: Math.max(1, Math.min(99, next.progressPct || 0)),
+          error:
+            "Sincronização global terminou sem publicar um resultado reaproveitável. Tente novamente.",
+        });
+      }
+
+      await saveInpiCatalogSyncState(next);
+    }
+  }
+
+  if (isInpiCatalogSyncStale(next)) {
+    next = withInpiCatalogSyncStatus(next, "FAILED", {
+      phase: "FAILED",
+      waitForGlobalSync: false,
+      progressPct: Math.max(1, Math.min(99, next.progressPct || 0)),
+      error: "A busca anterior foi encerrada automaticamente por inatividade do worker.",
+    });
+    await saveInpiCatalogSyncState(next);
+  }
+
+  return next;
 }
 
 async function withInpiCatalogEnqueueLock<T>(params: {
@@ -1277,12 +1408,7 @@ export async function startInpiCatalogBackgroundSearch(input: {
         });
 
         if (latest && !isInpiCatalogSyncTerminalStatus(latest.status)) {
-          const latestUpdatedAt = new Date(latest.updatedAt).getTime();
-          const isStale =
-            !Number.isFinite(latestUpdatedAt) ||
-            Date.now() - latestUpdatedAt > INPI_CATALOG_SYNC_STALE_MS;
-
-          if (isStale) {
+          if (isInpiCatalogSyncStale(latest)) {
             latest = withInpiCatalogSyncStatus(latest, "FAILED", {
               phase: "FAILED",
               progressPct: Math.max(1, Math.min(99, latest.progressPct || 0)),
@@ -1302,8 +1428,9 @@ export async function startInpiCatalogBackgroundSearch(input: {
         if (latest && !forceRefresh) {
           const latestUpdatedAt = new Date(latest.updatedAt).getTime();
           const shouldBypassCooldown =
+            latest.status === "CANCELED" ||
             latest.status === "COMPLETED" &&
-            (latest.reachedLimit || latest.reachedTimeout);
+              (latest.reachedLimit || latest.reachedTimeout);
           if (
             Number.isFinite(latestUpdatedAt) &&
             Date.now() - latestUpdatedAt < 60 * 1000 &&
@@ -1489,6 +1616,117 @@ export async function startInpiCatalogBackgroundSearch(input: {
   }
 }
 
+export async function cancelInpiCatalogBackgroundSearch(input: {
+  syncId: string;
+}): Promise<{
+  success: boolean;
+  status?: InpiCatalogSearchSyncStatus;
+  error?: string;
+}> {
+  try {
+    const ctx = await requireInpiContext("read");
+    const syncId = (input.syncId || "").trim();
+
+    if (!syncId) {
+      return {
+        success: false,
+        error: "ID da busca não informado.",
+      };
+    }
+
+    let state = await getInpiCatalogSyncState(syncId);
+
+    if (!state) {
+      return {
+        success: false,
+        error: "Busca não encontrada ou expirada.",
+      };
+    }
+
+    if (state.tenantId !== ctx.tenantId || state.usuarioId !== ctx.id) {
+      return {
+        success: false,
+        error: "Busca não pertence ao usuário atual.",
+      };
+    }
+
+    if (isInpiCatalogSyncTerminalStatus(state.status)) {
+      await clearInpiCatalogSyncCancellation(syncId);
+      return {
+        success: true,
+        status: toPublicInpiCatalogSearchSyncStatus(state),
+      };
+    }
+
+    const coordinationKey = state.coordinationKey;
+    const wasWaitingGlobalSync = Boolean(state.waitForGlobalSync);
+    let canceledImmediately = false;
+
+    await requestInpiCatalogSyncCancellation(syncId);
+
+    if (state.status === "QUEUED" && state.waitForGlobalSync) {
+      canceledImmediately = true;
+    } else if (state.status === "QUEUED" && state.queueJobId) {
+      const queue = getInpiCatalogSyncQueue();
+      const cancelAttempt = await queue.cancelJob(state.queueJobId);
+      canceledImmediately = cancelAttempt.removed;
+    }
+
+    if (canceledImmediately) {
+      state = withInpiCatalogSyncStatus(state, "CANCELED", {
+        phase: "CANCELED",
+        waitForGlobalSync: false,
+        progressPct: Math.max(1, Math.min(99, state.progressPct || 0)),
+        warning: wasWaitingGlobalSync
+          ? "A espera pela sincronização global foi cancelada pelo usuário."
+          : "Busca oficial cancelada antes do início da varredura.",
+        error: undefined,
+      });
+      await saveInpiCatalogSyncState(state);
+      await clearInpiCatalogSyncCancellation(syncId);
+
+      if (coordinationKey && !wasWaitingGlobalSync) {
+        await publishInpiCatalogGlobalFreshState(coordinationKey, state);
+        await releaseInpiCatalogGlobalInflight(coordinationKey);
+      }
+    } else {
+      state = withInpiCatalogSyncProgress(state, {
+        warning: "Cancelamento solicitado. Encerrando a busca oficial...",
+      });
+      await saveInpiCatalogSyncState(state);
+    }
+
+    await logAudit({
+      tenantId: ctx.tenantId,
+      usuarioId: ctx.id,
+      acao: "CANCELAR",
+      entidade: "INPI_CATALOGO_BUSCA",
+      dados: toAuditJson({
+        syncId: state.syncId,
+        termo: state.termo,
+        classeNice: state.classeNice,
+        statusAntes: canceledImmediately ? "QUEUED" : state.status,
+        cancelamentoImediato: canceledImmediately,
+      }),
+    });
+
+    return {
+      success: true,
+      status: toPublicInpiCatalogSearchSyncStatus(state),
+    };
+  } catch (error) {
+    logger.error("Erro ao cancelar busca em background do INPI:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao cancelar busca em background do INPI.",
+    };
+  }
+}
+
 export async function getInpiCatalogBackgroundSearchStatus(input: {
   syncId: string;
 }): Promise<{
@@ -1523,64 +1761,7 @@ export async function getInpiCatalogBackgroundSearchStatus(input: {
       };
     }
 
-    if (
-      state.waitForGlobalSync &&
-      state.status === "QUEUED" &&
-      state.coordinationKey
-    ) {
-      const redis = getRedisInstance();
-      const inflightExists = await redis.exists(
-        buildInpiCatalogGlobalInflightKey(state.coordinationKey),
-      );
-
-      if (!inflightExists) {
-        const freshPayload = parseInpiCatalogGlobalFreshPayload(
-          await redis.get(buildInpiCatalogGlobalFreshKey(state.coordinationKey)),
-        );
-        if (freshPayload?.status === "FAILED") {
-          state = withInpiCatalogSyncStatus(state, "FAILED", {
-            phase: "FAILED",
-            waitForGlobalSync: false,
-            progressPct: Math.max(1, Math.min(99, state.progressPct || 0)),
-            error:
-              freshPayload.warning ||
-              "Sincronização global finalizou com falha. Tente novamente.",
-          });
-        } else {
-          state = withInpiCatalogSyncStatus(state, "COMPLETED", {
-            phase: "COMPLETED",
-            waitForGlobalSync: false,
-            progressPct: 100,
-            scannedRows: Math.max(
-              state.scannedRows,
-              Math.max(0, freshPayload?.scannedRows ?? 0),
-            ),
-            matchedRows: Math.max(
-              state.matchedRows,
-              Math.max(0, freshPayload?.matchedRows ?? 0),
-            ),
-            persistedRows: Math.max(
-              state.persistedRows,
-              Math.max(0, freshPayload?.persistedRows ?? 0),
-            ),
-            createdCount: Math.max(
-              state.createdCount,
-              Math.max(0, freshPayload?.createdCount ?? 0),
-            ),
-            updatedCount: Math.max(
-              state.updatedCount,
-              Math.max(0, freshPayload?.updatedCount ?? 0),
-            ),
-            reachedLimit: Boolean(freshPayload?.reachedLimit),
-            reachedTimeout: Boolean(freshPayload?.reachedTimeout),
-            warning:
-              freshPayload?.warning ||
-              "Sincronização global concluída. Resultado reaproveitado para este escritório.",
-          });
-        }
-        await saveInpiCatalogSyncState(state);
-      }
-    }
+    state = await refreshReadableInpiCatalogSyncState(state);
 
     return {
       success: true,
@@ -1619,9 +1800,11 @@ export async function getInpiLatestCatalogBackgroundSearchStatus(): Promise<{
       };
     }
 
+    const resolved = await refreshReadableInpiCatalogSyncState(latest);
+
     return {
       success: true,
-      status: toPublicInpiCatalogSearchSyncStatus(latest),
+      status: toPublicInpiCatalogSearchSyncStatus(resolved),
     };
   } catch (error) {
     logger.error("Erro ao obter status mais recente de busca INPI:", error);

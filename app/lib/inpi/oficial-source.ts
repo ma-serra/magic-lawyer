@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 
+import { INPI_CATALOG_SYNC_CANCELED_ERROR } from "./catalog-sync-control";
 import { normalizeNiceClassCode } from "./nice-classes";
 import logger from "@/lib/logger";
 
@@ -414,6 +415,7 @@ export interface InpiOfficialSearchOptions {
   exhaustive?: boolean;
   maxMatches?: number;
   onProgress?: (progress: InpiOfficialSearchProgress) => Promise<void> | void;
+  shouldCancel?: () => Promise<boolean> | boolean;
 }
 
 export interface InpiOfficialSearchItem {
@@ -452,6 +454,18 @@ type CsvCandidate = {
   score: number;
 };
 
+async function throwIfSearchCanceled(
+  options: Pick<InpiOfficialSearchOptions, "shouldCancel">,
+) {
+  if (!options.shouldCancel) {
+    return;
+  }
+
+  if (await options.shouldCancel()) {
+    throw new Error(INPI_CATALOG_SYNC_CANCELED_ERROR);
+  }
+}
+
 async function searchInpiOfficialPortalSource(
   options: InpiOfficialSearchOptions,
 ): Promise<InpiOfficialSearchResult> {
@@ -485,6 +499,8 @@ async function searchInpiOfficialPortalSource(
   let reachedTimeout = false;
   let scannedRows = 0;
   let matchedRows = 0;
+
+  await throwIfSearchCanceled(options);
 
   const emitProgress = async (
     phase: InpiOfficialSearchProgress["phase"],
@@ -620,6 +636,8 @@ async function searchInpiOfficialPortalSource(
   await emitProgress("SCANNING_BIBLIOGRAPHIC");
 
   for (let page = 2; page <= totalPages; page += 1) {
+    await throwIfSearchCanceled(options);
+
     if (Date.now() - startedAt >= maxDurationMs) {
       reachedTimeout = true;
       break;
@@ -733,6 +751,8 @@ async function searchInpiOfficialCsvSource(
   let reachedTimeout = false;
   let lastProgressEmittedAt = 0;
 
+  await throwIfSearchCanceled(options);
+
   async function emitProgress(
     payload: Omit<InpiOfficialSearchProgress, "estimatedTotalRows">,
     force = false,
@@ -757,6 +777,10 @@ async function searchInpiOfficialCsvSource(
     INPI_MARCAS_BIBLIO_URL,
     async (row) => {
       scannedRows += 1;
+
+      if (scannedRows % 1000 === 0) {
+        await throwIfSearchCanceled(options);
+      }
 
       if (scannedRows % 2500 === 0) {
         await emitProgress({
@@ -872,10 +896,19 @@ async function searchInpiOfficialCsvSource(
   const classScanDeadline =
     Date.now() + Math.max(20_000, Math.floor(maxDurationMs * 0.35));
   let lastClassProgressEmittedAt = 0;
+  let classRowsScanned = 0;
+
+  await throwIfSearchCanceled(options);
 
   await forEachCsvRow(
     INPI_MARCAS_CLASSIFICACAO_NACIONAL_URL,
     async (row) => {
+      classRowsScanned += 1;
+
+      if (classRowsScanned % 1000 === 0) {
+        await throwIfSearchCanceled(options);
+      }
+
       const now = Date.now();
       if (options.onProgress && now - lastClassProgressEmittedAt >= 800) {
         lastClassProgressEmittedAt = now;
@@ -951,6 +984,8 @@ async function searchInpiOfficialCsvSource(
     .filter((item) => (classFilter ? item.classeNice === classFilter : true))
     .sort((a, b) => b.score - a.score)
     .slice(0, exhaustive ? maxMatches : limit);
+
+  await throwIfSearchCanceled(options);
 
   await emitProgress(
     {

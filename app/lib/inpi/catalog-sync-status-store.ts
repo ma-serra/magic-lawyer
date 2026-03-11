@@ -174,7 +174,9 @@ export function withInpiCatalogSyncStatus(
   const startedAt =
     status === "RUNNING" && !state.startedAt ? now : state.startedAt;
   const finishedAt =
-    status === "COMPLETED" || status === "FAILED" ? now : state.finishedAt;
+    status === "COMPLETED" || status === "CANCELED" || status === "FAILED"
+      ? now
+      : state.finishedAt;
 
   return {
     ...state,
@@ -211,4 +213,3 @@ export function withInpiCatalogSyncProgress(
     updatedAt: now,
   };
 }
-

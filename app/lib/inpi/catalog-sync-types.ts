@@ -2,6 +2,7 @@ export type InpiCatalogSyncStatus =
   | "QUEUED"
   | "RUNNING"
   | "COMPLETED"
+  | "CANCELED"
   | "FAILED";
 
 export type InpiCatalogSyncPhase =
@@ -11,6 +12,7 @@ export type InpiCatalogSyncPhase =
   | "PERSISTING"
   | "FINALIZING"
   | "COMPLETED"
+  | "CANCELED"
   | "FAILED";
 
 export interface InpiCatalogSyncJobData {
@@ -56,5 +58,7 @@ export interface InpiCatalogSyncState {
 export function isInpiCatalogSyncTerminalStatus(
   status: InpiCatalogSyncStatus,
 ) {
-  return status === "COMPLETED" || status === "FAILED";
+  return (
+    status === "COMPLETED" || status === "CANCELED" || status === "FAILED"
+  );
 }

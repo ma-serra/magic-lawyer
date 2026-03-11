@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 import {
+  cancelInpiCatalogBackgroundSearch,
   createInpiDossie,
   getInpiCatalogBackgroundSearchStatus,
   getInpiBuscaHistoryDetails,
@@ -53,6 +54,7 @@ import {
   type InpiDossieItem,
   type InpiNiceClassItem,
 } from "@/app/actions/inpi";
+import { estimateInpiCatalogSyncEtaSeconds } from "@/app/lib/inpi/catalog-sync-runtime";
 import {
   PeopleEntityCard,
   PeopleEntityCardBody,
@@ -263,6 +265,7 @@ export function InpiContent({
   );
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [isCatalogSyncStarting, setIsCatalogSyncStarting] = useState(false);
+  const [isCatalogSyncCanceling, setIsCatalogSyncCanceling] = useState(false);
   const [catalogExecution, setCatalogExecution] = useState<{
     termo: string;
     classeNice: string;
@@ -395,7 +398,7 @@ export function InpiContent({
     },
   );
 
-  const { data: latestCatalogSyncStatus } = useSWR<
+  const { data: latestCatalogSyncStatus, mutate: mutateLatestCatalogSyncStatus } = useSWR<
     InpiCatalogSearchSyncStatus | undefined
   >(
     "inpi-catalog-sync-latest",
@@ -698,7 +701,10 @@ export function InpiContent({
         }
 
         setActiveCatalogSyncId(start.syncId);
-        await mutateCatalogSyncStatus();
+        await Promise.all([
+          mutateCatalogSyncStatus(),
+          mutateLatestCatalogSyncStatus(),
+        ]);
 
         if (start.alreadyRunning) {
           toast.info("Já existe uma varredura completa em andamento para este termo.");
@@ -713,8 +719,42 @@ export function InpiContent({
         setIsCatalogSyncStarting(false);
       }
     },
-    [mutateCatalogSyncStatus],
+    [mutateCatalogSyncStatus, mutateLatestCatalogSyncStatus],
   );
+
+  const handleCancelCatalogSync = useCallback(async () => {
+    if (!catalogSyncStatus?.syncId) {
+      return;
+    }
+
+    setIsCatalogSyncCanceling(true);
+
+    try {
+      const result = await cancelInpiCatalogBackgroundSearch({
+        syncId: catalogSyncStatus.syncId,
+      });
+
+      if (!result.success || !result.status) {
+        toast.error(result.error || "Não foi possível cancelar a busca oficial.");
+        return;
+      }
+
+      await Promise.all([
+        mutateCatalogSyncStatus(result.status, { revalidate: false }),
+        mutateLatestCatalogSyncStatus(),
+      ]);
+
+      if (result.status.status === "CANCELED") {
+        toast.success("Busca oficial cancelada.");
+      } else {
+        toast.info("Cancelamento solicitado. Encerrando o processamento.");
+      }
+    } catch {
+      toast.error("Não foi possível cancelar a busca oficial.");
+    } finally {
+      setIsCatalogSyncCanceling(false);
+    }
+  }, [catalogSyncStatus, mutateCatalogSyncStatus, mutateLatestCatalogSyncStatus]);
 
   const handleCatalogSearch = useCallback(async () => {
     const termo = catalogSearch.termo.trim();
@@ -821,7 +861,10 @@ export function InpiContent({
     const current = catalogSyncStatus.status;
     lastCatalogSyncStatusRef.current = current;
     const statusChanged = previous !== current;
-    const isTerminal = current === "COMPLETED" || current === "FAILED";
+    const isTerminal =
+      current === "COMPLETED" ||
+      current === "CANCELED" ||
+      current === "FAILED";
     const terminalFingerprint = isTerminal
       ? `${catalogSyncStatus.syncId}:${current}:${catalogSyncStatus.updatedAt}`
       : null;
@@ -867,6 +910,12 @@ export function InpiContent({
         catalogSyncStatus.error || "A busca completa oficial falhou no background.",
       );
       void mutateHistory();
+    }
+
+    if (current === "CANCELED") {
+      toast.info(
+        catalogSyncStatus.warning || "A busca completa oficial foi cancelada.",
+      );
     }
   }, [catalogSyncStatus, mutateHistory, runLocalCatalogSearch]);
 
@@ -1036,6 +1085,15 @@ export function InpiContent({
       (catalogSyncStatus.status === "QUEUED" ||
         catalogSyncStatus.status === "RUNNING"),
   );
+  const canCancelCatalogSync = Boolean(
+    catalogSyncStatus &&
+      (catalogSyncStatus.status === "QUEUED" ||
+        catalogSyncStatus.status === "RUNNING"),
+  );
+  const isCatalogSyncCancellationPending = Boolean(
+    canCancelCatalogSync &&
+      catalogSyncStatus?.warning?.startsWith("Cancelamento solicitado"),
+  );
   const queuedElapsedSeconds = useMemo(() => {
     if (!catalogSyncStatus || catalogSyncStatus.status !== "QUEUED") {
       return 0;
@@ -1049,35 +1107,7 @@ export function InpiContent({
     return Math.max(0, Math.floor((Date.now() - queuedAt) / 1000));
   }, [catalogSyncStatus]);
   const catalogSyncEtaSeconds = useMemo(() => {
-    if (!catalogSyncStatus?.startedAt) {
-      return undefined;
-    }
-
-    if (
-      catalogSyncStatus.status !== "RUNNING" &&
-      catalogSyncStatus.status !== "QUEUED"
-    ) {
-      return undefined;
-    }
-
-    if (catalogSyncStatus.progressPct <= 0 || catalogSyncStatus.progressPct >= 100) {
-      return undefined;
-    }
-
-    const startedAt = new Date(catalogSyncStatus.startedAt).getTime();
-    if (!Number.isFinite(startedAt) || startedAt <= 0) {
-      return undefined;
-    }
-
-    const elapsedSeconds = Math.max(1, (Date.now() - startedAt) / 1000);
-    const estimatedTotalSeconds = elapsedSeconds / (catalogSyncStatus.progressPct / 100);
-    const remaining = Math.max(0, estimatedTotalSeconds - elapsedSeconds);
-
-    if (!Number.isFinite(remaining)) {
-      return undefined;
-    }
-
-    return remaining;
+    return estimateInpiCatalogSyncEtaSeconds(catalogSyncStatus);
   }, [catalogSyncStatus]);
 
   const clearFilters = () => {
@@ -1485,6 +1515,8 @@ export function InpiContent({
                           : "Busca enfileirada para execução."
                         : catalogSyncStatus.status === "RUNNING"
                           ? "Varredura completa em execução."
+                          : catalogSyncStatus.status === "CANCELED"
+                            ? "Varredura completa cancelada."
                           : catalogSyncStatus.status === "COMPLETED"
                             ? "Varredura completa concluída."
                             : "Varredura completa falhou."}
@@ -1496,16 +1528,32 @@ export function InpiContent({
                         : ""}
                     </p>
                   </div>
-                  <CircularProgress
-                    aria-label="Progresso da busca oficial INPI"
-                    color="warning"
-                    showValueLabel
-                    size="lg"
-                    value={Math.max(
-                      1,
-                      Math.min(100, catalogSyncStatus.progressPct || 0),
-                    )}
-                  />
+                  <div className="flex items-center gap-2">
+                    {canCancelCatalogSync ? (
+                      <Button
+                        color="danger"
+                        isDisabled={
+                          isCatalogSyncCanceling || isCatalogSyncCancellationPending
+                        }
+                        isLoading={isCatalogSyncCanceling}
+                        size="sm"
+                        variant="flat"
+                        onPress={handleCancelCatalogSync}
+                      >
+                        {isCatalogSyncCancellationPending ? "Cancelando..." : "Cancelar"}
+                      </Button>
+                    ) : null}
+                    <CircularProgress
+                      aria-label="Progresso da busca oficial INPI"
+                      color="warning"
+                      showValueLabel
+                      size="lg"
+                      value={Math.max(
+                        1,
+                        Math.min(100, catalogSyncStatus.progressPct || 0),
+                      )}
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -1530,9 +1578,15 @@ export function InpiContent({
                       ETA aproximado
                     </p>
                     <p className="text-sm font-semibold text-foreground">
-                      {isCatalogSyncRunning
+                      {catalogSyncStatus.status === "RUNNING"
                         ? formatEta(catalogSyncEtaSeconds)
-                        : "finalizado"}
+                        : catalogSyncStatus.status === "QUEUED"
+                          ? "na fila"
+                          : catalogSyncStatus.status === "CANCELED"
+                            ? "cancelado"
+                            : catalogSyncStatus.status === "FAILED"
+                              ? "falhou"
+                              : "finalizado"}
                     </p>
                   </div>
                 </div>
@@ -1542,8 +1596,8 @@ export function InpiContent({
                 queuedElapsedSeconds >= 90 ? (
                   <p className="mt-2 text-[11px] text-warning-700 dark:text-warning-300">
                     Busca ainda na fila há {formatEta(queuedElapsedSeconds)}. Se
-                    continuar assim, inicie o worker local (`npm run dev:worker`)
-                    para consumir a fila.
+                    continuar assim, verifique se o worker assíncrono do ambiente
+                    está ativo para consumir a fila.
                   </p>
                 ) : null}
 

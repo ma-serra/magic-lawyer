@@ -48,6 +48,35 @@ export class InpiCatalogSyncQueue {
     };
   }
 
+  async cancelJob(jobId: string): Promise<{
+    removed: boolean;
+    state: string | null;
+  }> {
+    const job = await this.queue.getJob(jobId);
+
+    if (!job) {
+      return {
+        removed: false,
+        state: null,
+      };
+    }
+
+    const state = await job.getState();
+
+    try {
+      await job.remove();
+      return {
+        removed: true,
+        state,
+      };
+    } catch {
+      return {
+        removed: false,
+        state,
+      };
+    }
+  }
+
   async close() {
     await this.queue.close();
   }
@@ -62,4 +91,3 @@ export function getInpiCatalogSyncQueue() {
 
   return inpiCatalogSyncQueue;
 }
-
