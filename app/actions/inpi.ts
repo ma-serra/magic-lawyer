@@ -9,6 +9,10 @@ import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import { INPI_DEFAULT_CATALOG } from "@/app/lib/inpi/default-catalog";
 import { getInpiCatalogSyncQueue } from "@/app/lib/inpi/catalog-sync-queue";
 import {
+  getInpiOfficialBackgroundSearchDisabledReason,
+  isInpiOfficialBackgroundSearchEnabled,
+} from "@/app/lib/inpi/catalog-sync-config";
+import {
   clearInpiCatalogSyncCancellation,
   requestInpiCatalogSyncCancellation,
 } from "@/app/lib/inpi/catalog-sync-control";
@@ -391,10 +395,57 @@ async function releaseInpiCatalogGlobalInflight(coordinationKey: string) {
   await redis.del(buildInpiCatalogGlobalInflightKey(coordinationKey));
 }
 
+async function stopInpiCatalogSyncBecauseDisabled(
+  state: InpiCatalogSyncState,
+): Promise<InpiCatalogSyncState> {
+  if (isInpiCatalogSyncTerminalStatus(state.status)) {
+    return state;
+  }
+
+  const warning =
+    getInpiOfficialBackgroundSearchDisabledReason() ||
+    "A busca oficial foi encerrada automaticamente porque a varredura em background está desabilitada neste ambiente.";
+  const coordinationKey = state.coordinationKey;
+  const wasWaitingGlobalSync = Boolean(state.waitForGlobalSync);
+
+  await requestInpiCatalogSyncCancellation(state.syncId);
+
+  if (state.status === "QUEUED" && state.queueJobId && !state.waitForGlobalSync) {
+    const queue = getInpiCatalogSyncQueue();
+    await queue.cancelJob(state.queueJobId);
+  }
+
+  const next = withInpiCatalogSyncStatus(state, "CANCELED", {
+    phase: "CANCELED",
+    waitForGlobalSync: false,
+    progressPct: Math.max(1, Math.min(99, state.progressPct || 0)),
+    warning,
+    error: undefined,
+  });
+  await saveInpiCatalogSyncState(next);
+
+  if (coordinationKey) {
+    await publishInpiCatalogGlobalFreshState(coordinationKey, next);
+
+    if (!wasWaitingGlobalSync) {
+      await releaseInpiCatalogGlobalInflight(coordinationKey);
+    }
+  }
+
+  return next;
+}
+
 async function refreshReadableInpiCatalogSyncState(
   state: InpiCatalogSyncState,
 ): Promise<InpiCatalogSyncState> {
   let next = state;
+
+  if (
+    !isInpiOfficialBackgroundSearchEnabled() &&
+    !isInpiCatalogSyncTerminalStatus(next.status)
+  ) {
+    return stopInpiCatalogSyncBecauseDisabled(next);
+  }
 
   if (
     next.waitForGlobalSync &&
@@ -1364,6 +1415,7 @@ export async function startInpiCatalogBackgroundSearch(input: {
   syncId?: string;
   status?: InpiCatalogSearchSyncStatus;
   alreadyRunning?: boolean;
+  disabled?: boolean;
   error?: string;
   retryAfterSeconds?: number;
 }> {
@@ -1380,6 +1432,29 @@ export async function startInpiCatalogBackgroundSearch(input: {
       };
     }
 
+    const termNormalized = normalizeTerm(termo);
+
+    if (!isInpiOfficialBackgroundSearchEnabled()) {
+      const latest = await getLatestInpiCatalogSyncState({
+        tenantId: ctx.tenantId,
+        usuarioId: ctx.id,
+        termo,
+        classeNice,
+      });
+
+      if (latest && !isInpiCatalogSyncTerminalStatus(latest.status)) {
+        await stopInpiCatalogSyncBecauseDisabled(latest);
+      }
+
+      return {
+        success: false,
+        disabled: true,
+        error:
+          getInpiOfficialBackgroundSearchDisabledReason() ||
+          "A varredura oficial completa está desabilitada neste ambiente.",
+      };
+    }
+
     try {
       await initNotificationWorker();
     } catch (workerError) {
@@ -1389,7 +1464,6 @@ export async function startInpiCatalogBackgroundSearch(input: {
       );
     }
 
-    const termNormalized = normalizeTerm(termo);
     const coordinationKey = buildInpiCatalogGlobalCoordinationKey(
       termNormalized,
       classeNice,
