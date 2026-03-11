@@ -224,15 +224,11 @@ function formatEta(seconds?: number) {
 interface InpiContentProps {
   canSyncCatalog?: boolean;
   canWrite?: boolean;
-  officialBackgroundSearchEnabled?: boolean;
-  officialBackgroundSearchMessage?: string;
 }
 
 export function InpiContent({
   canSyncCatalog = false,
   canWrite = true,
-  officialBackgroundSearchEnabled = true,
-  officialBackgroundSearchMessage,
 }: InpiContentProps) {
   const [filtros, setFiltros] = useState<{
     search: string;
@@ -698,14 +694,9 @@ export function InpiContent({
           const retryMessage = retryLabel
             ? ` Tente novamente em ${retryLabel}.`
             : "";
-          const feedbackMessage = `${
-            start.error || "Não foi possível iniciar a busca completa."
-          }${retryMessage}`;
-          if (start.disabled) {
-            toast.warning(feedbackMessage);
-          } else {
-            toast.error(feedbackMessage);
-          }
+          toast.error(
+            `${start.error || "Não foi possível iniciar a busca completa."}${retryMessage}`,
+          );
           return false;
         }
 
@@ -786,25 +777,18 @@ export function InpiContent({
         termo,
         classeNice,
       });
-      if (officialBackgroundSearchEnabled) {
-        await enqueueCatalogBackgroundSearch({
-          termo,
-          classeNice,
-          forceRefresh: false,
-        });
-      }
+      await enqueueCatalogBackgroundSearch({
+        termo,
+        classeNice,
+        forceRefresh: false,
+      });
     } catch {
       toast.error("Erro ao pesquisar catálogo INPI");
     } finally {
       setIsCatalogLoading(false);
       setCatalogExecution(null);
     }
-  }, [
-    catalogSearch,
-    enqueueCatalogBackgroundSearch,
-    officialBackgroundSearchEnabled,
-    runLocalCatalogSearch,
-  ]);
+  }, [catalogSearch, enqueueCatalogBackgroundSearch, runLocalCatalogSearch]);
 
   const handleForceCatalogResync = useCallback(async () => {
     const termo = catalogSearch.termo.trim();
@@ -815,25 +799,12 @@ export function InpiContent({
       return;
     }
 
-    if (!officialBackgroundSearchEnabled) {
-      toast.warning(
-        officialBackgroundSearchMessage ||
-          "A varredura oficial completa está desabilitada neste ambiente.",
-      );
-      return;
-    }
-
     await enqueueCatalogBackgroundSearch({
       termo,
       classeNice,
       forceRefresh: true,
     });
-  }, [
-    catalogSearch,
-    enqueueCatalogBackgroundSearch,
-    officialBackgroundSearchEnabled,
-    officialBackgroundSearchMessage,
-  ]);
+  }, [catalogSearch, enqueueCatalogBackgroundSearch]);
 
   const handleRunFromHistory = useCallback(
     async (item: InpiBuscaHistoryItem) => {
@@ -858,13 +829,11 @@ export function InpiContent({
 
       try {
         await runLocalCatalogSearch({ termo, classeNice });
-        if (officialBackgroundSearchEnabled) {
-          await enqueueCatalogBackgroundSearch({
-            termo,
-            classeNice,
-            forceRefresh: true,
-          });
-        }
+        await enqueueCatalogBackgroundSearch({
+          termo,
+          classeNice,
+          forceRefresh: true,
+        });
       } catch {
         toast.error("Erro ao executar consulta a partir do histórico.");
       } finally {
@@ -872,11 +841,7 @@ export function InpiContent({
         setCatalogExecution(null);
       }
     },
-    [
-      enqueueCatalogBackgroundSearch,
-      officialBackgroundSearchEnabled,
-      runLocalCatalogSearch,
-    ],
+    [enqueueCatalogBackgroundSearch, runLocalCatalogSearch],
   );
 
   const handleOpenHistoryDetails = useCallback((item: InpiBuscaHistoryItem) => {
@@ -1430,11 +1395,7 @@ export function InpiContent({
 
         <PeoplePanel
           title="Pesquisa no catálogo global"
-          description={
-            officialBackgroundSearchEnabled
-              ? "Consulta imediata na base local e varredura completa em background na fonte oficial do INPI."
-              : "Consulta imediata na base local. A varredura oficial completa em background está desabilitada neste ambiente."
-          }
+          description="Consulta imediata na base local e varredura completa em background na fonte oficial do INPI."
         >
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-[1fr_260px]">
@@ -1499,7 +1460,6 @@ export function InpiContent({
               <Button
                 isDisabled={
                   !catalogSearch.termo.trim() ||
-                  !officialBackgroundSearchEnabled ||
                   isCatalogSyncStarting ||
                   isCatalogSyncRunning
                 }
@@ -1519,26 +1479,9 @@ export function InpiContent({
               </Button>
             </div>
             <p className="text-[11px] text-default-400">
-              {officialBackgroundSearchEnabled
-                ? "O resultado local aparece na hora. Em paralelo, a varredura completa oficial roda em background sem travar a tela."
-                : officialBackgroundSearchMessage ||
-                  "O resultado local aparece na hora. A varredura oficial completa está desabilitada neste ambiente."}
+              O resultado local aparece na hora. Em paralelo, a varredura completa
+              oficial roda em background para evitar travamento.
             </p>
-
-            {!officialBackgroundSearchEnabled ? (
-              <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 p-3">
-                <ShieldAlert className="mt-0.5 h-4 w-4 text-danger" />
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-danger">
-                    Varredura oficial em background bloqueada neste ambiente
-                  </p>
-                  <p className="text-[11px] text-danger/80">
-                    {officialBackgroundSearchMessage ||
-                      "A pesquisa local segue disponível, mas a varredura completa foi desligada para evitar consumo contínuo de recursos."}
-                  </p>
-                </div>
-              </div>
-            ) : null}
 
             {isCatalogLoading && catalogExecution ? (
               <div className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/10 p-3">

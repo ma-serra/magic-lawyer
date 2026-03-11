@@ -4,8 +4,6 @@
  * durante build e renderização no servidor.
  */
 
-import { shouldBootstrapAppRuntimeWorkers } from "@/app/lib/inpi/catalog-sync-config";
-
 let workerInitialized = false;
 
 /**
@@ -15,10 +13,6 @@ export async function initNotificationWorker(): Promise<void> {
   // Verificar se estamos no servidor
   if (typeof window !== "undefined") {
     return; // Não executar no cliente
-  }
-
-  if (!shouldBootstrapAppRuntimeWorkers()) {
-    return;
   }
 
   // Verificar se worker já foi iniciado

@@ -5,10 +5,6 @@ import { InpiContent } from "./inpi-content";
 
 import { checkPermission } from "@/app/actions/equipe";
 import { getSession } from "@/app/lib/auth";
-import {
-  getInpiOfficialBackgroundSearchDisabledReason,
-  isInpiOfficialBackgroundSearchEnabled,
-} from "@/app/lib/inpi/catalog-sync-config";
 import { UserRole } from "@/generated/prisma";
 
 export const metadata: Metadata = {
@@ -20,10 +16,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function InpiPage() {
-  const officialBackgroundSearchEnabled =
-    isInpiOfficialBackgroundSearchEnabled();
-  const officialBackgroundSearchMessage =
-    getInpiOfficialBackgroundSearchDisabledReason();
   const session = await getSession();
 
   if (!session?.user) {
@@ -43,13 +35,7 @@ export default async function InpiPage() {
   }
 
   if (user.role === UserRole.ADMIN) {
-    return (
-      <InpiContent
-        canSyncCatalog
-        officialBackgroundSearchEnabled={officialBackgroundSearchEnabled}
-        officialBackgroundSearchMessage={officialBackgroundSearchMessage}
-      />
-    );
+    return <InpiContent canSyncCatalog />;
   }
 
   try {
@@ -61,14 +47,7 @@ export default async function InpiPage() {
 
     const canWrite = await checkPermission("causas", "editar");
 
-    return (
-      <InpiContent
-        canSyncCatalog={false}
-        canWrite={canWrite}
-        officialBackgroundSearchEnabled={officialBackgroundSearchEnabled}
-        officialBackgroundSearchMessage={officialBackgroundSearchMessage}
-      />
-    );
+    return <InpiContent canSyncCatalog={false} canWrite={canWrite} />;
   } catch {
     redirect("/dashboard");
   }
