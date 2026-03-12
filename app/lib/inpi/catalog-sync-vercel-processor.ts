@@ -32,7 +32,7 @@ import {
 
 const INPI_CATALOG_GLOBAL_FRESH_TTL_SECONDS = 2 * 60;
 const INPI_CATALOG_GLOBAL_INFLIGHT_TTL_SECONDS = 25 * 60;
-const INPI_CATALOG_SYNC_PAGES_PER_BATCH = 8;
+const INPI_CATALOG_SYNC_PAGES_PER_BATCH = 4;
 const INPI_CATALOG_SYNC_MAX_DELIVERIES = 6;
 
 function buildInpiCatalogGlobalInflightKey(coordinationKey: string) {
@@ -113,6 +113,25 @@ function calculateProgressPct(currentPage: number, totalPages: number) {
   }
 
   return Math.max(1, Math.min(95, Math.round((currentPage / totalPages) * 95)));
+}
+
+function describeSyncProcessingError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+
+  return "Erro inesperado na fila Vercel.";
 }
 
 async function finalizeTerminalState(state: Awaited<
@@ -330,14 +349,15 @@ export async function processInpiCatalogSyncVercelMessage(
       return;
     }
 
-    const messageText =
-      error instanceof Error ? error.message : "Erro inesperado na fila Vercel.";
+    const messageText = describeSyncProcessingError(error);
 
     logger.error("[InpiCatalogSyncVercel] Erro ao processar mensagem", {
       syncId: message.syncId,
       pageStart: message.pageStart,
       deliveryCount: metadata.deliveryCount,
       error: messageText,
+      errorType:
+        error === null ? "null" : Array.isArray(error) ? "array" : typeof error,
     });
 
     if (metadata.deliveryCount >= INPI_CATALOG_SYNC_MAX_DELIVERIES) {

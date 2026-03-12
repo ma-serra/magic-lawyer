@@ -243,9 +243,20 @@ async function fetchWithTimeout(
       cache: "no-store",
     });
   } catch (error) {
+    const errorName =
+      error && typeof error === "object" && "name" in error ? String(error.name) : "";
+    const errorMessage =
+      error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : typeof error === "string"
+          ? error
+          : "";
+
     if (
-      error instanceof Error &&
-      (error.name === "AbortError" || error.message.includes("AbortError"))
+      controller.signal.aborted ||
+      errorName === "AbortError" ||
+      errorMessage.includes("AbortError") ||
+      errorMessage.includes("portal_fetch_timeout")
     ) {
       throw new Error("Tempo limite ao consultar portal oficial do INPI");
     }
