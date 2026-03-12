@@ -9,7 +9,6 @@ import {
   useTransition,
 } from "react";
 import Image from "next/image";
-import NextLink from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -30,6 +29,8 @@ import { Tooltip } from "@heroui/react";
 import { useSession } from "next-auth/react";
 
 import { fetchSystemStatus } from "@/app/actions/system-status";
+import type { AuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
+import { AppNavLink } from "@/components/app-nav-link";
 import type { ExternalServiceStatus } from "@/app/actions/system-status";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { Logo } from "@/components/icons";
@@ -630,6 +631,7 @@ export type SidebarNavItem = {
   isAccordion?: boolean;
   compactChildrenCount?: number;
   section?: string;
+  prefetchStrategy?: AuthenticatedNavPrefetchStrategy;
 };
 
 export type SidebarProps = {
@@ -751,13 +753,14 @@ const AccordionNavItem = ({
                     delay={300}
                     placement="right"
                   >
-                    <NextLink
+                    <AppNavLink
                       className={
                         isChildActive
                           ? "flex items-center gap-2 rounded-xl px-3 py-1.5 text-[13px] transition bg-primary/25 text-primary"
                           : "flex items-center gap-2 rounded-xl px-3 py-1.5 text-[13px] transition text-default-400 hover:bg-default-100 hover:text-default-900"
                       }
                       href={child.href}
+                      prefetchStrategy={child.prefetchStrategy}
                       onClick={() => {
                         if (!isDesktop && onCloseMobile) {
                           onCloseMobile();
@@ -772,7 +775,7 @@ const AccordionNavItem = ({
                         }
                       />
                       <span className="truncate">{child.label}</span>
-                    </NextLink>
+                    </AppNavLink>
                   </Tooltip>
                 </li>
               );
@@ -1084,13 +1087,14 @@ function SidebarContent({
 
                   return (
                     <li key={item.href}>
-                      <NextLink
+                      <AppNavLink
                         className={
                           isActive
                             ? "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition justify-center bg-primary/25 text-primary"
                             : "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition justify-center text-default-400 hover:bg-default-100 hover:text-default-900"
                         }
                         href={item.href}
+                        prefetchStrategy={item.prefetchStrategy}
                         onClick={() => {
                           if (!isDesktop && onCloseMobile) {
                             onCloseMobile();
@@ -1098,7 +1102,7 @@ function SidebarContent({
                         }}
                       >
                         <span className="shrink-0 text-base">{icon}</span>
-                      </NextLink>
+                      </AppNavLink>
                     </li>
                   );
                 })}
@@ -1129,13 +1133,14 @@ function SidebarContent({
                   // Item normal sem accordion
                   return (
                     <li key={item.href}>
-                      <NextLink
+                      <AppNavLink
                         className={
                           isActive
                             ? "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition bg-primary/25 text-primary"
                             : "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition text-default-400 hover:bg-default-100 hover:text-default-900"
                         }
                         href={item.href}
+                        prefetchStrategy={item.prefetchStrategy}
                         onClick={() => {
                           if (!isDesktop && onCloseMobile) {
                             onCloseMobile();
@@ -1144,7 +1149,7 @@ function SidebarContent({
                       >
                         <span className="shrink-0 text-base">{icon}</span>
                         <span className="truncate">{item.label}</span>
-                      </NextLink>
+                      </AppNavLink>
                     </li>
                   );
                 })}
@@ -1280,7 +1285,7 @@ function SidebarContent({
             />
           ) : null}
           <Button
-            as={NextLink}
+            as={AppNavLink}
             className={clsx(
               "group w-full border shadow-none transition-all duration-200",
               collapsed
@@ -1290,6 +1295,7 @@ function SidebarContent({
             color="default"
             href="/suporte"
             isIconOnly={collapsed}
+            prefetchStrategy="none"
             radius="lg"
             variant="flat"
           >

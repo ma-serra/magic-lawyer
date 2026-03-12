@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 
+import { getAuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
 import { AppSidebar, type SidebarNavItem } from "@/components/app-sidebar";
 import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
@@ -30,10 +31,14 @@ export function AppShell({ children }: AppShellProps) {
       href: item.href,
       description: item.description,
       compactChildrenCount: item.compactChildrenCount,
+      prefetchStrategy:
+        item.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(item.href),
       children: item.children?.map((child) => ({
         label: child.label,
         href: child.href,
         description: child.description,
+        prefetchStrategy:
+          child.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(child.href),
       })),
       isAccordion: item.isAccordion,
       section: item.section, // ✨ Adicionar seção
@@ -46,6 +51,8 @@ export function AppShell({ children }: AppShellProps) {
       href: item.href,
       description: item.description,
       compactChildrenCount: item.compactChildrenCount,
+      prefetchStrategy:
+        item.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(item.href),
       section: item.section, // ✨ Adicionar seção
     }));
   }, [secondaryNavigationItems]);

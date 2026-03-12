@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 
+import { getAuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
 import { AppSidebar, type SidebarNavItem } from "@/components/app-sidebar";
 import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
@@ -28,8 +29,15 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
     return navigationItems.map((item) => ({
       label: item.label,
       href: item.href,
+      description: item.description,
       compactChildrenCount: item.compactChildrenCount,
-      children: item.children,
+      prefetchStrategy:
+        item.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(item.href),
+      children: item.children?.map((child) => ({
+        ...child,
+        prefetchStrategy:
+          child.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(child.href),
+      })),
       isAccordion: item.isAccordion,
     }));
   }, [navigationItems]);
@@ -38,8 +46,15 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
     return secondaryNavigationItems.map((item) => ({
       label: item.label,
       href: item.href,
+      description: item.description,
       compactChildrenCount: item.compactChildrenCount,
-      children: item.children,
+      prefetchStrategy:
+        item.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(item.href),
+      children: item.children?.map((child) => ({
+        ...child,
+        prefetchStrategy:
+          child.prefetchStrategy ?? getAuthenticatedNavPrefetchStrategy(child.href),
+      })),
       isAccordion: item.isAccordion,
     }));
   }, [secondaryNavigationItems]);

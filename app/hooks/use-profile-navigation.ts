@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 
+import type { AuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
+
 import { useUserPermissions } from "./use-user-permissions";
 import { useTenantModules } from "./use-tenant-modules";
 import { useModuleRouteMap } from "./use-module-route-map";
@@ -16,6 +18,7 @@ export interface NavigationItem {
   compactChildrenCount?: number;
   section?: string;
   requiredModules?: string[];
+  prefetchStrategy?: AuthenticatedNavPrefetchStrategy;
 }
 
 function filterNavigation(

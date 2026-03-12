@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 
+import type { AuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
+
 export interface NavigationItem {
   label: string;
   href: string;
@@ -9,6 +11,7 @@ export interface NavigationItem {
   isAccordion?: boolean;
   compactChildrenCount?: number;
   children?: NavigationItem[];
+  prefetchStrategy?: AuthenticatedNavPrefetchStrategy;
 }
 
 export function useAdminNavigation() {
