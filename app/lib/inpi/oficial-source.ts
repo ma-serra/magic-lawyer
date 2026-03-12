@@ -466,6 +466,33 @@ async function throwIfSearchCanceled(
   }
 }
 
+export interface InpiOfficialPortalBatchProgress {
+  currentPage: number;
+  totalPages: number;
+  totalFound: number;
+  scannedRows: number;
+}
+
+export interface InpiOfficialPortalBatchOptions {
+  term: string;
+  classNice?: string;
+  pageStart: number;
+  maxPages?: number;
+  shouldCancel?: () => Promise<boolean> | boolean;
+  onPage?: (
+    progress: InpiOfficialPortalBatchProgress,
+  ) => Promise<void> | void;
+}
+
+export interface InpiOfficialPortalBatchResult {
+  items: InpiOfficialSearchItem[];
+  totalPages: number;
+  totalFound: number;
+  scannedRows: number;
+  pageStart: number;
+  pageEnd: number;
+}
+
 async function searchInpiOfficialPortalSource(
   options: InpiOfficialSearchOptions,
 ): Promise<InpiOfficialSearchResult> {
@@ -700,6 +727,188 @@ async function searchInpiOfficialPortalSource(
     matchedRows: Math.max(matchedRows, aggregate.size),
     reachedLimit,
     reachedTimeout,
+  };
+}
+
+export async function searchInpiOfficialPortalPageBatch(
+  options: InpiOfficialPortalBatchOptions,
+): Promise<InpiOfficialPortalBatchResult> {
+  const term = options.term.trim();
+  const termNormalized = normalizeTerm(term);
+
+  if (!termNormalized || termNormalized.length < 2) {
+    return {
+      items: [],
+      totalPages: 0,
+      totalFound: 0,
+      scannedRows: 0,
+      pageStart: 1,
+      pageEnd: 0,
+    };
+  }
+
+  const classFilter = classToNice(options.classNice);
+  const registerPerPage = 100;
+  const pageStart = Math.max(1, Math.floor(options.pageStart || 1));
+  const maxPages = Math.max(1, Math.floor(options.maxPages ?? 8));
+
+  await throwIfSearchCanceled(options);
+
+  const loginResponse = await fetchWithTimeout(
+    INPI_PORTAL_LOGIN_URL,
+    {
+      method: "GET",
+      headers: {
+        "user-agent": INPI_PORTAL_USER_AGENT,
+      },
+    },
+    12_000,
+  );
+
+  if (!loginResponse.ok) {
+    throw new Error(`Falha ao iniciar sessão no portal INPI (${loginResponse.status})`);
+  }
+
+  const cookie = extractCookieHeaderFromResponse(loginResponse);
+
+  const body = new URLSearchParams();
+  body.set("marca", term);
+  body.set("classeInter", classFilter || "");
+  body.set("registerPerPage", String(registerPerPage));
+  body.set("Action", "searchMarca");
+  body.set("tipoPesquisa", "BY_MARCA_CLASSIF_BASICA");
+  body.set("buscaExata", "nao");
+  body.set("txt", "Pesquisa Radical");
+  body.set("botao", "pesquisar");
+
+  const firstResponse = await fetchWithTimeout(
+    INPI_PORTAL_SEARCH_URL,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        cookie,
+        referer: INPI_PORTAL_SEARCH_REFERER,
+        "user-agent": INPI_PORTAL_USER_AGENT,
+      },
+      body: body.toString(),
+      redirect: "follow",
+    },
+    15_000,
+  );
+
+  if (!firstResponse.ok) {
+    throw new Error(`Falha na busca oficial do portal INPI (${firstResponse.status})`);
+  }
+
+  const firstHtml = await readResponseText(firstResponse);
+  const firstSummary = parsePortalSummary(firstHtml);
+  const totalPages = Math.max(1, firstSummary.totalPages);
+  const targetPageEnd = Math.min(totalPages, pageStart + maxPages - 1);
+  const aggregate = new Map<string, InpiOfficialSearchItem>();
+  let scannedRows = 0;
+
+  const ingestRows = (rows: InpiPortalRow[]) => {
+    for (const row of rows) {
+      scannedRows += 1;
+
+      const scoreBase = computeNameScore(termNormalized, row.nome);
+      if (scoreBase < 40) {
+        continue;
+      }
+
+      const score =
+        row.classeNice && classFilter && row.classeNice === classFilter
+          ? Math.min(scoreBase + 8, 100)
+          : scoreBase;
+
+      if (score < 40) {
+        continue;
+      }
+
+      const key = [
+        row.processoNumero,
+        normalizeTerm(row.nome),
+        normalizeNiceClassCode(row.classeNice) || "sem-classe",
+      ].join("|");
+
+      const next: InpiOfficialSearchItem = {
+        nome: row.nome,
+        classeNice: row.classeNice,
+        processoNumero: row.processoNumero,
+        titular: row.titular,
+        status: row.status,
+        dataDeposito: null,
+        score,
+      };
+      const previous = aggregate.get(key);
+
+      if (!previous || next.score > previous.score) {
+        aggregate.set(key, next);
+      }
+    }
+  };
+
+  const emitPageProgress = async (currentPage: number) => {
+    if (!options.onPage) {
+      return;
+    }
+
+    await options.onPage({
+      currentPage,
+      totalPages,
+      totalFound: firstSummary.totalFound,
+      scannedRows,
+    });
+  };
+
+  if (pageStart === 1) {
+    ingestRows(parsePortalRows(firstHtml));
+    await emitPageProgress(1);
+  }
+
+  for (let page = Math.max(2, pageStart); page <= targetPageEnd; page += 1) {
+    await throwIfSearchCanceled(options);
+
+    const pageResponse = await fetchWithTimeout(
+      `${INPI_PORTAL_SEARCH_URL}?Action=nextPageMarca&page=${page}`,
+      {
+        method: "GET",
+        headers: {
+          cookie,
+          referer: INPI_PORTAL_SEARCH_REFERER,
+          "user-agent": INPI_PORTAL_USER_AGENT,
+        },
+      },
+      12_000,
+    );
+
+    if (!pageResponse.ok) {
+      throw new Error(`Falha na busca oficial do portal INPI (${pageResponse.status})`);
+    }
+
+    const pageHtml = await readResponseText(pageResponse);
+    ingestRows(parsePortalRows(pageHtml));
+    await emitPageProgress(page);
+  }
+
+  const items = Array.from(aggregate.values())
+    .filter((item) => (classFilter ? item.classeNice === classFilter : true))
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+
+      return a.processoNumero.localeCompare(b.processoNumero);
+    });
+
+  return {
+    items,
+    totalPages,
+    totalFound: firstSummary.totalFound,
+    scannedRows,
+    pageStart,
+    pageEnd: targetPageEnd,
   };
 }
 

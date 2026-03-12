@@ -1596,8 +1596,8 @@ export function InpiContent({
                 queuedElapsedSeconds >= 90 ? (
                   <p className="mt-2 text-[11px] text-warning-700 dark:text-warning-300">
                     Busca ainda na fila há {formatEta(queuedElapsedSeconds)}. Se
-                    continuar assim, verifique se o worker assíncrono do ambiente
-                    está ativo para consumir a fila.
+                    continuar assim, verifique se o processamento assíncrono do
+                    ambiente está saudável para consumir a fila.
                   </p>
                 ) : null}
 

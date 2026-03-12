@@ -12,6 +12,7 @@ import {
   clearInpiCatalogSyncCancellation,
   requestInpiCatalogSyncCancellation,
 } from "@/app/lib/inpi/catalog-sync-control";
+import { isInpiCatalogSyncUsingVercelQueue } from "@/app/lib/inpi/catalog-sync-provider";
 import { isInpiCatalogSyncStale } from "@/app/lib/inpi/catalog-sync-runtime";
 import {
   buildInitialInpiCatalogSyncState,
@@ -26,6 +27,7 @@ import {
   InpiCatalogSyncState,
   isInpiCatalogSyncTerminalStatus,
 } from "@/app/lib/inpi/catalog-sync-types";
+import { enqueueInpiCatalogSyncVercelMessage } from "@/app/lib/inpi/catalog-sync-vercel-queue";
 import {
   NICE_CLASS_CATALOG,
   formatNiceClassCode,
@@ -1380,13 +1382,15 @@ export async function startInpiCatalogBackgroundSearch(input: {
       };
     }
 
-    try {
-      await initNotificationWorker();
-    } catch (workerError) {
-      logger.warn(
-        "Falha ao inicializar workers antes do enqueue de busca INPI. Tentando seguir com fila existente.",
-        workerError,
-      );
+    if (!isInpiCatalogSyncUsingVercelQueue()) {
+      try {
+        await initNotificationWorker();
+      } catch (workerError) {
+        logger.warn(
+          "Falha ao inicializar workers antes do enqueue de busca INPI. Tentando seguir com fila existente.",
+          workerError,
+        );
+      }
     }
 
     const termNormalized = normalizeTerm(termo);
@@ -1543,17 +1547,24 @@ export async function startInpiCatalogBackgroundSearch(input: {
         await saveInpiCatalogSyncState(initialState);
 
         try {
-          const queue = getInpiCatalogSyncQueue();
-          const queueJobId = await queue.addJob({
-            syncId,
-            tenantId: ctx.tenantId,
-            usuarioId: ctx.id,
-            termo,
-            termoNormalizado: initialState.termoNormalizado,
-            classeNice,
-            coordinationKey,
-            forceRefresh,
-          });
+          const queueJobId = isInpiCatalogSyncUsingVercelQueue()
+            ? await enqueueInpiCatalogSyncVercelMessage({
+                syncId,
+                pageStart: 1,
+                scannedRowsBase: 0,
+                createdCountBase: 0,
+                updatedCountBase: 0,
+              })
+            : await getInpiCatalogSyncQueue().addJob({
+                syncId,
+                tenantId: ctx.tenantId,
+                usuarioId: ctx.id,
+                termo,
+                termoNormalizado: initialState.termoNormalizado,
+                classeNice,
+                coordinationKey,
+                forceRefresh,
+              });
 
           const queuedState: InpiCatalogSyncState = {
             ...initialState,
@@ -1666,10 +1677,16 @@ export async function cancelInpiCatalogBackgroundSearch(input: {
 
     if (state.status === "QUEUED" && state.waitForGlobalSync) {
       canceledImmediately = true;
-    } else if (state.status === "QUEUED" && state.queueJobId) {
+    } else if (
+      state.status === "QUEUED" &&
+      state.queueJobId &&
+      !isInpiCatalogSyncUsingVercelQueue()
+    ) {
       const queue = getInpiCatalogSyncQueue();
       const cancelAttempt = await queue.cancelJob(state.queueJobId);
       canceledImmediately = cancelAttempt.removed;
+    } else if (state.status === "QUEUED" && isInpiCatalogSyncUsingVercelQueue()) {
+      canceledImmediately = true;
     }
 
     if (canceledImmediately) {

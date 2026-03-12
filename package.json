@@ -1,6 +1,6 @@
 {
   "name": "magic-lawyer",
-  "version": "beta-1.0.6",
+  "version": "beta-1.0.7",
   "private": true,
   "scripts": {
     "dev": "pkill -f 'next dev' || true && cross-env PORT=9192 next dev --turbopack",
@@ -113,6 +113,7 @@
     "@types/crypto-js": "^4.2.2",
     "@types/qrcode": "^1.5.5",
     "@vercel/analytics": "^1.6.1",
+    "@vercel/queue": "^0.1.4",
     "ably": "^2.14.0",
     "asaas": "^1.1.0",
     "axios": "^1.13.5",
