@@ -7,37 +7,23 @@ import { NotificationEvent } from "./types";
  * durante o período de transição
  */
 export class HybridNotificationService {
-  private static useNewSystem =
-    process.env.NOTIFICATION_USE_NEW_SYSTEM === undefined
-      ? true
-      : process.env.NOTIFICATION_USE_NEW_SYSTEM === "true";
-
   /**
-   * Publica uma notificação usando o sistema apropriado
+   * Publica no sistema novo e replica no legado enquanto a central
+   * de notificações ainda consome ambos os modelos.
    */
   static async publishNotification(event: NotificationEvent): Promise<void> {
-    if (this.useNewSystem) {
-      await NotificationService.publishNotification(event);
-      console.log(
-        `[Hybrid] Notificação ${event.type} publicada via NOVO sistema`,
-      );
+    await NotificationService.publishNotification(event);
+    console.log(`[Hybrid] Notificação ${event.type} publicada no sistema novo`);
 
-      try {
-        await this.publishLegacyNotification(event);
-        console.log(
-          `[Hybrid] Notificação ${event.type} replicada no sistema legado para compatibilidade`,
-        );
-      } catch (legacyError) {
-        console.error(
-          "[Hybrid] Falha ao replicar notificação no sistema legado:",
-          legacyError,
-        );
-      }
-    } else {
-      // Usar sistema legado
+    try {
       await this.publishLegacyNotification(event);
       console.log(
-        `[Hybrid] Notificação ${event.type} publicada via SISTEMA LEGADO`,
+        `[Hybrid] Notificação ${event.type} replicada no sistema legado para compatibilidade`,
+      );
+    } catch (legacyError) {
+      console.error(
+        "[Hybrid] Falha ao replicar notificação no sistema legado:",
+        legacyError,
       );
     }
   }
@@ -213,20 +199,10 @@ export class HybridNotificationService {
   }
 
   /**
-   * Alterna entre sistemas
-   */
-  static setUseNewSystem(useNew: boolean): void {
-    this.useNewSystem = useNew;
-    console.log(
-      `[Hybrid] Sistema alterado para: ${useNew ? "NOVO" : "LEGADO"}`,
-    );
-  }
-
-  /**
-   * Verifica qual sistema está sendo usado
+   * O modo legado-only foi removido; a execução oficial é novo + replicação.
    */
   static isUsingNewSystem(): boolean {
-    return this.useNewSystem;
+    return true;
   }
 
   /**

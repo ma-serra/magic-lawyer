@@ -47,29 +47,9 @@ export async function POST(request: NextRequest) {
           success: true,
           message: "Notificação publicada via sistema híbrido",
           data: {
-            system: HybridNotificationService.isUsingNewSystem()
-              ? "NOVO"
-              : "LEGADO",
+            system: "NOVO_COM_REPLICACAO_LEGADA",
             event,
           },
-        });
-
-      case "switch_system":
-        const useNew = body.useNewSystem;
-
-        if (typeof useNew !== "boolean") {
-          return NextResponse.json(
-            { success: false, error: "useNewSystem deve ser boolean" },
-            { status: 400 },
-          );
-        }
-
-        HybridNotificationService.setUseNewSystem(useNew);
-
-        return NextResponse.json({
-          success: true,
-          message: `Sistema alterado para: ${useNew ? "NOVO" : "LEGADO"}`,
-          data: { useNewSystem: useNew },
         });
 
       case "get_status":
@@ -77,7 +57,7 @@ export async function POST(request: NextRequest) {
           success: true,
           data: {
             useNewSystem: HybridNotificationService.isUsingNewSystem(),
-            environment: process.env.NOTIFICATION_USE_NEW_SYSTEM,
+            mode: "NOVO_COM_REPLICACAO_LEGADA",
           },
         });
 

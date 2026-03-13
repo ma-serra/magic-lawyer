@@ -3,6 +3,11 @@ import { Readable } from "node:stream";
 
 import { INPI_CATALOG_SYNC_CANCELED_ERROR } from "./catalog-sync-control";
 import { normalizeNiceClassCode } from "./nice-classes";
+import {
+  analyzeTrademarkNameSimilarity,
+  hasBoundaryTokenMatch,
+  normalizeTrademarkTerm as normalizeTerm,
+} from "./trademark-similarity";
 import logger from "@/lib/logger";
 
 const INPI_MARCAS_BIBLIO_URL =
@@ -16,57 +21,6 @@ const INPI_PORTAL_SEARCH_URL = `${INPI_PORTAL_BASE_URL}/servlet/MarcasServletCon
 const INPI_PORTAL_SEARCH_REFERER = `${INPI_PORTAL_BASE_URL}/jsp/marcas/Pesquisa_classe_basica.jsp`;
 const INPI_PORTAL_USER_AGENT =
   "Mozilla/5.0 (compatible; MagicLawyerBot/1.0; +https://magiclawyer.app)";
-
-function normalizeTerm(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function tokenizeNormalized(value: string): string[] {
-  return value
-    .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-}
-
-function hasBoundaryTokenMatch(
-  normalizedCandidate: string,
-  normalizedQuery: string,
-): boolean {
-  const candidateTokens = tokenizeNormalized(normalizedCandidate);
-  const queryTokens = tokenizeNormalized(normalizedQuery);
-
-  if (!candidateTokens.length || !queryTokens.length) {
-    return false;
-  }
-
-  if (queryTokens.length === 1) {
-    const query = queryTokens[0];
-
-    return candidateTokens.some(
-      (candidate) =>
-        candidate === query ||
-        candidate.startsWith(query) ||
-        (query.startsWith(candidate) &&
-          candidate.length >= Math.max(4, query.length - 1)),
-    );
-  }
-
-  return queryTokens.every((query) =>
-    candidateTokens.some(
-      (candidate) =>
-        candidate === query ||
-        candidate.startsWith(query) ||
-        (query.startsWith(candidate) &&
-          candidate.length >= Math.max(4, query.length - 1)),
-    ),
-  );
-}
 
 function parseCsvLine(line: string): string[] {
   const values: string[] = [];
@@ -106,51 +60,7 @@ function classToNice(value: string | null | undefined): string | null {
 }
 
 function computeNameScore(targetNormalized: string, candidateName: string): number {
-  const normalizedCandidate = normalizeTerm(candidateName);
-
-  if (!normalizedCandidate) {
-    return 0;
-  }
-
-  if (normalizedCandidate === targetNormalized) {
-    return 100;
-  }
-
-  if (
-    normalizedCandidate.startsWith(targetNormalized) ||
-    targetNormalized.startsWith(normalizedCandidate)
-  ) {
-    return 92;
-  }
-
-  if (hasBoundaryTokenMatch(normalizedCandidate, targetNormalized)) {
-    return 80;
-  }
-
-  const targetTokens = tokenizeNormalized(targetNormalized).filter(
-    (token) => token.length >= 3,
-  );
-  const candidateTokens = tokenizeNormalized(normalizedCandidate).filter(
-    (token) => token.length >= 3,
-  );
-  const candidateSet = new Set(candidateTokens);
-  const shared = targetTokens.filter((token) => candidateSet.has(token)).length;
-
-  if (!targetTokens.length || shared === 0) {
-    return 0;
-  }
-
-  const ratio = shared / targetTokens.length;
-
-  if (ratio >= 0.8) {
-    return 72;
-  }
-
-  if (ratio >= 0.5) {
-    return 60;
-  }
-
-  return 45;
+  return analyzeTrademarkNameSimilarity(targetNormalized, candidateName).score;
 }
 
 type CsvRow = Record<string, string>;

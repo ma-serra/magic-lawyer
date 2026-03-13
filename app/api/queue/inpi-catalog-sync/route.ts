@@ -9,7 +9,8 @@ const queueClient = new QueueClient({
   region: process.env.VERCEL_REGION || "iad1",
 });
 
-export const POST = queueClient.handleCallback<InpiCatalogSyncQueueMessage>(
+const handleInpiCatalogSyncCallback =
+  queueClient.handleCallback<InpiCatalogSyncQueueMessage>(
   async (message, metadata) => {
     await processInpiCatalogSyncVercelMessage(message, metadata);
   },
@@ -26,3 +27,7 @@ export const POST = queueClient.handleCallback<InpiCatalogSyncQueueMessage>(
     },
   },
 );
+
+export async function POST(request: Request) {
+  return handleInpiCatalogSyncCallback(request);
+}

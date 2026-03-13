@@ -1,9 +1,9 @@
-import type { NotificationJobData } from "./notification-worker";
+import type { NotificationJobData } from "./notification-job";
 
 import crypto from "crypto";
+import { start } from "workflow/api";
 
 import { EmailChannel } from "./channels/email-channel";
-import { getNotificationQueue } from "./notification-queue";
 import { NotificationFactory } from "./domain/notification-factory";
 import { NotificationPolicy } from "./domain/notification-policy";
 import { getRedisInstance } from "./redis-singleton";
@@ -78,11 +78,6 @@ export class NotificationService {
         return;
       }
 
-      // Determinar prioridade na fila baseada na urgência
-      const priority = NotificationPolicy.getQueuePriority(
-        validatedEvent.urgency || "MEDIUM",
-      );
-
       const jobPayload: NotificationJobData = {
         type: validatedEvent.type,
         tenantId: validatedEvent.tenantId,
@@ -93,13 +88,15 @@ export class NotificationService {
       };
 
       try {
-        const queue = getNotificationQueue();
+        const { notificationProcessingWorkflow } = await import(
+          "@/workflows/notification-processing"
+        );
 
-        await queue.addNotificationJob(jobPayload, priority);
-      } catch (queueError) {
+        await start(notificationProcessingWorkflow, [jobPayload]);
+      } catch (workflowError) {
         console.error(
-          "[NotificationService] Falha ao enfileirar notificação, processando de forma síncrona:",
-          queueError,
+          "[NotificationService] Falha ao iniciar Workflow de notificação, processando de forma síncrona:",
+          workflowError,
         );
         await this.processNotificationSync(jobPayload);
       }

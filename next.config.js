@@ -1,10 +1,12 @@
+const { withWorkflow } = require("workflow/next");
+
 /** @type {import('next').NextConfig} */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
 
 const nextConfig = {
   output: isVercel ? undefined : "standalone",
   productionBrowserSourceMaps: false,
-  serverExternalPackages: ["bullmq", "ioredis"],
+  serverExternalPackages: ["ioredis"],
   images: {
     remotePatterns: [
       {
@@ -28,4 +30,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withWorkflow(nextConfig);

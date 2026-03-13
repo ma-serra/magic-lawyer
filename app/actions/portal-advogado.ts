@@ -1,21 +1,27 @@
 "use server";
 
 import { randomUUID } from "crypto";
+import { resumeHook, start } from "workflow/api";
 
 import { getSession } from "@/app/lib/auth";
-import { getPortalProcessSyncQueue } from "@/app/lib/juridical/process-sync-queue";
 import {
   buildInitialPortalProcessSyncState,
   getLatestPortalProcessSyncState,
   getPortalProcessSyncState,
   savePortalProcessSyncState,
+  withPortalProcessSyncStatus,
 } from "@/app/lib/juridical/process-sync-status-store";
 import prisma from "@/app/lib/prisma";
 import {
   PortalProcessSyncState,
   isPortalProcessSyncTerminalStatus,
 } from "@/app/lib/juridical/process-sync-types";
+import {
+  buildPortalProcessSyncHookToken,
+  type PortalProcessSyncWorkflowInput,
+} from "@/app/lib/juridical/process-sync-workflow-shared";
 import type { Prisma } from "@/generated/prisma";
+import { portalProcessSyncWorkflow } from "@/workflows/portal-process-sync";
 import {
   TRIBUNAIS_CONFIG,
   getTribunalConfig,
@@ -447,8 +453,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
 
     await savePortalProcessSyncState(initialState);
 
-    const queue = getPortalProcessSyncQueue();
-    const queueJobId = await queue.addJob({
+    const workflowInput: PortalProcessSyncWorkflowInput = {
       syncId,
       tenantId,
       usuarioId,
@@ -456,12 +461,29 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
       tribunalSigla,
       oab: ctx.oab,
       clienteNome: params?.clienteNome?.trim() || undefined,
-      mode: "INITIAL",
-    });
+    };
 
+    let runId: string;
+    try {
+      const run = await start(portalProcessSyncWorkflow, [workflowInput]);
+      runId = run.runId;
+    } catch (error) {
+      const failedState = withPortalProcessSyncStatus(initialState, "FAILED", {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Falha ao iniciar a sincronização no Workflow.",
+      });
+      await savePortalProcessSyncState(failedState);
+
+      throw error;
+    }
+
+    const persistedState =
+      (await getPortalProcessSyncState(syncId)) ?? initialState;
     const queuedState: PortalProcessSyncState = {
-      ...initialState,
-      queueJobId,
+      ...persistedState,
+      queueJobId: runId,
       updatedAt: new Date().toISOString(),
     };
 
@@ -579,28 +601,24 @@ export async function resolverCaptchaSincronizacaoMeusProcessos(params: {
       };
     }
 
-    const queue = getPortalProcessSyncQueue();
-    const queueJobId = await queue.addJob({
-      syncId: state.syncId,
-      tenantId: state.tenantId,
-      usuarioId: state.usuarioId,
-      advogadoId: state.advogadoId,
-      tribunalSigla: state.tribunalSigla,
-      oab: state.oab,
-      mode: "CAPTCHA",
-      captchaId: state.captchaId,
-      captchaText,
-    });
-
     const queuedState: PortalProcessSyncState = {
       ...state,
       mode: "CAPTCHA",
       status: "QUEUED",
-      queueJobId,
       error: undefined,
       updatedAt: new Date().toISOString(),
     };
     await savePortalProcessSyncState(queuedState);
+
+    try {
+      await resumeHook(buildPortalProcessSyncHookToken(state.syncId), {
+        action: "SOLVE",
+        captchaText,
+      });
+    } catch (error) {
+      await savePortalProcessSyncState(state);
+      throw error;
+    }
 
     return {
       success: true,
@@ -656,28 +674,25 @@ export async function gerarNovoCaptchaSincronizacaoMeusProcessos(params: {
       };
     }
 
-    const queue = getPortalProcessSyncQueue();
-    const queueJobId = await queue.addJob({
-      syncId: state.syncId,
-      tenantId: state.tenantId,
-      usuarioId: state.usuarioId,
-      advogadoId: state.advogadoId,
-      tribunalSigla: state.tribunalSigla,
-      oab: state.oab,
-      mode: "INITIAL",
-    });
-
     const queuedState: PortalProcessSyncState = {
       ...state,
       mode: "INITIAL",
       status: "QUEUED",
-      queueJobId,
       error: undefined,
       captchaId: undefined,
       captchaImage: undefined,
       updatedAt: new Date().toISOString(),
     };
     await savePortalProcessSyncState(queuedState);
+
+    try {
+      await resumeHook(buildPortalProcessSyncHookToken(state.syncId), {
+        action: "REFRESH",
+      });
+    } catch (error) {
+      await savePortalProcessSyncState(state);
+      throw error;
+    }
 
     return {
       success: true,

@@ -1,81 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  startNotificationWorker,
-  stopNotificationWorker,
-  getNotificationWorker,
-} from "@/app/lib/notifications/notification-worker";
-import { getNotificationQueue } from "@/app/lib/notifications/notification-queue";
-
 /**
- * Inicia o worker de notificações
+ * Mantido por compatibilidade: não existe mais worker manual para iniciar.
  */
 export async function POST(request: NextRequest) {
-  try {
-    await startNotificationWorker();
-
-    return NextResponse.json({
-      success: true,
-      message: "Worker de notificações iniciado com sucesso",
-    });
-  } catch (error) {
-    console.error("Erro ao iniciar worker:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Erro ao iniciar worker" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    success: true,
+    message: "Nenhum worker manual é necessário. A Vercel gerencia esse fluxo.",
+  });
 }
 
 /**
- * Para o worker de notificações
+ * Mantido por compatibilidade: não existe mais worker manual para parar.
  */
 export async function DELETE(request: NextRequest) {
-  try {
-    await stopNotificationWorker();
-
-    return NextResponse.json({
-      success: true,
-      message: "Worker de notificações parado com sucesso",
-    });
-  } catch (error) {
-    console.error("Erro ao parar worker:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Erro ao parar worker" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    success: true,
+    message: "Nenhum worker manual está em execução.",
+  });
 }
 
 /**
- * Obtém status do worker e estatísticas da fila
+ * Obtém status do processamento assíncrono após migração para Vercel.
  */
 export async function GET(request: NextRequest) {
-  try {
-    const worker = getNotificationWorker();
-    const queue = getNotificationQueue();
-
-    const [workerStats, queueStats] = await Promise.all([
-      worker.getStats(),
-      queue.getQueueStats(),
-    ]);
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        worker: workerStats,
-        queue: queueStats,
-        status: "running",
-      },
-    });
-  } catch (error) {
-    console.error("Erro ao obter status:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Erro ao obter status" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json({
+    success: true,
+    data: {
+      worker: null,
+      queue: null,
+      status: "managed_by_vercel",
+      provider: "workflow",
+      requiresWorker: false,
+    },
+  });
 }

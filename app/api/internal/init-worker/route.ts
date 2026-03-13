@@ -1,6 +1,6 @@
 /**
- * Endpoint interno para garantir inicialização dos workers
- * Pode ser chamado no startup da aplicação ou via health check
+ * Endpoint interno de compatibilidade.
+ * O app não precisa mais subir workers locais.
  */
 
 import { NextResponse } from "next/server";
@@ -9,7 +9,7 @@ import { initNotificationWorker } from "@/app/lib/notifications/init-worker";
 
 /**
  * GET /api/internal/init-worker
- * Inicializa workers assíncronos se ainda não estiverem rodando
+ * Mantém compatibilidade com checks antigos, sem iniciar processos locais.
  */
 export async function GET() {
   try {
@@ -17,7 +17,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      message: "Workers assíncronos inicializados",
+      message: "Processamento assíncrono é gerenciado pela Vercel.",
     });
   } catch (error) {
     console.error("[InitWorker] Erro:", error);
@@ -31,7 +31,6 @@ export async function GET() {
     );
   }
 }
-
 
 
 

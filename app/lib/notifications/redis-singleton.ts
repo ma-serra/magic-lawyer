@@ -31,7 +31,7 @@ export function getRedisInstance(): Redis {
         tls: {
           rejectUnauthorized: false,
         },
-        maxRetriesPerRequest: null, // Necessário para BullMQ
+        maxRetriesPerRequest: null,
         lazyConnect: true,
       });
     } else {
