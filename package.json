@@ -1,6 +1,6 @@
 {
   "name": "magic-lawyer",
-  "version": "beta-1.0.7",
+  "version": "beta-1.0.8",
   "private": true,
   "scripts": {
     "dev": "pkill -f 'next dev' || true && cross-env PORT=9192 next dev --turbopack",

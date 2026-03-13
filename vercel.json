@@ -32,10 +32,6 @@
     {
       "path": "/api/cron/check-event-reminders",
       "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/internal/module-detect",
-      "schedule": "0 * * * *"
     }
   ]
 }
