@@ -17,7 +17,7 @@
 - Frontend/Backend unificado: Next.js 15 (App Router + Server Components) com turbopack; React 18; HeroUI + Tailwind.
 - Multitenancy: isolamento por `tenantId` em middleware e em Server Actions; permicoes granulares (SUPER_ADMIN, ADMIN, ADVOGADO, SECRETARIA, FINANCEIRO, CLIENTE, CONVIDADO).
 - Dados: PostgreSQL + Prisma 6; seeds por tenant (`prisma/seed.js` e `/seeds/tenants`).
-- Realtime e automacao: Ably para notificacoes push; BullMQ + Redis para filas de prazos e eventos; worker dedicado (`scripts/worker.ts`).
+- Realtime e automacao: Ably para notificacoes push; Vercel Workflow + Vercel Queues para processamento assincrono; Redis para cache, estado e locks.
 - Integracoes chaves: Asaas (billing), Cloudinary (arquivos), Clicksign (assinatura), Google Calendar, NextAuth para SSO multi-tenant, Nodemailer com templates por tenant.
 - Storage e CDN prontos para white label (logos, temas, favicons dinamicos).
 
@@ -25,13 +25,13 @@
 - White label nativo: cada escritorio com identidade visual, dominio e email transacional proprios sem sacrificar a base unica.
 - Automacao de prazos e alertas multicanal (app, email, push) reduz risco operacional e aumenta stickiness.
 - CRM + Processos + Financeiro + Documentos no mesmo tenant; dados fluem entre modulos sem integrações externas caras.
-- Importadores (Excel) para clientes e processos aceleram onboarding; scripts `setup:dev` e `setup:dev:warm` sobem ambiente completo em minutos.
+- Importadores (Excel) para clientes e processos aceleram onboarding; `setup:dev` sobe o ambiente local com PostgreSQL, Redis, schema, seed e aplicacao.
 - Base de juizes e pacotes cria linha de receita adicional e barreira de conteudo proprietario.
 
 ## Maturidade de engenharia
-- Scripts de operacao: `dev` com turbopack, `dev:worker` para filas, `notifications:*` para testes de prazos/webhooks, `db:up/down/reset` para automacao de ambiente.
+- Scripts de operacao: `dev` com turbopack, `services:up/down` para infraestrutura local, `dev:ngrok` e `dev:asaas` para webhooks pontuais, `notifications:*` para testes de prazos/webhooks.
 - Qualidade: ESLint + Prettier, Jest + Testing Library, Playwright para e2e; CI-friendly.
-- Observabilidade baseline: toasts e realtime no front; filas monitoradas via BullMQ; cron endpoints versionados (`/api/cron/*`).
+- Observabilidade baseline: toasts e realtime no front; execucoes monitoradas pela Vercel; cron endpoints versionados (`/api/cron/*`).
 
 ## Roadmap curto (decks do repo `docs/`)
 - Integração direta com PJe/Comunica para captura automatica de andamentos.

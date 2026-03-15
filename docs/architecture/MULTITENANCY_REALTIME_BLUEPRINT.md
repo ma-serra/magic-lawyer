@@ -239,7 +239,7 @@ Documento mestre para implementar bloqueio imediato de tenants/usuários, sincro
 
 ### Passo 0 — Preparação
 1. Criar branch: `git checkout -b feature/realtime-multitenancy`.
-2. Executar `npm run setup:dev` para resetar o ambiente local (esse script já derruba processos antigos, reinstala dependências, sobe PostgreSQL, zera migrações, aplica `prisma db push`, roda o seed padrão e inicia o servidor com ngrok quando aplicável).
+2. Executar `npm run setup:dev` para preparar o ambiente local (o script instala dependências, sobe PostgreSQL e Redis, aplica `prisma db push`, roda o seed padrão e inicia o servidor local).
 3. Após o setup, rodar manualmente o seed específico dos planos/módulos (`npm run prisma:seed` ou script customizado) — hoje essa etapa ainda precisa ser disparada separadamente.
 4. Definir flag de ambiente:
    - `.env.local` → `REALTIME_INTERNAL_TOKEN="local-realtime-token"`.

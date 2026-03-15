@@ -13,9 +13,9 @@ Magic Lawyer is a multi-tenant SaaS for law firms built with Next.js 16 (App Rou
    sudo dockerd &>/tmp/dockerd.log &
    sudo chmod 666 /var/run/docker.sock
    ```
-2. **PostgreSQL**: `npm run db:up` (Docker Compose on port 8567)
-3. **Redis**: `redis-server --daemonize no &>/tmp/redis.log &` (port 6379). If Redis fails with "Can't handle RDB format version", delete `/var/lib/redis/dump.rdb` with sudo and retry.
-4. **Dev server**: `PORT=9192 npx next dev --turbopack` (do NOT use `npm run dev` as it uses `pkill -f` internally)
+2. **Local services**: `npm run services:up` (starts PostgreSQL via Docker Compose on port 8567 and starts Redis if it is not already running)
+3. **Dev server**: `npm run dev`
+4. **First-time bootstrap**: `npm run setup:dev` installs dependencies, starts services, applies `prisma db push`, seeds the database, and launches the app on port 9192
 
 ### Database
 

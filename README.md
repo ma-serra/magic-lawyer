@@ -7,7 +7,7 @@
 *Modernize seu escritório com uma plataforma white label, multi-tenant e totalmente integrada*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
 
 </div>
@@ -103,7 +103,7 @@ Cada escritório pode personalizar completamente sua experiência:
 
 O Magic Lawyer foi construído com tecnologias modernas e escaláveis:
 
-- **Frontend**: Next.js 14 com App Router e Server Components
+- **Frontend**: Next.js 16 com App Router e Server Components
 - **Backend**: Server Actions e API Routes
 - **Banco de Dados**: PostgreSQL com Prisma ORM
 - **UI/UX**: HeroUI + Tailwind CSS
@@ -113,7 +113,7 @@ O Magic Lawyer foi construído com tecnologias modernas e escaláveis:
 - **Email**: Nodemailer com credenciais por tenant
 - **Armazenamento**: Cloudinary para arquivos
 - **Cache**: Redis para performance
-- **Filas**: BullMQ para processamento assíncrono
+- **Background Jobs**: Vercel Workflow + Vercel Queues
 
 ---
 
@@ -137,16 +137,22 @@ cd magic-lawyer
 cp .env.example .env
 # Edite o .env com suas credenciais
 
-# Execute o setup completo
+# Execute o setup local
 npm run setup:dev
 ```
 
 O comando `setup:dev` executa automaticamente:
 - ✅ Instalação de dependências
-- ✅ Configuração do banco de dados
-- ✅ Aplicação do schema
+- ✅ Inicialização de PostgreSQL e Redis
+- ✅ Aplicação do schema atual
 - ✅ Seeds com dados de teste
-- ✅ Inicialização dos serviços
+- ✅ Inicialização do servidor local em `http://localhost:9192`
+
+Para o fluxo do dia a dia:
+- `npm run dev` inicia só a aplicação
+- `npm run dev:ngrok` inicia app + túnel ngrok
+- `npm run dev:asaas` inicia app + ngrok + limpeza/ajuste do sandbox Asaas
+- `npm run reset:dev` reseta o banco local explicitamente quando isso for realmente necessário
 
 ### Acesso ao Sistema
 
@@ -185,21 +191,22 @@ A documentação está organizada em categorias:
 ### Desenvolvimento
 
 ```bash
-npm run dev              # Inicia servidor de desenvolvimento
-npm run dev:with-ngrok  # Servidor + ngrok (para webhooks)
-npm run dev:worker      # Worker para processar notificações
-npm run stop            # Para servidor e ngrok
-npm run stop:all        # Para tudo (servidor + ngrok + banco)
+npm run dev          # Inicia servidor de desenvolvimento
+npm run dev:ngrok    # Servidor + ngrok
+npm run dev:asaas    # Servidor + ngrok + limpeza do sandbox Asaas
+npm run setup:dev    # Bootstrap local completo e subida da aplicação
 ```
 
 ### Banco de Dados
 
 ```bash
-npm run db:up           # Inicia banco de dados
-npm run db:down         # Para banco de dados
-npm run db:reset-dev   # Reset completo do banco
+npm run services:up    # Sobe PostgreSQL + Redis
+npm run services:down  # Para PostgreSQL + Redis
+npm run db:up          # Inicia apenas PostgreSQL
+npm run db:down        # Para apenas PostgreSQL
+npm run reset:dev      # Reset explícito do banco local com seed
 npm run prisma:studio  # Interface visual do banco
-npm run prisma:seed     # Popula banco com dados de teste
+npm run prisma:seed    # Popula banco com dados de teste
 ```
 
 ### Testes
