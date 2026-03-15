@@ -38,6 +38,7 @@ import { DateUtils } from "@/app/lib/date-utils";
 import { Evento, EventoConfirmacaoStatus } from "@/generated/prisma";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { useAgendaDisponibilidade } from "@/app/hooks/use-agenda-disponibilidade";
+import { SearchableSelect } from "@/components/searchable-select";
 
 type ViewMode = "calendar" | "list";
 
@@ -292,16 +293,48 @@ export default function AgendaPage() {
     () => eventoFormData?.advogados || [],
     [eventoFormData?.advogados],
   );
-  const clienteKeySet = useMemo(
-    () => new Set(clientesFiltro.map((cliente) => cliente.id)),
+  const clienteFilterOptions = useMemo(
+    () =>
+      clientesFiltro.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || ""].filter(Boolean).join(" "),
+        description: cliente.email || undefined,
+      })),
     [clientesFiltro],
   );
-  const processoKeySet = useMemo(
-    () => new Set(processosFiltro.map((processo) => processo.id)),
+  const processoFilterOptions = useMemo(
+    () =>
+      processosFiltro.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [
+          processo.numero,
+          processo.titulo || "Sem titulo",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: processo.titulo || "Sem titulo",
+      })),
     [processosFiltro],
   );
-  const advogadoKeySet = useMemo(
-    () => new Set(advogadosFiltro.map((advogado) => advogado.id)),
+  const advogadoFilterOptions = useMemo(
+    () =>
+      advogadosFiltro.map((advogado: any) => {
+        const nomeCompleto =
+          `${advogado.usuario.firstName || ""} ${
+            advogado.usuario.lastName || ""
+          }`.trim() || advogado.usuario.email;
+
+        return {
+          key: advogado.id,
+          label: nomeCompleto,
+          textValue: [nomeCompleto, advogado.usuario.email || ""]
+            .filter(Boolean)
+            .join(" "),
+          description: advogado.usuario.email || undefined,
+        };
+      }),
     [advogadosFiltro],
   );
 
@@ -1086,34 +1119,21 @@ export default function AgendaPage() {
                         <User className="w-4 h-4" />
                         Cliente
                       </label>
-                      <Select
+                      <SearchableSelect
                         aria-label="Filtrar por cliente"
                         aria-labelledby="agenda-filtro-cliente-label"
+                        emptyContent="Nenhum cliente encontrado"
+                        items={clienteFilterOptions}
                         placeholder="Selecione um cliente"
-                        selectedKeys={
-                          filtroCliente && clienteKeySet.has(filtroCliente)
-                            ? [filtroCliente]
-                            : []
-                        }
+                        selectedKey={filtroCliente || null}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const nextCliente = (Array.from(keys)[0] as string) || "";
+                        onSelectionChange={(selectedKey) => {
+                          const nextCliente = selectedKey || "";
                           setFiltroCliente(nextCliente);
                           setFiltroProcesso("");
                         }}
-                      >
-                        <>
-                          <SelectItem key="" textValue="Todos os clientes">
-                            Todos os clientes
-                          </SelectItem>
-                          {clientesFiltro.map((cliente) => (
-                            <SelectItem key={cliente.id} textValue={cliente.nome}>
-                              {cliente.nome}
-                            </SelectItem>
-                          ))}
-                        </>
-                      </Select>
+                      />
                     </div>
 
                     {/* Filtro por Processo */}
@@ -1125,37 +1145,19 @@ export default function AgendaPage() {
                         <Scale className="w-4 h-4" />
                         Processo
                       </label>
-                      <Select
+                      <SearchableSelect
                         aria-label="Filtrar por processo"
                         aria-labelledby="agenda-filtro-processo-label"
+                        emptyContent="Nenhum processo encontrado"
+                        items={processoFilterOptions}
                         placeholder="Selecione um processo"
-                        selectedKeys={
-                          filtroProcesso && processoKeySet.has(filtroProcesso)
-                            ? [filtroProcesso]
-                            : []
-                        }
+                        selectedKey={filtroProcesso || null}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) =>
-                          setFiltroProcesso((Array.from(keys)[0] as string) || "")
+                        onSelectionChange={(selectedKey) =>
+                          setFiltroProcesso(selectedKey || "")
                         }
-                      >
-                        <>
-                          <SelectItem key="" textValue="Todos os processos">
-                            Todos os processos
-                          </SelectItem>
-                          {processosFiltro.map((processo) => (
-                            <SelectItem
-                              key={processo.id}
-                              textValue={`${processo.numero} - ${
-                                processo.titulo || "Sem título"
-                              }`}
-                            >
-                              {processo.numero} - {processo.titulo || "Sem título"}
-                            </SelectItem>
-                          ))}
-                        </>
-                      </Select>
+                      />
                     </div>
 
                     {/* Filtro por Advogado - apenas para Admin/SuperAdmin */}
@@ -1168,39 +1170,19 @@ export default function AgendaPage() {
                           <Building className="w-4 h-4" />
                           Advogado
                         </label>
-                        <Select
+                        <SearchableSelect
                           aria-label="Filtrar por advogado"
                           aria-labelledby="agenda-filtro-advogado-label"
+                          emptyContent="Nenhum advogado encontrado"
+                          items={advogadoFilterOptions}
                           placeholder="Selecione um advogado"
-                          selectedKeys={
-                            filtroAdvogado && advogadoKeySet.has(filtroAdvogado)
-                              ? [filtroAdvogado]
-                              : []
-                          }
+                          selectedKey={filtroAdvogado || null}
                           size="sm"
                           variant="bordered"
-                          onSelectionChange={(keys) =>
-                            setFiltroAdvogado((Array.from(keys)[0] as string) || "")
+                          onSelectionChange={(selectedKey) =>
+                            setFiltroAdvogado(selectedKey || "")
                           }
-                        >
-                          <>
-                            <SelectItem key="" textValue="Todos os advogados">
-                              Todos os advogados
-                            </SelectItem>
-                            {advogadosFiltro.map((advogado: any) => {
-                              const nomeCompleto =
-                                `${advogado.usuario.firstName || ""} ${
-                                  advogado.usuario.lastName || ""
-                                }`.trim() || advogado.usuario.email;
-
-                              return (
-                                <SelectItem key={advogado.id} textValue={nomeCompleto}>
-                                  {nomeCompleto}
-                                </SelectItem>
-                              );
-                            })}
-                          </>
-                        </Select>
+                        />
                       </div>
                     )}
 

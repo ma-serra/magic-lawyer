@@ -46,6 +46,7 @@ import { listCategoriasTarefa } from "@/app/actions/categorias-tarefa";
 import { getAllProcessos } from "@/app/actions/processos";
 import { searchClientes } from "@/app/actions/clientes";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 import { useKanban } from "@/app/hooks/use-kanban";
 import { DateInput } from "@/components/ui/date-input";
 
@@ -213,6 +214,59 @@ export default function KanbanView({
         ? [formData.columnId]
         : [],
     [formData.columnId, colunaKeySet],
+  );
+  const categoriaOptions = useMemo(
+    () =>
+      (categorias || []).map((categoria: any) => ({
+        key: categoria.id,
+        label: categoria.nome,
+        textValue: categoria.nome,
+      })),
+    [categorias],
+  );
+  const clienteOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente: any) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.documento || cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processoOptions = useMemo(
+    () =>
+      (processosDisponiveis || []).map((processo: any) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: processo.titulo || "Sem título",
+      })),
+    [processosDisponiveis],
+  );
+  const boardOptions = useMemo(
+    () =>
+      (boards || []).map((board: any) => ({
+        key: board.id,
+        label: board.nome,
+        textValue: [board.nome, board.descricao || ""].filter(Boolean).join(" "),
+        description: board.descricao || undefined,
+      })),
+    [boards],
+  );
+  const colunaOptions = useMemo(
+    () =>
+      (colunas || []).map((coluna: any) => ({
+        key: coluna.id,
+        label: coluna.nome,
+        textValue: [coluna.nome, coluna.cor || ""].filter(Boolean).join(" "),
+        description: coluna.cor || undefined,
+      })),
+    [colunas],
   );
 
   useEffect(() => {
@@ -915,23 +969,16 @@ export default function KanbanView({
                   ))}
                 </Select>
 
-                <Select
+                <SearchableSelect
+                  emptyContent="Nenhuma categoria encontrada"
+                  items={categoriaOptions}
                   label="Categoria"
-                  onMouseDownCapture={handleSelectMouseFallback}
                   placeholder="Selecione uma categoria"
-                  selectedKeys={selectedCategoriaKeys}
-                  onSelectionChange={(keys) => {
-                    const value = Array.from(keys)[0];
-
-                    setFormData({ ...formData, categoriaId: value as string });
+                  selectedKey={selectedCategoriaKeys[0] ?? null}
+                  onSelectionChange={(value) => {
+                    setFormData({ ...formData, categoriaId: value || "" });
                   }}
-                >
-                  {(categorias || []).map((cat: any) => (
-                    <SelectItem key={cat.id} textValue={cat.nome}>
-                      {cat.nome}
-                    </SelectItem>
-                  ))}
-                </Select>
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -958,15 +1005,14 @@ export default function KanbanView({
                 />
               </div>
 
-              <Select
+              <SearchableSelect
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
                 label="Cliente"
-                onMouseDownCapture={handleSelectMouseFallback}
                 placeholder="Vincular a um cliente (opcional)"
-                selectedKeys={selectedClienteKeys}
-                onSelectionChange={(keys) => {
-                  const value = Array.from(keys)[0];
-                  const nextClienteId =
-                    typeof value === "string" ? value : "";
+                selectedKey={selectedClienteKeys[0] ?? null}
+                onSelectionChange={(value) => {
+                  const nextClienteId = value || "";
                   const processoPertenceAoClienteSelecionado =
                     !nextClienteId ||
                     !formData.processoId ||
@@ -988,28 +1034,21 @@ export default function KanbanView({
                       : "",
                   });
                 }}
-              >
-                {(clientes || []).map((cli: any) => (
-                  <SelectItem key={cli.id} textValue={cli.nome}>
-                    {cli.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
+                emptyContent="Nenhum processo encontrado"
+                items={processoOptions}
                 isDisabled={!formData.clienteId}
                 label="Processo"
-                onMouseDownCapture={handleSelectMouseFallback}
                 placeholder={
                   formData.clienteId
                     ? "Vincular a um processo do cliente (opcional)"
                     : "Selecione primeiro o cliente"
                 }
-                selectedKeys={selectedProcessKeys}
-                onSelectionChange={(keys) => {
-                  const value = Array.from(keys)[0];
-                  const processoIdSelecionado =
-                    typeof value === "string" ? value : "";
+                selectedKey={selectedProcessKeys[0] ?? null}
+                onSelectionChange={(value) => {
+                  const processoIdSelecionado = value || "";
                   const processoSelecionado = (processosDisponiveis || []).find(
                     (processo: any) => processo.id === processoIdSelecionado,
                   );
@@ -1025,29 +1064,19 @@ export default function KanbanView({
                       "",
                   });
                 }}
-              >
-                {(processosDisponiveis || []).map((proc: any) => (
-                  <SelectItem
-                    key={proc.id}
-                    textValue={`${proc.numero}${proc.titulo ? ` - ${proc.titulo}` : ""}`}
-                  >
-                    {proc.numero} - {proc.titulo || "Sem título"}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
               <div className="border-t pt-4 mt-4">
                 <p className="text-sm font-semibold mb-3">📊 Quadro Kanban</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <Select
+                  <SearchableSelect
+                    emptyContent="Nenhum quadro encontrado"
+                    items={boardOptions}
                     label="Board"
-                    onMouseDownCapture={handleSelectMouseFallback}
                     placeholder="Selecionar quadro"
-                    selectedKeys={selectedBoardKeys}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0];
-
-                      if (typeof value !== "string") {
+                    selectedKey={selectedBoardKeys[0] ?? null}
+                    onSelectionChange={(value) => {
+                      if (!value) {
                         setFormData({
                           ...formData,
                           boardId: "",
@@ -1063,39 +1092,22 @@ export default function KanbanView({
                         columnId: "",
                       });
                     }}
-                  >
-                    {(boards || []).length > 0
-                      ? (boards || []).map((b: any) => (
-                          <SelectItem key={b.id} textValue={b.nome}>
-                            {b.nome}
-                          </SelectItem>
-                        ))
-                      : null}
-                  </Select>
+                  />
 
-                  <Select
+                  <SearchableSelect
+                    emptyContent="Nenhuma coluna encontrada"
+                    items={colunaOptions}
                     isDisabled={!formData.boardId}
                     label="Coluna"
-                    onMouseDownCapture={handleSelectMouseFallback}
                     placeholder="Selecionar coluna"
-                    selectedKeys={selectedColunaKeys}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0];
-
+                    selectedKey={selectedColunaKeys[0] ?? null}
+                    onSelectionChange={(value) => {
                       setFormData({
                         ...formData,
-                        columnId: typeof value === "string" ? value : "",
+                        columnId: value || "",
                       });
                     }}
-                  >
-                    {(colunas || []).length > 0
-                      ? (colunas || []).map((col: any) => (
-                          <SelectItem key={col.id} textValue={col.nome}>
-                            {col.nome}
-                          </SelectItem>
-                        ))
-                      : null}
-                  </Select>
+                  />
                 </div>
                 <p className="text-xs text-default-400 mt-2">
                   💡 A tarefa será criada na coluna selecionada

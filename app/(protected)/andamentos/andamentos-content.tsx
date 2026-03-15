@@ -63,6 +63,7 @@ import {
   UserRole,
 } from "@/generated/prisma";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 import { DateInput } from "@/components/ui/date-input";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 
@@ -797,6 +798,46 @@ export default function AndamentosPage() {
     filters.responsavelId && responsavelFilterIds.has(filters.responsavelId)
       ? [filters.responsavelId]
       : [ALL_RESPONSAVEL_KEY];
+  const processoFilterOptions = useMemo(
+    () => [
+      {
+        key: ALL_PROCESSOS_KEY,
+        label: "Todos os processos",
+        textValue: "Todos os processos",
+        description: "Remove o filtro de processo",
+      },
+      ...processosDisponiveisFiltro.map((proc: any) => ({
+        key: proc.id,
+        label: getProcessNumber(proc),
+        textValue: getProcessLabel(proc),
+        description: String(proc?.titulo ?? "").trim() || undefined,
+      })),
+    ],
+    [processosDisponiveisFiltro],
+  );
+  const responsavelFilterOptions = useMemo(
+    () => [
+      {
+        key: ALL_RESPONSAVEL_KEY,
+        label: "Todos os responsáveis",
+        textValue: "Todos os responsáveis",
+        description: "Remove o filtro de responsável",
+      },
+      ...responsaveisDisponiveis.map((responsavel) => ({
+        key: responsavel.id,
+        label: formatPerson(responsavel),
+        textValue: [
+          formatPerson(responsavel),
+          responsavel.email,
+          responsavel.role,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: responsavel.email,
+      })),
+    ],
+    [responsaveisDisponiveis],
+  );
 
   useEffect(() => {
     if (filters.processoId && !processFilterIds.has(filters.processoId)) {
@@ -1027,47 +1068,23 @@ export default function AndamentosPage() {
                         <FileText className="w-4 h-4" />
                         Processo
                       </label>
-                      <Select
-                        classNames={{
-                          value: "truncate",
-                          listboxWrapper: "max-h-80",
-                        }}
+                      <SearchableSelect
                         id="filtro-processo"
+                        emptyContent="Nenhum processo encontrado"
+                        items={processoFilterOptions}
                         placeholder="Todos os processos"
-                        selectedKeys={selectedProcessFilterKeys}
+                        selectedKey={selectedProcessFilterKeys[0] ?? ALL_PROCESSOS_KEY}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const value = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(selectedKey) => {
                           handleFilterChange(
                             "processoId",
-                            value === ALL_PROCESSOS_KEY ? undefined : value,
+                            selectedKey === ALL_PROCESSOS_KEY
+                              ? undefined
+                              : (selectedKey ?? undefined),
                           );
                         }}
-                      >
-                        {[
-                          {
-                            id: ALL_PROCESSOS_KEY,
-                            label: "Todos os processos",
-                            tooltip: "Todos os processos",
-                          },
-                          ...processosDisponiveisFiltro.map((proc: any) => ({
-                            id: proc.id,
-                            label: getProcessNumber(proc),
-                            tooltip: getProcessLabel(proc),
-                          })),
-                        ].map((item) => (
-                          <SelectItem key={item.id} textValue={item.label}>
-                            <span
-                              className="block max-w-full truncate"
-                              title={item.tooltip}
-                            >
-                              {item.label}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </Select>
+                      />
                     </div>
 
                     <div className="space-y-2">
@@ -1243,36 +1260,26 @@ export default function AndamentosPage() {
                           <UserCheck className="w-4 h-4" />
                           Responsável
                         </label>
-                        <Select
+                        <SearchableSelect
                           id="filtro-responsavel"
+                          emptyContent="Nenhum responsável encontrado"
+                          items={responsavelFilterOptions}
                           placeholder="Todos os responsáveis"
-                          selectedKeys={selectedResponsavelFilterKeys}
+                          selectedKey={
+                            selectedResponsavelFilterKeys[0] ??
+                            ALL_RESPONSAVEL_KEY
+                          }
                           size="sm"
                           variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const value = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(selectedKey) => {
                             handleFilterChange(
                               "responsavelId",
-                              value === ALL_RESPONSAVEL_KEY ? undefined : value,
+                              selectedKey === ALL_RESPONSAVEL_KEY
+                                ? undefined
+                                : (selectedKey ?? undefined),
                             );
-                        }}
-                      >
-                          {[
-                            {
-                              id: ALL_RESPONSAVEL_KEY,
-                              label: "Todos os responsáveis",
-                            },
-                            ...responsaveisDisponiveis.map((responsavel) => ({
-                              id: responsavel.id,
-                              label: formatPerson(responsavel),
-                            })),
-                          ].map((item) => (
-                            <SelectItem key={item.id} textValue={item.label}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </Select>
+                          }}
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -1975,6 +1982,45 @@ function AndamentoModal({
     formData.responsavelId && responsavelIds.has(formData.responsavelId)
       ? [formData.responsavelId]
       : [UNASSIGNED_RESPONSAVEL_KEY];
+  const processoModalOptions = useMemo(
+    () =>
+      processos.map((proc: any) => {
+        const processLabel = getProcessLabel(proc);
+
+        return {
+          key: proc.id,
+          label:
+            String(proc?.numero ?? "")
+              .replace(/\s+/g, " ")
+              .trim() || "Processo sem número",
+          textValue: processLabel,
+          description: String(proc?.titulo ?? "").trim() || undefined,
+        };
+      }),
+    [processos],
+  );
+  const responsavelModalOptions = useMemo(
+    () => [
+      {
+        key: UNASSIGNED_RESPONSAVEL_KEY,
+        label: "Sem responsável",
+        textValue: "Sem responsável",
+      },
+      ...responsaveis.map((responsavel) => ({
+        key: responsavel.id,
+        label: formatResponsavelLabel(responsavel),
+        textValue: [
+          formatResponsavelLabel(responsavel),
+          responsavel.email,
+          responsavel.role,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: responsavel.email,
+      })),
+    ],
+    [responsaveis],
+  );
 
   // Atualizar formData quando initialFormData mudar
   useEffect(() => {
@@ -2086,36 +2132,18 @@ function AndamentoModal({
                   <FileText className="text-blue-500" size={16} />
                   Processo
                 </label>
-                <Select
+                <SearchableSelect
                   isRequired
-                  classNames={{
-                    trigger:
-                      "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600",
-                    value: "truncate",
-                    listboxWrapper: "max-h-80",
-                  }}
                   id="modal-processo"
+                  emptyContent="Nenhum processo encontrado"
+                  items={processoModalOptions}
                   isDisabled={isReadOnly || mode === "edit"}
                   placeholder="Selecione o processo"
-                  selectedKeys={selectedProcessKeys}
-                  onSelectionChange={(keys) => {
-                    const value = Array.from(keys)[0] as string;
-
-                    setFormData({ ...formData, processoId: value });
+                  selectedKey={selectedProcessKeys[0] ?? null}
+                  onSelectionChange={(selectedKey) => {
+                    setFormData({ ...formData, processoId: selectedKey || "" });
                   }}
-                >
-                  {processos.map((proc: any) => {
-                    const processLabel = getProcessLabel(proc);
-
-                    return (
-                      <SelectItem key={proc.id} textValue={processLabel}>
-                        <span className="block max-w-full truncate" title={processLabel}>
-                          {processLabel}
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </Select>
+                />
               </div>
 
               <div className="space-y-2">
@@ -2277,36 +2305,25 @@ function AndamentoModal({
                     <UserCheck className="text-emerald-500" size={16} />
                     Responsável
                   </label>
-                  <Select
+                  <SearchableSelect
                     id="modal-responsavel"
+                    emptyContent="Nenhum responsável encontrado"
+                    items={responsavelModalOptions}
                     isDisabled={isReadOnly}
                     placeholder="Defina responsável"
-                    selectedKeys={selectedResponsavelKeys}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0] as string;
-
+                    selectedKey={
+                      selectedResponsavelKeys[0] ?? UNASSIGNED_RESPONSAVEL_KEY
+                    }
+                    onSelectionChange={(selectedKey) => {
                       setFormData({
                         ...formData,
                         responsavelId:
-                          value === UNASSIGNED_RESPONSAVEL_KEY ? "" : value,
+                          selectedKey === UNASSIGNED_RESPONSAVEL_KEY
+                            ? ""
+                            : (selectedKey ?? ""),
                       });
                     }}
-                  >
-                    {[
-                      {
-                        id: UNASSIGNED_RESPONSAVEL_KEY,
-                        label: "Sem responsável",
-                      },
-                      ...responsaveis.map((responsavel) => ({
-                        id: responsavel.id,
-                        label: formatResponsavelLabel(responsavel),
-                      })),
-                    ].map((item) => (
-                      <SelectItem key={item.id} textValue={item.label}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </Select>
+                  />
                 </div>
               </div>
 

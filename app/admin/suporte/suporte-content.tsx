@@ -83,6 +83,7 @@ import {
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 
 const STATUS_OPTIONS: Array<{ key: TicketStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "Todos os status" },
@@ -564,6 +565,24 @@ export function SuporteContent() {
       })),
     ],
     [agents],
+  );
+  const tenantFilterOptions = useMemo(
+    () =>
+      tenantSelectItems.map((item) => ({
+        key: item.key,
+        label: item.label,
+        textValue: item.label,
+      })),
+    [tenantSelectItems],
+  );
+  const assigneeFilterOptions = useMemo(
+    () =>
+      assigneeSelectItems.map((item) => ({
+        key: item.key,
+        label: item.label,
+        textValue: item.label,
+      })),
+    [assigneeSelectItems],
   );
 
   const {
@@ -1356,21 +1375,17 @@ export function SuporteContent() {
             onValueChange={setQuery}
           />
 
-          <Select
-            classNames={{ trigger: "min-h-12" }}
+          <SearchableSelect
+            classNames={{ selectorButton: "min-h-12" }}
+            emptyContent="Nenhum tenant encontrado"
+            isClearable={false}
+            items={tenantFilterOptions}
             label="Tenant"
-            items={tenantSelectItems}
-            selectedKeys={[tenantFilter]}
-            onSelectionChange={(keys) =>
-              setTenantFilter((Array.from(keys)[0] as string) || "ALL")
+            selectedKey={tenantFilter}
+            onSelectionChange={(selectedKey) =>
+              setTenantFilter(selectedKey || "ALL")
             }
-          >
-            {(item) => (
-              <SelectItem key={item.key} textValue={item.label}>
-                {item.label}
-              </SelectItem>
-            )}
-          </Select>
+          />
 
           <Select
             classNames={{ trigger: "min-h-12" }}
@@ -1951,26 +1966,19 @@ export function SuporteContent() {
                     ))}
                   </Select>
 
-                  <Select
+                  <SearchableSelect
                     isDisabled={selectedTicket.status === TicketStatus.CLOSED}
+                    emptyContent="Nenhum agente encontrado"
+                    isClearable={false}
                     label="Atribuir para"
-                    items={assigneeSelectItems}
-                    selectedKeys={[routingAssigneeDraft || "unassigned"]}
-                    onSelectionChange={(keys) => {
-                      const selected =
-                        (Array.from(keys)[0] as string) || "unassigned";
-
+                    items={assigneeFilterOptions}
+                    selectedKey={routingAssigneeDraft || "unassigned"}
+                    onSelectionChange={(selected) => {
                       setRoutingAssigneeDraft(
-                        selected === "unassigned" ? "" : selected,
+                        selected && selected !== "unassigned" ? selected : "",
                       );
                     }}
-                  >
-                    {(item) => (
-                      <SelectItem key={item.key} textValue={item.label}>
-                        {item.label}
-                      </SelectItem>
-                    )}
-                  </Select>
+                  />
 
                   <div className="flex flex-wrap items-end gap-2 lg:col-span-3">
                     <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Card, CardBody, CardHeader, Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Textarea, Tabs, Tab, Switch, Select, SelectItem } from "@heroui/react";
 import {
@@ -43,6 +43,7 @@ import {
   gerarParcelasAutomaticamente,
 } from "@/app/actions/parcelas-contrato";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 import { DadosBancariosParcela } from "@/components/dados-bancarios-parcela";
 // import { ComprovantePagamentoUpload } from "@/components/comprovante-pagamento-upload";
 import { ValidacaoContaPrincipal } from "@/components/validacao-conta-principal";
@@ -77,6 +78,7 @@ interface ParcelaFormData {
   formaPagamento?: string;
   dataPagamento?: Date;
 }
+
 
 type ParcelaComContrato = ContratoParcela & {
   contrato: Contrato & {
@@ -139,6 +141,36 @@ export default function ParcelasContratoPage() {
     { key: "DINHEIRO", label: "Dinheiro" },
     { key: "CARTAO", label: "Cartão" },
   ];
+  const processoOptions = useMemo(
+    () =>
+      (processos || []).map((processo: ProcessoComParcelas) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: processo.titulo || undefined,
+      })),
+    [processos],
+  );
+  const contratoOptions = useMemo(
+    () =>
+      (contratos || []).map((contrato) => ({
+        key: contrato.id,
+        label: contrato.titulo,
+        textValue: [
+          contrato.titulo,
+          contrato.cliente.nome,
+          formatCurrency(contrato.valorDisponivel),
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: `${contrato.cliente.nome} - ${formatCurrency(
+          contrato.valorDisponivel,
+        )} disponível`,
+      })),
+    [contratos],
+  );
 
   const handleLimparFiltros = () => {
     setFilters({});
@@ -444,35 +476,22 @@ export default function ParcelasContratoPage() {
         </CardHeader>
         <CardBody className="pt-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Select
+            <SearchableSelect
               className="w-full"
+              emptyContent="Nenhum processo encontrado"
+              items={processoOptions}
               isLoading={loadingProcessos}
               label="Processo"
               placeholder="Todos os processos"
-              selectedKeys={filters.processoId ? [filters.processoId] : []}
+              selectedKey={filters.processoId ?? null}
               startContent={
                 <FileTextIcon className="text-default-400" size={16} />
               }
               variant="bordered"
-              onSelectionChange={(keys) => {
-                const processoId = Array.from(keys)[0] as string;
+              onSelectionChange={(processoId) => {
                 setFilters({ ...filters, processoId: processoId || undefined });
               }}
-            >
-              {processos.map((processo: ProcessoComParcelas) => (
-                <SelectItem
-                  key={processo.id}
-                  textValue={`${processo.numero} - ${processo.titulo}`}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{processo.numero}</span>
-                    <span className="max-w-[220px] truncate text-xs text-default-500">
-                      {processo.titulo}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
             <Select
               className="w-full"
@@ -877,46 +896,26 @@ export default function ParcelasContratoPage() {
                     </h3>
 
                     <div className="grid grid-cols-2 gap-4">
-                      <Select
+                      <SearchableSelect
+                        emptyContent="Nenhum contrato encontrado"
+                        items={contratoOptions}
                         isRequired
                         isLoading={loadingContratos}
                         label="Contrato"
                         placeholder="Selecione um contrato"
-                        selectedKeys={
-                          formData.contratoId ? [formData.contratoId] : []
-                        }
+                        selectedKey={formData.contratoId || null}
                         startContent={
                           <FileTextIcon
                             className="text-default-400"
                             size={16}
                           />
                         }
-                        onSelectionChange={(keys) => {
-                          const contratoId = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(contratoId) => {
                           if (contratoId) {
                             handleContratoChange(contratoId);
                           }
                         }}
-                      >
-                        {(contratos || []).map((contrato) => (
-                          <SelectItem
-                            key={contrato.id}
-                            textValue={contrato.titulo}
-                          >
-                            <div className="flex flex-col">
-                              <span className="font-medium">
-                                {contrato.titulo}
-                              </span>
-                              <span className="text-sm text-default-500">
-                                {contrato.cliente.nome} -{" "}
-                                {formatCurrency(contrato.valorDisponivel)}{" "}
-                                disponível
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </Select>
+                      />
                       <Input
                         isRequired
                         label="Número da Parcela"

@@ -39,6 +39,7 @@ import {
 } from "@/app/actions/recibos";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { TENANT_PERMISSIONS } from "@/types";
+import { SearchableSelect } from "@/components/searchable-select";
 
 type DateValueLike = {
   toDate: () => Date;
@@ -157,68 +158,59 @@ export default function RecibosPage() {
     (value) => value !== undefined && value !== "",
   ).length;
 
-  // Função para renderizar clientes
-  const renderClientes = () => {
+  const clienteFilterOptions = useMemo(() => {
     const clientes = dadosFiltros?.data?.clientes;
+    const clientesArray = !clientes
+      ? []
+      : Array.isArray(clientes)
+        ? clientes
+        : Object.values(clientes);
 
-    if (!clientes) return [];
-
-    // Converter objeto para array se necessário
-    const clientesArray = Array.isArray(clientes)
-      ? clientes
-      : Object.values(clientes);
-
-    return clientesArray.map((cliente: any) => (
-      <SelectItem
-        key={cliente.id}
-        textValue={`${cliente.nome}${cliente.documento ? ` - ${cliente.documento}` : ""}`}
-      >
-        {cliente.nome} {cliente.documento && `- ${cliente.documento}`}
-      </SelectItem>
-    )) as any;
-  };
-
-  // Função para renderizar processos
-  const renderProcessos = () => {
+    return clientesArray.map((cliente: any) => ({
+      key: cliente.id,
+      label: cliente.nome,
+      textValue: [cliente.nome, cliente.documento || ""].filter(Boolean).join(" "),
+      description: cliente.documento || undefined,
+    }));
+  }, [dadosFiltros?.data?.clientes]);
+  const processoFilterOptions = useMemo(() => {
     const processos = dadosFiltros?.data?.processos;
+    const processosArray = !processos
+      ? []
+      : Array.isArray(processos)
+        ? processos
+        : Object.values(processos);
 
-    if (!processos) return [];
-
-    // Converter objeto para array se necessário
-    const processosArray = Array.isArray(processos)
-      ? processos
-      : Object.values(processos);
-
-    return processosArray.map((processo: any) => (
-      <SelectItem
-        key={processo.id}
-        textValue={`${processo.numero}${processo.titulo ? ` - ${processo.titulo}` : ""}`}
-      >
-        {processo.numero} {processo.titulo && `- ${processo.titulo}`}
-      </SelectItem>
-    )) as any;
-  };
-
-  // Função para renderizar advogados
-  const renderAdvogados = () => {
+    return processosArray.map((processo: any) => ({
+      key: processo.id,
+      label: processo.numero,
+      textValue: [processo.numero, processo.titulo || ""].filter(Boolean).join(" "),
+      description: processo.titulo || undefined,
+    }));
+  }, [dadosFiltros?.data?.processos]);
+  const advogadoFilterOptions = useMemo(() => {
     const advogados = dadosFiltros?.data?.advogados;
+    const advogadosArray = !advogados
+      ? []
+      : Array.isArray(advogados)
+        ? advogados
+        : Object.values(advogados);
 
-    if (!advogados) return [];
+    return advogadosArray.map((advogado: any) => {
+      const nomeCompleto = `${advogado.usuario.firstName || ""} ${
+        advogado.usuario.lastName || ""
+      }`.trim() || advogado.usuario.email;
 
-    // Converter objeto para array se necessário
-    const advogadosArray = Array.isArray(advogados)
-      ? advogados
-      : Object.values(advogados);
-
-    return advogadosArray.map((advogado: any) => (
-      <SelectItem
-        key={advogado.id}
-        textValue={`${advogado.usuario.firstName} ${advogado.usuario.lastName}`}
-      >
-        {advogado.usuario.firstName} {advogado.usuario.lastName}
-      </SelectItem>
-    )) as any;
-  };
+      return {
+        key: advogado.id,
+        label: nomeCompleto,
+        textValue: [nomeCompleto, advogado.usuario.email || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: advogado.usuario.email || undefined,
+      };
+    });
+  }, [dadosFiltros?.data?.advogados]);
 
   const abrirModalRecibo = async (recibo: Recibo) => {
     setReciboSelecionado(recibo);
@@ -407,6 +399,7 @@ export default function RecibosPage() {
                 Limpar
               </Button>
               <Button
+                data-testid="recibos-toggle-filters"
                 size="sm"
                 startContent={
                   showFilters ? (
@@ -513,27 +506,20 @@ export default function RecibosPage() {
                         <User className="w-4 h-4" />
                         Cliente
                       </label>
-                      <Select
+                      <SearchableSelect
+                        emptyContent="Nenhum cliente encontrado"
+                        items={clienteFilterOptions}
                         placeholder="Selecione um cliente"
-                        selectedKeys={
-                          filtros.clienteId ? [filtros.clienteId] : []
-                        }
+                        selectedKey={filtros.clienteId ?? null}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(selected) => {
                           handleFiltroChange(
                             "clienteId",
                             selected || undefined,
                           );
                         }}
-                      >
-                        <SelectItem key="" textValue="Todos os clientes">
-                          Todos os clientes
-                        </SelectItem>
-                        {...renderClientes()}
-                      </Select>
+                      />
                     </div>
 
                     {/* Filtro por Processo */}
@@ -542,27 +528,20 @@ export default function RecibosPage() {
                         <Scale className="w-4 h-4" />
                         Processo
                       </label>
-                      <Select
+                      <SearchableSelect
+                        emptyContent="Nenhum processo encontrado"
+                        items={processoFilterOptions}
                         placeholder="Selecione um processo"
-                        selectedKeys={
-                          filtros.processoId ? [filtros.processoId] : []
-                        }
+                        selectedKey={filtros.processoId ?? null}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(selected) => {
                           handleFiltroChange(
                             "processoId",
                             selected || undefined,
                           );
                         }}
-                      >
-                        <SelectItem key="" textValue="Todos os processos">
-                          Todos os processos
-                        </SelectItem>
-                        {...renderProcessos()}
-                      </Select>
+                      />
                     </div>
 
                     {/* Filtro por Advogado */}
@@ -571,27 +550,20 @@ export default function RecibosPage() {
                         <Building className="w-4 h-4" />
                         Advogado
                       </label>
-                      <Select
+                      <SearchableSelect
+                        emptyContent="Nenhum advogado encontrado"
+                        items={advogadoFilterOptions}
                         placeholder="Selecione um advogado"
-                        selectedKeys={
-                          filtros.advogadoId ? [filtros.advogadoId] : []
-                        }
+                        selectedKey={filtros.advogadoId ?? null}
                         size="sm"
                         variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0] as string;
-
+                        onSelectionChange={(selected) => {
                           handleFiltroChange(
                             "advogadoId",
                             selected || undefined,
                           );
                         }}
-                      >
-                        <SelectItem key="" textValue="Todos os advogados">
-                          Todos os advogados
-                        </SelectItem>
-                        {...renderAdvogados()}
-                      </Select>
+                      />
                     </div>
                   </div>
                 </CardBody>

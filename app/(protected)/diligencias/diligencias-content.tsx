@@ -62,6 +62,7 @@ import { getClientesComRelacionamentos } from "@/app/actions/clientes";
 import { getUsuariosParaSelect } from "@/app/actions/usuarios";
 import { DateInput } from "@/components/ui/date-input";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { SearchableSelect } from "@/components/searchable-select";
 import {
   PeopleEntityCard,
   PeopleEntityCardBody,
@@ -549,6 +550,38 @@ export function DiligenciasContent() {
   const selectedResponsavelFilterKeys = useSafeSelectedKeys(
     filtros.responsavelId,
     usuarioFilterKeySet,
+  );
+  const clienteFilterOptions = useMemo(
+    () =>
+      clientes.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processoFilterOptions = useMemo(
+    () =>
+      processosFiltro.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""].filter(Boolean).join(" "),
+        description: processo.titulo || undefined,
+      })),
+    [processosFiltro],
+  );
+  const responsavelFilterOptions = useMemo(
+    () =>
+      usuarios.map((usuario) => ({
+        key: usuario.id,
+        label: formatResponsavel(usuario),
+        textValue: `${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`.trim(),
+        description: usuario.email,
+      })),
+    [usuarios],
   );
   const selectedStatusFilterKeys = useMemo(() => {
     if (!filtros.status) {
@@ -1057,72 +1090,54 @@ export function DiligenciasContent() {
             ))}
           </Select>
 
-          <Select
+          <SearchableSelect
             aria-label="Filtro por cliente"
+            emptyContent="Nenhum cliente encontrado"
+            items={clienteFilterOptions}
             isLoading={clientesQuery.isLoading}
             label="Cliente"
             placeholder="Todos"
-            selectedKeys={selectedClienteFilterKeys}
-            onSelectionChange={(keys) => {
-              const [value] = Array.from(keys) as string[];
+            selectedKey={selectedClienteFilterKeys[0] ?? null}
+            onSelectionChange={(value) => {
               setFiltros((prev) => ({
                 ...prev,
                 clienteId: value || "",
                 processoId: "",
               }));
             }}
-          >
-            {clientes.map((cliente) => (
-              <SelectItem key={cliente.id} textValue={cliente.nome}>
-                {cliente.nome}
-              </SelectItem>
-            ))}
-          </Select>
+          />
 
-          <Select
+          <SearchableSelect
             aria-label="Filtro por processo"
+            emptyContent="Nenhum processo encontrado"
+            items={processoFilterOptions}
             isDisabled={processosFiltro.length === 0}
             label="Processo"
             placeholder="Todos"
-            selectedKeys={selectedProcessoFilterKeys}
-            onSelectionChange={(keys) => {
-              const [value] = Array.from(keys) as string[];
+            selectedKey={selectedProcessoFilterKeys[0] ?? null}
+            onSelectionChange={(value) => {
               setFiltros((prev) => ({
                 ...prev,
                 processoId: value || "",
               }));
             }}
-          >
-            {processosFiltro.map((processo) => (
-              <SelectItem key={processo.id} textValue={processo.numero}>
-                {processo.numero}
-              </SelectItem>
-            ))}
-          </Select>
+          />
 
-          <Select
+          <SearchableSelect
             aria-label="Filtro por responsável"
+            emptyContent="Nenhum responsável encontrado"
+            items={responsavelFilterOptions}
             isLoading={usuariosQuery.isLoading}
             label="Responsável"
             placeholder="Todos"
-            selectedKeys={selectedResponsavelFilterKeys}
-            onSelectionChange={(keys) => {
-              const [value] = Array.from(keys) as string[];
+            selectedKey={selectedResponsavelFilterKeys[0] ?? null}
+            onSelectionChange={(value) => {
               setFiltros((prev) => ({
                 ...prev,
                 responsavelId: value || "",
               }));
             }}
-          >
-            {usuarios.map((usuario) => (
-              <SelectItem
-                key={usuario.id}
-                textValue={`${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`}
-              >
-                {formatResponsavel(usuario)}
-              </SelectItem>
-            ))}
-          </Select>
+          />
 
           <DateRangeInput
             aria-label="Filtro por intervalo de prazo previsto"
@@ -1759,6 +1774,47 @@ function CreateDiligenciaModal({
     () => clientes.find((item) => item.id === state.clienteId) || null,
     [clientes, state.clienteId],
   );
+  const clienteOptions = useMemo(
+    () =>
+      clientes.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processoOptions = useMemo(
+    () =>
+      processos.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""].filter(Boolean).join(" "),
+        description: processo.titulo || undefined,
+      })),
+    [processos],
+  );
+  const contratoOptions = useMemo(
+    () =>
+      contratos.map((contrato) => ({
+        key: contrato.id,
+        label: contrato.titulo,
+        textValue: contrato.titulo,
+      })),
+    [contratos],
+  );
+  const responsavelOptions = useMemo(
+    () =>
+      usuarios.map((usuario) => ({
+        key: usuario.id,
+        label: formatResponsavel(usuario),
+        textValue: `${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`.trim(),
+        description: usuario.email,
+      })),
+    [usuarios],
+  );
 
   return (
     <Modal
@@ -1772,14 +1828,15 @@ function CreateDiligenciaModal({
       }}
     >
       <ModalContent>
-        <ModalHeader className="flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Operacional</p>
-          <h3 className="text-xl font-semibold">Nova diligência</h3>
-          <p className="text-sm text-default-500">Preencha os dados essenciais, vínculos e prazo operacional.</p>
-        </ModalHeader>
+        <div data-testid="diligencia-create-modal">
+          <ModalHeader className="flex flex-col gap-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Operacional</p>
+            <h3 className="text-xl font-semibold">Nova diligência</h3>
+            <p className="text-sm text-default-500">Preencha os dados essenciais, vínculos e prazo operacional.</p>
+          </ModalHeader>
 
-        <ModalBody className="grid gap-6 px-6 pb-2">
-          <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
+          <ModalBody className="grid gap-6 px-6 pb-2">
+            <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Dados básicos</h4>
             <Input
               aria-label="Título da diligência"
@@ -1804,64 +1861,49 @@ function CreateDiligenciaModal({
               value={state.descricao}
               onValueChange={(value) => setState((prev) => ({ ...prev, descricao: value }))}
             />
-          </section>
+            </section>
 
-          <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
+            <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Relacionamentos</h4>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select
+              <SearchableSelect
                 aria-label="Cliente da diligência"
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
                 isLoading={loadingClientes}
                 label="Cliente"
                 placeholder="Selecione um cliente"
-                selectedKeys={selectedClienteKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedClienteKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   onClienteChange(value || "");
                 }}
-              >
-                {clientes.map((cliente) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    {cliente.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
                 aria-label="Processo da diligência"
+                emptyContent="Nenhum processo encontrado"
+                items={processoOptions}
                 isDisabled={processos.length === 0}
                 label="Processo"
                 placeholder="Opcional"
-                selectedKeys={selectedProcessoKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedProcessoKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, processoId: value || "" }));
                 }}
-              >
-                {processos.map((processo) => (
-                  <SelectItem key={processo.id} textValue={processo.numero}>
-                    {processo.numero}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
                 aria-label="Contrato da diligência"
+                emptyContent="Nenhum contrato encontrado"
+                items={contratoOptions}
                 isDisabled={contratos.length === 0}
                 label="Contrato"
                 placeholder="Opcional"
-                selectedKeys={selectedContratoKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedContratoKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, contratoId: value || "" }));
                 }}
-              >
-                {contratos.map((contrato) => (
-                  <SelectItem key={contrato.id} textValue={contrato.titulo}>
-                    {contrato.titulo}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
               <Select
                 aria-label="Causa da diligência"
@@ -1887,9 +1929,9 @@ function CreateDiligenciaModal({
                 Cliente selecionado com {selectedCliente.processos.length} processo(s) e {selectedCliente.contratos.length} contrato(s) disponíveis para vínculo.
               </div>
             ) : null}
-          </section>
+            </section>
 
-          <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
+            <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Prazo e responsável</h4>
             <div className="grid gap-4 sm:grid-cols-2">
               <Select
@@ -1919,43 +1961,36 @@ function CreateDiligenciaModal({
                 }
               />
 
-              <Select
+              <SearchableSelect
                 aria-label="Responsável da diligência"
+                emptyContent="Nenhum responsável encontrado"
+                items={responsavelOptions}
                 isLoading={loadingUsuarios}
                 label="Responsável"
                 placeholder="Opcional"
-                selectedKeys={selectedResponsavelKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedResponsavelKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, responsavelId: value || "" }));
                 }}
-              >
-                {usuarios.map((usuario) => (
-                  <SelectItem
-                    key={usuario.id}
-                    textValue={`${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`}
-                  >
-                    {formatResponsavel(usuario)}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
             </div>
-          </section>
-        </ModalBody>
+            </section>
+          </ModalBody>
 
-        <ModalFooter>
-          <Button variant="light" onPress={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            color="primary"
-            isLoading={isSubmitting}
-            startContent={!isSubmitting ? <CheckCircle className="h-4 w-4" /> : undefined}
-            onPress={onSubmit}
-          >
-            {isSubmitting ? "Criando..." : "Criar diligência"}
-          </Button>
-        </ModalFooter>
+          <ModalFooter>
+            <Button variant="light" onPress={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              color="primary"
+              isLoading={isSubmitting}
+              startContent={!isSubmitting ? <CheckCircle className="h-4 w-4" /> : undefined}
+              onPress={onSubmit}
+            >
+              {isSubmitting ? "Criando..." : "Criar diligência"}
+            </Button>
+          </ModalFooter>
+        </div>
       </ModalContent>
     </Modal>
   );
@@ -2017,6 +2052,47 @@ function EditDiligenciaModal({
   const selectedCliente = useMemo(
     () => clientes.find((item) => item.id === state.clienteId) || null,
     [clientes, state.clienteId],
+  );
+  const clienteOptions = useMemo(
+    () =>
+      clientes.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processoOptions = useMemo(
+    () =>
+      processos.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""].filter(Boolean).join(" "),
+        description: processo.titulo || undefined,
+      })),
+    [processos],
+  );
+  const contratoOptions = useMemo(
+    () =>
+      contratos.map((contrato) => ({
+        key: contrato.id,
+        label: contrato.titulo,
+        textValue: contrato.titulo,
+      })),
+    [contratos],
+  );
+  const responsavelOptions = useMemo(
+    () =>
+      usuarios.map((usuario) => ({
+        key: usuario.id,
+        label: formatResponsavel(usuario),
+        textValue: `${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`.trim(),
+        description: usuario.email,
+      })),
+    [usuarios],
   );
 
   return (
@@ -2113,59 +2189,44 @@ function EditDiligenciaModal({
           <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Relacionamentos</h4>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select
+              <SearchableSelect
                 aria-label="Cliente da diligência"
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
                 isLoading={loadingClientes}
                 label="Cliente"
                 placeholder="Selecione um cliente"
-                selectedKeys={selectedClienteKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedClienteKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   onClienteChange(value || "");
                 }}
-              >
-                {clientes.map((cliente) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    {cliente.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
                 aria-label="Processo da diligência"
+                emptyContent="Nenhum processo encontrado"
+                items={processoOptions}
                 isDisabled={processos.length === 0}
                 label="Processo"
                 placeholder="Opcional"
-                selectedKeys={selectedProcessoKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedProcessoKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, processoId: value || "" }));
                 }}
-              >
-                {processos.map((processo) => (
-                  <SelectItem key={processo.id} textValue={processo.numero}>
-                    {processo.numero}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
                 aria-label="Contrato da diligência"
+                emptyContent="Nenhum contrato encontrado"
+                items={contratoOptions}
                 isDisabled={contratos.length === 0}
                 label="Contrato"
                 placeholder="Opcional"
-                selectedKeys={selectedContratoKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedContratoKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, contratoId: value || "" }));
                 }}
-              >
-                {contratos.map((contrato) => (
-                  <SelectItem key={contrato.id} textValue={contrato.titulo}>
-                    {contrato.titulo}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
               <Select
                 aria-label="Causa da diligência"
@@ -2224,26 +2285,18 @@ function EditDiligenciaModal({
                 }
               />
 
-              <Select
+              <SearchableSelect
                 aria-label="Responsável da diligência"
+                emptyContent="Nenhum responsável encontrado"
+                items={responsavelOptions}
                 isLoading={loadingUsuarios}
                 label="Responsável"
                 placeholder="Opcional"
-                selectedKeys={selectedResponsavelKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
+                selectedKey={selectedResponsavelKeys[0] ?? null}
+                onSelectionChange={(value) => {
                   setState((prev) => ({ ...prev, responsavelId: value || "" }));
                 }}
-              >
-                {usuarios.map((usuario) => (
-                  <SelectItem
-                    key={usuario.id}
-                    textValue={`${usuario.firstName || ""} ${usuario.lastName || ""} ${usuario.email}`}
-                  >
-                    {formatResponsavel(usuario)}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
             </div>
           </section>
         </ModalBody>

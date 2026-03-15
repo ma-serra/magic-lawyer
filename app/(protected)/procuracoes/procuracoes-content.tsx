@@ -54,6 +54,7 @@ import {
 } from "@heroui/react";
 import { Pagination } from "@heroui/pagination";
 import { PeoplePageHeader, PeopleMetricCard, PeopleEntityCard, PeopleEntityCardHeader, PeopleEntityCardBody } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 
 type ProcuracaoFiltroValue<T extends string> = T | "";
 
@@ -263,6 +264,49 @@ export function ProcuracoesContent() {
   const selectedClienteFilterKey = clienteFilterKeySet.has(filtros.clienteId)
     ? filtros.clienteId
     : ALL_CLIENTE_FILTER_KEY;
+  const clienteFilterOptions = useMemo(
+    () =>
+      clienteFilterItems.map((item) => {
+        const cliente = clientes.find((entry) => entry.id === item.key);
+
+        return {
+          key: item.key,
+          label: item.label,
+          textValue: [item.label, cliente?.documento || "", cliente?.email || ""]
+            .filter(Boolean)
+            .join(" "),
+          description:
+            item.key === ALL_CLIENTE_FILTER_KEY
+              ? "Remove o filtro de cliente"
+              : cliente?.documento || cliente?.email || undefined,
+        };
+      }),
+    [clienteFilterItems, clientes],
+  );
+  const clienteNovaProcuracaoOptions = useMemo(
+    () =>
+      clientes.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.documento || "", cliente.email || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.documento || cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processoDisponivelOptions = useMemo(
+    () =>
+      processosDisponiveis.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: processo.titulo
+          ? `${processo.numero} - ${processo.titulo}`
+          : processo.numero,
+        description: processo.titulo || undefined,
+      })),
+    [processosDisponiveis],
+  );
 
   const metrics = useMemo(() => {
     return (
@@ -608,13 +652,13 @@ export function ProcuracoesContent() {
                 )}
               </Select>
 
-              <Select
-                items={clienteFilterItems}
+              <SearchableSelect
+                emptyContent="Nenhum cliente encontrado"
+                isClearable={false}
+                items={clienteFilterOptions}
                 placeholder="Cliente"
-                selectedKeys={[selectedClienteFilterKey]}
-                onSelectionChange={(keys) => {
-                  const [key] = Array.from(keys);
-
+                selectedKey={selectedClienteFilterKey}
+                onSelectionChange={(key) => {
                   setFiltros((prev) => ({
                     ...prev,
                     clienteId:
@@ -624,13 +668,7 @@ export function ProcuracoesContent() {
                   }));
                   setCurrentPage(1);
                 }}
-              >
-                {(item) => (
-                  <SelectItem key={item.key} textValue={item.label}>
-                    {item.label}
-                  </SelectItem>
-                )}
-              </Select>
+              />
             </div>
 
             {temFiltrosAtivos ? (
@@ -832,7 +870,9 @@ export function ProcuracoesContent() {
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    <Select
+                    <SearchableSelect
+                      emptyContent="Nenhum cliente encontrado"
+                      items={clienteNovaProcuracaoOptions}
                       label="Cliente"
                       placeholder="Selecione o cliente"
                       popoverProps={{
@@ -841,30 +881,18 @@ export function ProcuracoesContent() {
                           content: "z-[10000]",
                         },
                       }}
-                      selectedKeys={selectedClienteNovaProcuracaoKeys}
-                      onSelectionChange={(keys) => {
-                        const [key] = Array.from(keys);
-                        const novoClienteId = (key as string | undefined) ?? "";
+                      selectedKey={
+                        clienteNovaProcuracaoKeySet.has(clienteNovaProcuracaoId)
+                          ? clienteNovaProcuracaoId
+                          : null
+                      }
+                      onSelectionChange={(key) => {
+                        const novoClienteId = key ?? "";
 
                         setClienteNovaProcuracaoId(novoClienteId);
                         setProcessosNovaProcuracaoIds(new Set());
                       }}
-                    >
-                      {clientes.map((cliente) => (
-                        <SelectItem key={cliente.id} textValue={cliente.nome}>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-default-700">
-                              {cliente.nome}
-                            </span>
-                            {cliente.documento && (
-                              <span className="text-xs text-default-400">
-                                {cliente.documento}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </Select>
+                    />
 
                     <div className="space-y-2">
                       <p className="text-xs font-medium uppercase text-default-400">
@@ -983,7 +1011,9 @@ export function ProcuracoesContent() {
                     Nenhum processo disponível para este cliente.
                   </p>
                 ) : (
-                  <Select
+                  <SearchableSelect
+                    emptyContent="Nenhum processo encontrado"
+                    items={processoDisponivelOptions}
                     label="Processo"
                     placeholder="Selecione o processo"
                     popoverProps={{
@@ -992,35 +1022,15 @@ export function ProcuracoesContent() {
                         content: "z-[10000]",
                       },
                     }}
-                    selectedKeys={selectedProcessoDisponivelKeys}
-                    onSelectionChange={(keys) => {
-                      const key = Array.from(keys)[0] as string | undefined;
-
+                    selectedKey={
+                      processosDisponiveisKeySet.has(selectedProcessoId)
+                        ? selectedProcessoId
+                        : null
+                    }
+                    onSelectionChange={(key) => {
                       setSelectedProcessoId(key ?? "");
                     }}
-                  >
-                    {processosDisponiveis.map((processo) => (
-                      <SelectItem
-                        key={processo.id}
-                        textValue={
-                          processo.titulo
-                            ? `${processo.numero} - ${processo.titulo}`
-                            : processo.numero
-                        }
-                      >
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold">
-                            {processo.numero}
-                          </span>
-                          {processo.titulo && (
-                            <span className="text-xs text-default-400">
-                              {processo.titulo}
-                            </span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </Select>
+                  />
                 )}
               </ModalBody>
               <ModalFooter>

@@ -55,6 +55,7 @@ import {
   updateDadosBancarios,
 } from "@/app/actions/dados-bancarios";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 
 type DadosBancariosItem = {
   id: string;
@@ -342,6 +343,76 @@ export default function DadosBancariosContent() {
   const tipoContaItems = tiposContaData?.data || [];
   const tipoContaBancariaItems = tiposContaBancariaData?.data || [];
   const tipoPixItems = tiposPixData?.data || [];
+  const clienteOptions = useMemo(
+    () => [
+      {
+        key: "",
+        label: "Todos os clientes",
+        textValue: "Todos os clientes",
+        description: "Remove o filtro ou vínculo de cliente",
+      },
+      ...clientes.map((cliente: any) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.documento || "", cliente.email || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.documento || cliente.email || undefined,
+      })),
+    ],
+    [clientes],
+  );
+  const advogadoOptions = useMemo(
+    () => [
+      {
+        key: "",
+        label: "Todos os advogados",
+        textValue: "Todos os advogados",
+        description: "Remove o filtro de advogado",
+      },
+      ...advogados.map((advogado: any) => {
+        const nome =
+          `${advogado.usuario.firstName || ""} ${
+            advogado.usuario.lastName || ""
+          }`.trim() || advogado.usuario.email;
+
+        return {
+          key: advogado.id,
+          label: nome,
+          textValue: [nome, advogado.usuario.email || ""]
+            .filter(Boolean)
+            .join(" "),
+          description: advogado.usuario.email || undefined,
+        };
+      }),
+    ],
+    [advogados],
+  );
+  const colaboradorOptions = useMemo(
+    () =>
+      colaboradores.map((item: any) => {
+        const nome =
+          `${item.firstName || ""} ${item.lastName || ""}`.trim() || item.email;
+
+        return {
+          key: item.id,
+          label: nome,
+          textValue: [nome, item.email || ""].filter(Boolean).join(" "),
+          description: item.email || undefined,
+        };
+      }),
+    [colaboradores],
+  );
+  const bancoOptions = useMemo(
+    () =>
+      bancos.map((banco: any) => ({
+        key: banco.codigo,
+        label: banco.nome,
+        textValue: [banco.codigo, banco.nome].filter(Boolean).join(" "),
+        description: banco.codigo || undefined,
+      })),
+    [bancos],
+  );
 
   const activeFilters = [
     search,
@@ -670,55 +741,32 @@ export default function DadosBancariosContent() {
             </SelectItem>
           </Select>
 
-          <Select
+          <SearchableSelect
+            emptyContent="Nenhum cliente encontrado"
+            isClearable={false}
+            items={clienteOptions}
             placeholder="Cliente"
-            selectedKeys={withOption(clientesSet.has(clienteId) ? clienteId : "")}
+            selectedKey={clientesSet.has(clienteId) ? clienteId : ""}
             variant="bordered"
-            onSelectionChange={(keys) => {
-              setClienteId(getSingleSelection(keys));
+            onSelectionChange={(selectedKey) => {
+              setClienteId(selectedKey || "");
               setPage(1);
             }}
-          >
-            <SelectItem key="" textValue="Todos os clientes">
-              Todos os clientes
-            </SelectItem>
-            {
-              clientes.map((cliente: any) => (
-                <SelectItem
-                  key={cliente.id}
-                  textValue={`${cliente.nome}${cliente.documento ? ` - ${cliente.documento}` : ""}`}
-                >
-                  {cliente.nome}
-                </SelectItem>
-              )) as any
-            }
-          </Select>
+          />
 
           {canViewGlobal && (
-            <Select
+            <SearchableSelect
+              emptyContent="Nenhum advogado encontrado"
+              isClearable={false}
+              items={advogadoOptions}
               placeholder="Advogado"
-              selectedKeys={withOption(advogadosSet.has(advogadoId) ? advogadoId : "")}
+              selectedKey={advogadosSet.has(advogadoId) ? advogadoId : ""}
               variant="bordered"
-              onSelectionChange={(keys) => {
-                setAdvogadoId(getSingleSelection(keys));
+              onSelectionChange={(selectedKey) => {
+                setAdvogadoId(selectedKey || "");
                 setPage(1);
               }}
-            >
-              <SelectItem key="" textValue="Todos os advogados">
-                Todos os advogados
-              </SelectItem>
-              {
-                advogados.map((advogado: any) => (
-                  <SelectItem
-                    key={advogado.id}
-                    textValue={`${advogado.usuario.firstName || ""} ${advogado.usuario.lastName || ""}`.trim() || advogado.usuario.email}
-                  >
-                    {`${advogado.usuario.firstName || ""} ${advogado.usuario.lastName || ""}`.trim() ||
-                      advogado.usuario.email}
-                  </SelectItem>
-                )) as any
-              }
-            </Select>
+            />
           )}
         </CardBody>
       </Card>
@@ -921,56 +969,40 @@ export default function DadosBancariosContent() {
 
               {canManageGlobal ? (
                 form.linkType === "USUARIO" ? (
-                  <Select
+                  <SearchableSelect
+                    emptyContent="Nenhum usuário encontrado"
+                    items={colaboradorOptions}
                     label="Usuário"
-                    selectedKeys={withOption(
-                      colaboradoresSet.has(form.usuarioId) ? form.usuarioId : "",
-                    )}
+                    selectedKey={
+                      colaboradoresSet.has(form.usuarioId) ? form.usuarioId : null
+                    }
                     variant="bordered"
-                    onSelectionChange={(keys) => {
+                    onSelectionChange={(selectedKey) => {
                       setForm((prev) => ({
                         ...prev,
-                        usuarioId: getSingleSelection(keys),
+                        usuarioId: selectedKey || "",
                         clienteId: "",
                       }));
                     }}
-                  >
-                    {colaboradores.map((item: any) => (
-                      <SelectItem
-                        key={item.id}
-                        textValue={`${item.firstName || ""} ${item.lastName || ""}`.trim() || item.email}
-                      >
-                        {`${item.firstName || ""} ${item.lastName || ""}`.trim() || item.email}
-                      </SelectItem>
-                    ))}
-                  </Select>
+                  />
                 ) : form.linkType === "CLIENTE" ? (
-                  <Select
+                  <SearchableSelect
+                    emptyContent="Nenhum cliente encontrado"
+                    items={clienteOptions.filter((item) => item.key !== "")}
                     label="Cliente"
-                    selectedKeys={withOption(
-                      clientesSet.has(form.clienteId) ? form.clienteId : "",
-                    )}
+                    selectedKey={
+                      clientesSet.has(form.clienteId) ? form.clienteId : null
+                    }
                     variant="bordered"
-                    onSelectionChange={(keys) => {
+                    onSelectionChange={(selectedKey) => {
                       setForm((prev) => ({
                         ...prev,
-                        clienteId: getSingleSelection(keys),
+                        clienteId: selectedKey || "",
                         usuarioId: "",
                         linkType: "CLIENTE",
                       }));
                     }}
-                  >
-                    {
-                      clientes.map((item: any) => (
-                        <SelectItem
-                          key={item.id}
-                          textValue={`${item.nome}${item.documento ? ` - ${item.documento}` : ""}`}
-                        >
-                          {item.nome}
-                        </SelectItem>
-                      )) as any
-                    }
-                  </Select>
+                  />
                 ) : (
                   <Input
                     isReadOnly
@@ -980,36 +1012,22 @@ export default function DadosBancariosContent() {
                   />
                 )
               ) : canLinkCliente ? (
-                <Select
+                <SearchableSelect
+                  emptyContent="Nenhum cliente encontrado"
+                  isClearable={false}
+                  items={clienteOptions}
                   label="Vincular a cliente (opcional)"
-                  selectedKeys={withOption(
-                    clientesSet.has(form.clienteId) ? form.clienteId : "",
-                  )}
+                  selectedKey={clientesSet.has(form.clienteId) ? form.clienteId : ""}
                   variant="bordered"
-                  onSelectionChange={(keys) => {
-                    const selected = getSingleSelection(keys);
+                  onSelectionChange={(selected) => {
                     setForm((prev) => ({
                       ...prev,
-                      clienteId: selected,
+                      clienteId: selected || "",
                       usuarioId: "",
                       linkType: selected ? "CLIENTE" : "ME",
                     }));
                   }}
-                >
-                  <SelectItem key="" textValue="Sem cliente">
-                    Sem cliente
-                  </SelectItem>
-                  {
-                    clientes.map((item: any) => (
-                      <SelectItem
-                        key={item.id}
-                        textValue={`${item.nome}${item.documento ? ` - ${item.documento}` : ""}`}
-                      >
-                        {item.nome}
-                      </SelectItem>
-                    )) as any
-                  }
-                </Select>
+                />
               ) : (
                 <Input
                   isReadOnly
@@ -1019,24 +1037,20 @@ export default function DadosBancariosContent() {
                 />
               )}
 
-              <Select
+              <SearchableSelect
+                emptyContent="Nenhum banco encontrado"
+                items={bancoOptions}
                 isRequired
                 label="Banco"
-                selectedKeys={withOption(
-                  bancosSet.has(form.bancoCodigo) ? form.bancoCodigo : "",
-                )}
+                selectedKey={
+                  bancosSet.has(form.bancoCodigo) ? form.bancoCodigo : null
+                }
                 startContent={<Building className="h-4 w-4 text-default-400" />}
                 variant="bordered"
-                onSelectionChange={(keys) =>
-                  setForm((prev) => ({ ...prev, bancoCodigo: getSingleSelection(keys) }))
+                onSelectionChange={(selectedKey) =>
+                  setForm((prev) => ({ ...prev, bancoCodigo: selectedKey || "" }))
                 }
-              >
-                {bancos.map((banco: any) => (
-                  <SelectItem key={banco.codigo} textValue={banco.nome}>
-                    {banco.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
               <Select
                 isRequired

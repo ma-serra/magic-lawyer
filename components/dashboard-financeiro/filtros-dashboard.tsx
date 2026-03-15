@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Button, Skeleton, Select, SelectItem } from "@heroui/react";
+  Button, Skeleton } from "@heroui/react";
 import {
   Filter,
   RotateCcw,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { FiltrosDashboard } from "@/app/actions/dashboard-financeiro";
+import { SearchableSelect } from "@/components/searchable-select";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 
 interface FiltrosDashboardProps {
@@ -81,6 +82,43 @@ export function FiltrosDashboardComponent({
     dadosBancariosKeySet.has(filtros.dadosBancariosId)
       ? [filtros.dadosBancariosId]
       : [];
+  const advogadoOptions = useMemo(
+    () =>
+      safeAdvogados.map((advogado) => ({
+        key: advogado.id,
+        label: advogado.nome,
+        textValue: [advogado.nome, advogado.oab].filter(Boolean).join(" "),
+        description: advogado.oab || undefined,
+      })),
+    [safeAdvogados],
+  );
+  const clienteOptions = useMemo(
+    () =>
+      safeClientes.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.documento].filter(Boolean).join(" "),
+        description: cliente.documento || undefined,
+      })),
+    [safeClientes],
+  );
+  const contaOptions = useMemo(
+    () =>
+      safeDadosBancarios.map((conta) => ({
+        key: conta.id,
+        label: `${conta.bancoNome} - ${conta.agencia}/${conta.conta}`,
+        textValue: [
+          conta.bancoNome,
+          conta.agencia,
+          conta.conta,
+          conta.principal ? "principal" : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: conta.principal ? "Conta principal" : undefined,
+      })),
+    [safeDadosBancarios],
+  );
 
   if (isLoading) {
     return (
@@ -165,56 +203,38 @@ export function FiltrosDashboardComponent({
 
         {/* Advogado */}
         <div>
-          <Select
+          <SearchableSelect
             className="w-full"
+            emptyContent="Nenhum advogado encontrado"
+            items={advogadoOptions}
             label="Advogado"
             placeholder="Selecionar advogado"
-            selectedKeys={selectedAdvogadoKeys}
+            selectedKey={selectedAdvogadoKeys[0] ?? null}
             size="sm"
             startContent={<User className="h-4 w-4 text-default-400" />}
             variant="bordered"
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
-
+            onSelectionChange={(value) => {
               updateFiltro("advogadoId", value || null);
             }}
-          >
-            {safeAdvogados.map((advogado) => (
-              <SelectItem
-                key={advogado.id}
-                textValue={`${advogado.nome} - ${advogado.oab}`}
-              >
-                {advogado.nome} - {advogado.oab}
-              </SelectItem>
-            ))}
-          </Select>
+          />
         </div>
 
         {/* Cliente */}
         <div>
-          <Select
+          <SearchableSelect
             className="w-full"
+            emptyContent="Nenhum cliente encontrado"
+            items={clienteOptions}
             label="Cliente"
             placeholder="Selecionar cliente"
-            selectedKeys={selectedClienteKeys}
+            selectedKey={selectedClienteKeys[0] ?? null}
             size="sm"
             startContent={<Building className="h-4 w-4 text-default-400" />}
             variant="bordered"
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
-
+            onSelectionChange={(value) => {
               updateFiltro("clienteId", value || null);
             }}
-          >
-            {safeClientes.map((cliente) => (
-              <SelectItem
-                key={cliente.id}
-                textValue={`${cliente.nome} - ${cliente.documento}`}
-              >
-                {cliente.nome} - {cliente.documento}
-              </SelectItem>
-            ))}
-          </Select>
+          />
         </div>
       </div>
 
@@ -231,40 +251,22 @@ export function FiltrosDashboardComponent({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Conta Bancária */}
               <div>
-                <Select
+                <SearchableSelect
                   className="w-full"
+                  emptyContent="Nenhuma conta encontrada"
+                  items={contaOptions}
                   label="Conta Bancária"
                   placeholder="Selecionar conta"
-                  selectedKeys={selectedDadosBancariosKeys}
+                  selectedKey={selectedDadosBancariosKeys[0] ?? null}
                   size="sm"
                   startContent={
                     <CreditCard className="h-4 w-4 text-default-400" />
                   }
                   variant="bordered"
-                  onSelectionChange={(keys) => {
-                    const value = Array.from(keys)[0] as string;
-
+                  onSelectionChange={(value) => {
                     updateFiltro("dadosBancariosId", value || null);
                   }}
-                >
-                  {safeDadosBancarios.map((conta) => (
-                    <SelectItem
-                      key={conta.id}
-                      textValue={`${conta.bancoNome} - ${conta.agencia}/${conta.conta}`}
-                    >
-                      <div className="flex flex-col">
-                        <span>
-                          {conta.bancoNome} - {conta.agencia}/{conta.conta}
-                        </span>
-                        {conta.principal && (
-                          <span className="text-xs text-primary font-medium">
-                            Principal
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </Select>
+                />
               </div>
             </div>
           </motion.div>

@@ -25,6 +25,7 @@ import { ProcessosSyncOabModal } from "./processos-sync-oab-modal";
 import { Pagination, Select, SelectItem } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 interface ProcessoFiltros {
   busca: string;
@@ -317,6 +318,33 @@ export function ProcessosContent({
   const comarcaKeys = useMemo(() => new Set(comarcasUnicas), [comarcasUnicas]);
   const selectedComarcaKeys =
     filtros.comarca && comarcaKeys.has(filtros.comarca) ? [filtros.comarca] : [];
+  const advogadoFilterOptions = useMemo(
+    () =>
+      advogadosOptions.map((adv) => ({
+        key: adv.id,
+        label: adv.label,
+        textValue: adv.label,
+      })),
+    [advogadosOptions],
+  );
+  const clienteFilterOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+        startContent:
+          cliente.tipoPessoa === "JURIDICA" ? (
+            <Building2 className="h-4 w-4 text-default-400" />
+          ) : (
+            <User className="h-4 w-4 text-default-400" />
+          ),
+      })),
+    [clientes],
+  );
 
   const selectedSegredoJusticaKeys =
     filtros.segredoJustica !== null ? [filtros.segredoJustica.toString()] : [];
@@ -798,53 +826,34 @@ export function ProcessosContent({
                       ))}
                     </Select>
 
-                    <Select
+                    <SearchableSelect
+                      emptyContent="Nenhum advogado encontrado"
+                      items={advogadoFilterOptions}
                       label="Advogado responsável"
                       placeholder="Todos os advogados"
-                      selectedKeys={selectedAdvogadoKeys}
-                      onSelectionChange={(keys) => {
-                        const selectedKey = Array.from(keys)[0] as string;
-
+                      selectedKey={selectedAdvogadoKeys[0] ?? null}
+                      onSelectionChange={(selectedKey) => {
                         setFiltros((prev) => ({
                           ...prev,
                           advogadoId: selectedKey || "",
                         }));
                         setPaginaAtual(1);
                       }}
-                    >
-                      {advogadosOptions.map((adv) => (
-                        <SelectItem key={adv.id} textValue={adv.label}>
-                          {adv.label}
-                        </SelectItem>
-                      ))}
-                    </Select>
+                    />
 
-                    <Select
+                    <SearchableSelect
+                      emptyContent="Nenhum cliente encontrado"
+                      items={clienteFilterOptions}
                       label="Cliente"
                       placeholder="Todos os clientes"
-                      selectedKeys={selectedClienteKeys}
-                      onSelectionChange={(keys) => {
-                        const selectedKey = Array.from(keys)[0] as string;
-
+                      selectedKey={selectedClienteKeys[0] ?? null}
+                      onSelectionChange={(selectedKey) => {
                         setFiltros((prev) => ({
                           ...prev,
                           clienteId: selectedKey || "",
                         }));
                       }}
-                    >
-                      {(clientes || []).map((cliente) => (
-                        <SelectItem key={cliente.id} textValue={cliente.nome}>
-                          <div className="flex items-center gap-2">
-                            {cliente.tipoPessoa === "JURIDICA" ? (
-                              <Building2 className="h-4 w-4 text-default-400" />
-                            ) : (
-                              <User className="h-4 w-4 text-default-400" />
-                            )}
-                            <span>{cliente.nome}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </Select>
+                    />
                   </div>
                 </FilterSection>
               </div>

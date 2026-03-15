@@ -47,6 +47,7 @@ import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { useJuizes } from "@/app/hooks/use-juizes";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 export function NovoProcessoContent() {
   const router = useRouter();
@@ -139,6 +140,74 @@ export function NovoProcessoContent() {
     formData.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
   const selectedAreaKeys =
     formData.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const clienteOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+        startContent:
+          cliente.tipoPessoa === "JURIDICA" ? (
+            <Building2 className="h-4 w-4 text-default-400" />
+          ) : (
+            <User className="h-4 w-4 text-default-400" />
+          ),
+      })),
+    [clientes],
+  );
+  const juizOptions = useMemo(
+    () =>
+      (juizesDisponiveis || []).map((juiz) => ({
+        key: juiz.id,
+        label: juiz.nome,
+        textValue: [
+          juiz.nome,
+          juiz.vara || "",
+          juiz.comarca || "",
+          juiz.tipoAutoridade || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+          "Sem vara/comarca informada",
+      })),
+    [juizesDisponiveis],
+  );
+  const tribunalOptions = useMemo(
+    () =>
+      (tribunais || []).map((tribunal) => ({
+        key: tribunal.id,
+        label: tribunal.sigla
+          ? `${tribunal.sigla} - ${tribunal.nome}`
+          : tribunal.nome,
+        textValue: [
+          tribunal.sigla || "",
+          tribunal.nome,
+          tribunal.esfera || "",
+          tribunal.uf || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+          "Sem esfera/UF",
+      })),
+    [tribunais],
+  );
+  const advogadoOptions = useMemo(
+    () =>
+      (advogados || []).map((advogado) => ({
+        key: advogado.id,
+        label: advogado.label,
+        textValue: [advogado.label, advogado.oab || ""].filter(Boolean).join(" "),
+        description: advogado.oab ? `OAB ${advogado.oab}` : undefined,
+      })),
+    [advogados],
+  );
 
   const fases = Object.values(ProcessoFase);
   const graus = Object.values(ProcessoGrau);
@@ -323,148 +392,78 @@ export function NovoProcessoContent() {
 
             {/* Select de Cliente (se não veio de um cliente) */}
             {!clienteIdParam && (
-              <Select
+              <SearchableSelect
                 isRequired
                 description="Cliente principal do processo. Ele será incluído automaticamente como parte autora."
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
                 label="Cliente *"
                 placeholder="Selecione um cliente"
-                selectedKeys={selectedClienteKeys}
+                selectedKey={selectedClienteKeys[0] ?? null}
                 startContent={<User className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) =>
+                onSelectionChange={(selectedKey) =>
                   setFormData((prev) => ({
                     ...prev,
-                    clienteId: Array.from(keys)[0] as string,
+                    clienteId: selectedKey || "",
                   }))
                 }
-              >
-                {clientes.map((cliente) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    <div className="flex items-center gap-2">
-                      {cliente.tipoPessoa === "JURIDICA" ? (
-                        <Building2 className="h-4 w-4 text-default-400" />
-                      ) : (
-                        <User className="h-4 w-4 text-default-400" />
-                      )}
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold">
-                          {cliente.nome}
-                        </span>
-                        {cliente.email && (
-                          <span className="text-xs text-default-400">
-                            {cliente.email}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </Select>
+              />
             )}
 
             {/* Select de Advogado Responsável */}
-            <Select
+            <SearchableSelect
               isRequired
               description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
+              emptyContent="Nenhuma autoridade encontrada"
+              items={juizOptions}
               isLoading={isLoadingJuizes}
               label="Autoridade do Caso *"
               placeholder="Selecione o juiz ou promotor responsável"
-              selectedKeys={selectedJuizKeys}
+              selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) => ({
                   ...prev,
-                  juizId: (Array.from(keys)[0] as string) || "",
+                  juizId: selectedKey || "",
                 }))
               }
-            >
-              {(juizesDisponiveis || []).map((juiz) => (
-                <SelectItem key={juiz.id} textValue={juiz.nome}>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{juiz.nome}</span>
-                    <span className="text-[11px] text-primary/80">
-                      {juiz.tipoAutoridade === "PROMOTOR" ? "Promotor" : "Juiz"}
-                    </span>
-                    <span className="text-xs text-default-400">
-                      {[juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
-                        "Sem vara/comarca informada"}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
-            <Select
+            <SearchableSelect
               description="Tribunal ao qual o processo está vinculado. Pode ser global (oficial) ou do seu escritório."
+              emptyContent="Nenhum tribunal encontrado"
+              items={tribunalOptions}
               isLoading={isLoadingTribunais}
               isRequired
               label="Tribunal *"
               placeholder="Selecione o tribunal do caso"
-              selectedKeys={selectedTribunalKeys}
+              selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) => ({
                   ...prev,
-                  tribunalId: (Array.from(keys)[0] as string) || "",
+                  tribunalId: selectedKey || "",
                 }))
               }
-            >
-              {(tribunais || []).map((tribunal) => (
-                <SelectItem
-                  key={tribunal.id}
-                  textValue={
-                    tribunal.sigla
-                      ? `${tribunal.sigla} - ${tribunal.nome}`
-                      : tribunal.nome
-                  }
-                >
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">
-                      {tribunal.sigla
-                        ? `${tribunal.sigla} - ${tribunal.nome}`
-                        : tribunal.nome}
-                    </span>
-                    <span className="text-xs text-default-400">
-                      {[tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
-                        "Sem esfera/UF"}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
-            <Select
+            <SearchableSelect
               description="Pessoa que lidera o caso e recebe a responsabilidade principal."
+              emptyContent="Nenhum advogado encontrado"
+              items={advogadoOptions}
               isLoading={isLoadingAdvogados}
               isClearable
               label="Advogado Responsável"
               placeholder="Selecione um advogado (opcional)"
-              selectedKeys={selectedAdvogadoKeys}
+              selectedKey={selectedAdvogadoKeys[0] ?? null}
               startContent={<Scale className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) => ({
                   ...prev,
-                  advogadoResponsavelId: (Array.from(keys)[0] as string) || "",
+                  advogadoResponsavelId: selectedKey || "",
                 }))
               }
-            >
-              {(advogados || []).map((advogado) => (
-                <SelectItem key={advogado.id} textValue={advogado.label}>
-                  <div className="flex items-center gap-2">
-                    <Scale className="h-4 w-4 text-default-400" />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold">
-                        {advogado.label}
-                      </span>
-                      {advogado.oab && (
-                        <span className="text-xs text-default-400">
-                          OAB {advogado.oab}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Input

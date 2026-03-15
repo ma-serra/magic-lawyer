@@ -44,6 +44,7 @@ import {
 import { title } from "@/components/primitives";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 type ClienteSelectItem = Pick<
   ClienteDTO,
@@ -202,6 +203,34 @@ export default function NovaProcuracaoPage() {
         ),
       ),
     [formData.advogadoIds, advogadoKeys],
+  );
+  const clienteOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente: ClienteSelectItem) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+        startContent:
+          cliente.tipoPessoa === TipoPessoa.JURIDICA ? (
+            <Building2 className="h-4 w-4 text-default-400" />
+          ) : (
+            <User className="h-4 w-4 text-default-400" />
+          ),
+      })),
+    [clientes],
+  );
+  const modeloOptions = useMemo(
+    () =>
+      (modelos || []).map((modelo: ModeloSelectItem) => ({
+        key: modelo.id,
+        label: modelo.nome,
+        textValue: [modelo.nome, modelo.categoria || ""].filter(Boolean).join(" "),
+        description: modelo.categoria || undefined,
+      })),
+    [modelos],
   );
 
   const poderes = formData.poderes ?? [];
@@ -414,37 +443,21 @@ export default function NovaProcuracaoPage() {
             </h3>
 
             {!clienteIdParam && (
-              <Select
+              <SearchableSelect
                 isRequired
                 description="Selecione o cliente outorgante"
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
                 label="Cliente *"
                 placeholder="Selecione um cliente"
-                selectedKeys={selectedClienteKeys}
+                selectedKey={selectedClienteKeys[0] ?? null}
                 startContent={<User className="h-4 w-4 text-default-400" />}
-                onSelectionChange={handleClienteSelection}
-              >
-                {clientes.map((cliente: ClienteSelectItem) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    <div className="flex items-center gap-2">
-                      {cliente.tipoPessoa === TipoPessoa.JURIDICA ? (
-                        <Building2 className="h-4 w-4 text-default-400" />
-                      ) : (
-                        <User className="h-4 w-4 text-default-400" />
-                      )}
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold">
-                          {cliente.nome}
-                        </span>
-                        {cliente.email && (
-                          <span className="text-xs text-default-400">
-                            {cliente.email}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </Select>
+                onSelectionChange={(selectedKey) =>
+                  handleClienteSelection(
+                    selectedKey ? new Set([selectedKey]) : new Set(),
+                  )
+                }
+              />
             )}
 
             <Input
@@ -457,35 +470,20 @@ export default function NovaProcuracaoPage() {
               }
             />
 
-            <Select
+            <SearchableSelect
+              emptyContent="Nenhum modelo encontrado"
+              items={modeloOptions}
               isLoading={isLoadingModelos}
               label="Modelo de Procuração"
               placeholder="Selecione um modelo (opcional)"
-              selectedKeys={selectedModeloKeys}
-              onSelectionChange={(keys) => {
-                const [key] = Array.from(keys);
-
+              selectedKey={selectedModeloKeys[0] ?? null}
+              onSelectionChange={(key) => {
                 setFormData((prev) => ({
                   ...prev,
-                  modeloId: (key as string | undefined) || undefined,
+                  modeloId: key || undefined,
                 }));
               }}
-            >
-              {(modelos ?? []).map((modelo: ModeloSelectItem) => (
-                <SelectItem key={modelo.id} textValue={modelo.nome}>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-default-700">
-                      {modelo.nome}
-                    </span>
-                    {modelo.categoria && (
-                      <span className="text-xs text-default-400">
-                        {modelo.categoria}
-                      </span>
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
             <Input
               label="URL do Documento (opcional)"

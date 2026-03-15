@@ -653,6 +653,342 @@ export interface CausasOficiaisSyncResult {
   } | null;
 }
 
+export interface AdminCausasLinkageTenantRow {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  tenantStatus: string;
+  catalogCount: number;
+  officialCount: number;
+  internalCount: number;
+  processCount: number;
+  diligenciaCount: number;
+  peticaoCount: number;
+  prazoCount: number;
+  contractDocumentCount: number;
+  clientProcessCount: number;
+  clientCount: number;
+  hasOperationalImpact: boolean;
+}
+
+export interface AdminCausasLinkageSnapshot {
+  success: boolean;
+  error?: string;
+  generatedAt?: string;
+  totals?: {
+    tenantsWithCatalog: number;
+    tenantsWithOperationalImpact: number;
+    catalogCount: number;
+    officialCount: number;
+    internalCount: number;
+    processCount: number;
+    diligenciaCount: number;
+    peticaoCount: number;
+    prazoCount: number;
+    contractDocumentCount: number;
+    clientProcessCount: number;
+    clientCount: number;
+  };
+  tenants?: AdminCausasLinkageTenantRow[];
+}
+
+function buildCountMap(
+  rows: Array<{
+    tenantId: string;
+    _count: {
+      _all: number;
+    };
+  }>,
+) {
+  return new Map(rows.map((row) => [row.tenantId, row._count._all]));
+}
+
+function sumTenantLinkageCount(
+  tenant: Pick<
+    AdminCausasLinkageTenantRow,
+    | "processCount"
+    | "diligenciaCount"
+    | "peticaoCount"
+    | "prazoCount"
+    | "contractDocumentCount"
+    | "clientProcessCount"
+    | "clientCount"
+  >,
+) {
+  return (
+    tenant.processCount +
+    tenant.diligenciaCount +
+    tenant.peticaoCount +
+    tenant.prazoCount +
+    tenant.contractDocumentCount +
+    tenant.clientProcessCount +
+    tenant.clientCount
+  );
+}
+
+export async function getAdminCausasLinkageSnapshot(): Promise<AdminCausasLinkageSnapshot> {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return {
+        success: false,
+        error: "Não autorizado",
+      };
+    }
+
+    const user = session.user as any;
+
+    if (!isSuperAdmin(user.role)) {
+      return {
+        success: false,
+        error: "Sem permissão para visualizar o mapa administrativo de causas.",
+      };
+    }
+
+    const [
+      tenants,
+      catalogCountRows,
+      officialCountRows,
+      processCountRows,
+      diligenciaCountRows,
+      peticaoCountRows,
+      prazoCountRows,
+      contractDocumentCountRows,
+      clientVisibleProcessRows,
+      clientVisiblePairs,
+    ] = await Promise.all([
+      prisma.tenant.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      }),
+      prisma.causa.groupBy({
+        by: ["tenantId"],
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.causa.groupBy({
+        by: ["tenantId"],
+        where: {
+          isOficial: true,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.processoCausa.groupBy({
+        by: ["tenantId"],
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.diligencia.groupBy({
+        by: ["tenantId"],
+        where: {
+          causaId: {
+            not: null,
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.peticao.groupBy({
+        by: ["tenantId"],
+        where: {
+          causaId: {
+            not: null,
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.processoPrazo.groupBy({
+        by: ["tenantId"],
+        where: {
+          causaId: {
+            not: null,
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.contratoDocumento.groupBy({
+        by: ["tenantId"],
+        where: {
+          causaId: {
+            not: null,
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.processo.findMany({
+        where: {
+          deletedAt: null,
+          causasVinculadas: {
+            some: {},
+          },
+        },
+        select: {
+          tenantId: true,
+          clienteId: true,
+        },
+      }),
+      prisma.processo.findMany({
+        where: {
+          deletedAt: null,
+          causasVinculadas: {
+            some: {},
+          },
+        },
+        select: {
+          tenantId: true,
+          clienteId: true,
+        },
+        distinct: ["tenantId", "clienteId"],
+      }),
+    ]);
+
+    const catalogMap = buildCountMap(catalogCountRows);
+    const officialMap = buildCountMap(officialCountRows);
+    const processMap = buildCountMap(processCountRows);
+    const diligenciaMap = buildCountMap(diligenciaCountRows);
+    const peticaoMap = buildCountMap(peticaoCountRows);
+    const prazoMap = buildCountMap(prazoCountRows);
+    const contractDocumentMap = buildCountMap(contractDocumentCountRows);
+
+    const clientVisibleProcessMap = new Map<string, number>();
+    for (const row of clientVisibleProcessRows) {
+      clientVisibleProcessMap.set(
+        row.tenantId,
+        (clientVisibleProcessMap.get(row.tenantId) ?? 0) + 1,
+      );
+    }
+
+    const clientVisibleCountMap = new Map<string, number>();
+    for (const row of clientVisiblePairs) {
+      clientVisibleCountMap.set(
+        row.tenantId,
+        (clientVisibleCountMap.get(row.tenantId) ?? 0) + 1,
+      );
+    }
+
+    const tenantRows: AdminCausasLinkageTenantRow[] = tenants.map((tenant) => {
+      const catalogCount = catalogMap.get(tenant.id) ?? 0;
+      const officialCount = officialMap.get(tenant.id) ?? 0;
+      const internalCount = Math.max(0, catalogCount - officialCount);
+      const processCount = processMap.get(tenant.id) ?? 0;
+      const diligenciaCount = diligenciaMap.get(tenant.id) ?? 0;
+      const peticaoCount = peticaoMap.get(tenant.id) ?? 0;
+      const prazoCount = prazoMap.get(tenant.id) ?? 0;
+      const contractDocumentCount = contractDocumentMap.get(tenant.id) ?? 0;
+      const clientProcessCount = clientVisibleProcessMap.get(tenant.id) ?? 0;
+      const clientCount = clientVisibleCountMap.get(tenant.id) ?? 0;
+
+      const row: AdminCausasLinkageTenantRow = {
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        tenantSlug: tenant.slug,
+        tenantStatus: tenant.status,
+        catalogCount,
+        officialCount,
+        internalCount,
+        processCount,
+        diligenciaCount,
+        peticaoCount,
+        prazoCount,
+        contractDocumentCount,
+        clientProcessCount,
+        clientCount,
+        hasOperationalImpact:
+          catalogCount > 0 ||
+          processCount > 0 ||
+          diligenciaCount > 0 ||
+          peticaoCount > 0 ||
+          prazoCount > 0 ||
+          contractDocumentCount > 0 ||
+          clientProcessCount > 0 ||
+          clientCount > 0,
+      };
+
+      return row;
+    });
+
+    const totals = tenantRows.reduce(
+      (accumulator, tenant) => {
+        accumulator.catalogCount += tenant.catalogCount;
+        accumulator.officialCount += tenant.officialCount;
+        accumulator.internalCount += tenant.internalCount;
+        accumulator.processCount += tenant.processCount;
+        accumulator.diligenciaCount += tenant.diligenciaCount;
+        accumulator.peticaoCount += tenant.peticaoCount;
+        accumulator.prazoCount += tenant.prazoCount;
+        accumulator.contractDocumentCount += tenant.contractDocumentCount;
+        accumulator.clientProcessCount += tenant.clientProcessCount;
+        accumulator.clientCount += tenant.clientCount;
+        accumulator.tenantsWithCatalog += tenant.catalogCount > 0 ? 1 : 0;
+        accumulator.tenantsWithOperationalImpact +=
+          sumTenantLinkageCount(tenant) > 0 ? 1 : 0;
+
+        return accumulator;
+      },
+      {
+        tenantsWithCatalog: 0,
+        tenantsWithOperationalImpact: 0,
+        catalogCount: 0,
+        officialCount: 0,
+        internalCount: 0,
+        processCount: 0,
+        diligenciaCount: 0,
+        peticaoCount: 0,
+        prazoCount: 0,
+        contractDocumentCount: 0,
+        clientProcessCount: 0,
+        clientCount: 0,
+      },
+    );
+
+    return {
+      success: true,
+      generatedAt: new Date().toISOString(),
+      totals,
+      tenants: tenantRows.sort((left, right) => {
+        const rightImpact = sumTenantLinkageCount(right);
+        const leftImpact = sumTenantLinkageCount(left);
+
+        if (rightImpact !== leftImpact) {
+          return rightImpact - leftImpact;
+        }
+
+        if (right.catalogCount !== left.catalogCount) {
+          return right.catalogCount - left.catalogCount;
+        }
+
+        return left.tenantName.localeCompare(right.tenantName, "pt-BR");
+      }),
+    };
+  } catch (error) {
+    logger.error("Erro ao carregar snapshot administrativo de causas:", error);
+
+    return {
+      success: false,
+      error: "Erro ao carregar o mapa administrativo de causas.",
+    };
+  }
+}
+
 type CausaSyncAuditRow = {
   id: string;
   nome: string;

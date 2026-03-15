@@ -16,6 +16,7 @@ import { useEventoFormData } from "@/app/hooks/use-eventos";
 import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { Evento, EventoTipo, EventoStatus } from "@/generated/prisma";
 import { DateInput } from "@/components/ui/date-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 // Interface específica para o formulário (com DateValue para datas)
 interface FormEventoData {
@@ -217,6 +218,47 @@ export default function EventoForm({
     advogadoKeys.has(formData.advogadoResponsavelId)
       ? [formData.advogadoResponsavelId]
       : [];
+  const clienteOptions = useMemo(
+    () =>
+      (selectData?.clientes || []).map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+      })),
+    [selectData?.clientes],
+  );
+  const processoOptions = useMemo(
+    () =>
+      processosFiltrados.map((processo) => ({
+        key: processo.id,
+        label: processo.numero,
+        textValue: [processo.numero, processo.titulo || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: processo.titulo || "Sem titulo",
+      })),
+    [processosFiltrados],
+  );
+  const advogadoOptions = useMemo(
+    () =>
+      (selectData?.advogados || []).map((advogado) => {
+        const nome =
+          `${advogado.usuario.firstName || ""} ${
+            advogado.usuario.lastName || ""
+          }`.trim() || advogado.usuario.email;
+
+        return {
+          key: advogado.id,
+          label: nome,
+          textValue: [nome, advogado.usuario.email || ""].filter(Boolean).join(" "),
+          description: advogado.usuario.email || undefined,
+        };
+      }),
+    [selectData?.advogados],
+  );
 
   // Inicializar formData quando modal abre ou evento muda
   useEffect(() => {
@@ -379,7 +421,7 @@ export default function EventoForm({
       onClose={onClose}
     >
       <ModalContent>
-        <form onSubmit={handleSubmit}>
+        <form data-testid="evento-form-modal" onSubmit={handleSubmit}>
           <ModalHeader className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
@@ -598,27 +640,23 @@ export default function EventoForm({
 
                 {/* Relacionamentos */}
                 <div className="grid grid-cols-3 gap-4">
-                  <Select
+                  <SearchableSelect
                     color="secondary"
                     label="Cliente"
                     placeholder="Selecione um cliente"
-                    selectedKeys={selectedClienteKeys}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string | undefined;
-
+                    items={clienteOptions}
+                    selectedKey={selectedClienteKeys[0] ?? null}
+                    onSelectionChange={(selectedKey) => {
+                      
                       setFormData({
                         ...formData,
                         clienteId: selectedKey ?? null,
                         processoId: null, // Limpar processo quando cliente muda
                       });
                     }}
-                  >
-                    {selectData?.clientes?.map((cliente) => (
-                      <SelectItem key={cliente.id} textValue={cliente.nome}>{cliente.nome}</SelectItem>
-                    )) || []}
-                  </Select>
+                  />
 
-                  <Select
+                  <SearchableSelect
                     color="warning"
                     isDisabled={!formData.clienteId}
                     label="Processo"
@@ -627,42 +665,28 @@ export default function EventoForm({
                         ? "Selecione um processo"
                         : "Primeiro selecione um cliente"
                     }
-                    selectedKeys={selectedProcessoKeys}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string | undefined;
+                    items={processoOptions}
+                    selectedKey={selectedProcessoKeys[0] ?? null}
+                    onSelectionChange={(selectedKey) => {
 
                       setFormData({ ...formData, processoId: selectedKey ?? null });
                     }}
-                  >
-                    {processosFiltrados.map((processo) => (
-                      <SelectItem key={processo.id} textValue={processo.numero}>
-                        {processo.numero}
-                      </SelectItem>
-                    ))}
-                  </Select>
+                  />
 
-                  <Select
+                  <SearchableSelect
                     color="success"
                     label="Advogado Responsável"
                     placeholder="Selecione um advogado"
-                    selectedKeys={selectedAdvogadoKeys}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string | undefined;
+                    items={advogadoOptions}
+                    selectedKey={selectedAdvogadoKeys[0] ?? null}
+                    onSelectionChange={(selectedKey) => {
 
                       setFormData({
                         ...formData,
                         advogadoResponsavelId: selectedKey ?? null,
                       });
                     }}
-                  >
-                    {selectData?.advogados?.map((advogado) => (
-                      <SelectItem key={advogado.id} textValue={`${advogado.usuario.firstName || ""} ${advogado.usuario.lastName || ""}`.trim() ||
-                          advogado.usuario.email}>
-                        {`${advogado.usuario.firstName || ""} ${advogado.usuario.lastName || ""}`.trim() ||
-                          advogado.usuario.email}
-                      </SelectItem>
-                    )) || []}
-                  </Select>
+                  />
                 </div>
 
                 {/* Participantes */}

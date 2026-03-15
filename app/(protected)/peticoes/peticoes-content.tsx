@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import {
@@ -67,6 +67,7 @@ import {
   usePeticaoAssinada,
 } from "@/app/hooks/use-assinaturas";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 
 // ============================================
 // TIPOS
@@ -190,6 +191,16 @@ export default function PeticoesPage({
   const dashboard = dashboardData?.data as DashboardData | undefined;
   const processos = processosData?.processos || [];
   const tipos = tiposData?.data || [];
+  const processoOptions = useMemo(
+    () =>
+      processos.map((proc: any) => ({
+        key: proc.id,
+        label: proc.numero,
+        textValue: [proc.numero, proc.titulo || ""].filter(Boolean).join(" "),
+        description: proc.titulo || undefined,
+      })),
+    [processos],
+  );
   const pagination = peticoesData?.pagination || {
     page: currentPage,
     perPage: itemsPerPage,
@@ -806,6 +817,16 @@ function PeticaoModal({
   // Hook para buscar modelos ativos
   const { modelos: modelosDisponiveis, isLoading: loadingModelos } =
     useModelosPeticaoAtivos();
+  const processoOptions = useMemo(
+    () =>
+      processos.map((proc: any) => ({
+        key: proc.id,
+        label: proc.numero,
+        textValue: [proc.numero, proc.titulo || ""].filter(Boolean).join(" "),
+        description: proc.titulo || undefined,
+      })),
+    [processos],
+  );
 
   useEffect(() => {
     if (mode === "create") {
@@ -1012,32 +1033,23 @@ function PeticaoModal({
           {mode === "view" && "Detalhes da Petição"}
         </ModalHeader>
         <ModalBody className="gap-4">
-          <Select
+          <SearchableSelect
+            emptyContent="Nenhum processo encontrado"
+            items={processoOptions}
             isRequired
             isDisabled={isReadOnly}
             label="Processo"
             placeholder="Selecione o processo"
-            selectedKeys={
+            selectedKey={
               formData.processoId &&
               processos.some((p: any) => p.id === formData.processoId)
-                ? [formData.processoId]
-                : []
+                ? formData.processoId
+                : null
             }
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0];
-
-              setFormData({ ...formData, processoId: value as string });
+            onSelectionChange={(value) => {
+              setFormData({ ...formData, processoId: value || "" });
             }}
-          >
-            {processos.map((proc: any) => (
-              <SelectItem
-                key={proc.id}
-                textValue={`${proc.numero}${proc.titulo ? ` - ${proc.titulo}` : ""}`}
-              >
-                {proc.numero} {proc.titulo ? `- ${proc.titulo}` : ""}
-              </SelectItem>
-            ))}
-          </Select>
+          />
 
           {mode === "create" && (
             <div className="space-y-2">

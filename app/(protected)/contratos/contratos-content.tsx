@@ -55,6 +55,7 @@ import {
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import { SearchableSelect } from "@/components/searchable-select";
 
 const STATUS_OPTIONS = [
   { key: "ATIVO", label: "Ativo", color: "success" as const },
@@ -251,6 +252,27 @@ export default function ContratosContent() {
     () => new Set(clienteItems.map((cliente) => cliente.id)),
     [clienteItems],
   );
+  const clienteFilterOptions = useMemo(
+    () =>
+      clienteItems.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [
+          cliente.nome,
+          "email" in cliente ? cliente.email || "" : "",
+          "documento" in cliente ? cliente.documento || "" : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          cliente.id === "todos"
+            ? "Remover filtro de cliente"
+            : "email" in cliente
+              ? cliente.email || undefined
+              : undefined,
+      })),
+    [clienteItems],
+  );
   const selectedOrdenacaoKeys = ordenacaoKeySet.has(ordenacao)
     ? [ordenacao]
     : ["recente"];
@@ -436,20 +458,17 @@ export default function ContratosContent() {
                 )}
               </Select>
 
-              <Select
+              <SearchableSelect
+                emptyContent="Nenhum cliente encontrado"
+                isClearable={false}
+                items={clienteFilterOptions}
                 label="Cliente"
                 placeholder="Todos os clientes"
-                selectedKeys={selectedClienteKeys}
-                onSelectionChange={(keys) =>
-                  setFiltroCliente((Array.from(keys)[0] as string) || "todos")
+                selectedKey={selectedClienteKeys[0] ?? "todos"}
+                onSelectionChange={(selectedKey) =>
+                  setFiltroCliente(selectedKey || "todos")
                 }
-              >
-                {clienteItems.map((cliente) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    {cliente.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
               <Input
                 label="Valor mínimo"

@@ -48,6 +48,7 @@ import {
 } from "@/generated/prisma";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 export default function EditarProcessoPage() {
   const params = useParams();
@@ -115,6 +116,64 @@ export default function EditarProcessoPage() {
     formData?.tribunalId && tribunalKeys.has(formData.tribunalId)
       ? [formData.tribunalId]
       : [];
+  const clienteOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+        startContent:
+          cliente.tipoPessoa === "JURIDICA" ? (
+            <Building2 className="h-4 w-4 text-default-400" />
+          ) : (
+            <User className="h-4 w-4 text-default-400" />
+          ),
+      })),
+    [clientes],
+  );
+  const juizOptions = useMemo(
+    () =>
+      (juizesDisponiveis || []).map((juiz) => ({
+        key: juiz.id,
+        label: juiz.nome,
+        textValue: [
+          juiz.nome,
+          juiz.vara || "",
+          juiz.comarca || "",
+          juiz.tipoAutoridade || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+          "Sem vara/comarca informada",
+      })),
+    [juizesDisponiveis],
+  );
+  const tribunalOptions = useMemo(
+    () =>
+      (tribunais || []).map((tribunal) => ({
+        key: tribunal.id,
+        label: tribunal.sigla
+          ? `${tribunal.sigla} - ${tribunal.nome}`
+          : tribunal.nome,
+        textValue: [
+          tribunal.sigla || "",
+          tribunal.nome,
+          tribunal.esfera || "",
+          tribunal.uf || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+          "Sem esfera/UF",
+      })),
+    [tribunais],
+  );
 
   useEffect(() => {
     if (!processo || formData) return;
@@ -349,43 +408,22 @@ export default function EditarProcessoPage() {
               📋 Dados Básicos
             </h3>
 
-            <Select
+            <SearchableSelect
               isRequired
               description="Cliente principal do processo. Ele permanece como parte autora."
+              emptyContent="Nenhum cliente encontrado"
+              items={clienteOptions}
+              isLoading={isLoadingClientes}
               label="Cliente *"
               placeholder="Selecione um cliente"
-              selectedKeys={selectedClienteKeys}
+              selectedKey={selectedClienteKeys[0] ?? null}
               startContent={<User className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) =>
-                  prev
-                    ? { ...prev, clienteId: Array.from(keys)[0] as string }
-                    : prev,
+                  prev ? { ...prev, clienteId: selectedKey || "" } : prev,
                 )
               }
-            >
-              {clientes.map((cliente) => (
-                <SelectItem key={cliente.id} textValue={cliente.nome}>
-                  <div className="flex items-center gap-2">
-                    {cliente.tipoPessoa === "JURIDICA" ? (
-                      <Building2 className="h-4 w-4 text-default-400" />
-                    ) : (
-                      <User className="h-4 w-4 text-default-400" />
-                    )}
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold">
-                        {cliente.nome}
-                      </span>
-                      {cliente.email && (
-                        <span className="text-xs text-default-400">
-                          {cliente.email}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Input
@@ -460,80 +498,39 @@ export default function EditarProcessoPage() {
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Select
+            <SearchableSelect
               description="Juiz responsável para rastrear padrão de decisões e produtividade."
+              emptyContent="Nenhuma autoridade encontrada"
               isLoading={isLoadingJuizes}
               isRequired
+              items={juizOptions}
               label="Juiz do Caso *"
               placeholder="Selecione o juiz responsável pelo caso"
-              selectedKeys={selectedJuizKeys}
+              selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        juizId: (Array.from(keys)[0] as string) || "",
-                      }
-                    : prev,
+                  prev ? { ...prev, juizId: selectedKey || "" } : prev,
                 )
               }
-            >
-              {(juizesDisponiveis || []).map((juiz) => (
-                <SelectItem key={juiz.id} textValue={juiz.nome}>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{juiz.nome}</span>
-                    <span className="text-xs text-default-400">
-                      {[juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
-                        "Sem vara/comarca informada"}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
-            <Select
+            <SearchableSelect
               description="Tribunal onde o processo tramita."
+              emptyContent="Nenhum tribunal encontrado"
               isLoading={isLoadingTribunais}
               isRequired
+              items={tribunalOptions}
               label="Tribunal *"
               placeholder="Selecione o tribunal"
-              selectedKeys={selectedTribunalKeys}
+              selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        tribunalId: (Array.from(keys)[0] as string) || "",
-                      }
-                    : prev,
+                  prev ? { ...prev, tribunalId: selectedKey || "" } : prev,
                 )
               }
-            >
-              {(tribunais || []).map((tribunal) => (
-                <SelectItem
-                  key={tribunal.id}
-                  textValue={
-                    tribunal.sigla
-                      ? `${tribunal.sigla} - ${tribunal.nome}`
-                      : tribunal.nome
-                  }
-                >
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">
-                      {tribunal.sigla
-                        ? `${tribunal.sigla} - ${tribunal.nome}`
-                        : tribunal.nome}
-                    </span>
-                    <span className="text-xs text-default-400">
-                      {[tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
-                        "Sem esfera/UF"}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </Select>
+            />
 
             <Select
               description="Situação atual do processo no escritório."

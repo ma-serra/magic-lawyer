@@ -42,6 +42,7 @@ import {
 } from "@/app/hooks/use-modelos-contrato";
 import { Select, SelectItem } from "@heroui/react";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { SearchableSelect } from "@/components/searchable-select";
 
 export default function NovoContratoPage() {
   const formatBancoLabel = (conta: any) => {
@@ -133,6 +134,58 @@ export default function NovoContratoPage() {
     procuracoes.some((procuracao: any) => procuracao.id === procuracaoSelecionada)
       ? [procuracaoSelecionada]
       : [];
+  const clienteOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente: any) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.email || "", cliente.documento || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.email || undefined,
+        startContent:
+          cliente.tipoPessoa === "JURIDICA" ? (
+            <Building2 className="h-4 w-4 text-default-400" />
+          ) : (
+            <User className="h-4 w-4 text-default-400" />
+          ),
+      })),
+    [clientes],
+  );
+  const tipoContratoOptions = useMemo(
+    () =>
+      (tipos || []).map((tipo) => ({
+        key: tipo.id,
+        label: tipo.nome,
+        textValue: tipo.nome,
+      })),
+    [tipos],
+  );
+  const modeloContratoOptions = useMemo(
+    () =>
+      (modelos || []).map((modelo) => ({
+        key: modelo.id,
+        label: modelo.nome,
+        textValue: [modelo.nome, modelo.categoria || ""].filter(Boolean).join(" "),
+        description: modelo.categoria || undefined,
+      })),
+    [modelos],
+  );
+  const procuracaoOptions = useMemo(
+    () =>
+      procuracoes.map((procuracao: any) => ({
+        key: procuracao.id,
+        label: procuracao.numero || `Procuração ${procuracao.id}`,
+        textValue: [
+          procuracao.numero || procuracao.id,
+          procuracao.titulo || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description: procuracao.titulo || undefined,
+      })),
+    [procuracoes],
+  );
 
   const createProcuracaoLink = useMemo(() => {
     if (!formData.clienteId) {
@@ -419,42 +472,23 @@ export default function NovoContratoPage() {
 
             {/* Select de Cliente (se não veio de um cliente) */}
             {!clienteIdParam && (
-              <Select
+              <SearchableSelect
                 isRequired
                 description="Selecione o cliente vinculado a este contrato"
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
+                isLoading={isLoadingClientes}
                 label="Cliente *"
                 placeholder="Selecione um cliente"
-                selectedKeys={selectedClienteKeys}
+                selectedKey={selectedClienteKeys[0] ?? null}
                 startContent={<User className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) =>
+                onSelectionChange={(selectedKey) =>
                   setFormData((prev) => ({
                     ...prev,
-                    clienteId: Array.from(keys)[0] as string,
+                    clienteId: selectedKey || "",
                   }))
                 }
-              >
-                {clientes.map((cliente: any) => (
-                  <SelectItem key={cliente.id} textValue={cliente.nome}>
-                    <div className="flex items-center gap-2">
-                      {cliente.tipoPessoa === "JURIDICA" ? (
-                        <Building2 className="h-4 w-4 text-default-400" />
-                      ) : (
-                        <User className="h-4 w-4 text-default-400" />
-                      )}
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold">
-                          {cliente.nome}
-                        </span>
-                        {cliente.email && (
-                          <span className="text-xs text-default-400">
-                            {cliente.email}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </Select>
+              />
             )}
 
             <Input
@@ -468,15 +502,15 @@ export default function NovoContratoPage() {
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select
+              <SearchableSelect
                 description="Classificação para relatórios e filtros operacionais."
+                emptyContent="Nenhum tipo encontrado"
+                items={tipoContratoOptions}
                 isLoading={isLoadingTiposContrato}
                 label="Tipo de contrato"
                 placeholder="Selecione o tipo"
-                selectedKeys={selectedTipoContratoKeys}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string | undefined;
-
+                selectedKey={selectedTipoContratoKeys[0] ?? null}
+                onSelectionChange={(selected) => {
                   setFormData((prev) => ({
                     ...prev,
                     tipoContratoId: selected || undefined,
@@ -486,16 +520,12 @@ export default function NovoContratoPage() {
                         : undefined,
                   }));
                 }}
-              >
-                {(tipos || []).map((tipo) => (
-                  <SelectItem key={tipo.id} textValue={tipo.nome}>
-                    {tipo.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              />
 
-              <Select
+              <SearchableSelect
                 description="Modelo pronto para iniciar o texto-base do contrato."
+                emptyContent="Nenhum modelo encontrado"
+                items={modeloContratoOptions}
                 isDisabled={!formData.tipoContratoId || isLoadingModelosContrato}
                 isLoading={isLoadingModelosContrato}
                 label="Modelo de contrato"
@@ -504,29 +534,14 @@ export default function NovoContratoPage() {
                     ? "Selecione um modelo"
                     : "Escolha o tipo primeiro"
                 }
-                selectedKeys={selectedModeloContratoKeys}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string | undefined;
-
+                selectedKey={selectedModeloContratoKeys[0] ?? null}
+                onSelectionChange={(selected) => {
                   setFormData((prev) => ({
                     ...prev,
                     modeloContratoId: selected || undefined,
                   }));
                 }}
-              >
-                {(modelos || []).map((modelo) => (
-                  <SelectItem key={modelo.id} textValue={modelo.nome}>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold">{modelo.nome}</span>
-                      {modelo.categoria ? (
-                        <span className="text-xs text-default-400">
-                          {modelo.categoria}
-                        </span>
-                      ) : null}
-                    </div>
-                  </SelectItem>
-                ))}
-              </Select>
+              />
             </div>
 
             {/* Nota sobre vinculação de procuração */}
@@ -572,7 +587,9 @@ export default function NovoContratoPage() {
 
                 {vincularProcuracao && (
                   <div className="mt-3">
-                    <Select
+                    <SearchableSelect
+                      emptyContent="Nenhuma procuração disponível"
+                      items={procuracaoOptions}
                       isDisabled={isLoadingProcuracoes || procuracoes.length === 0}
                       isLoading={isLoadingProcuracoes}
                       label="Procuração"
@@ -581,29 +598,11 @@ export default function NovoContratoPage() {
                           ? "Nenhuma procuração disponível"
                           : "Selecione uma procuração"
                       }
-                      selectedKeys={selectedProcuracaoKeys}
-                      onSelectionChange={(keys) =>
-                        setProcuracaoSelecionada(Array.from(keys)[0] as string)
+                      selectedKey={selectedProcuracaoKeys[0] ?? null}
+                      onSelectionChange={(selectedKey) =>
+                        setProcuracaoSelecionada(selectedKey || "")
                       }
-                    >
-                      {procuracoes.map((procuracao: any) => (
-                        <SelectItem
-                          key={procuracao.id}
-                          textValue={procuracao.numero || procuracao.id}
-                        >
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold">
-                              {procuracao.numero || `Procuração ${procuracao.id}`}
-                            </span>
-                            {procuracao.titulo && (
-                              <span className="text-xs text-default-400">
-                                {procuracao.titulo}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </Select>
+                    />
                   </div>
                 )}
 

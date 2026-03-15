@@ -10,7 +10,7 @@ export async function GET() {
     const branding = await getTenantBrandingByHost(host);
 
     if (!branding) {
-      return NextResponse.json({ success: false, data: null }, { status: 404 });
+      return NextResponse.json({ success: false, data: null });
     }
 
     return NextResponse.json({ success: true, data: branding });

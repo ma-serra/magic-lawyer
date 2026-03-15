@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment, type KeyboardEvent } from "react";
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import { Kbd } from "@heroui/kbd";
@@ -13,10 +13,10 @@ import { useSession } from "next-auth/react";
 import { Search, X, AlertCircle } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
+import { SearchableSelect } from "@/components/searchable-select";
 import { useSearchResults } from "@/components/searchbar/use-search-results";
 import { getTenantOptions, type TenantOption } from "@/app/actions/tenant-options";
 import { getSearchStats, type SearchStatsPayload } from "@/app/actions/search-stats";
-import { Select, SelectItem } from "@heroui/react";
 
 interface CentralizedSearchBarProps {
   className?: string;
@@ -64,6 +64,30 @@ export function CentralizedSearchBar({ className = "" }: CentralizedSearchBarPro
   const hasTenantContext = isSuperAdmin
     ? Boolean(selectedTenantId && selectedTenantId !== "") // Super admin precisa selecionar
     : Boolean(tenantContext); // Usuário normal precisa ter tenantId
+  const tenantSearchOptions = useMemo(
+    () => [
+      {
+        key: "ALL",
+        label: "Todos os tenants",
+        textValue: "Todos os tenants estatisticas gerais",
+        description: "Estatisticas agregadas (sem dados sensiveis)",
+      },
+      ...((tenantOptions ?? []).map((tenant) => ({
+        key: tenant.id,
+        label: tenant.name,
+        textValue: [tenant.name, tenant.domain || "", tenant.slug || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: tenant.domain ?? tenant.slug,
+      })) as Array<{
+        key: string;
+        label: string;
+        textValue: string;
+        description?: string;
+      }>),
+    ],
+    [tenantOptions],
+  );
 
   const searchEnabled = hasTenantContext;
 
@@ -294,36 +318,20 @@ export function CentralizedSearchBar({ className = "" }: CentralizedSearchBarPro
                   <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-default-400">Escopo de estatísticas</p>
                   {tenantError ? <span className="text-[11px] text-danger-500">{tenantError instanceof Error ? tenantError.message : "Erro ao carregar tenants"}</span> : null}
                 </div>
-                <Select
+                <SearchableSelect
                   aria-label="Selecionar tenant para buscar"
                   className="max-w-xl"
+                  emptyContent="Nenhum tenant encontrado"
+                  isClearable={false}
                   isLoading={isLoadingTenants}
+                  items={tenantSearchOptions}
                   placeholder="Selecione um tenant para habilitar a busca"
-                  selectedKeys={selectedTenantId ? [selectedTenantId] : ([] as string[])}
+                  selectedKey={selectedTenantId || "ALL"}
                   size="sm"
-                  onSelectionChange={(keys) => {
-                    const [first] = Array.from(keys);
-
-                    setSelectedTenantId((first as string) ?? "");
+                  onSelectionChange={(selectedKey) => {
+                    setSelectedTenantId(selectedKey || "ALL");
                   }}
-                >
-                  <SelectItem key="ALL" textValue="Todos os tenants">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium">Todos os tenants</span>
-                      <span className="text-xs text-default-500">Estatísticas agregadas (sem dados sensíveis)</span>
-                    </div>
-                  </SelectItem>
-                  <Fragment>
-                    {(tenantOptions ?? []).map((tenant) => (
-                      <SelectItem key={tenant.id} textValue={tenant.name}>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium">{tenant.name}</span>
-                          <span className="text-xs text-default-500">{tenant.domain ?? tenant.slug}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </Fragment>
-                </Select>
+                />
                 <p className="text-[11px] text-default-500">Para Super Admin, a busca mostra apenas agregados por tenant (sem dados sensíveis). Use &quot;Todos&quot; para ver estatísticas gerais.</p>
               </div>
             ) : null}
