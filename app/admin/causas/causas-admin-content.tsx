@@ -8,7 +8,6 @@ import {
   Building2,
   CheckCircle2,
   Database,
-  RefreshCw,
   ShieldAlert,
   UserCheck,
   UserX,
@@ -101,6 +100,19 @@ function getTenantStatusColor(status: TenantStatus) {
   }
 }
 
+function getTenantStatusLabel(status: TenantStatus) {
+  switch (status) {
+    case "ACTIVE":
+      return "Ativo";
+    case "SUSPENDED":
+      return "Suspenso";
+    case "CANCELLED":
+      return "Cancelado";
+    default:
+      return status;
+  }
+}
+
 function getTenantSyncLabel(sync: CausaSyncTenantResult) {
   return `${formatNumber(sync.criadas)} novas, ${formatNumber(sync.atualizadas)} atualizadas, ${formatNumber(sync.ignoradas)} ignoradas`;
 }
@@ -177,10 +189,10 @@ export function CausasAdminContent() {
     data: tenants,
     isLoading,
     error,
-    mutate,
   } = useSWR("admin-causas-tenants", fetchAllTenants, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    focusThrottleInterval: 30000,
     keepPreviousData: true,
   });
   const {
@@ -189,8 +201,9 @@ export function CausasAdminContent() {
     error: linkageError,
     mutate: mutateLinkage,
   } = useSWR("admin-causas-linkage", fetchAdminCausasLinkage, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    focusThrottleInterval: 30000,
     keepPreviousData: true,
   });
 
@@ -263,7 +276,16 @@ export function CausasAdminContent() {
         textValue: [tenant.name, tenant.slug, tenant.status]
           .filter(Boolean)
           .join(" "),
-        description: `${tenant.slug} • ${tenant.status}`,
+        description: tenant.slug,
+        endContent: (
+          <Chip
+            color={getTenantStatusColor(tenant.status)}
+            size="sm"
+            variant="flat"
+          >
+            {getTenantStatusLabel(tenant.status)}
+          </Chip>
+        ),
       })),
     [tenantList],
   );
@@ -367,16 +389,6 @@ export function CausasAdminContent() {
         description="Este módulo não replica o CRUD do tenant. Ele existe para operar o catálogo oficial de causas em escala, validar onde o catálogo impacta o produto e abrir o tenant correto quando houver desvio."
         actions={
           <>
-            <Button
-              isDisabled={isLoading || isLoadingLinkage}
-              isLoading={isLoading || isLoadingLinkage}
-              radius="full"
-              startContent={<RefreshCw className="h-4 w-4" />}
-              variant="bordered"
-              onPress={() => void Promise.all([mutate(), mutateLinkage()])}
-            >
-              Atualizar painel
-            </Button>
             <Tooltip content="Fonte oficial consumida pelo sync.">
               <Button
                 as="a"
@@ -898,7 +910,7 @@ export function CausasAdminContent() {
               />
               <PeopleMetricCard
                 helper="Registros revisados no catálogo"
-                icon={<RefreshCw className="h-4 w-4" />}
+                icon={<CheckCircle2 className="h-4 w-4" />}
                 label="Atualizadas"
                 tone="secondary"
                 value={formatNumber(lastResult.atualizadas)}

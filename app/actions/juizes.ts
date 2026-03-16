@@ -1590,23 +1590,7 @@ export async function getProcessosDoJuiz(juizId: string): Promise<{
     const juiz = await prisma.juiz.findFirst({
       where: {
         id: juizId,
-        OR: [
-          { isPublico: true },
-          {
-            favoritos: {
-              some: {
-                tenantId: user.tenantId,
-              },
-            },
-          },
-          {
-            acessos: {
-              some: {
-                tenantId: user.tenantId,
-              },
-            },
-          },
-        ],
+        ...buildJuizAccessWhere(user.tenantId),
       },
     });
 
@@ -1708,23 +1692,7 @@ export async function getJulgamentosDoJuiz(juizId: string): Promise<{
     const juiz = await prisma.juiz.findFirst({
       where: {
         id: juizId,
-        OR: [
-          { isPublico: true },
-          {
-            favoritos: {
-              some: {
-                tenantId: user.tenantId,
-              },
-            },
-          },
-          {
-            acessos: {
-              some: {
-                tenantId: user.tenantId,
-              },
-            },
-          },
-        ],
+        ...buildJuizAccessWhere(user.tenantId),
       },
     });
 

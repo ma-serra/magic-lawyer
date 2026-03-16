@@ -327,6 +327,14 @@ export function useProfileNavigation() {
           : "Base de dados de juízes",
         requiredModules: ["juizes"],
       });
+
+      apoioJuridicoItems.push({
+        label: "Loja Premium",
+        href: "/juizes/pacotes",
+        icon: "CreditCard",
+        description: "Comprar pacotes de autoridades premium",
+        requiredModules: ["juizes"],
+      });
     }
 
     // Portal do Advogado - Acesso para ADMIN e ADVOGADO

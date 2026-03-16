@@ -58,6 +58,7 @@ export default async function Home() {
   ]);
 
   const role = (session?.user as any)?.role as string | undefined;
+  const numberFormatter = new Intl.NumberFormat("pt-BR");
 
   if (session?.user) {
     redirect(role === "SUPER_ADMIN" ? "/admin/dashboard" : "/dashboard");
@@ -66,25 +67,34 @@ export default async function Home() {
   const proofStats = [
     { label: "Processos sob controle", value: metrics.display.processos },
     { label: "Clientes ativos", value: metrics.display.clientes },
-    { label: "Usuários em operação", value: metrics.display.usuarios },
+    { label: "Usuários habilitados", value: metrics.display.usuarios },
     { label: "Escritórios ativos", value: metrics.display.escritorios },
   ];
 
   const controlPanels = [
     {
-      label: "Escritórios",
-      value: metrics.display.escritorios,
-      description: `${metrics.raw.escritorios} tenants ativos na base atual`,
-    },
-    {
-      label: "Usuários",
-      value: metrics.display.usuarios,
-      description: `${metrics.raw.usuarios} usuários ativos com acesso habilitado`,
+      label: "Processos",
+      value: numberFormatter.format(metrics.raw.processos),
+      description:
+        "Base processual real já centralizada na operação dos tenants ativos.",
     },
     {
       label: "Clientes",
-      value: metrics.display.clientes,
-      description: `${metrics.raw.clientes} clientes cadastrados em tenants ativos`,
+      value: numberFormatter.format(metrics.raw.clientes),
+      description:
+        "Carteira cadastrada com histórico, vínculos e documentos nos escritórios ativos.",
+    },
+    {
+      label: "Base multi-tenant",
+      value: numberFormatter.format(metrics.raw.escritorios),
+      description:
+        "Escritórios já operando com branding, permissões e módulos separados.",
+    },
+    {
+      label: "Equipe habilitada",
+      value: numberFormatter.format(metrics.raw.usuarios),
+      description:
+        "Usuários ativos com perfis operacionais, administrativos e jurídicos em uso real.",
     },
   ];
 
@@ -186,7 +196,7 @@ export default async function Home() {
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {controlPanels.map((panel) => (
                     <div
                       key={panel.label}

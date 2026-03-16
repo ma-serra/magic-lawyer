@@ -7,9 +7,9 @@ import { getSession } from "@/app/lib/auth";
 import { TENANT_PERMISSIONS } from "@/types";
 
 export const metadata: Metadata = {
-  title: "Billing da assinatura",
+  title: "Billing da conta",
   description:
-    "Faturas da assinatura do escritório com a plataforma, sem misturar com recebíveis operacionais.",
+    "Faturas da conta do escritório com a plataforma, incluindo assinatura principal e add-ons premium.",
 };
 
 export default async function BillingPage() {
@@ -31,4 +31,3 @@ export default async function BillingPage() {
 
   return <BillingContent />;
 }
-

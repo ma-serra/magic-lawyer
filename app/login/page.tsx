@@ -30,8 +30,8 @@ export default async function LoginPage() {
           value: marketingMetrics.display.clientes,
         },
         {
-          label: "Escritórios em operação",
-          value: marketingMetrics.display.escritorios,
+          label: "Usuários habilitados",
+          value: marketingMetrics.display.usuarios,
         },
       ]}
     />

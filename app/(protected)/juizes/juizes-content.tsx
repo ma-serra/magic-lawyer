@@ -8,6 +8,7 @@ import type {
 } from "@/app/actions/juizes";
 
 import { useMemo, useState } from "react";
+import NextLink from "next/link";
 import { Card, CardBody, CardHeader, CardFooter } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -694,19 +695,30 @@ export function JuizesContent() {
           tag="Gestao de pessoas"
           title="Base de Juizes e Promotores"
           actions={
-            permissions.canCreateJudgeProfiles ? (
+            <div className="flex flex-wrap gap-2">
               <Button
-                color="primary"
+                as={NextLink}
+                href="/juizes/pacotes"
+                radius="full"
                 size="sm"
-                startContent={<Plus className="h-4 w-4" />}
-                onPress={() => {
-                  resetForm();
-                  setIsCreateModalOpen(true);
-                }}
+                variant="bordered"
               >
-                Nova Autoridade
+                Loja premium
               </Button>
-            ) : undefined
+              {permissions.canCreateJudgeProfiles ? (
+                <Button
+                  color="primary"
+                  size="sm"
+                  startContent={<Plus className="h-4 w-4" />}
+                  onPress={() => {
+                    resetForm();
+                    setIsCreateModalOpen(true);
+                  }}
+                >
+                  Nova Autoridade
+                </Button>
+              ) : null}
+            </div>
           }
         />
 

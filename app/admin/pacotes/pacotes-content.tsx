@@ -2,10 +2,20 @@
 
 import type { JuizSerializado } from "@/app/actions/juizes";
 
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import NextLink from "next/link";
 import { Button } from "@heroui/button";
-import { Chip, Spinner } from "@heroui/react";
+import { Chip, Input, Spinner, Textarea } from "@heroui/react";
+import { Divider } from "@heroui/divider";
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from "@heroui/modal";
+import { Switch } from "@heroui/switch";
 import {
   Table,
   TableBody,
@@ -17,6 +27,10 @@ import {
 import {
   BadgeDollarSign,
   Building2,
+  CreditCard,
+  Edit3,
+  Plus,
+  Trash2,
   Crown,
   Gem,
   Layers3,
@@ -33,16 +47,26 @@ import {
 } from "@/app/actions/planos";
 import {
   getEstatisticasPacotesJuiz,
+  getAssinaturasPacotesJuizRecentesAdmin,
+  getPacoteJuizById,
   getPacotesJuiz,
+  createPacoteJuiz,
+  updatePacoteJuiz,
+  deletePacoteJuiz,
+  adicionarJuizAoPacote,
+  removerJuizDoPacote,
   type PacoteJuiz,
+  type RecentPacoteSubscriptionAdminItem,
 } from "@/app/actions/pacotesJuiz";
 import { getJuizesAdmin } from "@/app/actions/juizes";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/searchable-select";
 import {
   PeopleEmptyState,
   PeopleMetricCard,
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import { toast } from "@/lib/toast";
 
 type PlanoCatalogItem = {
   id: string;
@@ -91,6 +115,30 @@ type AssinaturaResumo = {
   createdAt: string | Date;
 };
 
+type PacoteFormState = {
+  nome: string;
+  descricao: string;
+  preco: string;
+  duracaoDias: string;
+  status: "ATIVO" | "INATIVO" | "PROMOCIONAL";
+  ordemExibicao: string;
+  cor: string;
+  icone: string;
+  isPublico: boolean;
+};
+
+const INITIAL_PACOTE_FORM: PacoteFormState = {
+  nome: "",
+  descricao: "",
+  preco: "",
+  duracaoDias: "",
+  status: "ATIVO",
+  ordemExibicao: "0",
+  cor: "primary",
+  icone: "",
+  isPublico: true,
+};
+
 function formatCurrency(value: number | null | undefined, currency = "BRL") {
   if (value == null) return "Sob consulta";
 
@@ -133,6 +181,20 @@ function LoadingBlock({ label }: { label: string }) {
   );
 }
 
+function parseNumberInput(value: string) {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseIntegerInput(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : undefined;
+}
+
 export function PacotesContent() {
   const {
     data: planosResponse,
@@ -143,6 +205,7 @@ export function PacotesContent() {
     data: pacotesResponse,
     error: pacotesError,
     isLoading: loadingPacotes,
+    mutate: mutatePacotes,
   } = useSWR("admin-pacotes-juiz-catalogo", getPacotesJuiz, {
     revalidateOnFocus: true,
   });
@@ -157,6 +220,7 @@ export function PacotesContent() {
     data: statsPacotesResponse,
     error: statsPacotesError,
     isLoading: loadingStatsPacotes,
+    mutate: mutatePacoteStats,
   } = useSWR("admin-pacotes-estatisticas", getEstatisticasPacotesJuiz, {
     revalidateOnFocus: true,
   });
@@ -172,6 +236,7 @@ export function PacotesContent() {
     data: juizesPremiumResponse,
     error: juizesError,
     isLoading: loadingJuizes,
+    mutate: mutateJuizesPremium,
   } = useSWR(
     ["admin-juizes-premium", { isPremium: true }],
     ([, filters]) => getJuizesAdmin(filters),
@@ -179,11 +244,90 @@ export function PacotesContent() {
       revalidateOnFocus: true,
     },
   );
+  const {
+    data: recentPacoteSubscriptionsResponse,
+    error: recentPacoteSubscriptionsError,
+    isLoading: loadingRecentPacoteSubscriptions,
+    mutate: mutateRecentPacoteSubscriptions,
+  } = useSWR(
+    "admin-pacotes-assinaturas-recentes",
+    getAssinaturasPacotesJuizRecentesAdmin,
+    {
+      revalidateOnFocus: true,
+    },
+  );
+
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isSavingPacote, setIsSavingPacote] = useState(false);
+  const [isDeletingPacote, setIsDeletingPacote] = useState<string | null>(null);
+  const [selectedJuizToAdd, setSelectedJuizToAdd] = useState<string | null>(null);
+  const [editingPacoteId, setEditingPacoteId] = useState<string | null>(null);
+  const [loadedJudgeIds, setLoadedJudgeIds] = useState<string[]>([]);
+  const [selectedJudgeIds, setSelectedJudgeIds] = useState<string[]>([]);
+  const [pacoteForm, setPacoteForm] =
+    useState<PacoteFormState>(INITIAL_PACOTE_FORM);
 
   const planos: PlanoCatalogItem[] = planosResponse?.data ?? [];
   const pacotesJuiz: PacoteJuiz[] = pacotesResponse?.data ?? [];
   const assinaturas: AssinaturaResumo[] = assinaturasResponse?.data ?? [];
   const juizesPremium: JuizSerializado[] = juizesPremiumResponse?.data ?? [];
+  const recentPacoteSubscriptions: RecentPacoteSubscriptionAdminItem[] =
+    recentPacoteSubscriptionsResponse?.data ?? [];
+
+  const pacoteStatusOptions: SearchableSelectOption[] = [
+    {
+      key: "ATIVO",
+      label: "Ativo",
+      description: "Disponível para venda imediata no tenant.",
+    },
+    {
+      key: "PROMOCIONAL",
+      label: "Promocional",
+      description: "Ativo no catálogo com apelo comercial de campanha.",
+    },
+    {
+      key: "INATIVO",
+      label: "Inativo",
+      description: "Fora de venda e preservado apenas para histórico.",
+    },
+  ];
+
+  const pacoteColorOptions: SearchableSelectOption[] = [
+    { key: "primary", label: "Azul" },
+    { key: "secondary", label: "Grafite" },
+    { key: "success", label: "Verde" },
+    { key: "warning", label: "Âmbar" },
+    { key: "danger", label: "Vermelho" },
+  ];
+
+  const availableJudgeOptions = useMemo(
+    () =>
+      juizesPremium
+        .filter((juiz) => !selectedJudgeIds.includes(juiz.id))
+        .map(
+          (juiz) =>
+            ({
+              key: juiz.id,
+              label: juiz.nome,
+              textValue: [juiz.nome, juiz.comarca, juiz.vara]
+                .filter(Boolean)
+                .join(" "),
+              description:
+                [juiz.tipoAutoridade, juiz.comarca, juiz.vara]
+                  .filter(Boolean)
+                  .join(" · ") || "Sem detalhamento",
+            }) satisfies SearchableSelectOption,
+        ),
+    [juizesPremium, selectedJudgeIds],
+  );
+
+  const selectedJudgeCards = useMemo(
+    () =>
+      selectedJudgeIds
+        .map((judgeId) => juizesPremium.find((juiz) => juiz.id === judgeId))
+        .filter(Boolean) as JuizSerializado[],
+    [juizesPremium, selectedJudgeIds],
+  );
 
   const planoStats: PlanoStats = statsResponse?.data ?? {
     totalPlanos: 0,
@@ -222,16 +366,189 @@ export function PacotesContent() {
     statsPacotesError,
     assinaturasError,
     juizesError,
+    recentPacoteSubscriptionsError,
   ].filter(Boolean) as Error[];
+
+  const resetPacoteEditor = () => {
+    setEditingPacoteId(null);
+    setLoadedJudgeIds([]);
+    setSelectedJudgeIds([]);
+    setSelectedJuizToAdd(null);
+    setPacoteForm(INITIAL_PACOTE_FORM);
+  };
+
+  const handleOpenCreatePacote = () => {
+    resetPacoteEditor();
+    setIsEditorOpen(true);
+  };
+
+  const handleOpenEditPacote = async (pacoteId: string) => {
+    resetPacoteEditor();
+    setEditingPacoteId(pacoteId);
+    setIsEditorOpen(true);
+
+    try {
+      const result = await getPacoteJuizById(pacoteId);
+
+      if (!result.success || !result.data) {
+        toast.error(result.error || "Não foi possível carregar o pacote");
+        setIsEditorOpen(false);
+        return;
+      }
+
+      setPacoteForm({
+        nome: result.data.nome,
+        descricao: result.data.descricao || "",
+        preco: String(result.data.preco),
+        duracaoDias: result.data.duracaoDias ? String(result.data.duracaoDias) : "",
+        status: result.data.status,
+        ordemExibicao: String(result.data.ordemExibicao ?? 0),
+        cor: result.data.cor || "primary",
+        icone: result.data.icone || "",
+        isPublico: result.data.isPublico,
+      });
+
+      const judgeIds = result.data.juizes.map((item) => item.juizId);
+      setLoadedJudgeIds(judgeIds);
+      setSelectedJudgeIds(judgeIds);
+    } catch (error) {
+      toast.error("Erro ao carregar pacote para edição");
+      setIsEditorOpen(false);
+    }
+  };
+
+  const handleAddSelectedJudge = () => {
+    if (!selectedJuizToAdd || selectedJudgeIds.includes(selectedJuizToAdd)) {
+      return;
+    }
+
+    setSelectedJudgeIds((current) => [...current, selectedJuizToAdd]);
+    setSelectedJuizToAdd(null);
+  };
+
+  const handleRemoveSelectedJudge = (judgeId: string) => {
+    setSelectedJudgeIds((current) => current.filter((id) => id !== judgeId));
+  };
+
+  const handlePersistPacote = async () => {
+    if (!pacoteForm.nome.trim()) {
+      toast.error("Informe um nome para o pacote");
+      return;
+    }
+
+    const preco = parseNumberInput(pacoteForm.preco);
+    if (!preco || preco <= 0) {
+      toast.error("Informe um preço válido");
+      return;
+    }
+
+    if (selectedJudgeIds.length === 0) {
+      toast.error("Adicione pelo menos uma autoridade ao pacote");
+      return;
+    }
+
+    setIsSavingPacote(true);
+
+    try {
+      const payload = {
+        nome: pacoteForm.nome.trim(),
+        descricao: pacoteForm.descricao.trim() || undefined,
+        preco,
+        duracaoDias: parseIntegerInput(pacoteForm.duracaoDias),
+        status: pacoteForm.status,
+        ordemExibicao: parseIntegerInput(pacoteForm.ordemExibicao) ?? 0,
+        cor: pacoteForm.cor,
+        icone: pacoteForm.icone.trim() || undefined,
+        isPublico: pacoteForm.isPublico,
+      };
+
+      const mutationResult = editingPacoteId
+        ? await updatePacoteJuiz(editingPacoteId, payload)
+        : await createPacoteJuiz(payload);
+
+      if (!mutationResult.success || !mutationResult.data) {
+        toast.error(mutationResult.error || "Não foi possível salvar o pacote");
+        return;
+      }
+
+      const pacoteId = mutationResult.data.id;
+      const originalIds = new Set(loadedJudgeIds);
+      const nextIds = new Set(selectedJudgeIds);
+
+      const toAdd = selectedJudgeIds.filter((judgeId) => !originalIds.has(judgeId));
+      const toRemove = loadedJudgeIds.filter((judgeId) => !nextIds.has(judgeId));
+
+      await Promise.all(
+        toAdd.map((judgeId, index) =>
+          adicionarJuizAoPacote(pacoteId, judgeId, index),
+        ),
+      );
+      await Promise.all(
+        toRemove.map((judgeId) => removerJuizDoPacote(pacoteId, judgeId)),
+      );
+
+      toast.success(
+        editingPacoteId
+          ? "Pacote atualizado com sucesso."
+          : "Pacote criado com sucesso.",
+      );
+
+      setIsEditorOpen(false);
+      resetPacoteEditor();
+      mutatePacotes();
+      mutatePacoteStats();
+      mutateRecentPacoteSubscriptions();
+      mutateJuizesPremium();
+    } catch (error) {
+      toast.error("Erro ao salvar pacote");
+    } finally {
+      setIsSavingPacote(false);
+    }
+  };
+
+  const handleDeletePacote = async (pacoteId: string) => {
+    if (!window.confirm("Deseja excluir este pacote do catálogo?")) {
+      return;
+    }
+
+    setIsDeletingPacote(pacoteId);
+
+    try {
+      const result = await deletePacoteJuiz(pacoteId);
+
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível excluir o pacote");
+        return;
+      }
+
+      toast.success("Pacote removido do catálogo.");
+      mutatePacotes();
+      mutatePacoteStats();
+      mutateRecentPacoteSubscriptions();
+    } catch (error) {
+      toast.error("Erro ao excluir pacote");
+    } finally {
+      setIsDeletingPacote(null);
+    }
+  };
 
   return (
     <section className="space-y-6">
       <PeoplePageHeader
         tag="Administração"
         title="Monetização e pacotes premium"
-        description="Comando comercial para catálogo de planos, pacotes premium de juízes e leitura de adesão da base pagante."
+        description="Comando comercial para catálogo de planos, pacotes premium de autoridades e leitura de adesão da base pagante."
         actions={
-          <>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              color="secondary"
+              radius="full"
+              size="sm"
+              startContent={<Plus className="h-4 w-4" />}
+              onPress={handleOpenCreatePacote}
+            >
+              Novo pacote
+            </Button>
             <Button
               as={NextLink}
               color="primary"
@@ -248,9 +565,9 @@ export function PacotesContent() {
               size="sm"
               variant="bordered"
             >
-              Juizes premium
+              Autoridades premium
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -301,7 +618,7 @@ export function PacotesContent() {
           tone="secondary"
         />
         <PeopleMetricCard
-          label="Juizes premium"
+          label="Autoridades premium"
           value={loadingJuizes ? "..." : juizesPremium.length}
           helper="Base monetizável de autoridades"
           icon={<Crown className="h-4 w-4" />}
@@ -310,7 +627,7 @@ export function PacotesContent() {
         <PeopleMetricCard
           label="Cobertura premium"
           value={loadingPacotes ? "..." : premiumCoverage}
-          helper="Vinculos de juizes em pacotes"
+          helper="Vínculos de autoridades em pacotes"
           icon={<Gem className="h-4 w-4" />}
           tone="primary"
         />
@@ -362,7 +679,50 @@ export function PacotesContent() {
               {Math.max(juizesPremium.length - premiumCoverage, 0)}
             </p>
             <p className="mt-1 text-xs text-default-400">
-              Juizes premium ainda sem cobertura comercial direta.
+              Autoridades premium ainda sem cobertura comercial direta.
+            </p>
+          </div>
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Governança do catálogo premium"
+        description="Monte o pacote, escolha se ele vai para a loja do tenant e controle rapidamente a composição de autoridades."
+        actions={
+          <Button
+            color="primary"
+            radius="full"
+            size="sm"
+            startContent={<Plus className="h-4 w-4" />}
+            onPress={handleOpenCreatePacote}
+          >
+            Criar pacote
+          </Button>
+        }
+      >
+        <div className="grid gap-3 xl:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Regra comercial
+            </p>
+            <p className="mt-2 text-sm text-default-400">
+              O pacote só entra na loja do tenant quando estiver marcado como público e com status ativo ou promocional.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Escopo vendido
+            </p>
+            <p className="mt-2 text-sm text-default-400">
+              A compra libera acesso por escritório às autoridades vinculadas ao pacote, com ativação automática após confirmação da cobrança.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
+              Controle de operação
+            </p>
+            <p className="mt-2 text-sm text-default-400">
+              Pacotes inativos saem da vitrine. Pacotes pagos continuam visíveis no histórico do tenant e no cockpit comercial abaixo.
             </p>
           </div>
         </div>
@@ -462,7 +822,7 @@ export function PacotesContent() {
         </PeoplePanel>
 
         <PeoplePanel
-          title="Pacotes premium de juizes"
+          title="Pacotes premium de autoridades"
           description="Ofertas adicionais de alta margem para monetizar autoridades estratégicas."
           actions={
             <Button
@@ -472,7 +832,7 @@ export function PacotesContent() {
               size="sm"
               variant="flat"
             >
-              Gerir juizes
+              Gerir autoridades premium
             </Button>
           }
         >
@@ -483,6 +843,7 @@ export function PacotesContent() {
               {pacotesJuiz.map((pacote) => (
                 <div
                   key={pacote.id}
+                  data-testid="admin-pacote-card"
                   className="rounded-3xl border border-white/10 bg-background/30 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -495,13 +856,37 @@ export function PacotesContent() {
                           "Sem descrição comercial definida."}
                       </p>
                     </div>
-                    <Chip
-                      color={getStatusColor(pacote.status)}
-                      size="sm"
-                      variant="flat"
-                    >
-                      {pacote.status}
-                    </Chip>
+                    <div className="flex flex-col items-end gap-2">
+                      <Chip
+                        color={getStatusColor(pacote.status)}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {pacote.status}
+                      </Chip>
+                      <div className="flex gap-2">
+                        <Button
+                          isIconOnly
+                          radius="full"
+                          size="sm"
+                          variant="light"
+                          onPress={() => handleOpenEditPacote(pacote.id)}
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          isIconOnly
+                          color="danger"
+                          isLoading={isDeletingPacote === pacote.id}
+                          radius="full"
+                          size="sm"
+                          variant="light"
+                          onPress={() => handleDeletePacote(pacote.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -518,10 +903,22 @@ export function PacotesContent() {
                         Cobertura
                       </p>
                       <p className="mt-2 text-base font-semibold text-foreground">
-                        {pacote._count?.juizes ?? 0} juiz(es) ·{" "}
+                        {pacote._count?.juizes ?? 0} autoridade(s) ·{" "}
                         {pacote._count?.assinaturas ?? 0} assinatura(s)
                       </p>
                     </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-default-400">
+                    <Chip size="sm" variant="bordered">
+                      Loja: {pacote.isPublico ? "Público" : "Interno"}
+                    </Chip>
+                    <Chip size="sm" variant="bordered">
+                      Vigência:{" "}
+                      {pacote.duracaoDias
+                        ? `${pacote.duracaoDias} dias`
+                        : "Permanente"}
+                    </Chip>
                   </div>
                 </div>
               ))}
@@ -639,12 +1036,70 @@ export function PacotesContent() {
           ) : (
             <PeopleEmptyState
               title="Sem autoridades premium catalogadas"
-              description="Quando a base de juizes premium crescer, esta área vira um radar claro de upsell."
+              description="Quando a base de autoridades premium crescer, esta área vira um radar claro de upsell."
               icon={<Scale className="h-6 w-6" />}
             />
           )}
         </PeoplePanel>
       </div>
+
+      <PeoplePanel
+        title="Pacotes vendidos recentemente"
+        description="Últimas compras ou ativações de pacotes premium pelos escritórios."
+      >
+        {loadingRecentPacoteSubscriptions && !recentPacoteSubscriptionsResponse ? (
+          <LoadingBlock label="Carregando vendas recentes..." />
+        ) : recentPacoteSubscriptions.length > 0 ? (
+          <Table removeWrapper aria-label="Pacotes vendidos recentemente">
+            <TableHeader>
+              <TableColumn>Tenant</TableColumn>
+              <TableColumn>Pacote</TableColumn>
+              <TableColumn>Status</TableColumn>
+              <TableColumn>Preço</TableColumn>
+              <TableColumn>Forma</TableColumn>
+              <TableColumn>Criada em</TableColumn>
+            </TableHeader>
+            <TableBody>
+              {recentPacoteSubscriptions.map((assinatura) => (
+                <TableRow
+                  key={assinatura.id}
+                  data-testid="admin-pacote-subscription-row"
+                >
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {assinatura.tenant.name}
+                      </p>
+                      <p className="text-xs text-default-500">
+                        {assinatura.tenant.slug}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{assinatura.pacote.nome}</TableCell>
+                  <TableCell>
+                    <Chip
+                      color={getStatusColor(assinatura.status)}
+                      size="sm"
+                      variant="flat"
+                    >
+                      {assinatura.status}
+                    </Chip>
+                  </TableCell>
+                  <TableCell>{formatCurrency(assinatura.precoPago)}</TableCell>
+                  <TableCell>{assinatura.formaPagamento || "N/D"}</TableCell>
+                  <TableCell>{formatDate(assinatura.createdAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <PeopleEmptyState
+            title="Nenhuma venda registrada ainda"
+            description="Assim que um escritório comprar um pacote premium, ele aparecerá aqui com preço e status."
+            icon={<CreditCard className="h-6 w-6" />}
+          />
+        )}
+      </PeoplePanel>
 
       <PeoplePanel
         title="Leitura estratégica"
@@ -692,6 +1147,229 @@ export function PacotesContent() {
           </div>
         </div>
       </PeoplePanel>
+
+      <Modal
+        isOpen={isEditorOpen}
+        scrollBehavior="inside"
+        size="4xl"
+        onOpenChange={(open) => {
+          setIsEditorOpen(open);
+          if (!open) {
+            resetPacoteEditor();
+          }
+        }}
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <p className="text-base font-semibold">
+              {editingPacoteId ? "Editar pacote premium" : "Novo pacote premium"}
+            </p>
+            <p className="text-sm text-default-500">
+              Monte a oferta, defina a visibilidade na loja e vincule as autoridades que compõem o pacote.
+            </p>
+          </ModalHeader>
+          <ModalBody className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Input
+                label="Nome do pacote"
+                value={pacoteForm.nome}
+                onValueChange={(value) =>
+                  setPacoteForm((current) => ({ ...current, nome: value }))
+                }
+              />
+              <Input
+                label="Preço"
+                placeholder="199.90"
+                value={pacoteForm.preco}
+                onValueChange={(value) =>
+                  setPacoteForm((current) => ({ ...current, preco: value }))
+                }
+              />
+            </div>
+
+            <Textarea
+              label="Descrição comercial"
+              minRows={3}
+              value={pacoteForm.descricao}
+              onValueChange={(value) =>
+                setPacoteForm((current) => ({ ...current, descricao: value }))
+              }
+            />
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Input
+                label="Vigência em dias"
+                placeholder="Vazio = permanente"
+                value={pacoteForm.duracaoDias}
+                onValueChange={(value) =>
+                  setPacoteForm((current) => ({
+                    ...current,
+                    duracaoDias: value,
+                  }))
+                }
+              />
+              <Input
+                label="Ordem"
+                value={pacoteForm.ordemExibicao}
+                onValueChange={(value) =>
+                  setPacoteForm((current) => ({
+                    ...current,
+                    ordemExibicao: value,
+                  }))
+                }
+              />
+              <Input
+                label="Ícone"
+                placeholder="⚖️"
+                value={pacoteForm.icone}
+                onValueChange={(value) =>
+                  setPacoteForm((current) => ({ ...current, icone: value }))
+                }
+              />
+              <SearchableSelect
+                items={pacoteColorOptions}
+                label="Cor"
+                selectedKey={pacoteForm.cor}
+                onSelectionChange={(key) =>
+                  setPacoteForm((current) => ({
+                    ...current,
+                    cor: key || "primary",
+                  }))
+                }
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <SearchableSelect
+                items={pacoteStatusOptions}
+                label="Status comercial"
+                selectedKey={pacoteForm.status}
+                onSelectionChange={(key) =>
+                  setPacoteForm((current) => ({
+                    ...current,
+                    status: (key as PacoteFormState["status"]) || "ATIVO",
+                  }))
+                }
+              />
+              <div className="rounded-2xl border border-white/10 bg-background/50 p-4">
+                <Switch
+                  isSelected={pacoteForm.isPublico}
+                  size="sm"
+                  onValueChange={(value) =>
+                    setPacoteForm((current) => ({
+                      ...current,
+                      isPublico: value,
+                    }))
+                  }
+                >
+                  Disponibilizar na loja do tenant
+                </Switch>
+                <p className="mt-2 text-xs text-default-500">
+                  Quando desligado, o pacote continua no histórico, mas sai da vitrine de compra dos escritórios.
+                </p>
+              </div>
+            </div>
+
+            <Divider className="border-white/10" />
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Autoridades do pacote
+                </p>
+                <p className="mt-1 text-sm text-default-500">
+                  Selecione as autoridades premium que o escritório receberá ao comprar esta oferta.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <SearchableSelect
+                  emptyContent={
+                    loadingJuizes
+                      ? "Carregando autoridades premium..."
+                      : "Nenhuma autoridade encontrada"
+                  }
+                  items={availableJudgeOptions}
+                  isLoading={loadingJuizes}
+                  label="Adicionar autoridade"
+                  placeholder="Buscar autoridade premium"
+                  selectedKey={selectedJuizToAdd}
+                  onSelectionChange={setSelectedJuizToAdd}
+                />
+                <Button
+                  className="md:self-end"
+                  color="primary"
+                  data-testid="pacote-add-autoridade"
+                  isDisabled={!selectedJuizToAdd || loadingJuizes}
+                  radius="full"
+                  variant="flat"
+                  onPress={handleAddSelectedJudge}
+                >
+                  Adicionar
+                </Button>
+              </div>
+
+              {selectedJudgeCards.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedJudgeCards.map((juiz) => (
+                    <div
+                      key={juiz.id}
+                      data-testid="pacote-selected-autoridade"
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-background/50 p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {juiz.nome}
+                        </p>
+                        <p className="truncate text-xs text-default-500">
+                          {[juiz.tipoAutoridade, juiz.comarca, juiz.vara]
+                            .filter(Boolean)
+                            .join(" · ") || "Sem detalhamento"}
+                        </p>
+                      </div>
+                      <Button
+                        isIconOnly
+                        color="danger"
+                        radius="full"
+                        size="sm"
+                        variant="light"
+                        onPress={() => handleRemoveSelectedJudge(juiz.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-background/30 p-4 text-sm text-default-500">
+                  Nenhuma autoridade adicionada ainda.
+                </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              radius="full"
+              variant="light"
+              onPress={() => {
+                setIsEditorOpen(false);
+                resetPacoteEditor();
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              color="primary"
+              data-testid="pacote-save"
+              isLoading={isSavingPacote}
+              radius="full"
+              onPress={handlePersistPacote}
+            >
+              {editingPacoteId ? "Salvar alterações" : "Criar pacote"}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </section>
   );
 }

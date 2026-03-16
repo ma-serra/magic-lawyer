@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/app/lib/prisma";
 import { processarPagamentoConfirmado } from "@/app/actions/processar-pagamento-confirmado";
 import { AsaasWebhookService } from "@/app/lib/notifications/services/asaas-webhook";
+import {
+  activatePacoteSubscription,
+  cancelPacoteSubscription,
+  extractPacoteAssinaturaIdFromReference,
+  markPacoteSubscriptionOverdue,
+} from "@/app/lib/pacotes-juiz-commerce";
 import { decrypt } from "@/lib/crypto";
 import logger from "@/lib/logger";
 
@@ -40,6 +46,7 @@ function normalizeParcelaReference(
   if (!externalReference) return null;
   if (externalReference.startsWith("checkout_")) return null;
   if (externalReference.startsWith("tenant_")) return null;
+  if (extractPacoteAssinaturaIdFromReference(externalReference)) return null;
 
   if (externalReference.startsWith("parcela_")) {
     return externalReference.replace("parcela_", "").trim() || null;
@@ -51,6 +58,22 @@ function normalizeParcelaReference(
 async function resolveTenantIdFromWebhook(
   webhookData: AsaasWebhookPayload,
 ): Promise<string | null> {
+  const assinaturaPacoteId = extractPacoteAssinaturaIdFromReference(
+    webhookData.payment?.externalReference ??
+      webhookData.subscription?.externalReference,
+  );
+
+  if (assinaturaPacoteId) {
+    const assinaturaPacote = await prisma.assinaturaPacoteJuiz.findUnique({
+      where: { id: assinaturaPacoteId },
+      select: { tenantId: true },
+    });
+
+    if (assinaturaPacote?.tenantId) {
+      return assinaturaPacote.tenantId;
+    }
+  }
+
   const tenantByExternalReference = extractTenantIdFromExternalReference(
     webhookData.payment?.externalReference ??
       webhookData.subscription?.externalReference,
@@ -98,8 +121,26 @@ async function resolveTenantIdFromWebhook(
 async function validateWebhookToken(
   tenantId: string | null,
   accessToken: string | null,
+  options?: {
+    forceGlobalSecret?: boolean;
+  },
 ) {
   const globalSecret = process.env.ASAAS_WEBHOOK_SECRET?.trim() || null;
+
+  if (options?.forceGlobalSecret) {
+    if (!globalSecret) {
+      logger.warn(
+        "[AsaasWebhook] Webhook da plataforma sem ASAAS_WEBHOOK_SECRET configurado. Prosseguindo sem autenticação.",
+      );
+      return { ok: true };
+    }
+
+    if (!accessToken || accessToken !== globalSecret) {
+      return { ok: false, reason: "Token global inválido" };
+    }
+
+    return { ok: true };
+  }
 
   if (!tenantId) {
     if (!globalSecret) {
@@ -198,7 +239,14 @@ export async function POST(request: NextRequest) {
     }
 
     const tenantId = await resolveTenantIdFromWebhook(webhookData);
-    const tokenValidation = await validateWebhookToken(tenantId, accessToken);
+    const tokenValidation = await validateWebhookToken(tenantId, accessToken, {
+      forceGlobalSecret: Boolean(
+        extractPacoteAssinaturaIdFromReference(
+          webhookData.payment?.externalReference ??
+            webhookData.subscription?.externalReference,
+        ),
+      ),
+    });
 
     if (!tokenValidation.ok) {
       logger.warn(
@@ -278,6 +326,30 @@ async function handlePaymentReceived(webhookData: AsaasWebhookPayload) {
   const payment = webhookData.payment;
   if (!payment?.id) return;
 
+  const assinaturaPacoteId = extractPacoteAssinaturaIdFromReference(
+    payment.externalReference,
+  );
+
+  if (assinaturaPacoteId) {
+    await activatePacoteSubscription({
+      assinaturaId: assinaturaPacoteId,
+      payment: {
+        id: payment.id,
+        customer: payment.externalReference || assinaturaPacoteId,
+        billingType: (payment.billingType as "PIX" | "BOLETO" | "CREDIT_CARD") || "PIX",
+        value: payment.value ?? 0,
+        dueDate: payment.dueDate || new Date().toISOString(),
+        confirmedDate: payment.confirmedDate || new Date().toISOString(),
+        status: "CONFIRMED",
+        externalReference: payment.externalReference,
+      },
+      billingType:
+        (payment.billingType as "PIX" | "BOLETO" | "CREDIT_CARD" | undefined) ??
+        undefined,
+    });
+    return;
+  }
+
   // Pagamento de checkout de assinatura do próprio sistema Magic Lawyer
   if (payment.externalReference?.startsWith("checkout_")) {
     const result = await processarPagamentoConfirmado(payment.id);
@@ -324,6 +396,15 @@ async function handlePaymentOverdue(webhookData: AsaasWebhookPayload) {
   const payment = webhookData.payment;
   if (!payment?.id) return;
 
+  const assinaturaPacoteId = extractPacoteAssinaturaIdFromReference(
+    payment.externalReference,
+  );
+
+  if (assinaturaPacoteId) {
+    await markPacoteSubscriptionOverdue(assinaturaPacoteId);
+    return;
+  }
+
   const subscription = await findSubscriptionForPayment(payment);
   if (!subscription) return;
 
@@ -337,6 +418,15 @@ async function handlePaymentOverdue(webhookData: AsaasWebhookPayload) {
 }
 
 async function handlePaymentDeleted(webhookData: AsaasWebhookPayload) {
+  const assinaturaPacoteId = extractPacoteAssinaturaIdFromReference(
+    webhookData.payment?.externalReference,
+  );
+
+  if (assinaturaPacoteId) {
+    await cancelPacoteSubscription(assinaturaPacoteId);
+    return;
+  }
+
   logger.info(
     `[AsaasWebhook] PAYMENT_DELETED ${webhookData.payment?.id ?? "sem-id"}`,
   );

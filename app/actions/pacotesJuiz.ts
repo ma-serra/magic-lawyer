@@ -1,9 +1,19 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
+import {
+  createPacoteCheckout,
+  processPacoteCreditCardPayment,
+  confirmPacotePaymentInDevelopment,
+  getPacoteInvoiceSnapshot,
+  listRecentPacoteSubscriptionsForAdmin,
+  listTenantPacoteSubscriptions,
+  listTenantPacotesCatalog,
+} from "@/app/lib/pacotes-juiz-commerce";
 import logger from "@/lib/logger";
 
 // ==================== TIPOS ====================
@@ -93,6 +103,119 @@ export type DeletePacoteJuizResponse = {
   error?: string;
 };
 
+export type PacoteCheckoutPayment = {
+  asaasPaymentId: string | null;
+  billingType: "PIX" | "BOLETO" | "CREDIT_CARD" | null;
+  status: string;
+  value: number;
+  dueDate: string | null;
+  invoiceUrl: string | null;
+  bankSlipUrl: string | null;
+  transactionReceiptUrl: string | null;
+  pixCopyPaste: string | null;
+  pixQrCodeUrl: string | null;
+  isMock: boolean;
+};
+
+export type TenantPacoteCatalogItem = PacoteJuiz & {
+  autoridadePreview: Array<{
+    id: string;
+    nome: string;
+    tipoAutoridade: string;
+    comarca: string | null;
+    vara: string | null;
+    especialidades: string[];
+  }>;
+  assinaturaAtual: {
+    id: string;
+    status: string;
+    dataInicio: Date;
+    dataFim: Date | null;
+    formaPagamento: string | null;
+    precoPago: number;
+    renovacaoAutomatica: boolean;
+    payment: PacoteCheckoutPayment | null;
+  } | null;
+};
+
+export type TenantPacoteSubscriptionItem = {
+  id: string;
+  status: string;
+  dataInicio: Date;
+  dataFim: Date | null;
+  renovacaoAutomatica: boolean;
+  precoPago: number;
+  formaPagamento: string | null;
+  pacote: {
+    id: string;
+    nome: string;
+    descricao: string | null;
+    cor: string;
+    icone: string | null;
+    duracaoDias: number | null;
+    autoridadeCount: number;
+  };
+  payment: PacoteCheckoutPayment;
+};
+
+export type PacoteCheckoutResponse = {
+  success: boolean;
+  data?: {
+    checkoutId: string;
+    pacoteId: string;
+    status: string;
+    payment: PacoteCheckoutPayment;
+  };
+  error?: string;
+};
+
+export type PacoteCheckoutStatusResponse = {
+  success: boolean;
+  data?: {
+    checkoutId: string;
+    status: string;
+    payment: PacoteCheckoutPayment;
+  };
+  error?: string;
+};
+
+export type TenantPacoteCatalogResponse = {
+  success: boolean;
+  data?: TenantPacoteCatalogItem[];
+  error?: string;
+};
+
+export type TenantPacoteSubscriptionsResponse = {
+  success: boolean;
+  data?: TenantPacoteSubscriptionItem[];
+  error?: string;
+};
+
+export type RecentPacoteSubscriptionAdminItem = {
+  id: string;
+  status: string;
+  dataInicio: Date;
+  dataFim: Date | null;
+  precoPago: number;
+  formaPagamento: string | null;
+  createdAt: Date;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  pacote: {
+    id: string;
+    nome: string;
+  };
+};
+
+export type RecentPacoteSubscriptionsAdminResponse = {
+  success: boolean;
+  data?: RecentPacoteSubscriptionAdminItem[];
+  error?: string;
+};
+
 // ==================== FUNÇÕES AUXILIARES ====================
 
 async function ensureSuperAdmin() {
@@ -111,6 +234,30 @@ async function ensureSuperAdmin() {
   }
 
   return session.user.id;
+}
+
+async function ensureTenantAuthenticated() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    throw new Error("Não autenticado");
+  }
+
+  const user = session.user as any;
+
+  if (!user.tenantId) {
+    throw new Error("Tenant não encontrado");
+  }
+
+  if (user.role === "SUPER_ADMIN") {
+    throw new Error("Fluxo disponível apenas dentro do tenant");
+  }
+
+  return {
+    session,
+    user,
+    tenantId: user.tenantId as string,
+  };
 }
 
 // ==================== CRUD PACOTES DE JUÍZES ====================
@@ -483,6 +630,254 @@ export async function getEstatisticasPacotesJuiz() {
       success: false,
       error:
         error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getAssinaturasPacotesJuizRecentesAdmin(): Promise<RecentPacoteSubscriptionsAdminResponse> {
+  try {
+    await ensureSuperAdmin();
+
+    const assinaturas = await listRecentPacoteSubscriptionsForAdmin();
+
+    return {
+      success: true,
+      data: assinaturas,
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar assinaturas recentes de pacotes:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getCatalogoPacotesJuizTenant(): Promise<TenantPacoteCatalogResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+    const catalogo = await listTenantPacotesCatalog(tenantId);
+
+    return {
+      success: true,
+      data: catalogo,
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar catálogo do tenant para pacotes:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getAssinaturasPacoteJuizTenant(): Promise<TenantPacoteSubscriptionsResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+    const assinaturas = await listTenantPacoteSubscriptions(tenantId);
+
+    return {
+      success: true,
+      data: assinaturas,
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar assinaturas de pacote do tenant:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function iniciarCheckoutPacoteJuiz(input: {
+  pacoteId: string;
+  billingType: "PIX" | "BOLETO" | "CREDIT_CARD";
+}): Promise<PacoteCheckoutResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+
+    if (!input.pacoteId) {
+      return { success: false, error: "Pacote não informado" };
+    }
+
+    const checkout = await createPacoteCheckout({
+      tenantId,
+      pacoteId: input.pacoteId,
+      billingType: input.billingType,
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/juizes/pacotes");
+    revalidatePath("/configuracoes");
+    revalidatePath("/configuracoes/billing");
+
+    return {
+      success: true,
+      data: {
+        checkoutId: checkout.assinatura.id,
+        pacoteId: input.pacoteId,
+        status: checkout.assinatura.status,
+        payment: checkout.payment,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao iniciar checkout do pacote:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro ao iniciar checkout",
+    };
+  }
+}
+
+export async function processarPagamentoCartaoPacoteJuiz(input: {
+  checkoutId: string;
+  paymentData: {
+    cardNumber: string;
+    cardName: string;
+    expiryMonth: string;
+    expiryYear: string;
+    cvv: string;
+  };
+}): Promise<PacoteCheckoutStatusResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+
+    if (!input.checkoutId) {
+      return { success: false, error: "Checkout não informado" };
+    }
+
+    const result = await processPacoteCreditCardPayment({
+      tenantId,
+      assinaturaId: input.checkoutId,
+      paymentData: input.paymentData,
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/juizes/pacotes");
+    revalidatePath("/configuracoes");
+    revalidatePath("/configuracoes/billing");
+
+    return {
+      success: true,
+      data: {
+        checkoutId: result.assinaturaId,
+        status: result.status,
+        payment: result.payment,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao processar pagamento de pacote no cartão:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao processar pagamento do pacote",
+    };
+  }
+}
+
+export async function getStatusCheckoutPacoteJuiz(
+  checkoutId: string,
+): Promise<PacoteCheckoutStatusResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+
+    if (!checkoutId) {
+      return { success: false, error: "Checkout não informado" };
+    }
+
+    const assinatura = await prisma.assinaturaPacoteJuiz.findFirst({
+      where: {
+        id: checkoutId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        status: true,
+        precoPago: true,
+        formaPagamento: true,
+      },
+    });
+
+    if (!assinatura) {
+      return { success: false, error: "Checkout do pacote não encontrado" };
+    }
+
+    const payment = await getPacoteInvoiceSnapshot(tenantId, assinatura.id, {
+      billingType: assinatura.formaPagamento,
+      value: Number(assinatura.precoPago),
+      status: assinatura.status,
+    });
+
+    return {
+      success: true,
+      data: {
+        checkoutId: assinatura.id,
+        status: assinatura.status,
+        payment,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao consultar status do checkout do pacote:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao consultar checkout do pacote",
+    };
+  }
+}
+
+export async function simularPagamentoPacoteJuizDev(
+  checkoutId: string,
+): Promise<PacoteCheckoutStatusResponse> {
+  try {
+    const { tenantId } = await ensureTenantAuthenticated();
+
+    if (!checkoutId) {
+      return { success: false, error: "Checkout não informado" };
+    }
+
+    const result = await confirmPacotePaymentInDevelopment({
+      tenantId,
+      assinaturaId: checkoutId,
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/juizes/pacotes");
+    revalidatePath("/admin/pacotes");
+    revalidatePath("/configuracoes");
+    revalidatePath("/configuracoes/billing");
+
+    return {
+      success: true,
+      data: {
+        checkoutId: result.assinaturaId,
+        status: result.status,
+        payment: result.payment,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao simular pagamento do pacote:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao simular pagamento do pacote",
     };
   }
 }

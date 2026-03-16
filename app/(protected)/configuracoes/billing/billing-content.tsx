@@ -143,8 +143,8 @@ export default function BillingContent() {
     <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 py-8 sm:px-6">
       <PeoplePageHeader
         tag="Administração"
-        title="Billing da assinatura"
-        description="Faturas do escritório com a Magic Lawyer. Este painel é separado dos recibos operacionais de clientes."
+        title="Billing da conta"
+        description="Faturas do escritório com a Magic Lawyer, incluindo assinatura principal e add-ons premium comprados internamente."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -334,7 +334,7 @@ export default function BillingContent() {
                 Nenhuma fatura encontrada
               </p>
               <p className="mt-1 text-sm text-default-400">
-                Ajuste os filtros ou aguarde a emissão de novas cobranças.
+                Ajuste os filtros ou aguarde a emissão de novas cobranças de assinatura ou add-ons.
               </p>
             </div>
           ) : (

@@ -3,6 +3,20 @@
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
+import {
+  buildFinanceiroAdminDashboard,
+  resolveFinanceiroBillingContext,
+  type FinanceiroAdminBillingContextFilter,
+  type FinanceiroAdminCommissionRecord,
+  type FinanceiroAdminDashboard,
+  type FinanceiroAdminFilterPreset,
+  type FinanceiroAdminFilters,
+  type FinanceiroAdminInvoiceRecord,
+  type FinanceiroAdminPaymentRecord,
+  type FinanceiroAdminStatusFilter,
+  type FinanceiroAdminSubscriptionRecord,
+  type FinanceiroAdminTenantOption,
+} from "@/app/lib/financeiro-admin-dashboard";
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 
@@ -90,6 +104,15 @@ export type ComissaoResumo = {
   status: string;
   dataPagamento?: Date;
   createdAt: Date;
+};
+
+export type {
+  FinanceiroAdminBillingContextFilter,
+  FinanceiroAdminDashboard,
+  FinanceiroAdminFilterPreset,
+  FinanceiroAdminFilters,
+  FinanceiroAdminStatusFilter,
+  FinanceiroAdminTenantOption,
 };
 
 // ==================== FUNÇÕES AUXILIARES ====================
@@ -583,6 +606,317 @@ export async function getComissoesPendentes(): Promise<{
       success: false,
       error:
         error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getFinanceiroDashboardAdmin(
+  filters?: FinanceiroAdminFilters,
+): Promise<{
+  success: boolean;
+  data?: FinanceiroAdminDashboard;
+  error?: string;
+}> {
+  try {
+    await ensureSuperAdmin();
+
+    const tenantId = filters?.tenantId?.trim() || undefined;
+
+    const [tenants, invoices, payments, subscriptions, commissions] =
+      await Promise.all([
+        prisma.tenant.findMany({
+          where: {
+            slug: {
+              not: "global",
+            },
+          },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            status: true,
+          },
+          orderBy: {
+            name: "asc",
+          },
+        }),
+        prisma.fatura.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            tenant: {
+              slug: {
+                not: "global",
+              },
+            },
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            numero: true,
+            valor: true,
+            status: true,
+            createdAt: true,
+            vencimento: true,
+            pagoEm: true,
+            subscriptionId: true,
+            contratoId: true,
+            metadata: true,
+            tenant: {
+              select: {
+                name: true,
+                slug: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+        prisma.pagamento.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            fatura: {
+              tenant: {
+                slug: {
+                  not: "global",
+                },
+              },
+            },
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            valor: true,
+            status: true,
+            metodo: true,
+            createdAt: true,
+            confirmadoEm: true,
+            fatura: {
+              select: {
+                id: true,
+                numero: true,
+                status: true,
+                subscriptionId: true,
+                contratoId: true,
+                metadata: true,
+                tenant: {
+                  select: {
+                    name: true,
+                    slug: true,
+                    status: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+        prisma.tenantSubscription.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            tenant: {
+              slug: {
+                not: "global",
+              },
+            },
+          },
+          select: {
+            tenantId: true,
+            status: true,
+            valorMensalContratado: true,
+            valorAnualContratado: true,
+            tenant: {
+              select: {
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        }),
+        prisma.pagamentoComissao.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            pagamento: {
+              fatura: {
+                tenant: {
+                  slug: {
+                    not: "global",
+                  },
+                },
+              },
+            },
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            valorComissao: true,
+            percentualComissao: true,
+            status: true,
+            createdAt: true,
+            dataPagamento: true,
+            advogado: {
+              select: {
+                oabNumero: true,
+                oabUf: true,
+                usuario: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+            pagamento: {
+              select: {
+                fatura: {
+                  select: {
+                    numero: true,
+                    tenant: {
+                      select: {
+                        name: true,
+                        slug: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+      ]);
+
+    const tenantOptions: FinanceiroAdminTenantOption[] = tenants.map((tenant) => ({
+      key: tenant.id,
+      label: tenant.name,
+      status: tenant.status,
+      description: `${tenant.slug} · ${tenant.status}`,
+    }));
+
+    const invoiceRecords: FinanceiroAdminInvoiceRecord[] = invoices.map(
+      (invoice) => ({
+        id: invoice.id,
+        tenantId: invoice.tenantId,
+        tenantName: invoice.tenant.name,
+        tenantSlug: invoice.tenant.slug,
+        tenantStatus: invoice.tenant.status,
+        numero: invoice.numero || `#${invoice.id.slice(-8)}`,
+        valor: Number(invoice.valor),
+        status: invoice.status,
+        createdAt: invoice.createdAt,
+        vencimento: invoice.vencimento,
+        pagoEm: invoice.pagoEm,
+        subscriptionId: invoice.subscriptionId,
+        contratoId: invoice.contratoId,
+        metadata:
+          invoice.metadata && typeof invoice.metadata === "object"
+            ? (invoice.metadata as Record<string, unknown>)
+            : null,
+      }),
+    );
+
+    const paymentRecords: FinanceiroAdminPaymentRecord[] = payments.map(
+      (payment) => {
+        const invoiceStub: FinanceiroAdminInvoiceRecord = {
+          id: payment.fatura.id,
+          tenantId: payment.tenantId,
+          tenantName: payment.fatura.tenant.name,
+          tenantSlug: payment.fatura.tenant.slug,
+          tenantStatus: payment.fatura.tenant.status,
+          numero: payment.fatura.numero || `#${payment.fatura.id.slice(-8)}`,
+          valor: Number(payment.valor),
+          status: payment.fatura.status,
+          createdAt: payment.createdAt,
+          vencimento: null,
+          pagoEm: payment.confirmadoEm,
+          subscriptionId: payment.fatura.subscriptionId,
+          contratoId: payment.fatura.contratoId,
+          metadata:
+            payment.fatura.metadata && typeof payment.fatura.metadata === "object"
+              ? (payment.fatura.metadata as Record<string, unknown>)
+              : null,
+        };
+
+        return {
+          id: payment.id,
+          tenantId: payment.tenantId,
+          tenantName: payment.fatura.tenant.name,
+          tenantSlug: payment.fatura.tenant.slug,
+          tenantStatus: payment.fatura.tenant.status,
+          invoiceId: payment.fatura.id,
+          invoiceNumero: payment.fatura.numero || `#${payment.fatura.id.slice(-8)}`,
+          invoiceStatus: payment.fatura.status,
+          valor: Number(payment.valor),
+          status: payment.status,
+          metodo: payment.metodo,
+          createdAt: payment.createdAt,
+          confirmadoEm: payment.confirmadoEm,
+          billingContext: resolveFinanceiroBillingContext(invoiceStub),
+        };
+      },
+    );
+
+    const subscriptionRecords: FinanceiroAdminSubscriptionRecord[] =
+      subscriptions.map((subscription) => ({
+        tenantId: subscription.tenantId,
+        tenantName: subscription.tenant.name,
+        tenantSlug: subscription.tenant.slug,
+        status: subscription.status,
+        valorMensalContratado:
+          subscription.valorMensalContratado != null
+            ? Number(subscription.valorMensalContratado)
+            : null,
+        valorAnualContratado:
+          subscription.valorAnualContratado != null
+            ? Number(subscription.valorAnualContratado)
+            : null,
+      }));
+
+    const commissionRecords: FinanceiroAdminCommissionRecord[] =
+      commissions.map((commission) => ({
+        id: commission.id,
+        tenantId: commission.tenantId,
+        tenantName: commission.pagamento.fatura.tenant.name,
+        tenantSlug: commission.pagamento.fatura.tenant.slug,
+        advogadoNome: `${commission.advogado.usuario.firstName} ${commission.advogado.usuario.lastName}`.trim(),
+        advogadoOab: [commission.advogado.oabNumero, commission.advogado.oabUf]
+          .filter(Boolean)
+          .join("/"),
+        valorComissao: Number(commission.valorComissao),
+        percentualComissao: Number(commission.percentualComissao),
+        status: commission.status,
+        createdAt: commission.createdAt,
+        dataPagamento: commission.dataPagamento,
+        faturaNumero:
+          commission.pagamento.fatura.numero ||
+          `#${commission.id.slice(-8)}`,
+      }));
+
+    return {
+      success: true,
+      data: buildFinanceiroAdminDashboard({
+        filters,
+        tenantOptions,
+        invoices: invoiceRecords,
+        payments: paymentRecords,
+        subscriptions: subscriptionRecords,
+        commissions: commissionRecords,
+      }),
+    };
+  } catch (error) {
+    logger.error("Erro ao montar dashboard financeiro global:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro interno do servidor",
     };
   }
 }

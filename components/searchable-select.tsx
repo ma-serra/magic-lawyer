@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type FocusEvent, type ReactNode } from "react";
 
 import {
   Autocomplete,
@@ -47,6 +47,14 @@ type SearchableSelectProps = {
   onSelectionChange: (key: string | null) => void;
 };
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export function SearchableSelect({
   items,
   selectedKey,
@@ -82,6 +90,39 @@ export function SearchableSelect({
     itemKeys.has(selectedKey)
       ? selectedKey
       : undefined;
+  const selectedItem = useMemo(
+    () =>
+      normalizedSelectedKey
+        ? items.find((item) => item.key === normalizedSelectedKey)
+        : undefined,
+    [items, normalizedSelectedKey],
+  );
+  const [inputValue, setInputValue] = useState(selectedItem?.label ?? "");
+  const filteredItems = useMemo(() => {
+    const normalizedInput = normalizeSearchText(inputValue);
+
+    if (!normalizedInput) {
+      return items;
+    }
+
+    if (selectedItem && normalizeSearchText(selectedItem.label) === normalizedInput) {
+      return items;
+    }
+
+    return items.filter((item) => {
+      const haystack = normalizeSearchText(item.textValue ?? item.label);
+      return haystack.includes(normalizedInput);
+    });
+  }, [inputValue, items, selectedItem]);
+
+  useEffect(() => {
+    setInputValue(selectedItem?.label ?? "");
+  }, [selectedItem?.key, selectedItem?.label]);
+
+  const handleInputBlur = (event: FocusEvent<HTMLInputElement>) => {
+    inputProps?.onBlur?.(event);
+    setInputValue(selectedItem?.label ?? "");
+  };
 
   return (
     <Autocomplete
@@ -95,16 +136,18 @@ export function SearchableSelect({
       description={description}
       errorMessage={errorMessage}
       id={id}
+      inputValue={inputValue}
       inputProps={{
         autoComplete: "off",
         ...inputProps,
+        onBlur: handleInputBlur,
       }}
       isClearable={isClearable}
       isDisabled={isDisabled}
       isLoading={isLoading}
       isRequired={isRequired}
-      isVirtualized={items.length > 50}
-      items={items}
+      isVirtualized={filteredItems.length > 50}
+      items={filteredItems}
       label={label}
       listboxProps={{
         emptyContent,
@@ -119,8 +162,18 @@ export function SearchableSelect({
       size={size}
       startContent={startContent}
       variant={variant}
+      onClear={() => {
+        setInputValue("");
+      }}
+      onInputChange={setInputValue}
       onSelectionChange={(key) => {
-        onSelectionChange(typeof key === "string" ? key : null);
+        const nextKey = typeof key === "string" ? key : null;
+        const nextItem = nextKey
+          ? items.find((item) => item.key === nextKey)
+          : undefined;
+
+        setInputValue(nextItem?.label ?? "");
+        onSelectionChange(nextKey);
       }}
     >
       {(item) => (

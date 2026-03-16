@@ -6,7 +6,7 @@ import prisma from "./prisma";
 
 type MetricFormatOptions = {
   step: number;
-  multiplier?: number;
+  exactUntil?: number;
 };
 
 export type PublicMarketingMetrics = {
@@ -26,14 +26,17 @@ export type PublicMarketingMetrics = {
 
 function formatMarketingCount(
   value: number,
-  { step, multiplier = 10 }: MetricFormatOptions,
+  { step, exactUntil = 0 }: MetricFormatOptions,
 ) {
   if (value <= 0) {
     return "0";
   }
 
-  const boostedValue = value * multiplier;
-  const roundedValue = Math.ceil(boostedValue / step) * step;
+  if (value <= exactUntil) {
+    return new Intl.NumberFormat("pt-BR").format(value);
+  }
+
+  const roundedValue = Math.ceil(value / step) * step;
 
   return `${new Intl.NumberFormat("pt-BR").format(roundedValue)}+`;
 }
@@ -80,10 +83,10 @@ export const getPublicMarketingMetrics = cache(
         usuarios,
       },
       display: {
-        processos: formatMarketingCount(processos, { step: 100 }),
-        clientes: formatMarketingCount(clientes, { step: 50 }),
-        escritorios: formatMarketingCount(escritorios, { step: 10 }),
-        usuarios: formatMarketingCount(usuarios, { step: 25 }),
+        processos: formatMarketingCount(processos, { step: 25, exactUntil: 99 }),
+        clientes: formatMarketingCount(clientes, { step: 10, exactUntil: 99 }),
+        escritorios: formatMarketingCount(escritorios, { step: 1, exactUntil: 20 }),
+        usuarios: formatMarketingCount(usuarios, { step: 5, exactUntil: 50 }),
       },
     };
   },

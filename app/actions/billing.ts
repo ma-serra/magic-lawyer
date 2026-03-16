@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/auth";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
+import { PACOTE_BILLING_CONTEXT } from "@/app/lib/pacotes-juiz-commerce";
 import { createAsaasClientFromEncrypted, type AsaasPayment } from "@/lib/asaas";
 import { InvoiceStatus, Prisma } from "@/generated/prisma";
 
@@ -525,10 +526,25 @@ export async function getTenantBillingFaturas(
       },
     });
 
+    const billingOrigins: Prisma.FaturaWhereInput[] = [];
+
+    if (assinatura?.id) {
+      billingOrigins.push({
+        subscriptionId: assinatura.id,
+      });
+    }
+
+    billingOrigins.push({
+      metadata: {
+        path: ["billingContext"],
+        equals: PACOTE_BILLING_CONTEXT,
+      },
+    });
+
     const whereBase: Prisma.FaturaWhereInput = {
       tenantId,
-      subscriptionId: assinatura?.id ? assinatura.id : { not: null },
       contratoId: null,
+      OR: billingOrigins,
     };
 
     if (filtros.status) {
