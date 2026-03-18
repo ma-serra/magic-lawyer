@@ -187,4 +187,56 @@ describe("financeiro admin dashboard", () => {
     expect(dashboard.recentInvoices[0]?.numero).toBe("FAT-002");
     expect(dashboard.recentPayments).toHaveLength(0);
   });
+
+  it("separa métodos legados dos canais suportados atualmente", () => {
+    const dashboard = buildFinanceiroAdminDashboard({
+      filters: {
+        preset: "90D",
+        tenantId: null,
+        invoiceStatus: "ALL",
+        billingContext: "ALL",
+      },
+      tenantOptions,
+      invoices,
+      payments: [
+        ...payments,
+        {
+          id: "pay-legacy",
+          tenantId: "tenant-2",
+          tenantName: "Sandra Costa Advocacia",
+          tenantSlug: "sandra",
+          tenantStatus: "ACTIVE",
+          invoiceId: "inv-3",
+          invoiceNumero: "FAT-003",
+          invoiceStatus: "ABERTA",
+          valor: 25,
+          status: "PAGO",
+          metodo: "Débito Automático",
+          createdAt: new Date("2026-03-12T10:00:00.000Z"),
+          confirmadoEm: new Date("2026-03-12T10:00:00.000Z"),
+          billingContext: "CONTRATO",
+        },
+      ],
+      subscriptions,
+      commissions,
+      now,
+    });
+
+    expect(dashboard.paymentMethods).toEqual([
+      {
+        key: "PIX",
+        label: "PIX",
+        valor: 100,
+        quantidade: 1,
+      },
+    ]);
+    expect(dashboard.legacyPaymentMethods).toEqual([
+      {
+        rawMethod: "Débito Automático",
+        label: "Débito Automático",
+        valor: 25,
+        quantidade: 1,
+      },
+    ]);
+  });
 });

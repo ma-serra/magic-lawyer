@@ -1,9 +1,7 @@
 import { NotificationService } from "./notification-service";
 import { NotificationEvent } from "./types";
 
-import { PrismaClient } from "@/generated/prisma";
-
-const prisma = new PrismaClient();
+import prisma from "@/app/lib/prisma";
 
 /**
  * Serviço de migração do sistema legado para o novo sistema de notificações

@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import {
   getTenantByDomainWithBranding,
   getTenantBySlugWithBranding,
@@ -21,6 +23,23 @@ export function normalizeHost(host: string): string {
   return host.split(":")[0]?.toLowerCase() ?? "";
 }
 
+function isPlatformHostWithoutTenant(cleanHost: string): boolean {
+  if (!cleanHost) {
+    return true;
+  }
+
+  return (
+    cleanHost === "localhost" ||
+    cleanHost === "127.0.0.1" ||
+    cleanHost === "magiclawyer.vercel.app" ||
+    cleanHost === "www.magiclawyer.com.br" ||
+    cleanHost === "magiclawyer.com.br" ||
+    (cleanHost.endsWith(".vercel.app") &&
+      cleanHost.split(".").length <= 3 &&
+      cleanHost.includes("magiclawyer"))
+  );
+}
+
 export function extractTenantFromHost(host: string): string | null {
   const cleanHost = normalizeHost(host);
 
@@ -42,6 +61,14 @@ export function extractTenantFromHost(host: string): string | null {
     }
   }
 
+  if (
+    cleanHost.endsWith(".vercel.app") &&
+    cleanHost.split(".").length >= 4 &&
+    cleanHost.includes("magiclawyer")
+  ) {
+    return cleanHost.split(".")[0] ?? null;
+  }
+
   if (cleanHost.endsWith(".magiclawyer.com.br")) {
     const subdomain = cleanHost.replace(".magiclawyer.com.br", "");
     if (subdomain) {
@@ -60,47 +87,57 @@ export function extractTenantFromHost(host: string): string | null {
   return null;
 }
 
-export async function getTenantBrandingByHost(host: string): Promise<TenantBrandingData | null> {
-  try {
-    const cleanHost = normalizeHost(host);
-    const tenantSlug = extractTenantFromHost(cleanHost);
-
-    if (cleanHost) {
-      const tenantByDomain = await getTenantByDomainWithBranding(cleanHost);
-      if (tenantByDomain) {
-        return {
-          name: tenantByDomain.name ?? null,
-          logoUrl: tenantByDomain.branding?.logoUrl ?? null,
-          faviconUrl: tenantByDomain.branding?.faviconUrl ?? null,
-          primaryColor: tenantByDomain.branding?.primaryColor ?? null,
-          secondaryColor: tenantByDomain.branding?.secondaryColor ?? null,
-          accentColor: tenantByDomain.branding?.accentColor ?? null,
-          loginBackgroundUrl: tenantByDomain.branding?.loginBackgroundUrl ?? null,
-        };
-      }
-    }
-
-    if (tenantSlug) {
-      const tenantBySlug = await getTenantBySlugWithBranding(
-        tenantSlug.toLowerCase(),
-      );
-
-      if (tenantBySlug) {
-        return {
-          name: tenantBySlug.name ?? null,
-          logoUrl: tenantBySlug.branding?.logoUrl ?? null,
-          faviconUrl: tenantBySlug.branding?.faviconUrl ?? null,
-          primaryColor: tenantBySlug.branding?.primaryColor ?? null,
-          secondaryColor: tenantBySlug.branding?.secondaryColor ?? null,
-          accentColor: tenantBySlug.branding?.accentColor ?? null,
-          loginBackgroundUrl: tenantBySlug.branding?.loginBackgroundUrl ?? null,
-        };
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error("[tenant-branding] Erro ao buscar branding:", error);
+function mapTenantBranding(
+  tenant:
+    | Awaited<ReturnType<typeof getTenantByDomainWithBranding>>
+    | Awaited<ReturnType<typeof getTenantBySlugWithBranding>>,
+): TenantBrandingData | null {
+  if (!tenant) {
     return null;
   }
+
+  return {
+    name: tenant.name ?? null,
+    logoUrl: tenant.branding?.logoUrl ?? null,
+    faviconUrl: tenant.branding?.faviconUrl ?? null,
+    primaryColor: tenant.branding?.primaryColor ?? null,
+    secondaryColor: tenant.branding?.secondaryColor ?? null,
+    accentColor: tenant.branding?.accentColor ?? null,
+    loginBackgroundUrl: tenant.branding?.loginBackgroundUrl ?? null,
+  };
+}
+
+const getTenantBrandingByNormalizedHost = cache(
+  async (cleanHost: string): Promise<TenantBrandingData | null> => {
+    try {
+      if (!cleanHost || isPlatformHostWithoutTenant(cleanHost)) {
+        return null;
+      }
+
+      const tenantSlug = extractTenantFromHost(cleanHost);
+
+      if (
+        tenantSlug &&
+        (cleanHost.endsWith(".localhost") ||
+          cleanHost.endsWith(".magiclawyer.vercel.app") ||
+          cleanHost.endsWith(".magiclawyer.com.br") ||
+          (cleanHost.endsWith(".vercel.app") && cleanHost.split(".").length >= 4))
+      ) {
+        return mapTenantBranding(
+          await getTenantBySlugWithBranding(tenantSlug.toLowerCase()),
+        );
+      }
+
+      return mapTenantBranding(await getTenantByDomainWithBranding(cleanHost));
+    } catch (error) {
+      console.error("[tenant-branding] Erro ao buscar branding:", error);
+      return null;
+    }
+  },
+);
+
+export async function getTenantBrandingByHost(
+  host: string,
+): Promise<TenantBrandingData | null> {
+  return getTenantBrandingByNormalizedHost(normalizeHost(host));
 }

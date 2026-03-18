@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/auth";
+import { logOperationalEvent } from "@/app/lib/audit/operational-events";
 import prisma from "@/app/lib/prisma";
 import { UploadService } from "@/lib/upload-service";
 import {
@@ -126,6 +127,8 @@ function getTenantUserRoleLabel(role: string): string {
 interface AuthContext {
   userId: string;
   role: string;
+  name: string | null;
+  email: string | null;
   tenantId: string | null;
   tenantSlug: string | null;
   isSuperAdmin: boolean;
@@ -138,6 +141,14 @@ async function getAuthContext(): Promise<AuthContext> {
   const userId = String(session?.user?.id ?? "");
   const tenantId = (session?.user as any)?.tenantId ?? null;
   const tenantSlug = String((session?.user as any)?.tenantSlug ?? "") || null;
+  const name =
+    typeof session?.user?.name === "string" && session.user.name.trim()
+      ? session.user.name.trim()
+      : null;
+  const email =
+    typeof session?.user?.email === "string" && session.user.email.trim()
+      ? session.user.email.trim()
+      : null;
 
   if (!session?.user || !userId) {
     throw new Error("Usuário não autenticado");
@@ -152,11 +163,42 @@ async function getAuthContext(): Promise<AuthContext> {
   return {
     userId,
     role,
+    name,
+    email,
     tenantId,
     tenantSlug,
     isSuperAdmin,
     canManageTenantSupport: TENANT_SUPPORT_ALLOWED_ROLES.has(role),
   };
+}
+
+async function logSupportEvent(
+  context: AuthContext,
+  input: {
+    action: string;
+    status?: "SUCCESS" | "WARNING" | "ERROR" | "INFO";
+    ticketId?: string | null;
+    tenantId?: string | null;
+    message: string;
+    payload?: unknown;
+  },
+) {
+  await logOperationalEvent({
+    tenantId: input.tenantId ?? context.tenantId,
+    category: "SUPPORT",
+    source: "SUPPORT_CENTER",
+    action: input.action,
+    status: input.status ?? "INFO",
+    actorType: context.isSuperAdmin ? "SUPER_ADMIN" : "TENANT_USER",
+    actorId: context.userId,
+    actorName: context.name,
+    actorEmail: context.email,
+    entityType: "TICKET",
+    entityId: input.ticketId ?? null,
+    route: context.isSuperAdmin ? "/admin/suporte" : "/suporte",
+    message: input.message,
+    payload: input.payload,
+  });
 }
 
 function parseTicketPriority(value: string | null): TicketPriority {
@@ -1098,6 +1140,19 @@ async function createSupportTicketInternal(params: {
     });
   }
 
+  await logSupportEvent(context, {
+    action: "SUPPORT_TICKET_CREATED",
+    status: "SUCCESS",
+    ticketId: ticket.id,
+    message: "Novo ticket de suporte criado.",
+    payload: {
+      priority: data.priority ?? TicketPriority.MEDIUM,
+      category: data.category ?? TicketCategory.GENERAL,
+      hasDescription: Boolean(description),
+      imageCount: images.length,
+    },
+  });
+
   revalidateSupportPaths();
 
   return { success: true, ticketId: ticket.id };
@@ -1652,6 +1707,31 @@ async function addSupportMessageInternal(params: {
     data: ticketUpdate,
   });
 
+  await logSupportEvent(context, {
+    action: context.isSuperAdmin
+      ? isInternal
+        ? "SUPPORT_INTERNAL_NOTE_ADDED"
+        : "SUPPORT_REPLY_SENT"
+      : "SUPPORT_REQUESTER_MESSAGE",
+    status: "SUCCESS",
+    ticketId: ticket.id,
+    tenantId: ticket.tenantId,
+    message: context.isSuperAdmin
+      ? isInternal
+        ? "Nota interna adicionada ao ticket."
+        : "Resposta do suporte enviada ao ticket."
+      : "Mensagem do solicitante registrada no ticket.",
+    payload: {
+      isInternal,
+      imageCount: images.length,
+      previousStatus: ticket.status,
+      nextStatus:
+        ticketUpdate.status && typeof ticketUpdate.status === "string"
+          ? ticketUpdate.status
+          : ticket.status,
+    },
+  });
+
   revalidateSupportPaths();
 
   return {
@@ -1762,6 +1842,19 @@ export async function updateSupportTicketStatus(
     });
   }
 
+  await logSupportEvent(context, {
+    action: "SUPPORT_TICKET_STATUS_UPDATED",
+    status: "SUCCESS",
+    ticketId: ticket.id,
+    tenantId: ticket.tenantId,
+    message: `Status do ticket atualizado para ${status}.`,
+    payload: {
+      previousStatus: ticket.status,
+      nextStatus: status,
+      reason: reason || null,
+    },
+  });
+
   revalidateSupportPaths();
 
   return { success: true };
@@ -1838,6 +1931,18 @@ export async function finalizeSupportTicket(
     }),
   ]);
 
+  await logSupportEvent(context, {
+    action: "SUPPORT_TICKET_FINALIZED",
+    status: "SUCCESS",
+    ticketId,
+    message: "Atendimento finalizado pelo suporte.",
+    payload: {
+      closureCategory: data.closureCategory,
+      resolutionOutcome: data.resolutionOutcome,
+      closureSummary,
+    },
+  });
+
   revalidateSupportPaths();
 
   return { success: true };
@@ -1911,6 +2016,18 @@ export async function rateSupportTicket(
     }),
   ]);
 
+  await logSupportEvent(context, {
+    action: "SUPPORT_TICKET_RATED",
+    status: "SUCCESS",
+    ticketId: ticket.id,
+    tenantId: ticket.tenantId,
+    message: "Solicitante avaliou o atendimento de suporte.",
+    payload: {
+      rating: parsedRating,
+      hasComment: Boolean(comment),
+    },
+  });
+
   revalidateSupportPaths();
 
   return { success: true };
@@ -1963,6 +2080,17 @@ export async function updateSupportTicketRouting(
     },
   });
 
+  await logSupportEvent(context, {
+    action: "SUPPORT_TICKET_ROUTED",
+    status: "SUCCESS",
+    ticketId: ticket.id,
+    message: "Roteamento do ticket atualizado pelo suporte.",
+    payload: {
+      supportLevel: data.supportLevel ?? null,
+      assignedToSuperAdminId: assignedToSuperAdminId ?? null,
+    },
+  });
+
   revalidateSupportPaths();
 
   return { success: true };
@@ -1997,6 +2125,13 @@ export async function claimSupportTicket(ticketId: string): Promise<{
   });
 
   if (claimed.count > 0) {
+    await logSupportEvent(context, {
+      action: "SUPPORT_TICKET_CLAIMED",
+      status: "SUCCESS",
+      ticketId,
+      message: "Ticket assumido pelo suporte.",
+    });
+
     revalidateSupportPaths();
 
     return {
@@ -2083,6 +2218,13 @@ export async function markSupportTicketViewed(
         data: { readBySupportAt: now },
       }),
     ]);
+
+    await logSupportEvent(context, {
+      action: "SUPPORT_THREAD_VIEWED",
+      status: "INFO",
+      ticketId,
+      message: "Suporte abriu a thread do ticket.",
+    });
   } else {
     await prisma.$transaction([
       prisma.ticket.update({

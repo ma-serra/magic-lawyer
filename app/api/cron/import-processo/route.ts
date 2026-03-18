@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/app/lib/prisma";
+import {
+  getRequestAuditMetadata,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
 import { capturarProcesso } from "@/app/lib/juridical/capture-service";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import { ProcessoJuridico } from "@/lib/api/juridical/types";
@@ -77,11 +81,25 @@ async function parsePayload(request: NextRequest): Promise<CapturePayload> {
 }
 
 async function handle(request: NextRequest) {
+  const requestMeta = getRequestAuditMetadata(request);
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
 
   if (!cronSecret) {
     logger.error("[Cron Import Processo] CRON_SECRET nao configurado.");
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Importação de processo falhou porque CRON_SECRET não está configurado.",
+    });
     return NextResponse.json(
       { success: false, error: "CRON_SECRET não configurado." },
       { status: 503 },
@@ -89,8 +107,35 @@ async function handle(request: NextRequest) {
   }
 
   if (authHeader !== `Bearer ${cronSecret}`) {
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_REJECTED",
+      status: "WARNING",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Importação de processo rejeitada por autorização inválida.",
+    });
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
+
+  await logOperationalEvent({
+    category: "CRON",
+    source: "VERCEL_CRON",
+    action: "CRON_STARTED",
+    status: "INFO",
+    actorType: "CRON",
+    entityType: "SCHEDULE",
+    entityId: "import-processo",
+    route: requestMeta.route,
+    ipAddress: requestMeta.ipAddress,
+    userAgent: requestMeta.userAgent,
+    message: "Importação automática de processo iniciada.",
+  });
 
   const payload = await parsePayload(request);
   let tenantId = await resolveTenantId(payload.tenantId ?? undefined);
@@ -144,6 +189,20 @@ async function handle(request: NextRequest) {
   }
 
   if (!tenantId) {
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Importação automática sem tenant resolvido.",
+      payload,
+    });
     return NextResponse.json(
       { success: false, error: "Tenant não encontrado para captura." },
       { status: 400 },
@@ -151,6 +210,20 @@ async function handle(request: NextRequest) {
   }
 
   if (!numeroProcesso && !oab) {
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Importação automática sem número do processo nem OAB.",
+      payload,
+    });
     return NextResponse.json(
       {
         success: false,
@@ -169,6 +242,25 @@ async function handle(request: NextRequest) {
     });
 
     if (!resultado.success) {
+      await logOperationalEvent({
+        tenantId,
+        category: "CRON",
+        source: "VERCEL_CRON",
+        action: "CRON_FAILED",
+        status: "ERROR",
+        actorType: "CRON",
+        entityType: "SCHEDULE",
+        entityId: "import-processo",
+        route: requestMeta.route,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+        message: resultado.error || "Falha ao capturar processo.",
+        payload: {
+          numeroProcesso,
+          oab,
+          tribunalSigla,
+        },
+      });
       return NextResponse.json(
         {
           success: false,
@@ -187,6 +279,25 @@ async function handle(request: NextRequest) {
     );
 
     if (processosCapturados.length === 0) {
+      await logOperationalEvent({
+        tenantId,
+        category: "CRON",
+        source: "VERCEL_CRON",
+        action: "CRON_FAILED",
+        status: "ERROR",
+        actorType: "CRON",
+        entityType: "SCHEDULE",
+        entityId: "import-processo",
+        route: requestMeta.route,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+        message: "Captura não retornou processos válidos para persistência.",
+        payload: {
+          numeroProcesso,
+          oab,
+          tribunalSigla,
+        },
+      });
       return NextResponse.json(
         {
           success: false,
@@ -228,6 +339,27 @@ async function handle(request: NextRequest) {
 
     const firstItem = itens[0];
 
+    await logOperationalEvent({
+      tenantId,
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_SUCCEEDED",
+      status: "SUCCESS",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: `Importação automática concluiu ${itens.length} processo(s).`,
+      payload: {
+        createdCount,
+        updatedCount,
+        total: itens.length,
+        tenantId,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       mode: numeroProcesso ? "single" : "batch",
@@ -246,6 +378,21 @@ async function handle(request: NextRequest) {
     });
   } catch (error) {
     logger.error("[Cron Import Processo] Erro:", error);
+
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "import-processo",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message:
+        error instanceof Error ? error.message : "Falha geral na importação de processo.",
+    });
 
     return NextResponse.json(
       {

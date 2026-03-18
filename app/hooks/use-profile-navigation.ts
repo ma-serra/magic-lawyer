@@ -176,6 +176,16 @@ export function useProfileNavigation() {
       });
     }
 
+    if (!isCliente && (isAdmin || isAdvogado || isSecretaria || isFinanceiro)) {
+      items.push({
+        label: "Magic AI",
+        href: "/magic-ai",
+        icon: "Sparkles",
+        description: "Assistente jurídico proativo do escritório",
+        section: "Inteligência Jurídica",
+      });
+    }
+
     if (permissions.canViewAllClients) {
       items.push({
         label: "Clientes",

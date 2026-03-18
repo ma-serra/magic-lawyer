@@ -179,6 +179,7 @@ model Tenant {
   messageThreads            MessageThread[]
   messages                  Message[]
   messageDeliveries         MessageDelivery[]
+  operationalAuditEvents    OperationalAuditEvent[]
   advogadoHistorico         AdvogadoHistorico[]
 
   // Sistema de Gestão de Equipe
@@ -607,6 +608,36 @@ model SuperAdminAuditLog {
   @@index([acao])
   @@index([entidade])
   @@index([createdAt])
+  @@schema("magiclawyer")
+}
+
+model OperationalAuditEvent {
+  id         String   @id @default(cuid())
+  tenantId    String?
+  category    String
+  source      String
+  action      String
+  status      String   @default("INFO")
+  actorType   String?
+  actorId     String?
+  actorName   String?
+  actorEmail  String?
+  entityType  String?
+  entityId    String?
+  route       String?
+  ipAddress   String?
+  userAgent   String?
+  message     String?
+  payload     Json?
+  createdAt   DateTime @default(now())
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([category, createdAt])
+  @@index([source, createdAt])
+  @@index([action, createdAt])
+  @@index([status, createdAt])
+  @@index([entityType, entityId])
   @@schema("magiclawyer")
 }
 
@@ -4239,6 +4270,187 @@ model NotificationTemplate {
   @@schema("magiclawyer")
 }
 
+model AiPromptVersion {
+  id                String         @id @default(cuid())
+  ownerKey          String         @default("global")
+  tenantId          String?
+  taskKey           String
+  title             String
+  status            AiPromptStatus @default(DRAFT)
+  version           Int
+  scope             String         @default("tenant")
+  systemPrompt      String
+  instructionPrompt String
+  outputSchema      Json?
+  metadata          Json?
+  createdByType     String?
+  createdById       String?
+  publishedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  executions        AiExecutionLog[]
+
+  @@unique([ownerKey, taskKey, version])
+  @@index([ownerKey, taskKey, status])
+  @@index([tenantId, taskKey, status])
+  @@schema("magiclawyer")
+}
+
+model AiWorkspaceSession {
+  id                String             @id @default(cuid())
+  tenantId          String?
+  userId            String?
+  actorRole         String?
+  scope             String             @default("tenant")
+  action            String
+  status            AiWorkspaceStatus  @default(OPEN)
+  title             String?
+  contextRoute      String?
+  contextLabel      String?
+  contextSnapshot   Json?
+  sourceProcessoId  String?
+  sourceDocumentoId String?
+  sourceClienteId   String?
+  sourceContratoId  String?
+  sourcePeticaoId   String?
+  inputContext      Json?
+  attachments       Json?
+  lastActivityAt    DateTime           @default(now())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  executions        AiExecutionLog[]
+  drafts            AiDraftDocument[]
+  analyses          AiDocumentAnalysis[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, action, status])
+  @@index([userId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model AiExecutionLog {
+  id               String            @id @default(cuid())
+  tenantId         String?
+  userId           String?
+  sessionId        String?
+  action           String
+  status           AiExecutionStatus @default(SUCCESS)
+  engine           AiExecutionEngine @default(LOCAL_FALLBACK)
+  promptVersionId  String?
+  inputTokens      Int               @default(0)
+  outputTokens     Int               @default(0)
+  estimatedCost    Decimal?          @db.Decimal(10, 4)
+  latencyMs        Int?
+  inputSummary     String?
+  outputSummary    String?
+  errorMessage     String?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  promptVersion    AiPromptVersion?  @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+  session          AiWorkspaceSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, action, status])
+  @@index([sessionId, createdAt])
+  @@index([promptVersionId])
+  @@schema("magiclawyer")
+}
+
+model AiUsageLedger {
+  id              String            @id @default(cuid())
+  tenantId        String?
+  userId          String?
+  sessionId       String?
+  periodKey       String
+  tier            String
+  action          String
+  ledgerType      AiUsageLedgerType
+  units           Int               @default(1)
+  promptVersionId String?
+  engine          AiExecutionEngine @default(LOCAL_FALLBACK)
+  estimatedCost   Decimal?          @db.Decimal(10, 4)
+  metadata        Json?
+  createdAt       DateTime          @default(now())
+
+  @@index([tenantId, periodKey, ledgerType])
+  @@index([tenantId, action, createdAt])
+  @@index([sessionId])
+  @@schema("magiclawyer")
+}
+
+model AiDraftDocument {
+  id                String             @id @default(cuid())
+  tenantId          String?
+  userId            String?
+  sessionId         String
+  action            String
+  draftType         String
+  title             String
+  tone              String?
+  strategy          String?
+  status            AiDraftStatus      @default(RASCUNHO)
+  sourceProcessoId  String?
+  sourceDocumentoId String?
+  sourceClienteId   String?
+  sourceContratoId  String?
+  sourcePeticaoId   String?
+  contentMarkdown   String
+  summary           String?
+  citations         Json?
+  pendingReview     Json?
+  confidenceScore   Decimal?           @db.Decimal(5, 2)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  session           AiWorkspaceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, draftType, status])
+  @@index([sessionId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model AiDocumentAnalysis {
+  id                String             @id @default(cuid())
+  tenantId          String?
+  userId            String?
+  sessionId         String
+  analysisType      String
+  status            AiExecutionStatus  @default(SUCCESS)
+  sourceDocumentoId String?
+  sourceName        String?
+  inputExcerpt      String?
+  summary           String?
+  findings          Json?
+  riskFlags         Json?
+  recommendations   Json?
+  confidenceScore   Decimal?           @db.Decimal(5, 2)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  session           AiWorkspaceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, analysisType, status])
+  @@index([sessionId, createdAt])
+  @@schema("magiclawyer")
+}
+
+model AiCaseMemory {
+  id            String            @id @default(cuid())
+  tenantId      String
+  scopeType     AiMemoryScopeType
+  scopeId       String
+  title         String
+  summary       String?
+  memory        Json
+  updatedById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([tenantId, scopeType, scopeId])
+  @@index([tenantId, updatedAt])
+  @@schema("magiclawyer")
+}
+
 enum NotificationDeliveryStatus {
   PENDING
   SENT
@@ -4280,6 +4492,68 @@ enum DigitalCertificateLogAction {
   ENABLED
   DELETED
   TESTED
+
+  @@schema("magiclawyer")
+}
+
+enum AiPromptStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@schema("magiclawyer")
+}
+
+enum AiWorkspaceStatus {
+  OPEN
+  COMPLETED
+  ABORTED
+
+  @@schema("magiclawyer")
+}
+
+enum AiExecutionStatus {
+  SUCCESS
+  ERROR
+  BLOCKED
+  SKIPPED
+
+  @@schema("magiclawyer")
+}
+
+enum AiExecutionEngine {
+  LOCAL_FALLBACK
+  OPENAI_RESPONSES
+  MANUAL_REVIEW
+
+  @@schema("magiclawyer")
+}
+
+enum AiUsageLedgerType {
+  MESSAGE
+  DRAFT
+  ANALYSIS
+  SEARCH
+  CITATION_VALIDATION
+
+  @@schema("magiclawyer")
+}
+
+enum AiDraftStatus {
+  RASCUNHO
+  EM_REVISAO
+  APROVADO
+  DESCARTADO
+
+  @@schema("magiclawyer")
+}
+
+enum AiMemoryScopeType {
+  PROCESSO
+  CLIENTE
+  CONTRATO
+  PETICAO
+  CUSTOM
 
   @@schema("magiclawyer")
 }

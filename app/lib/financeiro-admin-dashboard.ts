@@ -124,6 +124,13 @@ export type FinanceiroAdminBreakdownItem = {
   quantidade: number;
 };
 
+export type FinanceiroAdminLegacyPaymentMethod = {
+  rawMethod: string;
+  label: string;
+  valor: number;
+  quantidade: number;
+};
+
 export type FinanceiroAdminTenantPerformance = {
   tenantId: string;
   tenantName: string;
@@ -170,6 +177,7 @@ export type FinanceiroAdminDashboard = {
   forecast: FinanceiroAdminForecastPoint[];
   revenueMix: FinanceiroAdminBreakdownItem[];
   paymentMethods: FinanceiroAdminBreakdownItem[];
+  legacyPaymentMethods: FinanceiroAdminLegacyPaymentMethod[];
   topTenants: FinanceiroAdminTenantPerformance[];
   topRiskTenants: FinanceiroAdminTenantPerformance[];
   recentInvoices: FinanceiroAdminInvoiceRecord[];
@@ -230,6 +238,56 @@ function toMonthLabel(date: Date) {
 
 function toFiniteNumber(value: number | null | undefined) {
   return Number.isFinite(value) ? Number(value) : 0;
+}
+
+function normalizeMethodToken(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+function normalizeSupportedPaymentMethod(
+  method: string | null | undefined,
+): "PIX" | "BOLETO" | "CREDIT_CARD" | null {
+  const normalized = normalizeMethodToken(method);
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "PIX") {
+    return "PIX";
+  }
+
+  if (normalized === "BOLETO" || normalized === "BOLETO BANCARIO") {
+    return "BOLETO";
+  }
+
+  if (
+    normalized === "CREDIT_CARD" ||
+    normalized === "CARTAO" ||
+    normalized === "CARTAO DE CREDITO" ||
+    normalized === "CARTAO_CREDITO"
+  ) {
+    return "CREDIT_CARD";
+  }
+
+  return null;
+}
+
+function paymentMethodLabel(
+  method: "PIX" | "BOLETO" | "CREDIT_CARD",
+) {
+  switch (method) {
+    case "PIX":
+      return "PIX";
+    case "BOLETO":
+      return "Boleto";
+    case "CREDIT_CARD":
+      return "Cartão";
+  }
 }
 
 function safePercent(numerator: number, denominator: number) {
@@ -518,6 +576,7 @@ export function buildFinanceiroAdminDashboard({
 
   const revenueMixMap = new Map<string, FinanceiroAdminBreakdownItem>();
   const paymentMethodMap = new Map<string, FinanceiroAdminBreakdownItem>();
+  const legacyPaymentMethodMap = new Map<string, FinanceiroAdminLegacyPaymentMethod>();
   const tenantPerformanceMap = new Map<string, FinanceiroAdminTenantPerformance>();
 
   for (const invoice of filteredInvoices) {
@@ -647,18 +706,33 @@ export function buildFinanceiroAdminDashboard({
       revenueMixEntry.quantidade += 1;
       revenueMixMap.set(payment.billingContext, revenueMixEntry);
 
-      const methodKey = (payment.metodo || "N/I").toUpperCase();
-      const paymentMethodEntry =
-        paymentMethodMap.get(methodKey) ??
-        {
-          key: methodKey,
-          label: methodKey,
-          valor: 0,
-          quantidade: 0,
-        };
-      paymentMethodEntry.valor += paymentValue;
-      paymentMethodEntry.quantidade += 1;
-      paymentMethodMap.set(methodKey, paymentMethodEntry);
+      const supportedMethod = normalizeSupportedPaymentMethod(payment.metodo);
+      if (supportedMethod) {
+        const paymentMethodEntry =
+          paymentMethodMap.get(supportedMethod) ??
+          {
+            key: supportedMethod,
+            label: paymentMethodLabel(supportedMethod),
+            valor: 0,
+            quantidade: 0,
+          };
+        paymentMethodEntry.valor += paymentValue;
+        paymentMethodEntry.quantidade += 1;
+        paymentMethodMap.set(supportedMethod, paymentMethodEntry);
+      } else {
+        const rawMethod = (payment.metodo || "N/I").trim() || "N/I";
+        const legacyEntry =
+          legacyPaymentMethodMap.get(rawMethod) ??
+          {
+            rawMethod,
+            label: rawMethod,
+            valor: 0,
+            quantidade: 0,
+          };
+        legacyEntry.valor += paymentValue;
+        legacyEntry.quantidade += 1;
+        legacyPaymentMethodMap.set(rawMethod, legacyEntry);
+      }
 
       const tenantPerformance = tenantPerformanceMap.get(payment.tenantId);
       if (tenantPerformance) {
@@ -775,6 +849,9 @@ export function buildFinanceiroAdminDashboard({
       (a, b) => b.valor - a.valor,
     ),
     paymentMethods: Array.from(paymentMethodMap.values()).sort(
+      (a, b) => b.valor - a.valor,
+    ),
+    legacyPaymentMethods: Array.from(legacyPaymentMethodMap.values()).sort(
       (a, b) => b.valor - a.valor,
     ),
     topTenants: tenantPerformance

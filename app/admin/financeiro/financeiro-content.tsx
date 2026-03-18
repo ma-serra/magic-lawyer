@@ -222,7 +222,11 @@ function getStatusLabel(status: string) {
 }
 
 function getPaymentMethodLabel(method: string | null | undefined) {
-  const normalized = String(method || "N/I").toUpperCase();
+  const normalized = String(method || "N/I")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
 
   switch (normalized) {
     case "PIX":
@@ -231,13 +235,16 @@ function getPaymentMethodLabel(method: string | null | undefined) {
       return "Boleto";
     case "CREDIT_CARD":
     case "CARTAO":
+    case "CARTAO DE CREDITO":
     case "CARTAO_CREDITO":
       return "Cartão";
     case "TRANSFERENCIA":
     case "BANK_TRANSFER":
       return "Transferência";
+    case "DEBITO AUTOMATICO":
+      return "Legado: Débito Automático";
     default:
-      return normalized;
+      return String(method || "N/I");
   }
 }
 
@@ -376,6 +383,14 @@ function buildExportRows(data: FinanceiroAdminDashboard) {
         String(item.quantidade),
       ]),
     ],
+    legacyPaymentMethods: [
+      ["Método legado", "Valor", "Quantidade"],
+      ...data.legacyPaymentMethods.map((item) => [
+        item.label,
+        item.valor.toFixed(2),
+        String(item.quantidade),
+      ]),
+    ],
     invoices: [
       [
         "Fatura",
@@ -451,6 +466,9 @@ async function exportDashboard(
       ["Métodos de pagamento"],
       ...rows.paymentMethods,
       [""],
+      ["Métodos legados"],
+      ...rows.legacyPaymentMethods,
+      [""],
       ["Faturas recentes"],
       ...rows.invoices,
       [""],
@@ -503,6 +521,7 @@ async function exportDashboard(
     { title: "Top tenants", rows: rows.topTenants },
     { title: "Mix de receita", rows: rows.revenueMix },
     { title: "Métodos de pagamento", rows: rows.paymentMethods },
+    { title: "Métodos legados", rows: rows.legacyPaymentMethods },
     { title: "Faturas recentes", rows: rows.invoices },
     { title: "Pagamentos recentes", rows: rows.payments },
     { title: "Comissões pendentes", rows: rows.commissions },
@@ -705,21 +724,64 @@ function TopTenantCard({
 
 function PaymentMethodList({
   items,
+  legacyItems,
 }: {
   items: FinanceiroAdminDashboard["paymentMethods"];
+  legacyItems: FinanceiroAdminDashboard["legacyPaymentMethods"];
 }) {
+  const legacyTotal = legacyItems.reduce((acc, item) => acc + item.valor, 0);
+  const legacyCount = legacyItems.reduce((acc, item) => acc + item.quantidade, 0);
+
   if (items.length === 0) {
     return (
-      <DashboardTableEmpty
-        description="Os pagamentos confirmados aparecerão aqui com o método utilizado."
-        icon={<CreditCard className="h-6 w-6" />}
-        title="Sem métodos de pagamento"
-      />
+      <div className="space-y-4">
+        <DashboardTableEmpty
+          description="Os pagamentos confirmados nos canais suportados aparecerão aqui."
+          icon={<CreditCard className="h-6 w-6" />}
+          title="Sem métodos suportados"
+        />
+        {legacyItems.length > 0 ? (
+          <div className="rounded-2xl border border-warning/30 bg-warning/5 p-4">
+            <p className="text-sm font-semibold text-warning">
+              Há registros legados fora do catálogo atual
+            </p>
+            <p className="mt-1 text-sm text-default-400">
+              {formatCurrency(legacyTotal)} em {legacyCount} pagamento(s) usam
+              método(s) não oferecidos hoje pela plataforma.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {legacyItems.map((item) => (
+                <Chip key={item.rawMethod} color="warning" size="sm" variant="flat">
+                  {item.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      {legacyItems.length > 0 ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/5 p-4">
+          <p className="text-sm font-semibold text-warning">
+            Registros fora do catálogo de cobrança atual
+          </p>
+          <p className="mt-1 text-sm text-default-400">
+            O produto hoje opera com PIX, boleto e cartão. Ainda existem{" "}
+            {legacyCount} pagamento(s) legados somando {formatCurrency(legacyTotal)}.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {legacyItems.map((item) => (
+              <Chip key={item.rawMethod} color="warning" size="sm" variant="flat">
+                {item.label}: {formatCurrency(item.valor)}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {items.map((item, index) => (
         <div
           key={item.key}
@@ -1617,13 +1679,16 @@ export function FinanceiroContent() {
         </PeoplePanel>
 
         <PeoplePanel
-          description="Composição do recebido por canal de pagamento."
+          description="Composição do recebido apenas nos canais suportados hoje pela plataforma."
           title="Métodos de pagamento"
         >
           {isLoading || !data ? (
             <ChartLoading label="Montando métodos..." />
           ) : (
-            <PaymentMethodList items={data.paymentMethods} />
+            <PaymentMethodList
+              items={data.paymentMethods}
+              legacyItems={data.legacyPaymentMethods}
+            />
           )}
         </PeoplePanel>
       </div>

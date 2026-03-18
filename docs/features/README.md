@@ -18,6 +18,16 @@ Documentação completa do sistema de notificações push em [notifications/](./
 - Exibição organizada dentro do sistema para o usuário
 - Uso futuro de IA para analisar o acervo de jurisprudências e sugerir decisões relevantes aos clientes com mais precisão
 
+### 🤖 IA Jurídica
+Documentação estratégica da camada premium de IA do produto:
+- Assistente jurídico proativo
+- Geração de peças
+- Pesquisa jurisprudencial assistida
+- Validação de citações
+- Speed dial contextual nas telas internas
+
+Índice da pasta: [juridical-ai/README.md](./juridical-ai/README.md)
+
 ## 📚 Como Usar
 
 Cada pasta contém toda a documentação relacionada a uma feature específica, incluindo:

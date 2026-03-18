@@ -34,6 +34,13 @@ test.describe.serial("Cockpit financeiro global admin", () => {
     await expect(page.getByText("Faturas recentes")).toBeVisible();
     await expect(page.getByText("Pagamentos recentes")).toBeVisible();
     await expect(page.getByText("Comissões pendentes")).toBeVisible();
+    await expect(page.getByText("Registros fora do catálogo de cobrança atual")).toBeVisible();
+    await expect(
+      page.getByText("O produto hoje opera com PIX, boleto e cartão."),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Legado: Débito Automático").first(),
+    ).toBeVisible();
   });
 
   test("permite trocar o recorte temporal sem quebrar o cockpit", async ({

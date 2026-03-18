@@ -99,7 +99,7 @@ async function seedDadosFinanceiros(prisma) {
 
         // Criar pagamento se a fatura foi paga
         if (i < 4) {
-          const metodos = ["Cartão de Crédito", "PIX", "Boleto", "Débito Automático"];
+          const metodos = ["Cartão de Crédito", "PIX", "Boleto"];
           const metodo = metodos[Math.floor(Math.random() * metodos.length)];
 
           await prisma.pagamento.create({

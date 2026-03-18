@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { fetchComunica } from "@/lib/api/juridical/pje/comunica";
 import { mapComunicaItemsToProcessos } from "@/lib/api/juridical/pje/comunica-normalizer";
+import {
+  getRequestAuditMetadata,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -67,11 +71,25 @@ async function syncTenantComunica(tenantId: string, tenantName: string | null) {
 }
 
 export async function GET(request: NextRequest) {
+  const requestMeta = getRequestAuditMetadata(request);
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
   if (!cronSecret) {
     logger.error("[Cron Comunica] CRON_SECRET nao configurado.");
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "comunica",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Cron Comunica falhou porque CRON_SECRET não está configurado.",
+    });
     return NextResponse.json(
       { success: false, error: "CRON_SECRET não configurado." },
       { status: 503 },
@@ -79,11 +97,38 @@ export async function GET(request: NextRequest) {
   }
 
   if (authHeader !== `Bearer ${cronSecret}`) {
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_REJECTED",
+      status: "WARNING",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "comunica",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Cron Comunica rejeitado por autorização inválida.",
+    });
     return NextResponse.json(
       { success: false, error: "Não autorizado" },
       { status: 401 },
     );
   }
+
+  await logOperationalEvent({
+    category: "CRON",
+    source: "VERCEL_CRON",
+    action: "CRON_STARTED",
+    status: "INFO",
+    actorType: "CRON",
+    entityType: "SCHEDULE",
+    entityId: "comunica",
+    route: requestMeta.route,
+    ipAddress: requestMeta.ipAddress,
+    userAgent: requestMeta.userAgent,
+    message: "Sincronização Comunica iniciada.",
+  });
 
   const certificates = await prisma.digitalCertificate.findMany({
     where: {
@@ -104,6 +149,19 @@ export async function GET(request: NextRequest) {
   });
 
   if (certificates.length === 0) {
+    await logOperationalEvent({
+      category: "CRON",
+      source: "VERCEL_CRON",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "comunica",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Nenhum certificado PJE ativo encontrado para sincronização Comunica.",
+    });
     return NextResponse.json(
       { success: false, error: "Nenhum certificado PJE ativo encontrado." },
       { status: 400 },
@@ -159,6 +217,35 @@ export async function GET(request: NextRequest) {
   }
 
   const status = summaries.length > 0 ? 200 : 500;
+
+  await logOperationalEvent({
+    category: "CRON",
+    source: "VERCEL_CRON",
+    action:
+      failures.length > 0
+        ? summaries.length > 0
+          ? "CRON_PARTIAL"
+          : "CRON_FAILED"
+        : "CRON_SUCCEEDED",
+    status:
+      failures.length > 0
+        ? summaries.length > 0
+          ? "WARNING"
+          : "ERROR"
+        : "SUCCESS",
+    actorType: "CRON",
+    entityType: "SCHEDULE",
+    entityId: "comunica",
+    route: requestMeta.route,
+    ipAddress: requestMeta.ipAddress,
+    userAgent: requestMeta.userAgent,
+    message: `Sincronização Comunica concluída para ${summaries.length} tenant(s), com ${failures.length} falha(s).`,
+    payload: {
+      totalTenants: certificates.length,
+      tenantsSincronizados: summaries.length,
+      tenantsComFalha: failures.length,
+    },
+  });
 
   return NextResponse.json(
     {

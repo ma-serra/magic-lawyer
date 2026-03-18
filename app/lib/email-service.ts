@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 
 import prisma from "@/app/lib/prisma";
+import { logOperationalEvent } from "@/app/lib/audit/operational-events";
 
 // =============================================
 // TYPES
@@ -451,6 +452,23 @@ class EmailService {
       );
 
       if (!credential) {
+        await logOperationalEvent({
+          tenantId,
+          category: "EMAIL",
+          source: "RESEND",
+          action: "EMAIL_FAILED",
+          status: "ERROR",
+          actorType: "SYSTEM",
+          entityType: "TENANT_EMAIL_CREDENTIAL",
+          route: "email-service",
+          message: "Tentativa de envio sem credencial de email configurada.",
+          payload: {
+            to: emailData.to,
+            subject: emailData.subject,
+            credentialType: emailData.credentialType || "DEFAULT",
+          },
+        });
+
         return {
           success: false,
           error: "Credenciais de email não configuradas para o tenant",
@@ -474,15 +492,71 @@ class EmailService {
       });
 
       if (error) {
+        await logOperationalEvent({
+          tenantId,
+          category: "EMAIL",
+          source: "RESEND",
+          action: "EMAIL_FAILED",
+          status: "ERROR",
+          actorType: "SYSTEM",
+          entityType: "EMAIL",
+          route: "email-service",
+          message: this.getErrorMessage(error, "Erro ao enviar email via Resend"),
+          payload: {
+            to: emailData.to,
+            from,
+            subject: emailData.subject,
+            credentialType: emailData.credentialType || "DEFAULT",
+            providerMessageId: null,
+          },
+        });
+
         return {
           success: false,
           error: this.getErrorMessage(error, "Erro ao enviar email via Resend"),
         };
       }
 
+      await logOperationalEvent({
+        tenantId,
+        category: "EMAIL",
+        source: "RESEND",
+        action: "EMAIL_SENT",
+        status: "SUCCESS",
+        actorType: "SYSTEM",
+        entityType: "EMAIL",
+        entityId: data?.id ?? null,
+        route: "email-service",
+        message: "Email enviado com sucesso.",
+        payload: {
+          to: emailData.to,
+          from,
+          subject: emailData.subject,
+          credentialType: emailData.credentialType || "DEFAULT",
+          providerMessageId: data?.id ?? null,
+        },
+      });
+
       return { success: true, messageId: data?.id };
     } catch (error) {
       console.error("Error sending email (Resend/per-tenant):", error);
+
+      await logOperationalEvent({
+        tenantId,
+        category: "EMAIL",
+        source: "RESEND",
+        action: "EMAIL_FAILED",
+        status: "ERROR",
+        actorType: "SYSTEM",
+        entityType: "EMAIL",
+        route: "email-service",
+        message: this.getErrorMessage(error, "Unknown error sending email"),
+        payload: {
+          to: emailData.to,
+          subject: emailData.subject,
+          credentialType: emailData.credentialType || "DEFAULT",
+        },
+      });
 
       return {
         success: false,

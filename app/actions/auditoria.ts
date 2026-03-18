@@ -2,6 +2,12 @@
 
 import { getServerSession } from "next-auth/next";
 
+import {
+  buildAdminAuditControlTower,
+  type AdminAuditChangeEntry,
+  type AdminOperationalAuditEntry,
+  type AdminSupportAuditItem,
+} from "@/app/lib/admin-audit-center";
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
@@ -48,11 +54,41 @@ export type AuditLogSummary = {
 export type AuditLogFilters = {
   limit?: number;
   fonte?: "SUPER_ADMIN" | "TENANT";
+  tenantId?: string;
   entidade?: string;
   acao?: string;
   search?: string;
   startDate?: string;
   endDate?: string;
+};
+
+export type AdminAuditCenterFilters = {
+  limit?: number;
+  tenantId?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type AdminAuditCenterResponse = {
+  success: boolean;
+  data?: {
+    changeLogs: AuditLogEntry[];
+    operationalEvents: AdminOperationalAuditEntry[];
+    supportTickets: AdminSupportAuditItem[];
+    tenantOptions: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      status: string;
+    }>;
+    overview: ReturnType<typeof buildAdminAuditControlTower>["overview"];
+    categories: ReturnType<typeof buildAdminAuditControlTower>["categories"];
+    topActors: ReturnType<typeof buildAdminAuditControlTower>["topActors"];
+    topTenants: ReturnType<typeof buildAdminAuditControlTower>["topTenants"];
+    criticalEvents: ReturnType<typeof buildAdminAuditControlTower>["criticalEvents"];
+  };
+  error?: string;
 };
 
 export type GetAuditLogsResponse = {
@@ -158,181 +194,208 @@ function buildDateRangeFilter(startDate?: string, endDate?: string) {
   return filter;
 }
 
+const SUPPORT_FIRST_RESPONSE_SLA_MINUTES: Record<string, number> = {
+  LOW: 24 * 60,
+  MEDIUM: 4 * 60,
+  HIGH: 60,
+  URGENT: 15,
+};
+
+function computeSupportDueAt(createdAt: Date, priority: string) {
+  const minutes =
+    SUPPORT_FIRST_RESPONSE_SLA_MINUTES[priority] ??
+    SUPPORT_FIRST_RESPONSE_SLA_MINUTES.MEDIUM;
+
+  return new Date(createdAt.getTime() + minutes * 60 * 1000);
+}
+
+function filterLogsBySearch(logs: AuditLogEntry[], search?: string) {
+  if (!search || search.trim().length === 0) {
+    return logs;
+  }
+
+  const searchTerm = search.trim().toLowerCase();
+
+  return logs.filter((log) => {
+    const candidateValues = [
+      log.acao,
+      log.entidade,
+      log.entidadeId,
+      log.superAdmin?.nome,
+      log.superAdmin?.email,
+      log.tenant?.nome,
+      log.tenant?.slug,
+      log.usuario?.nome,
+      log.usuario?.email,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase());
+
+    return candidateValues.some((value) => value.includes(searchTerm));
+  });
+}
+
+async function loadUnifiedAuditLogs(filters?: AuditLogFilters) {
+  const {
+    limit = 100,
+    fonte,
+    tenantId,
+    entidade,
+    acao,
+    search,
+    startDate,
+    endDate,
+  } = filters ?? {};
+
+  const shouldFetchSuperAdmin = fonte !== "TENANT";
+  const shouldFetchTenant = fonte !== "SUPER_ADMIN";
+  const dateFilter = buildDateRangeFilter(startDate, endDate);
+
+  const [superAdminLogs, tenantLogs] = await Promise.all([
+    shouldFetchSuperAdmin
+      ? prisma.superAdminAuditLog.findMany({
+          orderBy: { createdAt: "desc" },
+          where: {
+            ...(entidade ? { entidade } : {}),
+            ...(acao
+              ? {
+                  acao: {
+                    contains: acao,
+                    mode: "insensitive",
+                  },
+                }
+              : {}),
+            ...(dateFilter ? { createdAt: dateFilter } : {}),
+          },
+          include: {
+            superAdmin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        })
+      : [],
+    shouldFetchTenant
+      ? prisma.auditLog.findMany({
+          orderBy: { createdAt: "desc" },
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(entidade ? { entidade } : {}),
+            ...(acao
+              ? {
+                  acao: {
+                    contains: acao,
+                    mode: "insensitive",
+                  },
+                }
+              : {}),
+            ...(dateFilter ? { createdAt: dateFilter } : {}),
+          },
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            usuario: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        })
+      : [],
+  ]);
+
+  const logs: AuditLogEntry[] = [
+    ...superAdminLogs.map((log) => ({
+      id: log.id,
+      fonte: "SUPER_ADMIN" as const,
+      acao: log.acao,
+      entidade: log.entidade,
+      entidadeId: log.entidadeId,
+      createdAt: log.createdAt.toISOString(),
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent,
+      dadosAntigos: log.dadosAntigos ?? undefined,
+      dadosNovos: log.dadosNovos ?? undefined,
+      superAdmin: log.superAdmin
+        ? {
+            id: log.superAdmin.id,
+            nome:
+              buildNome(log.superAdmin.firstName, log.superAdmin.lastName) ||
+              log.superAdmin.email,
+            email: log.superAdmin.email,
+          }
+        : null,
+    })),
+    ...tenantLogs.map((log) => ({
+      id: log.id,
+      fonte: "TENANT" as const,
+      acao: log.acao,
+      entidade: log.entidade,
+      entidadeId: log.entidadeId,
+      createdAt: log.createdAt.toISOString(),
+      ipAddress: log.ip,
+      userAgent: log.userAgent,
+      dadosAntigos: log.previousValues ?? undefined,
+      dadosNovos: log.dados ?? undefined,
+      changedFields: log.changedFields ?? undefined,
+      tenant: log.tenant
+        ? {
+            id: log.tenant.id,
+            nome: log.tenant.name,
+            slug: log.tenant.slug,
+          }
+        : null,
+      usuario: log.usuario
+        ? {
+            id: log.usuario.id,
+            nome:
+              buildNome(log.usuario.firstName, log.usuario.lastName) ||
+              log.usuario.email ||
+              "",
+            email: log.usuario.email ?? "",
+          }
+        : null,
+    })),
+  ];
+
+  const filteredLogs = filterLogsBySearch(logs, search);
+
+  filteredLogs.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+
+  const limitedLogs = filteredLogs.slice(0, limit);
+
+  return {
+    logs: limitedLogs,
+    summary: buildSummary(limitedLogs),
+  };
+}
+
 export async function getSystemAuditLogs(
   filters?: AuditLogFilters,
 ): Promise<GetAuditLogsResponse> {
   try {
     await ensureSuperAdmin();
-
-    const {
-      limit = 100,
-      fonte,
-      entidade,
-      acao,
-      search,
-      startDate,
-      endDate,
-    } = filters ?? {};
-
-    const shouldFetchSuperAdmin = fonte !== "TENANT";
-    const shouldFetchTenant = fonte !== "SUPER_ADMIN";
-
-    const dateFilter = buildDateRangeFilter(startDate, endDate);
-
-    const [superAdminLogs, tenantLogs] = await Promise.all([
-      shouldFetchSuperAdmin
-        ? prisma.superAdminAuditLog.findMany({
-            orderBy: { createdAt: "desc" },
-            where: {
-              ...(entidade ? { entidade } : {}),
-              ...(acao
-                ? {
-                    acao: {
-                      contains: acao,
-                      mode: "insensitive",
-                    },
-                  }
-                : {}),
-              ...(dateFilter ? { createdAt: dateFilter } : {}),
-            },
-            include: {
-              superAdmin: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          })
-        : [],
-      shouldFetchTenant
-        ? prisma.auditLog.findMany({
-            orderBy: { createdAt: "desc" },
-            where: {
-              ...(entidade ? { entidade } : {}),
-              ...(acao
-                ? {
-                    acao: {
-                      contains: acao,
-                      mode: "insensitive",
-                    },
-                  }
-                : {}),
-              ...(dateFilter ? { createdAt: dateFilter } : {}),
-            },
-            include: {
-              tenant: {
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
-                },
-              },
-              usuario: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          })
-        : [],
-    ]);
-
-    const logs: AuditLogEntry[] = [
-      ...superAdminLogs.map((log) => ({
-        id: log.id,
-        fonte: "SUPER_ADMIN" as const,
-        acao: log.acao,
-        entidade: log.entidade,
-        entidadeId: log.entidadeId,
-        createdAt: log.createdAt.toISOString(),
-        ipAddress: log.ipAddress,
-        userAgent: log.userAgent,
-        dadosAntigos: log.dadosAntigos ?? undefined,
-        dadosNovos: log.dadosNovos ?? undefined,
-        superAdmin: log.superAdmin
-          ? {
-              id: log.superAdmin.id,
-              nome:
-                buildNome(log.superAdmin.firstName, log.superAdmin.lastName) ||
-                log.superAdmin.email,
-              email: log.superAdmin.email,
-            }
-          : null,
-      })),
-      ...tenantLogs.map((log) => ({
-        id: log.id,
-        fonte: "TENANT" as const,
-        acao: log.acao,
-        entidade: log.entidade,
-        entidadeId: log.entidadeId,
-        createdAt: log.createdAt.toISOString(),
-        ipAddress: log.ip,
-        userAgent: log.userAgent,
-        dadosAntigos: log.previousValues ?? undefined,
-        dadosNovos: log.dados ?? undefined,
-        changedFields: log.changedFields ?? undefined,
-        tenant: log.tenant
-          ? {
-              id: log.tenant.id,
-              nome: log.tenant.name,
-              slug: log.tenant.slug,
-            }
-          : null,
-        usuario: log.usuario
-          ? {
-              id: log.usuario.id,
-              nome:
-                buildNome(log.usuario.firstName, log.usuario.lastName) ||
-                log.usuario.email ||
-                "",
-              email: log.usuario.email ?? "",
-            }
-          : null,
-      })),
-    ];
-
-    let filteredLogs = logs;
-
-    if (search && search.trim().length > 0) {
-      const searchTerm = search.trim().toLowerCase();
-
-      filteredLogs = filteredLogs.filter((log) => {
-        const candidateValues = [
-          log.acao,
-          log.entidade,
-          log.entidadeId,
-          log.superAdmin?.nome,
-          log.superAdmin?.email,
-          log.tenant?.nome,
-          log.tenant?.slug,
-          log.usuario?.nome,
-          log.usuario?.email,
-        ]
-          .filter(Boolean)
-          .map((value) => String(value).toLowerCase());
-
-        return candidateValues.some((value) => value.includes(searchTerm));
-      });
-    }
-
-    filteredLogs.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-    const limitedLogs = filteredLogs.slice(0, limit);
+    const result = await loadUnifiedAuditLogs(filters);
 
     return {
       success: true,
       data: {
-        logs: limitedLogs,
-        summary: buildSummary(limitedLogs),
+        logs: result.logs,
+        summary: result.summary,
       },
     };
   } catch (error) {
@@ -341,6 +404,285 @@ export async function getSystemAuditLogs(
     return {
       success: false,
       error: "Erro interno do servidor ao buscar logs de auditoria",
+    };
+  }
+}
+
+function buildOperationalSearchWhere(search?: string) {
+  if (!search || search.trim().length === 0) {
+    return undefined;
+  }
+
+  const searchTerm = search.trim();
+
+  return {
+    OR: [
+      { action: { contains: searchTerm, mode: "insensitive" as const } },
+      { category: { contains: searchTerm, mode: "insensitive" as const } },
+      { source: { contains: searchTerm, mode: "insensitive" as const } },
+      { status: { contains: searchTerm, mode: "insensitive" as const } },
+      { actorName: { contains: searchTerm, mode: "insensitive" as const } },
+      { actorEmail: { contains: searchTerm, mode: "insensitive" as const } },
+      { entityType: { contains: searchTerm, mode: "insensitive" as const } },
+      { entityId: { contains: searchTerm, mode: "insensitive" as const } },
+      { route: { contains: searchTerm, mode: "insensitive" as const } },
+      { message: { contains: searchTerm, mode: "insensitive" as const } },
+    ],
+  };
+}
+
+function mapOperationalEvent(event: any): AdminOperationalAuditEntry {
+  return {
+    id: event.id,
+    tenant: event.tenant
+      ? {
+          id: event.tenant.id,
+          name: event.tenant.name,
+          slug: event.tenant.slug,
+          status: event.tenant.status,
+        }
+      : null,
+    category: event.category,
+    source: event.source,
+    action: event.action,
+    status: event.status,
+    actorType: event.actorType,
+    actorId: event.actorId,
+    actorName: event.actorName,
+    actorEmail: event.actorEmail,
+    entityType: event.entityType,
+    entityId: event.entityId,
+    route: event.route,
+    ipAddress: event.ipAddress,
+    userAgent: event.userAgent,
+    message: event.message,
+    payload: event.payload ?? undefined,
+    createdAt: event.createdAt.toISOString(),
+  };
+}
+
+function mapSupportWaitingFor(
+  status: string,
+  latestMessage?:
+    | {
+        authorType: string;
+        isInternal: boolean;
+      }
+    | null,
+): AdminSupportAuditItem["waitingFor"] {
+  if (status === "CLOSED" || status === "RESOLVED") {
+    return "NONE";
+  }
+
+  if (status === "WAITING_CUSTOMER") {
+    return "REQUESTER";
+  }
+
+  if (status === "WAITING_EXTERNAL") {
+    return "NONE";
+  }
+
+  if (!latestMessage) {
+    return "SUPPORT";
+  }
+
+  if (
+    latestMessage.authorType === "SUPER_ADMIN" ||
+    latestMessage.authorType === "SYSTEM"
+  ) {
+    return latestMessage.isInternal ? "SUPPORT" : "REQUESTER";
+  }
+
+  return "SUPPORT";
+}
+
+export async function getAdminAuditCenter(
+  filters?: AdminAuditCenterFilters,
+): Promise<AdminAuditCenterResponse> {
+  try {
+    await ensureSuperAdmin();
+
+    const limit = filters?.limit ?? 180;
+    const tenantId =
+      filters?.tenantId && filters.tenantId !== "ALL"
+        ? filters.tenantId
+        : undefined;
+    const dateFilter = buildDateRangeFilter(
+      filters?.startDate,
+      filters?.endDate,
+    );
+
+    const [changeLogResult, operationalEventsRaw, supportTicketsRaw, tenantOptions] =
+      await Promise.all([
+        loadUnifiedAuditLogs({
+          limit,
+          tenantId,
+          search: filters?.search,
+          startDate: filters?.startDate,
+          endDate: filters?.endDate,
+        }),
+        prisma.operationalAuditEvent.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(dateFilter ? { createdAt: dateFilter } : {}),
+            ...(buildOperationalSearchWhere(filters?.search) ?? {}),
+          },
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+        }),
+        prisma.ticket.findMany({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(dateFilter ? { updatedAt: dateFilter } : {}),
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 36,
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+            assignedToSuperAdmin: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            messages: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: {
+                authorType: true,
+                isInternal: true,
+              },
+            },
+          },
+        }),
+        prisma.tenant.findMany({
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            status: true,
+          },
+        }),
+      ]);
+
+    const operationalEvents = operationalEventsRaw.map(mapOperationalEvent);
+    const changeLogs = changeLogResult.logs;
+
+    const supportTickets: AdminSupportAuditItem[] = supportTicketsRaw.map(
+      (ticket) => {
+        const firstResponseDueAt = computeSupportDueAt(
+          ticket.createdAt,
+          ticket.priority,
+        );
+        const slaBreached = ticket.firstResponseAt
+          ? ticket.firstResponseAt > firstResponseDueAt
+          : ticket.status !== "CLOSED" &&
+            ticket.status !== "RESOLVED" &&
+            new Date() > firstResponseDueAt;
+
+        return {
+          id: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          priority: ticket.priority,
+          category: ticket.category,
+          supportLevel: ticket.supportLevel,
+          createdAt: ticket.createdAt.toISOString(),
+          updatedAt: ticket.updatedAt.toISOString(),
+          closedAt: ticket.closedAt ? ticket.closedAt.toISOString() : null,
+          firstResponseAt: ticket.firstResponseAt
+            ? ticket.firstResponseAt.toISOString()
+            : null,
+          firstResponseDueAt: firstResponseDueAt.toISOString(),
+          slaBreached,
+          waitingFor: mapSupportWaitingFor(ticket.status, ticket.messages[0] ?? null),
+          tenant: {
+            id: ticket.tenant.id,
+            name: ticket.tenant.name,
+            slug: ticket.tenant.slug,
+          },
+          requester: {
+            id: ticket.user.id,
+            name:
+              buildNome(ticket.user.firstName, ticket.user.lastName) ||
+              ticket.user.email,
+            email: ticket.user.email,
+            role: ticket.user.role,
+          },
+          assignedTo: ticket.assignedToSuperAdmin
+            ? {
+                id: ticket.assignedToSuperAdmin.id,
+                name:
+                  buildNome(
+                    ticket.assignedToSuperAdmin.firstName,
+                    ticket.assignedToSuperAdmin.lastName,
+                  ) || ticket.assignedToSuperAdmin.email,
+                email: ticket.assignedToSuperAdmin.email,
+              }
+            : null,
+        };
+      },
+    );
+
+    const controlTower = buildAdminAuditControlTower({
+      operationalEvents,
+      changeLogs: changeLogs as AdminAuditChangeEntry[],
+      supportTickets,
+    });
+
+    return {
+      success: true,
+      data: {
+        changeLogs,
+        operationalEvents,
+        supportTickets,
+        tenantOptions: tenantOptions.map((tenant) => ({
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          status: tenant.status,
+        })),
+        overview: controlTower.overview,
+        categories: controlTower.categories,
+        topActors: controlTower.topActors,
+        topTenants: controlTower.topTenants,
+        criticalEvents: controlTower.criticalEvents,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao montar central de auditoria:", error);
+
+    return {
+      success: false,
+      error: "Erro interno do servidor ao montar a central de auditoria.",
     };
   }
 }

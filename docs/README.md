@@ -16,6 +16,7 @@ Documentação detalhada de cada funcionalidade:
 - **Integrações** - Visão consolidada em [INTEGRACOES_STATUS.md](./features/INTEGRACOES_STATUS.md)
 - **Tenant Dashboard Enhancements** - Melhorias e funcionalidades do dashboard do tenant
 - **Novo Acervo** - [FAB_NOVO_ACERVO_CHECKLIST.md](./features/novo-acervo/FAB_NOVO_ACERVO_CHECKLIST.md) descreve o botão flutuante, modal “Novo Acervo” e pipeline de OCR/IA com checklist passo a passo
+- **IA Jurídica** - [ATA_ASSISTENTE_JURIDICO_PROATIVO.md](./features/juridical-ai/ATA_ASSISTENTE_JURIDICO_PROATIVO.md) define a visão do assistente jurídico proativo, geração de peças e speed dial contextual
 
 ### 🏗️ [Arquitetura](./architecture/)
 Documentação técnica de arquitetura e estrutura:

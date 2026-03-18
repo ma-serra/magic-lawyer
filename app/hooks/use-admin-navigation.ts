@@ -60,6 +60,12 @@ export function useAdminNavigation() {
         description: "Configurar monetização",
       },
       {
+        label: "Magic AI",
+        href: "/admin/magic-ai",
+        icon: "Sparkles",
+        description: "Governança da IA jurídica e rollout premium",
+      },
+      {
         label: "Financeiro",
         href: "/admin/financeiro",
         icon: "DollarSign",

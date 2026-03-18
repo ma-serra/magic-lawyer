@@ -4,6 +4,10 @@ import prisma from "@/app/lib/prisma";
 import { processarPagamentoConfirmado } from "@/app/actions/processar-pagamento-confirmado";
 import { AsaasWebhookService } from "@/app/lib/notifications/services/asaas-webhook";
 import {
+  getRequestAuditMetadata,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
+import {
   activatePacoteSubscription,
   cancelPacoteSubscription,
   extractPacoteAssinaturaIdFromReference,
@@ -226,6 +230,8 @@ async function findSubscriptionForPayment(payment: {
 }
 
 export async function POST(request: NextRequest) {
+  const requestMeta = getRequestAuditMetadata(request);
+
   try {
     const rawPayload = await request.text();
     const accessToken = request.headers.get("asaas-access-token");
@@ -235,10 +241,51 @@ export async function POST(request: NextRequest) {
     try {
       webhookData = JSON.parse(rawPayload) as AsaasWebhookPayload;
     } catch {
+      await logOperationalEvent({
+        category: "WEBHOOK",
+        source: "ASAAS",
+        action: "WEBHOOK_INVALID_PAYLOAD",
+        status: "ERROR",
+        actorType: "WEBHOOK",
+        route: requestMeta.route,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+        message: "Webhook Asaas recebido com JSON inválido.",
+      });
+
       return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
     }
 
     const tenantId = await resolveTenantIdFromWebhook(webhookData);
+    await logOperationalEvent({
+      tenantId,
+      category: "WEBHOOK",
+      source: "ASAAS",
+      action: "WEBHOOK_RECEIVED",
+      status: "INFO",
+      actorType: "WEBHOOK",
+      entityType: "ASAAS_EVENT",
+      entityId:
+        webhookData.payment?.id ??
+        webhookData.subscription?.id ??
+        webhookData.payment?.externalReference ??
+        null,
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: `Webhook Asaas recebido: ${webhookData.event ?? "desconhecido"}.`,
+      payload: {
+        event: webhookData.event ?? null,
+        paymentId: webhookData.payment?.id ?? null,
+        subscriptionId:
+          webhookData.subscription?.id ?? webhookData.payment?.subscription ?? null,
+        externalReference:
+          webhookData.payment?.externalReference ??
+          webhookData.subscription?.externalReference ??
+          null,
+        hasAccessToken: Boolean(accessToken),
+      },
+    });
     const tokenValidation = await validateWebhookToken(tenantId, accessToken, {
       forceGlobalSecret: Boolean(
         extractPacoteAssinaturaIdFromReference(
@@ -252,6 +299,28 @@ export async function POST(request: NextRequest) {
       logger.warn(
         `[AsaasWebhook] Requisição recusada (${tokenValidation.reason ?? "token inválido"})`,
       );
+      await logOperationalEvent({
+        tenantId,
+        category: "WEBHOOK",
+        source: "ASAAS",
+        action: "WEBHOOK_REJECTED",
+        status: "WARNING",
+        actorType: "WEBHOOK",
+        entityType: "ASAAS_EVENT",
+        entityId:
+          webhookData.payment?.id ??
+          webhookData.subscription?.id ??
+          webhookData.payment?.externalReference ??
+          null,
+        route: requestMeta.route,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+        message: `Webhook Asaas rejeitado: ${tokenValidation.reason ?? "token inválido"}.`,
+        payload: {
+          event: webhookData.event ?? null,
+          reason: tokenValidation.reason ?? null,
+        },
+      });
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -301,9 +370,47 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await logOperationalEvent({
+      tenantId,
+      category: "WEBHOOK",
+      source: "ASAAS",
+      action: "WEBHOOK_PROCESSED",
+      status: "SUCCESS",
+      actorType: "WEBHOOK",
+      entityType: "ASAAS_EVENT",
+      entityId:
+        webhookData.payment?.id ??
+        webhookData.subscription?.id ??
+        webhookData.payment?.externalReference ??
+        null,
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: `Webhook Asaas processado: ${webhookData.event ?? "desconhecido"}.`,
+      payload: {
+        event: webhookData.event ?? null,
+        paymentId: webhookData.payment?.id ?? null,
+        subscriptionId:
+          webhookData.subscription?.id ?? webhookData.payment?.subscription ?? null,
+      },
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     logger.error("Erro ao processar webhook Asaas:", error);
+
+    await logOperationalEvent({
+      category: "WEBHOOK",
+      source: "ASAAS",
+      action: "WEBHOOK_FAILED",
+      status: "ERROR",
+      actorType: "WEBHOOK",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message:
+        error instanceof Error ? error.message : "Falha interna ao processar webhook Asaas.",
+    });
 
     return NextResponse.json(
       { error: "Internal server error" },

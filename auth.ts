@@ -7,6 +7,11 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 
 import prisma from "./app/lib/prisma";
+import {
+  extractRequestIp,
+  extractRequestUserAgent,
+  logOperationalEvent,
+} from "./app/lib/audit/operational-events";
 import { getTenantAccessibleModules } from "./app/lib/tenant-modules";
 
 // Função para detectar se é um preview deployment com subdomínio
@@ -113,6 +118,10 @@ export const authOptions: NextAuthOptions = {
         tenant: { label: "Escritório", type: "text" }, // pode ser slug ou domínio
       },
       authorize: async (credentials, req) => {
+        const requestHeaders = new Headers(req?.headers as HeadersInit | undefined);
+        const authRoute = "/api/auth/[...nextauth]";
+        const ipAddress = extractRequestIp(requestHeaders);
+        const userAgent = extractRequestUserAgent(requestHeaders);
         const normalizedEmail = credentials?.email?.trim().toLowerCase();
         const normalizedTenant = credentials?.tenant?.trim().toLowerCase();
 
@@ -144,6 +153,20 @@ export const authOptions: NextAuthOptions = {
             "[auth] Credenciais incompletas para login",
             attemptContext,
           );
+
+          await logOperationalEvent({
+            category: "ACCESS",
+            source: "NEXTAUTH",
+            action: "LOGIN_REJECTED",
+            status: "WARNING",
+            actorType: "ANONYMOUS",
+            actorEmail: normalizedEmail ?? credentials?.email ?? null,
+            route: authRoute,
+            ipAddress,
+            userAgent,
+            message: "Tentativa de login com credenciais incompletas.",
+            payload: attemptContext,
+          });
 
           return null;
         }
@@ -179,6 +202,24 @@ export const authOptions: NextAuthOptions = {
             if (!superAdmin.passwordHash) {
               console.warn("[auth] SuperAdmin sem senha cadastrada");
 
+              await logOperationalEvent({
+                category: "ACCESS",
+                source: "NEXTAUTH",
+                action: "LOGIN_REJECTED",
+                status: "WARNING",
+                actorType: "SUPER_ADMIN",
+                actorId: superAdmin.id,
+                actorName: `${superAdmin.firstName} ${superAdmin.lastName}`.trim(),
+                actorEmail: superAdmin.email,
+                entityType: "SUPER_ADMIN",
+                entityId: superAdmin.id,
+                route: authRoute,
+                ipAddress,
+                userAgent,
+                message: "Super admin sem senha cadastrada tentou autenticar.",
+                payload: attemptContext,
+              });
+
               return null;
             }
 
@@ -189,6 +230,24 @@ export const authOptions: NextAuthOptions = {
 
             if (!validPassword) {
               console.warn("[auth] Senha inválida para SuperAdmin");
+
+              await logOperationalEvent({
+                category: "ACCESS",
+                source: "NEXTAUTH",
+                action: "LOGIN_REJECTED",
+                status: "WARNING",
+                actorType: "SUPER_ADMIN",
+                actorId: superAdmin.id,
+                actorName: `${superAdmin.firstName} ${superAdmin.lastName}`.trim(),
+                actorEmail: superAdmin.email,
+                entityType: "SUPER_ADMIN",
+                entityId: superAdmin.id,
+                route: authRoute,
+                ipAddress,
+                userAgent,
+                message: "Tentativa de login de super admin com senha inválida.",
+                payload: attemptContext,
+              });
 
               return null;
             }
@@ -211,6 +270,24 @@ export const authOptions: NextAuthOptions = {
               ...attemptContext,
               userId: superAdmin.id,
               role: "SUPER_ADMIN",
+            });
+
+            await logOperationalEvent({
+              category: "ACCESS",
+              source: "NEXTAUTH",
+              action: "LOGIN_SUCCESS",
+              status: "SUCCESS",
+              actorType: "SUPER_ADMIN",
+              actorId: superAdmin.id,
+              actorName: `${superAdmin.firstName} ${superAdmin.lastName}`.trim(),
+              actorEmail: superAdmin.email,
+              entityType: "SUPER_ADMIN",
+              entityId: superAdmin.id,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: "Login de super admin autorizado.",
+              payload: attemptContext,
             });
 
             return resultUser as any;
@@ -382,6 +459,24 @@ export const authOptions: NextAuthOptions = {
               attemptContext,
             );
 
+            await logOperationalEvent({
+              tenantId: user?.tenantId ?? null,
+              category: "ACCESS",
+              source: "NEXTAUTH",
+              action: "LOGIN_REJECTED",
+              status: "WARNING",
+              actorType: "TENANT_USER",
+              actorId: user?.id ?? null,
+              actorEmail: email,
+              entityType: "USUARIO",
+              entityId: user?.id ?? null,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: "Tentativa de login com usuário inexistente ou sem senha.",
+              payload: attemptContext,
+            });
+
             return null;
           }
 
@@ -395,6 +490,26 @@ export const authOptions: NextAuthOptions = {
               "[auth] Senha inválida para o usuário",
               attemptContext,
             );
+
+            await logOperationalEvent({
+              tenantId: user.tenantId,
+              category: "ACCESS",
+              source: "NEXTAUTH",
+              action: "LOGIN_REJECTED",
+              status: "WARNING",
+              actorType: "TENANT_USER",
+              actorId: user.id,
+              actorName:
+                [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+              actorEmail: user.email,
+              entityType: "USUARIO",
+              entityId: user.id,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: "Tentativa de login com senha inválida.",
+              payload: attemptContext,
+            });
 
             return null;
           }
@@ -420,6 +535,33 @@ export const authOptions: NextAuthOptions = {
             console.warn("[auth] Tenant com acesso bloqueado", {
               ...attemptContext,
               tenantStatus: tenantData?.status,
+            });
+
+            await logOperationalEvent({
+              tenantId: user.tenantId,
+              category: "ACCESS",
+              source: "NEXTAUTH",
+              action: "LOGIN_BLOCKED",
+              status:
+                tenantData?.status === "SUSPENDED" ||
+                tenantData?.status === "CANCELLED"
+                  ? "ERROR"
+                  : "WARNING",
+              actorType: "TENANT_USER",
+              actorId: user.id,
+              actorName:
+                [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+              actorEmail: user.email,
+              entityType: "TENANT",
+              entityId: user.tenantId,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: `Login bloqueado por status do tenant: ${tenantData?.status}.`,
+              payload: {
+                ...attemptContext,
+                tenantStatus: tenantData?.status,
+              },
             });
 
             // Retornar erro específico baseado no status para exibir mensagem correta
@@ -492,6 +634,30 @@ export const authOptions: NextAuthOptions = {
             role: user.role,
           });
 
+          await logOperationalEvent({
+            tenantId: user.tenantId,
+            category: "ACCESS",
+            source: "NEXTAUTH",
+            action: "LOGIN_SUCCESS",
+            status: "SUCCESS",
+            actorType: "TENANT_USER",
+            actorId: user.id,
+            actorName:
+              [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+            actorEmail: user.email,
+            entityType: "USUARIO",
+            entityId: user.id,
+            route: authRoute,
+            ipAddress,
+            userAgent,
+            message: "Login autorizado para usuário do tenant.",
+            payload: {
+              ...attemptContext,
+              tenantId: user.tenantId,
+              role: user.role,
+            },
+          });
+
           return resultUser as any;
         } catch (error) {
           // Verificar se é erro de redirecionamento
@@ -517,6 +683,23 @@ export const authOptions: NextAuthOptions = {
             console.warn("[auth] Tenant suspenso/cancelado detectado", {
               ...attemptContext,
               error: error.message,
+            });
+
+            await logOperationalEvent({
+              category: "ACCESS",
+              source: "NEXTAUTH",
+              action: "LOGIN_BLOCKED",
+              status: "ERROR",
+              actorType: "TENANT_USER",
+              actorEmail: normalizedEmail ?? credentials?.email ?? null,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: `Login bloqueado por ${error.message}.`,
+              payload: {
+                ...attemptContext,
+                error: error.message,
+              },
             });
 
             // Re-lançar o erro para ser tratado pelo cliente

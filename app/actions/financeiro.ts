@@ -6,14 +6,11 @@ import prisma from "@/app/lib/prisma";
 import {
   buildFinanceiroAdminDashboard,
   resolveFinanceiroBillingContext,
-  type FinanceiroAdminBillingContextFilter,
   type FinanceiroAdminCommissionRecord,
   type FinanceiroAdminDashboard,
-  type FinanceiroAdminFilterPreset,
   type FinanceiroAdminFilters,
   type FinanceiroAdminInvoiceRecord,
   type FinanceiroAdminPaymentRecord,
-  type FinanceiroAdminStatusFilter,
   type FinanceiroAdminSubscriptionRecord,
   type FinanceiroAdminTenantOption,
 } from "@/app/lib/financeiro-admin-dashboard";
@@ -104,15 +101,6 @@ export type ComissaoResumo = {
   status: string;
   dataPagamento?: Date;
   createdAt: Date;
-};
-
-export type {
-  FinanceiroAdminBillingContextFilter,
-  FinanceiroAdminDashboard,
-  FinanceiroAdminFilterPreset,
-  FinanceiroAdminFilters,
-  FinanceiroAdminStatusFilter,
-  FinanceiroAdminTenantOption,
 };
 
 // ==================== FUNÇÕES AUXILIARES ====================

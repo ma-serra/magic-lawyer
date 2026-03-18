@@ -55,6 +55,21 @@ function normalizeSearchText(value: string) {
     .trim();
 }
 
+function findExactMatch(items: SearchableSelectOption[], value: string) {
+  const normalizedValue = normalizeSearchText(value);
+
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return items.find((item) => {
+    const candidates = [item.label, item.textValue ?? item.label];
+    return candidates.some(
+      (candidate) => normalizeSearchText(candidate) === normalizedValue,
+    );
+  });
+}
+
 export function SearchableSelect({
   items,
   selectedKey,
@@ -121,6 +136,14 @@ export function SearchableSelect({
 
   const handleInputBlur = (event: FocusEvent<HTMLInputElement>) => {
     inputProps?.onBlur?.(event);
+
+    const exactMatch = findExactMatch(items, inputValue);
+    if (exactMatch && exactMatch.key !== normalizedSelectedKey) {
+      setInputValue(exactMatch.label);
+      onSelectionChange(exactMatch.key);
+      return;
+    }
+
     setInputValue(selectedItem?.label ?? "");
   };
 
@@ -165,7 +188,14 @@ export function SearchableSelect({
       onClear={() => {
         setInputValue("");
       }}
-      onInputChange={setInputValue}
+      onInputChange={(value) => {
+        setInputValue(value);
+
+        const exactMatch = findExactMatch(items, value);
+        if (exactMatch && exactMatch.key !== normalizedSelectedKey) {
+          onSelectionChange(exactMatch.key);
+        }
+      }}
       onSelectionChange={(key) => {
         const nextKey = typeof key === "string" ? key : null;
         const nextItem = nextKey

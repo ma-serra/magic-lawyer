@@ -7,6 +7,7 @@ import { getAuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefet
 import { AppSidebar, type SidebarNavItem } from "@/components/app-sidebar";
 import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
+import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assistant-dock";
 import { TenantFloatingChatDock } from "@/components/support/tenant-floating-chat-dock";
 import { useProfileNavigation } from "@/app/hooks/use-profile-navigation";
 
@@ -85,6 +86,7 @@ export function AppShell({ children }: AppShellProps) {
             {children}
           </div>
         </main>
+        <FloatingAssistantDock scope="tenant" />
         <TenantFloatingChatDock />
       </div>
     </div>

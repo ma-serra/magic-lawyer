@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/app/lib/prisma";
+import {
+  getRequestAuditMetadata,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
 import { capturarProcesso } from "@/app/lib/juridical/capture-service";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import logger from "@/lib/logger";
@@ -12,17 +16,44 @@ import { DigitalCertificateScope } from "@/generated/prisma";
  * Protegido por token interno
  */
 export async function POST(request: NextRequest) {
+  const requestMeta = getRequestAuditMetadata(request);
+
   try {
     // Verificar token de autenticação
     const authHeader = request.headers.get("authorization");
     const expectedToken = process.env.INTERNAL_API_TOKEN;
 
     if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+      await logOperationalEvent({
+        category: "CRON",
+        source: "INTERNAL_API",
+        action: "CRON_REJECTED",
+        status: "WARNING",
+        actorType: "CRON",
+        route: requestMeta.route,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+        message: "Captura automática de processos rejeitada por token inválido.",
+      });
       return NextResponse.json(
         { error: "Não autorizado" },
         { status: 401 },
       );
     }
+
+    await logOperationalEvent({
+      category: "CRON",
+      source: "INTERNAL_API",
+      action: "CRON_STARTED",
+      status: "INFO",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "capture-processos",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: "Captura automática de processos iniciada.",
+    });
 
     // Buscar processos que precisam ser atualizados
     // Por enquanto, busca processos com data de última atualização antiga
@@ -119,6 +150,25 @@ export async function POST(request: NextRequest) {
       `[Cron Capture] Concluído: ${sucessos} sucessos, ${falhas} falhas`,
     );
 
+    await logOperationalEvent({
+      category: "CRON",
+      source: "INTERNAL_API",
+      action: falhas > 0 ? "CRON_PARTIAL" : "CRON_SUCCEEDED",
+      status: falhas > 0 ? "WARNING" : "SUCCESS",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "capture-processos",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message: `Captura automática concluída com ${sucessos} sucesso(s) e ${falhas} falha(s).`,
+      payload: {
+        processados: resultados.length,
+        sucessos,
+        falhas,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       processados: resultados.length,
@@ -128,6 +178,21 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     logger.error("[Cron Capture] Erro geral:", error);
+
+    await logOperationalEvent({
+      category: "CRON",
+      source: "INTERNAL_API",
+      action: "CRON_FAILED",
+      status: "ERROR",
+      actorType: "CRON",
+      entityType: "SCHEDULE",
+      entityId: "capture-processos",
+      route: requestMeta.route,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+      message:
+        error instanceof Error ? error.message : "Falha geral na captura automática.",
+    });
 
     return NextResponse.json(
       {
