@@ -8,7 +8,7 @@ import { DeadlineSchedulerService } from "@/app/lib/notifications/services/deadl
 
 /**
  * Cron job para verificação e notificação de prazos próximos do vencimento
- * Executa diariamente às 8:00 UTC (5:00 BRT)
+ * Executa a cada 15 minutos para suportar janelas críticas como H-2
  */
 export async function GET(request: NextRequest) {
   const requestMeta = getRequestAuditMetadata(request);

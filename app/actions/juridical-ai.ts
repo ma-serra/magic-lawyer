@@ -33,6 +33,7 @@ import type {
   JuridicalAiDraftResult,
   JuridicalAiGenericResult,
   JuridicalAiResearchPlan,
+  JuridicalAiSentenceCalculationResult,
   JuridicalAiSourceLead,
   JuridicalAiTaskKey,
   JuridicalAiTier,
@@ -96,6 +97,9 @@ type GenericInput = {
   action: string;
   taskKey: JuridicalAiTaskKey;
   processId?: string | null;
+  documentId?: string | null;
+  documentName?: string | null;
+  documentText?: string | null;
   question?: string | null;
   objective?: string | null;
   notes?: string | null;
@@ -657,6 +661,7 @@ function buildVerificationMetadataSnapshot(input: {
   sourceLeads?: JuridicalAiSourceLead[] | null;
   citationChecks?: JuridicalAiCitationCheck[] | null;
   researchPlan?: JuridicalAiResearchPlan | null;
+  sentenceCalculation?: JuridicalAiSentenceCalculationResult | null;
 }) {
   return {
     sourceLeads: (input.sourceLeads ?? []).slice(0, 6).map((item) => ({
@@ -692,6 +697,24 @@ function buildVerificationMetadataSnapshot(input: {
           objective: input.researchPlan.objective,
           targetCourts: input.researchPlan.targetCourts,
           primaryQueries: input.researchPlan.primaryQueries.slice(0, 4),
+        }
+      : null,
+    sentenceCalculation: input.sentenceCalculation
+      ? {
+          outcomeSummary: input.sentenceCalculation.outcomeSummary,
+          calculableItems: input.sentenceCalculation.calculableItems.slice(0, 6),
+          requiredInputs: input.sentenceCalculation.requiredInputs.slice(0, 6),
+          condemnedItems: input.sentenceCalculation.condemnedItems
+            .slice(0, 6)
+            .map((item) => ({
+              label: item.label,
+              nature: item.nature,
+              amountMentioned: item.amountMentioned ?? null,
+              correctionRule: item.correctionRule,
+              interestRule: item.interestRule,
+              startTrigger: item.startTrigger,
+              automationStatus: item.automationStatus,
+            })),
         }
       : null,
   };
@@ -1832,13 +1855,14 @@ export async function executeJuridicalAiGenericTask(
 ): Promise<ActionResponse<JuridicalAiGenericResult>> {
   try {
     const auth = await requireTenantAiAuth();
-    const [runtime, usage, processContext, caseMemorySnapshot] = await Promise.all([
+    const [runtime, usage, processContext, caseMemorySnapshot, documentSnapshot] = await Promise.all([
       resolveTenantAiRuntimeContext({
         tenantId: auth.tenantId,
       }),
       getTenantAiUsageSummary(auth.tenantId, auth.userId),
       fetchProcessSnapshot(auth.tenantId, input.processId),
       fetchProcessCaseMemorySnapshot(auth.tenantId, input.processId),
+      fetchDocumentSnapshot(auth.tenantId, input.documentId),
     ]);
     const entitlement = runtime.entitlement;
 
@@ -1863,6 +1887,11 @@ export async function executeJuridicalAiGenericTask(
         ledgerType: "MESSAGE",
       },
       CASE_STRATEGY: {
+        used: usage.messagesUsed,
+        limit: entitlement.quotas.messagesPerMonth,
+        ledgerType: "MESSAGE",
+      },
+      SENTENCE_CALCULATION: {
         used: usage.messagesUsed,
         limit: entitlement.quotas.messagesPerMonth,
         ledgerType: "MESSAGE",
@@ -1914,7 +1943,10 @@ export async function executeJuridicalAiGenericTask(
       contextRoute: input.returnTo ?? "/magic-ai",
       contextLabel: processContext?.titulo ?? processContext?.numero ?? "Workspace IA",
       processId: input.processId,
+      documentId: input.documentId,
       inputContext: {
+        documentId: input.documentId,
+        documentName: input.documentName ?? documentSnapshot?.nome ?? null,
         question: input.question,
         objective: input.objective,
         notes: input.notes,
@@ -1923,6 +1955,9 @@ export async function executeJuridicalAiGenericTask(
 
     const result = runLocalJuridicalAiEngine({
       taskKey: input.taskKey,
+      documentId: input.documentId,
+      documentName: input.documentName ?? documentSnapshot?.nome ?? null,
+      documentText: input.documentText,
       question: input.question,
       objective: input.objective,
       notes: input.notes,
@@ -1959,14 +1994,15 @@ export async function executeJuridicalAiGenericTask(
         outputSummary: result.summary,
         metadata: {
           mode: "generic",
-          taskKey: input.taskKey,
-          verification: buildVerificationMetadataSnapshot({
-            sourceLeads: result.sourceLeads,
-            citationChecks: enrichedCitationChecks,
-            researchPlan: result.researchPlan,
-          }),
-        },
-      }),
+            taskKey: input.taskKey,
+            verification: buildVerificationMetadataSnapshot({
+              sourceLeads: result.sourceLeads,
+              citationChecks: enrichedCitationChecks,
+              researchPlan: result.researchPlan,
+              sentenceCalculation: result.sentenceCalculation,
+            }),
+          },
+        }),
       prisma.aiWorkspaceSession.update({
         where: { id: session.id },
         data: {
@@ -1986,6 +2022,10 @@ export async function executeJuridicalAiGenericTask(
               latestTaskKey: input.taskKey,
               latestQuestion: input.question ?? null,
               latestObjective: input.objective ?? null,
+              latestDocumentName:
+                input.documentName ?? documentSnapshot?.nome ?? null,
+              latestSentenceCalculationSummary:
+                result.sentenceCalculation?.outcomeSummary ?? null,
               bullets: result.bullets,
               updatedAt: new Date().toISOString(),
             },
@@ -2018,6 +2058,7 @@ export async function executeJuridicalAiGenericTask(
         bullets: result.bullets,
         citationChecks: enrichedCitationChecks,
         researchPlan: result.researchPlan,
+        sentenceCalculation: result.sentenceCalculation,
         sourceLeads: result.sourceLeads,
         confidenceScore: result.confidenceScore,
         engine: isOpenAiProviderConfigured() ? "OPENAI_RESPONSES" : "LOCAL_FALLBACK",

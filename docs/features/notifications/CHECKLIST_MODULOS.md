@@ -42,7 +42,7 @@ Este documento rastreia quais eventos de notificação já estão implementados 
 - **Serviço:** `app/lib/notifications/services/deadline-scheduler.ts`
 
 ### Status:
-✅ **COMPLETO** - Todos os eventos de prazo estão implementados e funcionando via cron diário
+✅ **COMPLETO** - Todos os eventos de prazo estão implementados e funcionando via cron de 15 em 15 minutos
 
 ---
 

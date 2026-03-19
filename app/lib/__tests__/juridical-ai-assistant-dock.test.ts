@@ -5,13 +5,14 @@ import {
 } from "../juridical-ai/assistant-dock";
 
 describe("juridical ai assistant dock", () => {
-  it("prioriza ações de peça e resumo em contexto de processos", () => {
+  it("prioriza peça e cálculo em contexto de processos sem perder o resumo", () => {
     const context = resolveJuridicalAiDockContext("/processos/abc", "tenant");
     const actions = getJuridicalAiDockActions("/processos/abc", "tenant");
 
     expect(context.id).toBe("processos");
     expect(actions[0]?.id).toBe("nova-peca");
-    expect(actions[1]?.id).toBe("resumir-processo");
+    expect(actions[1]?.id).toBe("calcular-sentenca");
+    expect(actions[2]?.id).toBe("resumir-processo");
   });
 
   it("reconhece documentos como contexto próprio", () => {

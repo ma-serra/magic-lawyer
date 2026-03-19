@@ -11,6 +11,7 @@ import {
   getGlobalClicksignFallbackSummary,
   testClicksignConnection,
 } from "@/app/lib/clicksign";
+import { getGlobalTelegramProviderSummary } from "@/app/lib/notifications/telegram-provider";
 import { createAsaasClientFromEncrypted } from "@/lib/asaas";
 import { decrypt } from "@/lib/crypto";
 
@@ -48,6 +49,10 @@ jest.mock("@/app/lib/clicksign", () => ({
   testClicksignConnection: jest.fn(),
 }));
 
+jest.mock("@/app/lib/notifications/telegram-provider", () => ({
+  getGlobalTelegramProviderSummary: jest.fn(),
+}));
+
 jest.mock("@/lib/asaas", () => ({
   createAsaasClientFromEncrypted: jest.fn(),
 }));
@@ -75,6 +80,15 @@ describe("admin integration actions", () => {
         id: "super-admin-id",
         role: "SUPER_ADMIN",
       },
+    });
+    (getGlobalTelegramProviderSummary as jest.Mock).mockReturnValue({
+      available: false,
+      source: "GLOBAL",
+      provider: "TELEGRAM_BOT",
+      providerLabel: "Telegram Bot",
+      botUsername: null,
+      displayName: "Magic Radar",
+      healthHint: "Bot global da plataforma ainda não configurado no ambiente.",
     });
   });
 
@@ -232,5 +246,41 @@ describe("admin integration actions", () => {
       }),
     );
     expect(revalidatePath).toHaveBeenCalledWith("/admin/tenants/tenant-1");
+  });
+
+  it("usa o bot global do Telegram quando o tenant não possui provider próprio", async () => {
+    (prisma.tenantChannelProvider.findUnique as jest.Mock).mockResolvedValue(null);
+    (getGlobalTelegramProviderSummary as jest.Mock).mockReturnValue({
+      available: true,
+      source: "GLOBAL",
+      provider: "TELEGRAM_BOT",
+      providerLabel: "Telegram Bot",
+      botUsername: "@magicradarbot",
+      displayName: "Magic Radar",
+      healthHint: "Bot global da plataforma pronto para operação multi-tenant.",
+    });
+
+    const result = await testTenantChannelProviderAsSuperAdmin(
+      "tenant-1",
+      "TELEGRAM",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        provider: "TELEGRAM_BOT",
+        validationMode: "STRUCTURAL",
+        effectiveSource: "GLOBAL",
+      }),
+    );
+    expect(prisma.tenantChannelProvider.update).not.toHaveBeenCalled();
+    expect(prisma.superAdminAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          acao: "TEST_TENANT_CHANNEL_PROVIDER_CONNECTION",
+          entidadeId: "tenant-1",
+        }),
+      }),
+    );
   });
 });

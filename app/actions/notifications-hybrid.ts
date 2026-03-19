@@ -66,7 +66,7 @@ export async function publishNotification(event: {
   title: string;
   message: string;
   urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-  channels?: ("REALTIME" | "EMAIL" | "PUSH")[];
+  channels?: ("REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH")[];
   payload?: Record<string, any>;
   referenciaTipo?: string;
   referenciaId?: string;

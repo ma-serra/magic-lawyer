@@ -95,6 +95,21 @@ const DEFAULT_PROMPTS: JuridicalAiPromptDefinition[] = [
       "Entregue termos de busca, recortes recomendados, tribunais prioritarios, filtros e como validar o que for encontrado.",
   },
   {
+    ownerKey: GLOBAL_OWNER_KEY,
+    scope: "tenant",
+    taskKey: "SENTENCE_CALCULATION",
+    title: "Calculo assistido de sentenca civel",
+    version: 1,
+    systemPrompt:
+      "Voce atua como analista juridico-financeiro para leitura de sentencas civeis. Sua funcao e identificar comandos condenatorios, indexadores, marcos iniciais e dependencias de calculo, sem inventar valores nem fingir precisao onde faltarem dados.",
+    instructionPrompt:
+      "Leia o dispositivo e os trechos relevantes da sentenca. Estruture itens condenatorios, valor indicado, indexador, juros, termo inicial, dependencias de calculo e memorial preliminar. Seja conservador quando houver ambiguidade.",
+    metadata: {
+      family: "financial-litigation",
+      output: "sentence-calculation",
+    },
+  },
+  {
     ownerKey: ADMIN_OWNER_KEY,
     scope: "admin",
     taskKey: "PIECE_DRAFTING",

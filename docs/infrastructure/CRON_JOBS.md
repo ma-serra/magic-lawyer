@@ -15,7 +15,7 @@ O Magic Lawyer utiliza cron jobs do Vercel para automatizar tarefas de manutenç
 
 ### **Funcionalidade**
 - **Objetivo**: Verificar prazos próximos do vencimento e disparar notificações (D-7, D-3, D-1, H-2)
-- **Frequência**: Diariamente às 8:00 UTC
+- **Frequência**: A cada 15 minutos
 - **Endpoint**: `/api/cron/check-deadlines`
 
 ### **Como Funciona**
@@ -154,7 +154,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" ...
 
 ### **Cronograma Atual**
 - **Limpeza de Documentos**: `0 2 * * *` (2:00 UTC diariamente)
-- **Verificação de Prazos**: `0 8 * * *` (8:00 UTC diariamente) - Notificações de prazos expirando
+- **Verificação de Prazos**: `*/15 * * * *` (a cada 15 minutos) - Notificações de prazos expirando
 
 ### **Fuso Horário**
 - **UTC**: Horário de referência

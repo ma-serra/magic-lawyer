@@ -29,10 +29,15 @@ import { useDisclosure } from "@heroui/react";
 import { useRealtime } from "@/app/providers/realtime-provider";
 import { getStatusSincronizacaoMeusProcessos } from "@/app/actions/portal-advogado";
 import {
+  getProcessDeadlineNotificationPreference,
+  setProcessDeadlineNotificationMute,
+} from "@/app/actions/processo-deadline-preferences";
+import {
   useNotifications,
   type NotificationStatus,
   type NotificationItem,
 } from "@/app/hooks/use-notifications";
+import { getDeadlineFrontBadgeLabel } from "@/app/lib/notifications/deadline-alerts";
 import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
 import {
   isPollingGloballyEnabled,
@@ -287,6 +292,25 @@ export const NotificationCenter = () => {
 
     return selectedNotification.dados as Record<string, any>;
   }, [selectedNotification]);
+  const selectedDeadlineProcessId =
+    selectedNotification?.tipo.startsWith("prazo.") &&
+    detailPayload &&
+    typeof detailPayload.processoId === "string"
+      ? detailPayload.processoId
+      : null;
+  const { data: selectedDeadlineProcessPreference, mutate: mutateSelectedDeadlineProcessPreference } =
+    useSWR(
+      selectedDeadlineProcessId
+        ? ["notification-center-deadline-process-preference", selectedDeadlineProcessId]
+        : null,
+      () => getProcessDeadlineNotificationPreference(selectedDeadlineProcessId!),
+      {
+        revalidateOnFocus: false,
+      },
+    );
+  const selectedDeadlineProcessMuted =
+    selectedDeadlineProcessPreference?.success &&
+    selectedDeadlineProcessPreference.data?.deadlineAlertsMuted === true;
 
   const detailDiffItems = useMemo(() => {
     if (!detailPayload) {
@@ -354,6 +378,50 @@ export const NotificationCenter = () => {
       addToast({
         title: "Erro ao marcar",
         description: message,
+        color: "danger",
+      });
+    }
+  };
+
+  const handleToggleDeadlineProcessMute = async () => {
+    if (!selectedDeadlineProcessId) {
+      return;
+    }
+
+    try {
+      const result = await setProcessDeadlineNotificationMute({
+        processoId: selectedDeadlineProcessId,
+        muted: !selectedDeadlineProcessMuted,
+      });
+
+      if (!result.success) {
+        throw new Error(
+          result.error || "Falha ao atualizar alertas deste processo.",
+        );
+      }
+
+      await mutateSelectedDeadlineProcessPreference();
+
+      if (!selectedDeadlineProcessMuted && selectedNotification) {
+        await handleStatusChange(selectedNotification.id, "LIDA");
+      }
+
+      addToast({
+        title: !selectedDeadlineProcessMuted
+          ? "Processo silenciado"
+          : "Processo reativado",
+        description: !selectedDeadlineProcessMuted
+          ? "Novos alertas de prazo deste processo deixam de ser enviados para voce."
+          : "Este processo volta a participar das frentes de prazo.",
+        color: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Nao foi possivel atualizar",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Falha ao atualizar alertas do processo.",
         color: "danger",
       });
     }
@@ -518,7 +586,7 @@ export const NotificationCenter = () => {
                                     {statusCopy[item.status]}
                                   </Chip>
                                 </div>
-                                <p className="text-sm text-default-400">
+                                <p className="line-clamp-4 whitespace-pre-line text-sm text-default-400">
                                   {item.mensagem}
                                 </p>
                               </div>
@@ -644,8 +712,27 @@ export const NotificationCenter = () => {
                   </span>
                 </ModalHeader>
                 <ModalBody className="space-y-4">
+                  {notification && notification.tipo.startsWith("prazo.") ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Chip color="primary" size="sm" variant="flat">
+                        {getDeadlineFrontBadgeLabel(notification.tipo)}
+                      </Chip>
+                      {selectedDeadlineProcessId ? (
+                        <Chip
+                          color={selectedDeadlineProcessMuted ? "warning" : "success"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {selectedDeadlineProcessMuted
+                            ? "Alertas deste processo silenciados"
+                            : "Alertas deste processo ativos"}
+                        </Chip>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {notification?.mensagem ? (
-                    <p className="text-sm text-default-300">
+                    <p className="whitespace-pre-wrap text-sm text-default-300">
                       {notification.mensagem}
                     </p>
                   ) : null}
@@ -717,6 +804,18 @@ export const NotificationCenter = () => {
                       }}
                     >
                       Marcar como lida
+                    </Button>
+                  ) : null}
+                  {selectedDeadlineProcessId ? (
+                    <Button
+                      variant="bordered"
+                      onPress={() => {
+                        void handleToggleDeadlineProcessMute();
+                      }}
+                    >
+                      {selectedDeadlineProcessMuted
+                        ? "Reativar alertas deste processo"
+                        : "Silenciar alertas deste processo"}
                     </Button>
                   ) : null}
                   {referenceHref ? (

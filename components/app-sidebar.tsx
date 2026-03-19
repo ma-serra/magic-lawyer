@@ -569,6 +569,7 @@ const navIconMap: Record<string, ReactElement> = {
   Modelos: <FileTemplateIcon />,
   Documentos: <FileIcon />,
   Agenda: <CalendarIcon />,
+  Prazos: <ClockIcon />,
   Feriados: <CalendarIcon />,
   Tarefas: <CheckSquareIcon />,
   Financeiro: <WalletIcon />,
@@ -580,6 +581,7 @@ const navIconMap: Record<string, ReactElement> = {
   Causas: <ScaleIcon />,
   INPI: <ShieldIcon />,
   "Apoio Jurídico": <ScaleIcon />,
+  "Operações Jurídicas": <ScaleIcon />,
   "Portal do Advogado": (
     <svg
       className="w-5 h-5"
@@ -596,6 +598,8 @@ const navIconMap: Record<string, ReactElement> = {
       />
     </svg>
   ),
+  "Discovery Full": <ActivityIcon />,
+  Protocolos: <FileIcon />,
   "Regimes de prazo": <ClockIcon />,
   Diligências: <ClipboardIcon />,
   Relatórios: <ChartIcon />,

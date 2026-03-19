@@ -25,6 +25,7 @@ import {
   buildAdminClicksignSummary,
   buildAdminTenantChannelProviderSummary,
 } from "@/app/lib/admin-integration-summaries";
+import { getGlobalTelegramProviderSummary } from "@/app/lib/notifications/telegram-provider";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -771,6 +772,7 @@ export async function getTenantManagementData(
     const omnichannelProviders = new Map(
       tenantChannelProviders.map((provider) => [provider.channel, provider]),
     );
+    const globalTelegramFallback = getGlobalTelegramProviderSummary();
 
     const data: TenantManagementData = {
       tenant: {
@@ -890,6 +892,16 @@ export async function getTenantManagementData(
         telegram: buildAdminTenantChannelProviderSummary(
           "TELEGRAM",
           omnichannelProviders.get("TELEGRAM") ?? null,
+          globalTelegramFallback.available
+            ? {
+                available: true,
+                provider: globalTelegramFallback.provider,
+                providerLabel: globalTelegramFallback.providerLabel,
+                displayName: globalTelegramFallback.displayName,
+                botUsername: globalTelegramFallback.botUsername,
+                healthHint: globalTelegramFallback.healthHint,
+              }
+            : null,
         ),
         sms: buildAdminTenantChannelProviderSummary(
           "SMS",

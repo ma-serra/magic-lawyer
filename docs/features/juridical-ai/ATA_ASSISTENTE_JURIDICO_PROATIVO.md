@@ -36,6 +36,98 @@ Já entrou no produto:
 - exportação e cópia em markdown;
 - lastro verificável com processo, causa, documento, memória e referências extraídas;
 - reaproveitamento da saída da IA em fluxo nativo por exportação direta para modelos de petição.
+- frente de cálculo de sentenças cíveis no Magic AI, com memorial preliminar e leitura de comandos condenatórios.
+
+### Frente derivada aberta: Cálculo de Sentenças Cíveis
+
+Fica aberta como frente formal de paridade competitiva e monetização premium a entrega de:
+
+- leitura de sentença com IA;
+- estruturação de memorial preliminar;
+- identificação de condenações, indexadores, juros e termo inicial;
+- reaproveitamento em petições e cumprimento de sentença.
+
+Documento dedicado:
+
+- [CALCULO_SENTENCAS_CIVEIS_IA.md](./CALCULO_SENTENCAS_CIVEIS_IA.md)
+
+### Prioridade operacional imediata - blindagem de prazos
+
+Prazos são o coração operacional do escritório.
+
+Para a reunião e para a operação real, ficou decidido que alertas de prazo no limite entram como **P0 transversal do produto**, mesmo fora do núcleo de IA. Não é aceitável depender apenas de inbox passiva.
+
+#### O que já existia pronto
+
+- cron oficial de verificação de prazos;
+- eventos de prazo crítico (`prazo.expiring_1d`, `prazo.expiring_2h`, `prazo.expired`) e, agora, digest operacional em lista para `30 dias` e `10 dias`;
+- notificação in-app via realtime;
+- fallback HTTP/polling;
+- envio por email;
+- centro de notificações e marcação de leitura;
+- políticas de criticidade para prazo.
+
+#### O que estava faltando
+
+- Telegram real no novo motor de notificações;
+- decisão de produto: operar com **um bot global da plataforma** no Telegram, deixando bot por tenant apenas como override enterprise;
+- popup obrigatório na cara do advogado ao entrar;
+- confirmação explícita de leitura para alerta crítico;
+- cadência forte o suficiente para `H-2` funcionar de verdade;
+- onboarding operacional do advogado para receber Telegram;
+- priorização formal disso na trilha de produto.
+
+#### Decisão de execução
+
+Entrar agora, nesta ordem:
+
+1. email;
+2. in-app;
+3. popup obrigatório com “Marcar que li”;
+4. Telegram real;
+5. WhatsApp fica deliberadamente para depois.
+
+#### Regra fechada em 18 de março de 2026
+
+Os alertas de prazo passam a operar em **3 frentes**:
+
+1. **Frente 1 · Monitoramento**
+   - digest operacional em lista para `30 dias`
+2. **Frente 2 · Atenção**
+   - digest em lista para `10 dias`
+   - reforços individuais para `7 dias` e `3 dias`
+3. **Frente 3 · Crítica**
+   - alertas em `1 dia`, `2 horas` e `vencido`
+   - popup obrigatório
+   - in-app
+   - email
+   - Telegram
+
+Regras adicionais obrigatórias:
+
+- quanto mais perto do vencimento, mais forte a cadência;
+- o usuário pode marcar que já leu;
+- o usuário pode silenciar alertas de prazo de um processo específico;
+- o mute é por `tenant + usuário + processo`;
+- processo silenciado sai das três frentes, inclusive dos digests;
+- o controle precisa existir no popup, na central de notificações e na visão de prazo do processo.
+
+#### Entregas executadas nesta frente
+
+- cron de prazos elevado para execução a cada 15 minutos;
+- popup crítico de prazo no shell autenticado;
+- confirmação explícita de leitura com gravação no banco;
+- canal real de Telegram no novo motor;
+- fluxo de conexão do advogado com bot do Telegram via perfil;
+- página de preferências preparada para refletir o estado do Telegram;
+- notificação em lista para prazos a `30 dias` e `10 dias`, no formato `Cliente - Processo - Prazo final`;
+- ampliação da cadência para `7 dias` e `3 dias`, completando a frente de atenção;
+- três frentes formalizadas no produto e na comunicação;
+- botão de silenciar alertas de prazo por processo;
+- popup crítico com ação de silenciar o processo;
+- central de notificações com controle de silenciar ou reativar alertas daquele processo;
+- aba de prazos do processo com estado do alerta e mute por processo;
+- priorização desta frente mantida como obrigatória até estabilização completa.
 
 ---
 
@@ -742,6 +834,7 @@ Resumo real:
   - menos clique manual;
   - menos secretaria operando no braço;
   - mais automação por evento.
+- Essa frente agora tem documento dedicado de execução em [PROTOCOLO_JURIDICO_AUTOMATIZADO.md](../PROTOCOLO_JURIDICO_AUTOMATIZADO.md).
 
 6. **Ecossistema de produtos acoplados**
 - O CPJ aparece conectado a CPJ Connect, CPJ-Cobrança e outras soluções via API.
@@ -760,6 +853,7 @@ Resumo real:
 - produto de cliente/mobile mais claramente empacotado;
 - ecossistema maduro de módulos acoplados;
 - percepção de robustez para operações jurídicas pesadas.
+- protocolo juridico automatizado ponta a ponta com recibo real de tribunal.
 
 #### O que não devemos copiar cegamente do CPJ-3C
 
@@ -825,6 +919,37 @@ Decisão de leitura:
 8. Ecossistema mais amarrado entre jurídico, cobrança, cliente e automação.
 9. Educação de produto e onboarding específico da IA.
 10. Posicionamento comercial mais claro para grandes bancas e operação enterprise.
+11. Protocolo jurídico automatizado como módulo comercializável com preço por faixa/uso.
+
+### 17.5.1 Frente derivada aberta agora: Protocolo Juridico Automatizado
+
+Para responder diretamente ao gap do CPJ-3C / Preâmbulo, fica aberta a frente formal de **Protocolo Juridico Automatizado**, com documento dedicado em:
+
+- [PROTOCOLO_JURIDICO_AUTOMATIZADO.md](../PROTOCOLO_JURIDICO_AUTOMATIZADO.md)
+
+Esse documento foi reforcado para ficar **pre-pronto para execucao**, incluindo:
+
+- leitura do SKU comercial da Preâmbulo;
+- espelho de monetizacao por faixa;
+- integracao real com peticoes, processos, certificado, auditoria, notificacoes e billing;
+- backlog tecnico de dominio + workflow + adaptadores por tribunal.
+
+Essa frente deve nascer integrada a:
+
+- peticoes;
+- certificados A1;
+- workflow;
+- auditoria;
+- notificacoes;
+- billing/pacotes.
+
+E so pode ser considerada pronta quando houver:
+
+- adaptador real de tribunal;
+- protocolo real;
+- recibo real;
+- trilha auditavel;
+- cobranca integrada.
 
 ### 17.6 Fontes oficiais consultadas
 
@@ -904,6 +1029,10 @@ Decisão de leitura:
   - modelos de petição;
   - petições do escritório como rascunho operacional;
   - documentos do processo em markdown rastreável dentro do acervo do tenant;
+- regra operacional de processo monitorado:
+  - toda nova movimentação descoberta por captura manual, sync em background, cron ou integração futura com Jusbrasil deve ser persistida no processo;
+  - toda nova movimentação em processo já monitorado deve notificar todos os advogados vinculados ao processo;
+  - primeira importação pode absorver histórico sem bombardear o time, mas a partir do momento em que o processo já está dentro do escritório, qualquer movimentação nova vira evento operacional e notificação;
 - bloqueio real por task no backend e na UI conforme rollout do tenant;
 - relatório executivo em MD para comunicação interna e WhatsApp.
 
@@ -951,3 +1080,4 @@ Decisão de leitura:
 
 - manual fica apenas no que exige juízo jurídico humano;
 - pesquisa operacional repetitiva, confirmação de existência de fonte e rastreio de referência devem ser automatizados sempre que houver base oficial ou acervo confiável disponível.
+- o mesmo vale para andamentos e movimentações processuais: descobrir, persistir e notificar é obrigação do sistema; decidir a estratégia jurídica continua sendo obrigação humana.

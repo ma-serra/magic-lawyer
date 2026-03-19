@@ -79,6 +79,10 @@ export type AdminTenantChannelProviderSummary = {
   hasCredentials: boolean;
   configSummary: Array<{ key: string; label: string; value: string }>;
   healthHint: string;
+  effectiveSource: "TENANT" | "GLOBAL" | "NONE";
+  fallbackAvailable: boolean;
+  fallbackLabel: string | null;
+  fallbackDescription: string | null;
 };
 
 function toStringRecord(value: unknown): Record<string, string> {
@@ -266,8 +270,49 @@ export function buildAdminTenantChannelProviderSummary(
     lastErrorAt: Date | null;
     lastErrorMessage: string | null;
   } | null,
+  fallback?: {
+    available: boolean;
+    provider: TenantChannelProviderType;
+    providerLabel: string;
+    displayName: string;
+    botUsername?: string | null;
+    healthHint: string;
+  } | null,
 ): AdminTenantChannelProviderSummary {
   if (!config) {
+    if (fallback?.available) {
+      return {
+        id: null,
+        channel,
+        provider: fallback.provider,
+        providerLabel: fallback.providerLabel,
+        providerDescription: "Bot global da plataforma disponível como fallback.",
+        displayName: fallback.displayName,
+        active: true,
+        healthStatus: "PENDING",
+        dataConfiguracao: null,
+        lastValidatedAt: null,
+        lastValidationMode: "STRUCTURAL",
+        lastErrorAt: null,
+        lastErrorMessage: null,
+        hasCredentials: true,
+        configSummary: fallback.botUsername
+          ? [
+              {
+                key: "botUsername",
+                label: "Bot username",
+                value: fallback.botUsername,
+              },
+            ]
+          : [],
+        healthHint: fallback.healthHint,
+        effectiveSource: "GLOBAL",
+        fallbackAvailable: true,
+        fallbackLabel: fallback.displayName,
+        fallbackDescription: "Bot global da plataforma",
+      };
+    }
+
     return {
       id: null,
       channel,
@@ -285,6 +330,10 @@ export function buildAdminTenantChannelProviderSummary(
       hasCredentials: false,
       configSummary: [],
       healthHint: "Canal ainda não foi configurado pelo tenant.",
+      effectiveSource: "NONE",
+      fallbackAvailable: false,
+      fallbackLabel: null,
+      fallbackDescription: null,
     };
   }
 
@@ -314,5 +363,11 @@ export function buildAdminTenantChannelProviderSummary(
         value: publicConfig[field.key],
       })),
     healthHint: definition.healthHint,
+    effectiveSource: "TENANT",
+    fallbackAvailable: Boolean(fallback?.available),
+    fallbackLabel: fallback?.available ? fallback.displayName : null,
+    fallbackDescription: fallback?.available
+      ? "Bot global da plataforma disponível como fallback."
+      : null,
   };
 }

@@ -56,6 +56,7 @@ const ALL_TASK_KEYS: JuridicalAiTaskKey[] = [
   "PROCESS_SUMMARY",
   "CASE_STRATEGY",
   "JURISPRUDENCE_BRIEF",
+  "SENTENCE_CALCULATION",
 ];
 
 const ROLLOUT_DEFAULT_TASKS: Record<JuridicalAiRolloutStage, JuridicalAiTaskKey[]> = {
@@ -66,6 +67,7 @@ const ROLLOUT_DEFAULT_TASKS: Record<JuridicalAiRolloutStage, JuridicalAiTaskKey[
     "QUESTION_ANSWERING",
     "PROCESS_SUMMARY",
     "CASE_STRATEGY",
+    "SENTENCE_CALCULATION",
   ],
   CONTROLLED: [...ALL_TASK_KEYS],
   RELEASED: [...ALL_TASK_KEYS],

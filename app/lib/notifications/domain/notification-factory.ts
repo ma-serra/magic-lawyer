@@ -212,7 +212,7 @@ export class NotificationFactory {
       );
     }
 
-    const validChannels = ["REALTIME", "EMAIL", "PUSH"];
+    const validChannels = ["REALTIME", "EMAIL", "TELEGRAM", "PUSH"];
 
     if (event.channels) {
       for (const channel of event.channels) {

@@ -15,6 +15,7 @@ import {
   Bell,
   Mail,
   Smartphone,
+  Send,
   RefreshCw,
   HelpCircle,
   Info,
@@ -33,6 +34,7 @@ import {
   getNotificationPreferences,
   updateNotificationPreference,
 } from "@/app/actions/notifications";
+import { getMyTelegramNotificationStatus } from "@/app/actions/telegram-notifications";
 
 // Agrupar eventos por categoria com ícones e descrições
 const EVENT_CATEGORIES: Record<
@@ -66,6 +68,8 @@ const EVENT_CATEGORIES: Record<
     color: "danger",
     events: [
       "prazo.created",
+      "prazo.digest_30d",
+      "prazo.digest_10d",
       "prazo.expiring_7d",
       "prazo.expiring_3d",
       "prazo.expiring_1d",
@@ -146,6 +150,11 @@ const CHANNEL_LABELS: Record<
     icon: Mail,
     description: "Receba notificações por email",
   },
+  TELEGRAM: {
+    label: "Telegram",
+    icon: Send,
+    description: "Escalonamento via bot do Telegram do escritório",
+  },
   PUSH: {
     label: "Push",
     icon: Smartphone,
@@ -193,9 +202,20 @@ export function NotificationPreferencesContent() {
       revalidateOnFocus: false,
     },
   );
+  const { data: telegramStatusResult } = useSWR(
+    "my-telegram-notification-status",
+    getMyTelegramNotificationStatus,
+    {
+      revalidateOnFocus: false,
+    },
+  );
 
   const preferences = data?.preferences || [];
   const preferencesMap = new Map(preferences.map((p) => [p.eventType, p]));
+  const telegramStatus =
+    telegramStatusResult?.success && telegramStatusResult.status
+      ? telegramStatusResult.status
+      : null;
 
   const handleUpdatePreference = async (
     eventType: string,
@@ -436,6 +456,34 @@ export function NotificationPreferencesContent() {
           </CardBody>
         </Card>
       </motion.div>
+
+      {telegramStatus && (!telegramStatus.providerReady || !telegramStatus.connected) ? (
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, y: 20 }}
+          transition={{ delay: 0.15 }}
+        >
+          <Card className="border border-warning/20 bg-warning/5">
+            <CardBody>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    Telegram ainda não está pronto para escalonamento total
+                  </p>
+                  <p className="text-xs text-default-400">
+                    {!telegramStatus.providerReady
+                      ? "A plataforma ainda precisa configurar o bot global do Telegram."
+                      : "Conecte seu chat no perfil para receber alertas críticos de prazo via Telegram."}
+                  </p>
+                </div>
+                <Chip color="warning" size="sm" variant="flat">
+                  {!telegramStatus.providerReady ? "Bot pendente" : "Vínculo pendente"}
+                </Chip>
+              </div>
+            </CardBody>
+          </Card>
+        </motion.div>
+      ) : null}
 
       {/* Legendas e Ajuda */}
       <motion.div

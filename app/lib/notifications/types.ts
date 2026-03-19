@@ -1,5 +1,5 @@
 export type NotificationUrgency = "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-export type NotificationChannel = "REALTIME" | "EMAIL" | "PUSH";
+export type NotificationChannel = "REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH";
 
 // Tipos do sistema legado para migração
 export type LegacyNotificationType =
@@ -84,6 +84,8 @@ export type ProcessoEventType =
 export type PrazoEventType =
   | "prazo.created"
   | "prazo.updated"
+  | "prazo.digest_30d"
+  | "prazo.digest_10d"
   | "prazo.expiring_7d"
   | "prazo.expiring_3d"
   | "prazo.expiring_1d"

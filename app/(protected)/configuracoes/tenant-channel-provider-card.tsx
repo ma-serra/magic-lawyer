@@ -43,7 +43,8 @@ function resolveChannelMeta(channel: TenantChannelProviderChannel) {
       return {
         label: "Telegram",
         icon: <Send className="h-4 w-4" />,
-        accent: "Canal alternativo para inbox bidirecional e campanhas operacionais.",
+        accent:
+          "Por padrão o tenant usa o bot global da plataforma. Configure aqui apenas se este escritório precisar de um bot próprio.",
       };
     case "SMS":
       return {

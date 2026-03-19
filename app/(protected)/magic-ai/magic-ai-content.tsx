@@ -31,6 +31,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   BrainCircuit,
+  Calculator,
   Copy,
   Download,
   FileSearch,
@@ -92,6 +93,7 @@ const WORKSPACE_TAB_ORDER: JuridicalAiWorkspaceTab[] = [
   "citacoes",
   "pergunta",
   "pesquisa",
+  "calculos",
   "historico",
 ];
 
@@ -101,6 +103,7 @@ const WORKSPACE_ICONS: Record<JuridicalAiWorkspaceTab, ReactNode> = {
   citacoes: <ShieldCheck className="h-4 w-4" />,
   pergunta: <BrainCircuit className="h-4 w-4" />,
   pesquisa: <Scale className="h-4 w-4" />,
+  calculos: <Calculator className="h-4 w-4" />,
   historico: <History className="h-4 w-4" />,
 };
 
@@ -111,6 +114,7 @@ const WORKSPACE_PRIMARY_TASK_BY_TAB: Partial<
   documento: "DOCUMENT_ANALYSIS",
   citacoes: "CITATION_VALIDATION",
   pesquisa: "JURISPRUDENCE_BRIEF",
+  calculos: "SENTENCE_CALCULATION",
 };
 
 const WORKSPACE_GENERIC_TASKS: JuridicalAiTaskKey[] = [
@@ -508,6 +512,132 @@ function ResultPanel({
 
         {result.kind === "generic" ? (
           <div className="space-y-4">
+            {result.data.sentenceCalculation ? (
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-default-200/70 bg-default-50/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Resumo executivo do cálculo
+                    </p>
+                    <p className="mt-3 text-sm leading-7 text-default-700">
+                      {result.data.sentenceCalculation.outcomeSummary}
+                    </p>
+                  </div>
+
+                  <div className="rounded-3xl border border-default-200/70 bg-default-50/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Itens condenatórios mapeados
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {result.data.sentenceCalculation.condemnedItems.length > 0 ? (
+                        result.data.sentenceCalculation.condemnedItems.map((item, index) => (
+                          <div
+                            key={`${item.label}-${index}`}
+                            className="rounded-2xl border border-default-200/60 px-3 py-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-foreground">
+                                  {item.label}
+                                </p>
+                                <p className="text-xs text-default-500">{item.nature}</p>
+                              </div>
+                              {item.amountMentioned ? (
+                                <Chip color="primary" size="sm" variant="flat">
+                                  {item.amountMentioned}
+                                </Chip>
+                              ) : null}
+                            </div>
+                            <p className="mt-3 text-sm text-default-700">{item.basis}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {item.correctionRule ? (
+                                <Chip size="sm" variant="flat">
+                                  Correção: {item.correctionRule}
+                                </Chip>
+                              ) : null}
+                              {item.interestRule ? (
+                                <Chip size="sm" variant="flat">
+                                  Juros: {item.interestRule}
+                                </Chip>
+                              ) : null}
+                              {item.startTrigger ? (
+                                <Chip size="sm" variant="flat">
+                                  Termo inicial: {item.startTrigger}
+                                </Chip>
+                              ) : null}
+                            </div>
+                            {item.dependencies.length > 0 ? (
+                              <div className="mt-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
+                                  Dependências
+                                </p>
+                                <ul className="mt-2 space-y-1 text-xs leading-6 text-default-600">
+                                  {item.dependencies.map((dependency) => (
+                                    <li key={`${item.label}-${dependency}`}>• {dependency}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-default-500">
+                          Nenhum item condenatório estruturado com segurança.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-default-200/70 bg-default-50/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                      Itens que já entram no memorial
+                    </p>
+                    <ul className="mt-3 space-y-2 text-sm text-default-700">
+                      {result.data.sentenceCalculation.calculableItems.length > 0 ? (
+                        result.data.sentenceCalculation.calculableItems.map((item) => (
+                          <li key={item}>• {item}</li>
+                        ))
+                      ) : (
+                        <li>• Nenhum item entrou no memorial automático com segurança.</li>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-3xl border border-default-200/70 bg-warning-50/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-warning">
+                      Insumos obrigatórios
+                    </p>
+                    <ul className="mt-3 space-y-2 text-sm text-default-700">
+                      {result.data.sentenceCalculation.requiredInputs.length > 0 ? (
+                        result.data.sentenceCalculation.requiredInputs.map((item) => (
+                          <li key={item}>• {item}</li>
+                        ))
+                      ) : (
+                        <li>• Nenhum insumo adicional obrigatório foi detectado.</li>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-3xl border border-danger/20 bg-danger/5 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-danger">
+                      Revisão humana obrigatória
+                    </p>
+                    <ul className="mt-3 space-y-2 text-sm text-default-700">
+                      {result.data.sentenceCalculation.manualReviewItems.length > 0 ? (
+                        result.data.sentenceCalculation.manualReviewItems.map((item) => (
+                          <li key={item}>• {item}</li>
+                        ))
+                      ) : (
+                        <li>• Revisar critérios de atualização e consistência do dispositivo.</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="rounded-3xl border border-default-200/70 bg-default-50/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
                 Pontos principais
@@ -917,6 +1047,13 @@ export function MagicAiContent() {
     objective: "",
     notes: "",
   });
+  const [sentenceCalcForm, setSentenceCalcForm] = useState({
+    documentId: "",
+    documentName: "",
+    documentText: "",
+    objective: "",
+    notes: "",
+  });
   const [genericForm, setGenericForm] = useState({
     question: "",
     objective: "",
@@ -1000,6 +1137,18 @@ export function MagicAiContent() {
       }));
     }
   }, [analysisForm.documentId, analysisForm.documentName, documentos]);
+
+  useEffect(() => {
+    const selectedDocument = documentos.find(
+      (item) => item.id === sentenceCalcForm.documentId,
+    );
+    if (selectedDocument && !sentenceCalcForm.documentName) {
+      setSentenceCalcForm((current) => ({
+        ...current,
+        documentName: selectedDocument.nome,
+      }));
+    }
+  }, [documentos, sentenceCalcForm.documentId, sentenceCalcForm.documentName]);
 
   const processOptions = useMemo<SearchableSelectOption[]>(
     () =>
@@ -1301,20 +1450,62 @@ export function MagicAiContent() {
     });
   };
 
+  const handleSentenceCalculation = () => {
+    startTransition(async () => {
+      const selectedDocument = documentos.find(
+        (item) => item.id === sentenceCalcForm.documentId,
+      );
+      const response = await executeJuridicalAiGenericTask({
+        action: actionFromQuery ?? "calcular-sentenca",
+        taskKey: "SENTENCE_CALCULATION",
+        processId: selectedProcessId,
+        documentId: sentenceCalcForm.documentId || null,
+        documentName:
+          sentenceCalcForm.documentName || selectedDocument?.nome || null,
+        documentText: sentenceCalcForm.documentText,
+        objective: sentenceCalcForm.objective,
+        notes: sentenceCalcForm.notes,
+        returnTo: returnTo ?? "/magic-ai",
+      });
+
+      if (!response.success || !response.data) {
+        addToast({
+          color: "danger",
+          title: "Falha no cálculo da sentença",
+          description:
+            response.error ??
+            "Nao foi possivel estruturar o memorial preliminar da sentenca.",
+        });
+        return;
+      }
+
+      setWorkspaceResult({ kind: "generic", data: response.data });
+      refreshWorkspace();
+      addToast({
+        color: "success",
+        title: "Cálculo estruturado",
+        description:
+          "A leitura da sentença foi registrada com memorial preliminar e trilha auditável.",
+      });
+    });
+  };
+
   const handleGenericTask = (taskKey: JuridicalAiTaskKey) => {
     startTransition(async () => {
       const response = await executeJuridicalAiGenericTask({
         action:
           actionFromQuery ??
-          (taskKey === "JURISPRUDENCE_BRIEF"
-            ? "pesquisar-jurisprudencia"
-            : taskKey === "CITATION_VALIDATION"
-              ? "validar-citacoes"
-              : taskKey === "PROCESS_SUMMARY"
-                ? "resumir-processo"
-                : taskKey === "CASE_STRATEGY"
-                  ? "estrategia-caso"
-                  : "perguntar-ia"),
+          (taskKey === "SENTENCE_CALCULATION"
+            ? "calcular-sentenca"
+            : taskKey === "JURISPRUDENCE_BRIEF"
+              ? "pesquisar-jurisprudencia"
+              : taskKey === "CITATION_VALIDATION"
+                ? "validar-citacoes"
+                : taskKey === "PROCESS_SUMMARY"
+                  ? "resumir-processo"
+                  : taskKey === "CASE_STRATEGY"
+                    ? "estrategia-caso"
+                    : "perguntar-ia"),
         taskKey,
         processId: selectedProcessId,
         question: genericForm.question,
@@ -2139,6 +2330,137 @@ export function MagicAiContent() {
                   </Button>
                 </div>
               </div>
+              <div className="space-y-4">
+                {selectedProcessId || bootstrapQuery.data?.entitlement.allowCaseMemory === false ? (
+                  <CaseMemoryCard
+                    allowCaseMemory={bootstrapQuery.data?.entitlement.allowCaseMemory ?? false}
+                    isLoading={caseMemoryQuery.isLoading}
+                    memory={caseMemoryQuery.data}
+                  />
+                ) : null}
+                <ResultPanel
+                  result={workspaceResult}
+                  onCopyContent={handleCopyWorkspaceOutput}
+                  onDownloadContent={handleDownloadWorkspaceOutput}
+                  onCreateModelFromDraft={handleCreateModelFromDraft}
+                  onCreateDocumentFromDraft={handleCreateDocumentFromDraft}
+                  onCreatePeticaoFromDraft={handleCreatePeticaoFromDraft}
+                  isCreatingModel={creatingModelDraftId !== null}
+                  isCreatingDocument={creatingDocumentDraftId !== null}
+                  isCreatingPeticao={creatingPeticaoDraftId !== null}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {selectedTab === "calculos" ? (
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <SearchableSelect
+                    items={processOptions}
+                    label="Processo relacionado"
+                    placeholder="Opcional"
+                    selectedKey={selectedProcessId}
+                    isLoading={isLoadingProcessos}
+                    onSelectionChange={setSelectedProcessId}
+                  />
+                  <SearchableSelect
+                    items={documentOptions}
+                    label="Documento base"
+                    placeholder="Opcional"
+                    selectedKey={sentenceCalcForm.documentId || null}
+                    isLoading={isLoadingDocumentos}
+                    onSelectionChange={(value) =>
+                      setSentenceCalcForm((current) => ({
+                        ...current,
+                        documentId: value ?? "",
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Input
+                    label="Nome do documento"
+                    placeholder="Ex.: sentença cível embasa.pdf"
+                    value={sentenceCalcForm.documentName}
+                    onValueChange={(value) =>
+                      setSentenceCalcForm((current) => ({
+                        ...current,
+                        documentName: value,
+                      }))
+                    }
+                  />
+                  <Input
+                    label="Objetivo do memorial"
+                    placeholder="Ex.: preparar cumprimento de sentença e memoriais"
+                    value={sentenceCalcForm.objective}
+                    onValueChange={(value) =>
+                      setSentenceCalcForm((current) => ({
+                        ...current,
+                        objective: value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <Textarea
+                  label="Dispositivo ou trecho da sentença"
+                  minRows={12}
+                  placeholder="Cole aqui o dispositivo, os comandos condenatórios, os índices e os termos iniciais indicados pelo juízo."
+                  value={sentenceCalcForm.documentText}
+                  onValueChange={(value) =>
+                    setSentenceCalcForm((current) => ({
+                      ...current,
+                      documentText: value,
+                    }))
+                  }
+                />
+
+                <Textarea
+                  label="Notas do cálculo"
+                  minRows={4}
+                  placeholder="Ex.: considerar pagamentos parciais, depósito judicial, limitação de multa, planilha da contadoria ou necessidade de abatimento."
+                  value={sentenceCalcForm.notes}
+                  onValueChange={(value) =>
+                    setSentenceCalcForm((current) => ({
+                      ...current,
+                      notes: value,
+                    }))
+                  }
+                />
+
+                <Card className="border border-warning/20 bg-warning/5">
+                  <CardBody className="gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-warning">
+                      Prudência operacional
+                    </p>
+                    <p className="text-sm font-semibold text-foreground">
+                      O Magic AI organiza o cálculo e o memorial preliminar, mas não substitui a conferência jurídica e financeira.
+                    </p>
+                    <p className="text-xs leading-6 text-default-500">
+                      Sempre confira índice, juros, termo inicial, abatimentos, depósito judicial, teto de multa e improcedências parciais antes do protocolo.
+                    </p>
+                  </CardBody>
+                </Card>
+
+                <div className="flex justify-end">
+                  <Button
+                    color="primary"
+                    isDisabled={
+                      !sentenceCalcForm.documentText.trim() ||
+                      !sentenceCalcForm.objective.trim() ||
+                      (taskAccessMap.get("SENTENCE_CALCULATION")?.enabled === false)
+                    }
+                    isLoading={isPending}
+                    onPress={handleSentenceCalculation}
+                  >
+                    Estruturar cálculo da sentença
+                  </Button>
+                </div>
+              </div>
+
               <div className="space-y-4">
                 {selectedProcessId || bootstrapQuery.data?.entitlement.allowCaseMemory === false ? (
                   <CaseMemoryCard

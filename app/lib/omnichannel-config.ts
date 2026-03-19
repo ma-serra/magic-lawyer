@@ -237,7 +237,7 @@ export const TENANT_CHANNEL_PROVIDER_DEFINITIONS: Record<
     provider: "TELEGRAM_BOT",
     label: "Telegram Bot",
     description:
-      "Bot do Telegram por tenant, com token dedicado e possibilidade de inbox bidirecional.",
+      "Override de bot do Telegram por tenant. O padrão operacional recomendado é usar o bot global da plataforma.",
     channels: ["TELEGRAM"],
     validationMode: "STRUCTURAL",
     publicFields: [
@@ -269,7 +269,7 @@ export const TENANT_CHANNEL_PROVIDER_DEFINITIONS: Record<
       },
     ],
     healthHint:
-      "Pronto para configurar o bot por tenant; teste real depende do token definitivo.",
+      "Use esta configuração apenas se o escritório precisar de bot próprio. O caminho padrão é o bot global da plataforma.",
   },
   TWILIO_SMS: {
     provider: "TWILIO_SMS",

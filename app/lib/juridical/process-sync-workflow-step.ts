@@ -132,6 +132,7 @@ export async function executePortalProcessSyncWorkflowStep(
       processos: processosCapturados,
       clienteNome: input.clienteNome,
       advogadoId: input.advogadoId,
+      criadoPorId: input.usuarioId,
     });
 
     const processosNumeros = processosCapturados

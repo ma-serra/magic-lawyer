@@ -380,6 +380,7 @@ export function AdminMagicAiContent() {
           "CASE_STRATEGY",
           "JURISPRUDENCE_BRIEF",
           "CITATION_VALIDATION",
+          "SENTENCE_CALCULATION",
         ],
       }));
       return;
@@ -826,6 +827,7 @@ export function AdminMagicAiContent() {
                                       "QUESTION_ANSWERING",
                                       "PROCESS_SUMMARY",
                                       "CASE_STRATEGY",
+                                      "SENTENCE_CALCULATION",
                                     ]
                                   : (Object.keys(
                                       JURIDICAL_AI_TASK_LABELS,

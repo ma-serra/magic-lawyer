@@ -180,4 +180,35 @@ describe("admin integration summaries", () => {
       ]),
     );
   });
+
+  it("monta resumo administrativo do Telegram com fallback global", () => {
+    const summary = buildAdminTenantChannelProviderSummary("TELEGRAM", null, {
+      available: true,
+      provider: "TELEGRAM_BOT",
+      providerLabel: "Telegram Bot",
+      displayName: "Magic Radar",
+      botUsername: "@magicradarbot",
+      healthHint: "Bot global da plataforma pronto para operação multi-tenant.",
+    });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        channel: "TELEGRAM",
+        provider: "TELEGRAM_BOT",
+        providerLabel: "Telegram Bot",
+        displayName: "Magic Radar",
+        effectiveSource: "GLOBAL",
+        fallbackAvailable: true,
+        hasCredentials: true,
+      }),
+    );
+    expect(summary.configSummary).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "botUsername",
+          value: "@magicradarbot",
+        }),
+      ]),
+    );
+  });
 });

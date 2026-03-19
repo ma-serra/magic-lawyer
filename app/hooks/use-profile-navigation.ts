@@ -348,12 +348,36 @@ export function useProfileNavigation() {
     }
 
     // Portal do Advogado - Acesso para ADMIN e ADVOGADO
-    if (isAdmin || isAdvogado) {
+    if (isAdmin || isAdvogado || isSecretaria) {
+      apoioJuridicoItems.push({
+        label: "Operações Jurídicas",
+        href: "/portal-advogado/operacoes",
+        icon: "Scale",
+        description:
+          "Publicações, intimações, discovery processual e fila de protocolos",
+      });
+
       apoioJuridicoItems.push({
         label: "Portal do Advogado",
         href: "/portal-advogado",
         icon: "Gavel",
         description: "Portais dos tribunais, recessos forenses e comunicados",
+      });
+    }
+
+    if (isAdmin || isAdvogado) {
+      apoioJuridicoItems.push({
+        label: "Discovery Full",
+        href: "/portal-advogado/operacoes?tab=discovery",
+        icon: "Gavel",
+        description: "Captura por OAB, planilha e sincronização operacional",
+      });
+
+      apoioJuridicoItems.push({
+        label: "Protocolos",
+        href: "/portal-advogado/operacoes?tab=protocols",
+        icon: "FileText",
+        description: "Fila pronta para protocolar petições do escritório",
       });
     }
 
@@ -381,6 +405,20 @@ export function useProfileNavigation() {
         description: isCliente ? "Eventos do meu processo" : "Gestão de agenda",
         section: "Operacional",
         requiredModules: ["agenda"],
+      });
+    }
+
+    if (
+      !isCliente &&
+      (permissions.canViewAllProcesses || isAdvogado || isSecretaria)
+    ) {
+      items.push({
+        label: "Prazos",
+        href: "/processos/prazos",
+        icon: "Clock",
+        description: "Carteira operacional de prazos do escritório",
+        section: "Operacional",
+        requiredModules: ["processos"],
       });
     }
 

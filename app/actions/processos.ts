@@ -18,6 +18,7 @@ import {
 } from "@/app/lib/audit/log";
 import { ProcessoNotificationIntegration } from "@/app/lib/notifications/examples/processo-integration";
 import { HybridNotificationService } from "@/app/lib/notifications/hybrid-notification-service";
+import { publishProcessNotificationToLawyers } from "@/app/lib/juridical/process-movement-sync";
 import { buildProcessoDiff } from "@/app/lib/processos/diff";
 import { checkPermission } from "@/app/actions/equipe";
 import {
@@ -847,7 +848,7 @@ async function publishPrazoNotificationToUsers(params: {
   userIds: string[];
   payload: Record<string, unknown>;
   urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-  channels?: ("REALTIME" | "EMAIL" | "PUSH")[];
+  channels?: ("REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH")[];
 }) {
   const uniqueUserIds = Array.from(
     new Set(params.userIds.filter((userId) => Boolean(userId?.trim()))),
@@ -2561,9 +2562,10 @@ export async function updateProcesso(
     // Notificações, diff estruturado e auditoria da alteração
     try {
       if (diff.items.length > 0) {
-        const responsavelUserId =
-          (atualizado.advogadoResponsavel?.usuario as any)?.id ||
-          (user.id as string);
+        const actorName =
+          `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
+          (user.email as string | undefined) ||
+          "Usuário";
         const statusChange = diff.statusChange;
         const changesSummary = statusChange
           ? diff.otherChangesSummary
@@ -2574,8 +2576,17 @@ export async function updateProcesso(
           numero: atualizado.numero,
           referenciaTipo: "processo",
           referenciaId: processoId,
+          clienteNome: atualizado.cliente?.nome ?? null,
+          processoTitulo: atualizado.titulo ?? null,
           diff: diff.items,
           changes: diff.items.map((item) => item.field),
+          detailLines: diff.items.map(
+            (item) => `${item.label}: ${item.before} → ${item.after}`,
+          ),
+          actorName,
+          actorUserId: user.id,
+          sourceLabel: "Alteração manual no cadastro do processo",
+          sourceKind: "MANUAL",
         };
 
         if (changesSummary) {
@@ -2597,19 +2608,14 @@ export async function updateProcesso(
           }
         }
 
-        await HybridNotificationService.publishNotification({
+        await publishProcessNotificationToLawyers({
           type: statusChange ? "processo.status_changed" : "processo.updated",
           tenantId: tenantId,
-          userId: responsavelUserId,
+          processoId,
           payload: notificationPayload,
-          urgency: statusChange ? "HIGH" : "MEDIUM",
-          channels: statusChange ? ["REALTIME", "EMAIL"] : ["REALTIME"],
+          urgency: "HIGH",
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
         });
-
-        const actorName =
-          `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() ||
-          (user.email as string | undefined) ||
-          "Usuário";
 
         const auditDiff = diff.items.map((item) => ({
           field: item.field,

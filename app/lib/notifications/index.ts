@@ -63,6 +63,8 @@ export const NOTIFICATION_EVENTS = {
   PRAZO: {
     CREATED: "prazo.created",
     UPDATED: "prazo.updated",
+    DIGEST_30D: "prazo.digest_30d",
+    DIGEST_10D: "prazo.digest_10d",
     EXPIRING_7D: "prazo.expiring_7d",
     EXPIRING_3D: "prazo.expiring_3d",
     EXPIRING_1D: "prazo.expiring_1d",

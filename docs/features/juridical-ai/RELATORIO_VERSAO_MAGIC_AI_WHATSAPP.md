@@ -4,6 +4,54 @@ Data base: 18 de marco de 2026
 Status: documento vivo da versao em desenvolvimento
 Uso recomendado: resumo para WhatsApp, alinhamento interno e checkpoint de release
 
+## Atualizacao complementar - 18 de marco de 2026 (calculo de sentencas civeis)
+
+Entrou uma frente nova e muito relevante no Magic AI:
+
+- o workspace ganhou a aba `Calculos`;
+- nasceu a tarefa dedicada `SENTENCE_CALCULATION`;
+- o sistema agora consegue ler o dispositivo da sentenca e separar itens condenatorios;
+- a IA passou a identificar natureza do comando, valor mencionado, indexador, juros, termo inicial e dependencias de calculo;
+- o resultado agora monta um **memorial preliminar de calculo** em markdown;
+- a tela passou a separar:
+  - itens que ja entram no memorial;
+  - insumos obrigatorios ainda faltantes;
+  - pontos de revisao humana obrigatoria;
+- a frente foi documentada como produto em `CALCULO_SENTENCAS_CIVEIS_IA.md`.
+
+Leitura executiva:
+
+- isso aproxima o Magic Lawyer de uma dor muito concreta de cumprimento de sentenca;
+- a frente deixa de ser so IA textual e entra em territorio de ganho operacional real;
+- o produto fica mais forte para escritorio que quer reduzir trabalho manual na leitura de sentencas e preparacao de memoriais.
+
+## Atualizacao complementar - 18 de marco de 2026 (blindagem de prazos)
+
+Entrou uma frente operacional critica paralela:
+
+- o cron de prazos deixou de ser diario e passou a rodar a cada 15 minutos, para que o alerta `H-2` seja real e nao decorativo;
+- alertas criticos de prazo agora geram popup obrigatorio ao entrar no sistema, com acao explicita de `Marcar que li`;
+- o popup grava leitura no banco, em vez de ser so aviso visual;
+- o novo motor de notificacoes passou a suportar Telegram de verdade;
+- o advogado agora consegue conectar seu Telegram no perfil usando o bot do escritorio;
+- as preferencias de notificacao passaram a refletir o estado do Telegram;
+- os alertas de horizonte deixaram de ser aviso unitario solto e passaram a sair em lista, para `30 dias` e `10 dias`, no formato `Cliente - Processo - Prazo final`;
+- a malha foi fechada em **3 frentes de prazo**:
+  - `Frente 1 · Monitoramento`: 30 dias
+  - `Frente 2 · Atencao`: 10 dias, 7 dias e 3 dias
+  - `Frente 3 · Critica`: 1 dia, 2 horas e vencido
+- o usuario agora pode **silenciar alertas de prazo por processo**, sem desligar o resto do escritorio;
+- processo silenciado sai inclusive dos digests daquele usuario;
+- o controle de silenciar ou reativar entrou no popup critico, na central de notificacoes e dentro da aba de prazos do processo;
+- WhatsApp foi mantido fora desta rodada de forma deliberada.
+
+Leitura executiva:
+
+- email e in-app ja existiam;
+- popup obrigatorio e Telegram real eram lacunas;
+- agora a blindagem de prazo ficou mais compativel com a gravidade operacional do escritorio;
+- o advogado ganhou controle fino por processo, sem perder a escalada forte dos casos realmente ativos.
+
 ## Atualizacao complementar - 17 de marco de 2026
 
 Entrou mais uma camada critica no Magic AI:
@@ -211,6 +259,9 @@ Entrou nesta rodada:
   - próximo tier recomendado;
   - CTA direto para billing.
 - bloqueio real de tarefas e do workspace conforme rollout do tenant, refletindo tanto na UI quanto nas actions server-side.
+- regra operacional reforçada para processo monitorado:
+  - toda movimentação nova descoberta por captura manual, sync em background, cron ou integração futura deve entrar no sistema;
+  - toda movimentação nova em processo já monitorado agora pode disparar notificação para todos os advogados vinculados ao processo, não só responsável isolado.
 
 Valor pratico:
 
@@ -221,6 +272,7 @@ Valor pratico:
 - quando o portal oficial bloqueia automacao, o produto agora deixa isso explicito e auditavel, em vez de fingir que a fonte simplesmente "nao existe";
 - a camada comercial ficou mais madura porque agora existe piloto governado, upsell interno e proteção operacional por tenant;
 - melhora narrativa comercial e reduz fragilidade na demonstracao.
+- reduz risco operacional de "o andamento entrou e ninguém viu", que é um ponto crítico para escritório.
 
 ## Validacao executada
 

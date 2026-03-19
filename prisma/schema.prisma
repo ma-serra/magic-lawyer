@@ -196,11 +196,12 @@ model Tenant {
   funcionarioDependentes       FuncionarioDependente[]
 
   // Sistema de Notificações
-  notifications           Notification[]
-  notificationPreferences NotificationPreference[]
-  notificationTemplates   NotificationTemplate[]
-  digitalCertificates     DigitalCertificate[]
-  digitalCertificateLogs  DigitalCertificateLog[]  @relation("DigitalCertificateLogs")
+  notifications               Notification[]
+  notificationPreferences     NotificationPreference[]
+  notificationTemplates       NotificationTemplate[]
+  processoDeadlinePreferences ProcessoDeadlineNotificationPreference[]
+  digitalCertificates         DigitalCertificate[]
+  digitalCertificateLogs      DigitalCertificateLog[]  @relation("DigitalCertificateLogs")
 
   @@index([status])
   @@index([superAdminId])
@@ -472,6 +473,9 @@ model Usuario {
   firstName                        String?
   lastName                         String?
   phone                            String?
+  telegramChatId                   String?
+  telegramUsername                 String?
+  telegramAlertsEnabled            Boolean                  @default(true)
   avatarUrl                        String?
   active                           Boolean                  @default(true)
   sessionVersion                   Int                      @default(1)
@@ -552,6 +556,7 @@ model Usuario {
   // Sistema de Notificações
   notifications                  Notification[]
   notificationPreferences        NotificationPreference[]
+  processoDeadlinePreferences    ProcessoDeadlineNotificationPreference[]
   digitalCertificatesResponsavel DigitalCertificate[]     @relation("DigitalCertificateResponsavel")
   digitalCertificateLogs         DigitalCertificateLog[]  @relation("DigitalCertificateLogActor")
 
@@ -1026,6 +1031,7 @@ model Processo {
   tarefas               Tarefa[]
   partes                ProcessoParte[]
   prazos                ProcessoPrazo[]
+  deadlinePreferences   ProcessoDeadlineNotificationPreference[]
   autos                 AutoProcessual[]
   causasVinculadas      ProcessoCausa[]
   diligencias           Diligencia[]
@@ -4177,6 +4183,7 @@ enum NotificationUrgency {
 enum NotificationChannel {
   REALTIME
   EMAIL
+  TELEGRAM
   PUSH
 
   @@schema("magiclawyer")
@@ -4267,6 +4274,27 @@ model NotificationTemplate {
   @@unique([tenantId, eventType])
   @@index([tenantId, eventType])
   @@index([isDefault])
+  @@schema("magiclawyer")
+}
+
+model ProcessoDeadlineNotificationPreference {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  userId              String
+  processoId          String
+  deadlineAlertsMuted Boolean  @default(false)
+  mutedAt             DateTime?
+  mutedReason         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  processo Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, processoId])
+  @@index([tenantId, userId])
+  @@index([tenantId, processoId])
   @@schema("magiclawyer")
 }
 

@@ -4,5 +4,5 @@ export interface NotificationJobData {
   userId: string;
   payload: Record<string, any>;
   urgency: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-  channels: ("REALTIME" | "EMAIL" | "PUSH")[];
+  channels: ("REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH")[];
 }

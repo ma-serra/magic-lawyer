@@ -36,7 +36,7 @@ curl "http://localhost:9192/api/test/notifications?type=prazo.expiring_7d&tenant
 ### 2. Testar Scheduler de Prazos
 
 **Via Cron (Produção):**
-- O cron executa automaticamente diariamente às 8:00 UTC
+- O cron executa automaticamente a cada 15 minutos
 - Verifique logs em: Vercel Dashboard → Functions → Cron Jobs
 
 **Manual (Desenvolvimento):**

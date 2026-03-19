@@ -11,7 +11,8 @@ export type JuridicalAiTaskKey =
   | "CITATION_VALIDATION"
   | "PROCESS_SUMMARY"
   | "CASE_STRATEGY"
-  | "JURISPRUDENCE_BRIEF";
+  | "JURISPRUDENCE_BRIEF"
+  | "SENTENCE_CALCULATION";
 
 export type JuridicalAiWorkspaceTab =
   | "peca"
@@ -19,6 +20,7 @@ export type JuridicalAiWorkspaceTab =
   | "citacoes"
   | "pergunta"
   | "pesquisa"
+  | "calculos"
   | "historico";
 
 export type JuridicalAiRolloutStage =
@@ -254,6 +256,34 @@ export type JuridicalAiVerificationLink = {
   accessMode: "DIRECT" | "SEARCH";
 };
 
+export type JuridicalAiSentenceCalculationItem = {
+  label: string;
+  nature:
+    | "OBRIGACAO_DE_FAZER"
+    | "MULTA"
+    | "LIBERACAO_DE_VALOR"
+    | "RESTITUICAO"
+    | "INDENIZACAO"
+    | "IMPROCEDENCIA"
+    | "OUTRO";
+  basis: string;
+  amountMentioned?: string | null;
+  correctionRule: string;
+  interestRule: string;
+  startTrigger: string;
+  dependencies: string[];
+  automationStatus: "AUTO_ESTIMAVEL" | "DEPENDENTE_DE_DADOS" | "MANUAL";
+};
+
+export type JuridicalAiSentenceCalculationResult = {
+  outcomeSummary: string;
+  condemnedItems: JuridicalAiSentenceCalculationItem[];
+  requiredInputs: string[];
+  calculableItems: string[];
+  manualReviewItems: string[];
+  memorialDraft: string;
+};
+
 export type JuridicalAiGenericResult = {
   sessionId: string;
   summary: string;
@@ -261,6 +291,7 @@ export type JuridicalAiGenericResult = {
   bullets: string[];
   citationChecks?: JuridicalAiCitationCheck[];
   researchPlan?: JuridicalAiResearchPlan;
+  sentenceCalculation?: JuridicalAiSentenceCalculationResult;
   sourceLeads?: JuridicalAiSourceLead[];
   confidenceScore: number | null;
   engine: "LOCAL_FALLBACK" | "OPENAI_RESPONSES";

@@ -16,6 +16,7 @@ import {
   testClicksignConnection,
   type ResolvedClicksignConfig,
 } from "@/app/lib/clicksign";
+import { getGlobalTelegramProviderSummary } from "@/app/lib/notifications/telegram-provider";
 import {
   testStoredTenantChannelProviderRecord,
   type TenantChannelProviderRecord,
@@ -333,7 +334,52 @@ export async function testTenantChannelProviderAsSuperAdmin(
       },
     });
 
-    const summary = buildAdminTenantChannelProviderSummary(channel, config);
+    const telegramFallback =
+      channel === "TELEGRAM" ? getGlobalTelegramProviderSummary() : null;
+    const summary = buildAdminTenantChannelProviderSummary(
+      channel,
+      config,
+      telegramFallback?.available
+        ? {
+            available: true,
+            provider: telegramFallback.provider,
+            providerLabel: telegramFallback.providerLabel,
+            displayName: telegramFallback.displayName,
+            botUsername: telegramFallback.botUsername,
+            healthHint: telegramFallback.healthHint,
+          }
+        : null,
+    );
+
+    if (!config && summary.effectiveSource === "GLOBAL") {
+      await logSuperAdminIntegrationTest({
+        superAdminId: user.id,
+        tenantId,
+        acao: "TEST_TENANT_CHANNEL_PROVIDER_CONNECTION",
+        dadosNovos: {
+          channel,
+          provider: summary.provider,
+          success: true,
+          validationMode: "STRUCTURAL",
+          healthStatus: "PENDING",
+          effectiveSource: "GLOBAL",
+        },
+      });
+
+      revalidatePath(`/admin/tenants/${tenantId}`);
+
+      return {
+        success: true,
+        data: {
+          channel,
+          provider: summary.provider,
+          validationMode: "STRUCTURAL",
+          healthStatus: "PENDING",
+          ultimaValidacao: new Date(),
+          effectiveSource: "GLOBAL",
+        },
+      } as const;
+    }
 
     if (!summary.id || !config) {
       return {

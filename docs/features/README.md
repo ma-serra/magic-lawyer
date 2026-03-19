@@ -24,9 +24,19 @@ Documentação estratégica da camada premium de IA do produto:
 - Geração de peças
 - Pesquisa jurisprudencial assistida
 - Validação de citações
+- Cálculo de sentenças cíveis
 - Speed dial contextual nas telas internas
 
 Índice da pasta: [juridical-ai/README.md](./juridical-ai/README.md)
+
+### 📨 Protocolo Jurídico Automatizado
+Frente de paridade operacional com ERP jurídico pesado:
+- peticionamento intermediário automatizado
+- integração com certificados A1
+- workflow por tribunal
+- recibo real, auditoria e cobrança por uso/faixa
+
+Documento principal: [PROTOCOLO_JURIDICO_AUTOMATIZADO.md](./PROTOCOLO_JURIDICO_AUTOMATIZADO.md)
 
 ## 📚 Como Usar
 

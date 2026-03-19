@@ -21,7 +21,7 @@ export class NotificationPolicy {
   static getDefaultChannels(
     eventType: string,
     urgency?: NotificationUrgency,
-  ): Array<"REALTIME" | "EMAIL" | "PUSH"> {
+  ): Array<"REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH"> {
     const effectiveUrgency = urgency || this.getDefaultUrgency(eventType);
 
     // CRÍTICOS: sempre REALTIME + EMAIL
@@ -73,6 +73,20 @@ export class NotificationPolicy {
         "dataVencimento",
       ],
       "prazo.updated": ["prazoId", "processoId", "processoNumero"],
+      "prazo.digest_30d": [
+        "diasRestantes",
+        "digestDate",
+        "digestKey",
+        "totalPrazos",
+        "resumoPrazos",
+      ],
+      "prazo.digest_10d": [
+        "diasRestantes",
+        "digestDate",
+        "digestKey",
+        "totalPrazos",
+        "resumoPrazos",
+      ],
       "prazo.expiring_7d": [
         "prazoId",
         "processoId",
@@ -303,6 +317,7 @@ export class NotificationPolicy {
       "procuracao.expired": "CRITICAL",
       "sistema.critical_error": "CRITICAL",
       // ALTOS
+      "prazo.digest_10d": "HIGH",
       "prazo.expiring_3d": "HIGH",
       "prazo.expiring_7d": "HIGH",
       "prazo.created": "HIGH",
@@ -323,6 +338,7 @@ export class NotificationPolicy {
       "advogado.permissions_changed": "HIGH",
       "relatorio.failed": "HIGH",
       // MÉDIOS e INFORMATIVOS (todos os outros do getRequiredFields)
+      "prazo.digest_30d": "MEDIUM",
       "processo.created": "MEDIUM",
       "processo.updated": "MEDIUM",
       "processo.document_uploaded": "MEDIUM",
@@ -408,6 +424,20 @@ export class NotificationPolicy {
         "dataVencimento",
       ],
       "prazo.updated": ["prazoId", "processoId", "processoNumero"],
+      "prazo.digest_30d": [
+        "diasRestantes",
+        "digestDate",
+        "digestKey",
+        "totalPrazos",
+        "resumoPrazos",
+      ],
+      "prazo.digest_10d": [
+        "diasRestantes",
+        "digestDate",
+        "digestKey",
+        "totalPrazos",
+        "resumoPrazos",
+      ],
       "prazo.expiring_7d": [
         "prazoId",
         "processoId",
@@ -585,6 +615,23 @@ export class NotificationPolicy {
 
     // Eventos críticos não podem ser desabilitados
     return urgency !== "CRITICAL";
+  }
+
+  static shouldMirrorToTelegram(
+    eventType: string,
+    urgency: NotificationUrgency,
+  ): boolean {
+    if (urgency === "CRITICAL" || urgency === "HIGH") {
+      return true;
+    }
+
+    return [
+      "processo.",
+      "prazo.",
+      "andamento.",
+      "movimentacao.",
+      "documento.",
+    ].some((prefix) => eventType.startsWith(prefix));
   }
 
   /**

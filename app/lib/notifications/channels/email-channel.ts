@@ -98,6 +98,8 @@ export class EmailChannel {
           : undefined;
 
       case "prazo.expiring":
+      case "prazo.digest_30d":
+      case "prazo.digest_10d":
       case "prazo.expiring_7d":
       case "prazo.expiring_3d":
       case "prazo.expiring_1d":
@@ -105,6 +107,10 @@ export class EmailChannel {
       case "prazo.expired":
       case "prazo.created":
       case "prazo.updated":
+        if (event.type === "prazo.digest_30d" || event.type === "prazo.digest_10d") {
+          return `${normalizedBase}/processos`;
+        }
+
         return event.payload.processoId
           ? `${normalizedBase}/processos/${event.payload.processoId}?tab=prazos`
           : `${normalizedBase}/andamentos`;
@@ -147,6 +153,8 @@ export class EmailChannel {
         return "Ver Processo";
 
       case "prazo.expiring":
+      case "prazo.digest_30d":
+      case "prazo.digest_10d":
       case "prazo.expiring_7d":
       case "prazo.expiring_3d":
       case "prazo.expiring_1d":
@@ -154,6 +162,10 @@ export class EmailChannel {
       case "prazo.expired":
       case "prazo.created":
       case "prazo.updated":
+        if (event.type === "prazo.digest_30d" || event.type === "prazo.digest_10d") {
+          return "Revisar lista de prazos";
+        }
+
         return "Ver Prazos";
 
       case "documento.uploaded":

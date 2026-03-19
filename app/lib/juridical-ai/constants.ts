@@ -11,6 +11,7 @@ export const JURIDICAL_AI_TAB_LABELS: Record<JuridicalAiWorkspaceTab, string> = 
   citacoes: "Citações",
   pergunta: "Perguntas",
   pesquisa: "Pesquisa",
+  calculos: "Cálculos",
   historico: "Histórico",
 };
 
@@ -22,6 +23,7 @@ export const JURIDICAL_AI_TASK_LABELS: Record<JuridicalAiTaskKey, string> = {
   PROCESS_SUMMARY: "Resumo processual",
   CASE_STRATEGY: "Estratégia do caso",
   JURISPRUDENCE_BRIEF: "Briefing jurisprudencial",
+  SENTENCE_CALCULATION: "Cálculo de sentença",
 };
 
 export const JURIDICAL_AI_TIER_LABELS: Record<JuridicalAiTier, string> = {
@@ -74,6 +76,12 @@ export const JURIDICAL_AI_GENERIC_TASK_OPTIONS: Array<{
     key: "CASE_STRATEGY",
     label: "Estratégia do caso",
     description: "Linha de atuação com risco, reforços e próxima providência.",
+  },
+  {
+    key: "SENTENCE_CALCULATION",
+    label: "Calcular sentença",
+    description:
+      "Extrai condenações, indexadores e dependências para montar memorial preliminar.",
   },
 ];
 

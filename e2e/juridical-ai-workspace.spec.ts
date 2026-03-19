@@ -256,6 +256,41 @@ test.describe("juridical ai workspace", () => {
     expect(modelCountAfter).toBeGreaterThan(modelCountBefore);
   });
 
+  test("tenant estrutura cálculo preliminar de sentença no workspace", async ({
+    page,
+  }) => {
+    const { processId } = await getSandraTenantContext();
+    await loginTenantAdmin(page);
+
+    await page.goto(
+      `${TENANT_BASE_URL}/magic-ai?action=calcular-sentenca&tab=calculos&processId=${processId}`,
+      {
+        timeout: 60000,
+        waitUntil: "domcontentloaded",
+      },
+    );
+
+    await expect(page.getByRole("tab", { name: "Cálculos" })).toBeVisible({
+      timeout: 15000,
+    });
+
+    await page
+      .getByLabel("Objetivo do memorial")
+      .fill("Montar memorial preliminar para cumprimento de sentença");
+    await page.getByLabel("Dispositivo ou trecho da sentença").fill(
+      "a) CONDENAR a parte ré à restituição em dobro dos valores pagos a maior, com correção monetária pelo IPCA desde o pagamento indevido e juros de mora pela taxa SELIC a partir da citação. b) CONDENAR a parte ré ao pagamento de indenização por danos morais no valor de R$ 4.000,00, corrigido pelo IPCA desde a sentença e juros de mora pela SELIC a partir da citação.",
+    );
+    await page
+      .getByRole("button", { name: "Estruturar cálculo da sentença" })
+      .click();
+
+    await expect(page.getByText("Resumo executivo do cálculo")).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(page.getByText("Itens condenatórios mapeados")).toBeVisible();
+    await expect(page.getByText("Memorial preliminar de cálculo")).toBeVisible();
+  });
+
   test("super admin cria e publica nova versão de prompt", async ({ page }) => {
     await loginSuperAdmin(page);
 

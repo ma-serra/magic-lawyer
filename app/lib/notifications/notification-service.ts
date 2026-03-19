@@ -7,12 +7,16 @@ import { EmailChannel } from "./channels/email-channel";
 import { NotificationFactory } from "./domain/notification-factory";
 import { NotificationPolicy } from "./domain/notification-policy";
 import { getRedisInstance } from "./redis-singleton";
+import {
+  canDeliverTelegramToUser,
+  sendTelegramNotification,
+} from "./telegram-bot";
 
 import prisma from "@/app/lib/prisma";
 import { publishRealtimeEvent } from "@/app/lib/realtime/publisher";
 
 export type NotificationUrgency = "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-export type NotificationChannel = "REALTIME" | "EMAIL" | "PUSH";
+export type NotificationChannel = "REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH";
 
 export interface NotificationEvent {
   type: string;
@@ -174,13 +178,20 @@ export class NotificationService {
       if (event.urgency === "CRITICAL") {
         // Eventos críticos sempre vão por REALTIME + EMAIL
         channelsToUse = ["REALTIME", "EMAIL"];
+
+        if (event.channels?.includes("TELEGRAM")) {
+          channelsToUse.push("TELEGRAM");
+        }
       } else if (event.channels && event.channels.length > 0) {
         // Se o evento especificou canais explicitamente (override), usa eles
         // Mas filtra para manter apenas canais habilitados nas preferências (exceto CRITICAL)
         const enabledChannels = preferences.channels;
+        const shouldForceDeadlineTelegram =
+          event.type.startsWith("prazo.") && event.channels.includes("TELEGRAM");
 
         channelsToUse = event.channels.filter((channel) =>
-          enabledChannels.includes(channel),
+          enabledChannels.includes(channel) ||
+          (shouldForceDeadlineTelegram && channel === "TELEGRAM"),
         );
 
         // Se após filtrar não sobrar nenhum, usa as preferências
@@ -191,6 +202,14 @@ export class NotificationService {
         // Caso padrão: respeita preferências do usuário
         channelsToUse = preferences.channels;
       }
+
+      channelsToUse = await this.resolveChannelsForDelivery(
+        event.tenantId,
+        event.userId,
+        channelsToUse,
+        event.type,
+        event.urgency || preferences.urgency,
+      );
 
       // 6. Salvar notificação no banco
       const notification = await prisma.notification.create({
@@ -482,6 +501,8 @@ export class NotificationService {
     switch (channel) {
       case "EMAIL":
         return "RESEND";
+      case "TELEGRAM":
+        return "TELEGRAM_BOT";
       case "PUSH":
         return "PUSH_GATEWAY";
       case "REALTIME":
@@ -522,6 +543,9 @@ export class NotificationService {
           break;
         case "EMAIL":
           result = await this.deliverEmail(notification);
+          break;
+        case "TELEGRAM":
+          result = await this.deliverTelegram(notification);
           break;
         case "PUSH":
           result = await this.deliverPush(notification);
@@ -672,6 +696,27 @@ export class NotificationService {
     }
   }
 
+  private static async deliverTelegram(
+    notification: any,
+  ): Promise<{
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    metadata?: Record<string, any>;
+  }> {
+    const result = await sendTelegramNotification({
+      tenantId: notification.tenantId,
+      userId: notification.userId,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      urgency: notification.urgency,
+      payload: notification.payload,
+    });
+
+    return result;
+  }
+
   /**
    * Entrega via push mobile
    */
@@ -704,6 +749,16 @@ export class NotificationService {
           channels: ["REALTIME", "EMAIL"],
           urgency: "HIGH",
         },
+        "andamento.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
+        "movimentacao.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
         "cliente.*": {
           enabled: true,
           channels: ["REALTIME"],
@@ -731,6 +786,16 @@ export class NotificationService {
           channels: ["REALTIME", "EMAIL"],
           urgency: "HIGH",
         },
+        "andamento.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
+        "movimentacao.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
         "cliente.*": {
           enabled: true,
           channels: ["REALTIME"],
@@ -752,6 +817,16 @@ export class NotificationService {
         "processo.*": {
           enabled: true,
           channels: ["REALTIME", "EMAIL"],
+          urgency: "HIGH",
+        },
+        "andamento.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
+        "movimentacao.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
           urgency: "HIGH",
         },
         "cliente.*": {
@@ -860,9 +935,20 @@ export class NotificationService {
         message:
           'Prazo "{titulo}" do processo {processoNumero} foi atualizado',
       },
+      "prazo.digest_30d": {
+        title: "Frente 1 · Prazos com vencimento em 30 dias",
+        message:
+          "Os seguintes prazos vencem em 30 dias:\n{resumoPrazos}\n\nTotal: {totalPrazos} prazo(s).",
+      },
+      "prazo.digest_10d": {
+        title: "Frente 2 · Prazos com vencimento em 10 dias",
+        message:
+          "Os seguintes prazos vencem em 10 dias:\n{resumoPrazos}\n\nTotal: {totalPrazos} prazo(s).",
+      },
       "prazo.expiring_7d": {
-        title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {processoNumero} vence em 7 dias",
+        title: "Frente 2 · Prazo próximo do vencimento",
+        message:
+          'Prazo "{titulo}" do processo {processoNumero} vence em 7 dias.',
       },
       "prazo.expiring": {
         title: "Prazo próximo do vencimento",
@@ -870,20 +956,23 @@ export class NotificationService {
           "Prazo do processo {processoNumero} está próximo do vencimento",
       },
       "prazo.expiring_3d": {
-        title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {processoNumero} vence em 3 dias",
+        title: "Frente 2 · Prazo muito próximo do vencimento",
+        message:
+          'Prazo "{titulo}" do processo {processoNumero} vence em 3 dias.',
       },
       "prazo.expiring_1d": {
-        title: "Prazo próximo do vencimento",
-        message: "Prazo do processo {processoNumero} vence em 1 dia",
+        title: "Frente 3 · Prazo crítico",
+        message:
+          'Prazo "{titulo}" do processo {processoNumero} vence em 1 dia.',
       },
       "prazo.expiring_2h": {
-        title: "Prazo vence em breve",
-        message: "Prazo do processo {processoNumero} vence em até 2 horas",
+        title: "Frente 3 · Prazo no limite",
+        message:
+          'Prazo "{titulo}" do processo {processoNumero} vence em até 2 horas.',
       },
       "prazo.expired": {
-        title: "Prazo vencido",
-        message: "Prazo do processo {processoNumero} venceu",
+        title: "Frente 3 · Prazo vencido",
+        message: 'Prazo "{titulo}" do processo {processoNumero} venceu.',
       },
       "cliente.created": {
         title: "Novo cliente cadastrado",
@@ -932,6 +1021,38 @@ export class NotificationService {
           'O andamento "{titulo}" do processo {processoNumero} foi atualizado: {changesSummary}',
       },
     };
+  }
+
+  private static async resolveChannelsForDelivery(
+    tenantId: string,
+    userId: string,
+    channels: NotificationChannel[],
+    eventType: string,
+    urgency: NotificationUrgency,
+  ): Promise<NotificationChannel[]> {
+    const resolved = new Set<NotificationChannel>(channels);
+
+    if (NotificationPolicy.shouldMirrorToTelegram(eventType, urgency)) {
+      const canUseTelegram = await canDeliverTelegramToUser(tenantId, userId);
+
+      if (canUseTelegram) {
+        resolved.add("TELEGRAM");
+      }
+    }
+
+    if (resolved.has("TELEGRAM")) {
+      const canUseTelegram = await canDeliverTelegramToUser(tenantId, userId);
+
+      if (!canUseTelegram) {
+        resolved.delete("TELEGRAM");
+      }
+    }
+
+    if (resolved.size === 0) {
+      resolved.add("REALTIME");
+    }
+
+    return Array.from(resolved);
   }
 
   private static buildWildcardEventTypes(eventType: string): string[] {

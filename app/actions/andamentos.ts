@@ -17,6 +17,10 @@ import {
   toAuditJson,
 } from "@/app/lib/audit/log";
 import { buildAndamentoDiff } from "@/app/lib/andamentos/diff";
+import {
+  notifyLawyersAboutProcessMovement,
+  publishProcessNotificationToLawyers,
+} from "@/app/lib/juridical/process-movement-sync";
 
 // ============================================
 // TIPOS
@@ -812,60 +816,30 @@ export async function createAndamento(
       });
     }
 
-    // Notificar envolvidos (advogado responsável e cliente, se existir)
+    // Notificar todos os advogados vinculados ao processo.
     try {
-      const advogado = await prisma.processo.findFirst({
-        where: { id: input.processoId, tenantId },
-        select: {
-          advogadoResponsavel: {
-            select: { usuario: { select: { id: true } } },
-          },
-          cliente: { select: { usuarioId: true, nome: true } },
-          numero: true,
+      await notifyLawyersAboutProcessMovement({
+        tenantId,
+        processoId: input.processoId,
+        movement: {
+          id: andamento.id,
+          titulo: input.titulo,
+          descricao: input.descricao ?? andamento.descricao ?? null,
+          tipo: andamento.tipo,
+          statusOperacional: andamento.statusOperacional,
+          prioridade: andamento.prioridade,
+          responsavelId: andamento.responsavelId,
+          slaEm: andamento.slaEm,
+          dataMovimentacao: input.dataMovimentacao || andamento.dataMovimentacao,
         },
+        urgency: "HIGH",
+        actorName,
+        sourceLabel: "Andamento criado manualmente no processo",
+        sourceKind: "MANUAL",
       });
-
-      const targetUserIds: string[] = [];
-      const advogadoUserId = (advogado?.advogadoResponsavel?.usuario as any)
-        ?.id;
-
-      if (advogadoUserId) targetUserIds.push(advogadoUserId);
-      if (advogado?.cliente?.usuarioId)
-        targetUserIds.push(advogado.cliente.usuarioId);
-
-      const channels = input.notificarEmail
-        ? ["REALTIME", "EMAIL"]
-        : (["REALTIME"] as ("REALTIME" | "EMAIL")[]);
-
-      for (const uid of targetUserIds) {
-        const { HybridNotificationService } = await import(
-          "@/app/lib/notifications/hybrid-notification-service"
-        );
-
-        await HybridNotificationService.publishNotification({
-          type: "andamento.created",
-          tenantId,
-          userId: uid,
-          payload: {
-            andamentoId: andamento.id,
-            processoId: input.processoId,
-            processoNumero: processo.numero,
-            titulo: input.titulo,
-            descricao: input.descricao ?? andamento.descricao ?? null,
-            tipo: input.tipo,
-            statusOperacional: andamento.statusOperacional,
-            prioridade: andamento.prioridade,
-            responsavelId: andamento.responsavelId,
-            slaEm: andamento.slaEm,
-            dataMovimentacao: input.dataMovimentacao || new Date(),
-          },
-          urgency: "MEDIUM",
-          channels,
-        } as any);
-      }
     } catch (e) {
       console.warn(
-        "Falha ao emitir notificações de andamento criado para envolvidos",
+        "Falha ao emitir notificações de andamento criado para advogados do processo",
         e,
       );
     }
@@ -1141,62 +1115,94 @@ export async function updateAndamento(
     // Notificar atualização de andamento para envolvidos (advogado responsável e cliente)
     if (hasChanges) {
       try {
+        const actorName =
+          `${(session?.user as any)?.firstName ?? ""} ${(session?.user as any)?.lastName ?? ""}`.trim() ||
+          ((session?.user as any)?.email as string | undefined) ||
+          "Usuário";
         const proc = await prisma.processo.findFirst({
           where: { id: andamento.processo.id, tenantId },
           select: {
             numero: true,
-            advogadoResponsavel: {
-              select: { usuario: { select: { id: true } } },
-            },
             cliente: { select: { usuarioId: true } },
           },
         });
 
         const targetUserIds: string[] = [];
-        const advogadoUserId = (proc?.advogadoResponsavel?.usuario as any)?.id;
-
-        if (advogadoUserId) targetUserIds.push(advogadoUserId);
         if (proc?.cliente?.usuarioId)
           targetUserIds.push(proc.cliente.usuarioId);
 
-        const channels = input.notificarEmail
-          ? ["REALTIME", "EMAIL"]
-          : (["REALTIME"] as ("REALTIME" | "EMAIL")[]);
+        await publishProcessNotificationToLawyers({
+          type: "andamento.updated",
+          tenantId,
+          processoId: andamento.processo.id,
+          payload: {
+            andamentoId: andamento.id,
+            processoNumero: proc?.numero || andamento.processo.numero,
+            titulo: andamento.titulo,
+            descricao: andamento.descricao ?? null,
+            tipo: andamento.tipo,
+            statusOperacional: andamento.statusOperacional,
+            prioridade: andamento.prioridade,
+            responsavelId: andamento.responsavelId,
+            slaEm: andamento.slaEm,
+            dataMovimentacao: andamento.dataMovimentacao,
+            diff: diff.items,
+            changes: diff.items.map((item) => item.field),
+            detailLines: diff.items.map(
+              (item) => `${item.label}: ${item.before} → ${item.after}`,
+            ),
+            changesSummary:
+              diff.summary || "Informações do andamento foram atualizadas",
+            actorName,
+            actorUserId: userId,
+            sourceLabel: "Andamento atualizado manualmente no processo",
+            sourceKind: "MANUAL",
+          },
+          urgency: "HIGH",
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+        });
 
-        const { HybridNotificationService } = await import(
-          "@/app/lib/notifications/hybrid-notification-service"
-        );
+        if (targetUserIds.length > 0) {
+          const { HybridNotificationService } = await import(
+            "@/app/lib/notifications/hybrid-notification-service"
+          );
 
-        await Promise.all(
-          targetUserIds.map((uid) =>
-            HybridNotificationService.publishNotification({
-              type: "andamento.updated",
-              tenantId,
-              userId: uid,
-              payload: {
-                andamentoId: andamento.id,
-                processoId: andamento.processo.id,
-                processoNumero: proc?.numero || andamento.processo.numero,
-                titulo: andamento.titulo,
-                descricao: andamento.descricao ?? null,
-                tipo: andamento.tipo,
-                statusOperacional: andamento.statusOperacional,
-                prioridade: andamento.prioridade,
-                responsavelId: andamento.responsavelId,
-                slaEm: andamento.slaEm,
-                dataMovimentacao: andamento.dataMovimentacao,
-                referenciaTipo: "processo",
-                referenciaId: andamento.processo.id,
-                diff: diff.items,
-                changes: diff.items.map((item) => item.field),
-                changesSummary:
-                  diff.summary || "Informações do andamento foram atualizadas",
-              },
-              urgency: "MEDIUM",
-              channels,
-            } as any),
-          ),
-        );
+          await Promise.all(
+            Array.from(new Set(targetUserIds)).map((uid) =>
+              HybridNotificationService.publishNotification({
+                type: "andamento.updated",
+                tenantId,
+                userId: uid,
+                payload: {
+                  andamentoId: andamento.id,
+                  processoId: andamento.processo.id,
+                  processoNumero: proc?.numero || andamento.processo.numero,
+                  titulo: andamento.titulo,
+                  descricao: andamento.descricao ?? null,
+                  tipo: andamento.tipo,
+                  statusOperacional: andamento.statusOperacional,
+                  prioridade: andamento.prioridade,
+                  responsavelId: andamento.responsavelId,
+                  slaEm: andamento.slaEm,
+                  dataMovimentacao: andamento.dataMovimentacao,
+                  referenciaTipo: "processo",
+                  referenciaId: andamento.processo.id,
+                  diff: diff.items,
+                  changes: diff.items.map((item) => item.field),
+                  changesSummary:
+                    diff.summary ||
+                    "Informações do andamento foram atualizadas",
+                  actorName,
+                  actorUserId: userId,
+                  sourceLabel: "Andamento atualizado manualmente no processo",
+                  sourceKind: "MANUAL",
+                },
+                urgency: "HIGH",
+                channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+              } as any),
+            ),
+          );
+        }
       } catch (e) {
         console.warn(
           "Falha ao emitir notificações de andamento atualizado para envolvidos",

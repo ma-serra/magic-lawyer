@@ -47,13 +47,16 @@ export class NotificationMigrationService {
    */
   private static mapLegacyChannelsToNew(
     legacyChannels: string[],
-  ): ("REALTIME" | "EMAIL" | "PUSH")[] {
-    const channelMapping: Record<string, "REALTIME" | "EMAIL" | "PUSH"> = {
+  ): ("REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH")[] {
+    const channelMapping: Record<
+      string,
+      "REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH"
+    > = {
       IN_APP: "REALTIME",
       EMAIL: "EMAIL",
       SMS: "EMAIL",
       WHATSAPP: "EMAIL", // Mapear WhatsApp para EMAIL por enquanto
-      TELEGRAM: "EMAIL", // Mapear Telegram para EMAIL por enquanto
+      TELEGRAM: "TELEGRAM",
       PUSH: "PUSH",
     };
 

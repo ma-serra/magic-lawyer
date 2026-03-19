@@ -1922,7 +1922,7 @@ function ChannelProviderAdminPanel({
             </div>
             <Button
               color="primary"
-              isDisabled={!summary.id}
+              isDisabled={summary.effectiveSource === "NONE"}
               isLoading={isTesting}
               radius="full"
               startContent={!isTesting ? <Zap className="h-4 w-4" /> : null}
@@ -1975,6 +1975,16 @@ function ChannelProviderAdminPanel({
                 <strong>{summary.providerLabel ?? "Não configurado"}</strong>
               </p>
               <p>
+                Fonte efetiva:{" "}
+                <strong>
+                  {summary.effectiveSource === "TENANT"
+                    ? "Configuração do tenant"
+                    : summary.effectiveSource === "GLOBAL"
+                      ? "Bot global da plataforma"
+                      : "Não configurado"}
+                </strong>
+              </p>
+              <p>
                 Nome operacional:{" "}
                 <strong>{summary.displayName ?? "Não informado"}</strong>
               </p>
@@ -1991,6 +2001,14 @@ function ChannelProviderAdminPanel({
                 <strong>{summary.lastValidationMode ?? "Não executado"}</strong>
               </p>
             </div>
+            {summary.fallbackAvailable && summary.effectiveSource !== "TENANT" ? (
+              <p className="mt-3 text-xs text-default-400">
+                Fallback disponível: <strong>{summary.fallbackLabel}</strong>
+                {summary.fallbackDescription
+                  ? ` • ${summary.fallbackDescription}`
+                  : ""}
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
@@ -2629,7 +2647,7 @@ function IntegrationsTab({
 
             {selectedIntegration === "telegram" ? (
               <ChannelProviderAdminPanel
-                description="Leitura administrativa do bot ou provider de Telegram configurado pelo tenant."
+                description="Leitura administrativa do Telegram do tenant, considerando override próprio ou fallback do bot global da plataforma."
                 isTesting={testingChannel === "TELEGRAM"}
                 summary={integrations.telegram}
                 title="Telegram omnichannel"

@@ -146,4 +146,50 @@ describe("juridical ai engine", () => {
       ),
     ).toBe(true);
   });
+
+  it("estrutura o cálculo preliminar de sentença cível com condenações e memorial", () => {
+    const result = runLocalJuridicalAiEngine({
+      taskKey: "SENTENCE_CALCULATION",
+      objective: "Montar memorial preliminar para cumprimento de sentença",
+      documentName: "Sentenca parcial procedente.pdf",
+      documentText: `Diante de todo o exposto, JULGO PARCIALMENTE PROCEDENTES os pedidos para:
+      a) DECLARAR a abusividade das faturas de consumo dos meses de maio, junho e julho de 2023, determinando a EMBASA que promova o refaturamento dos respectivos débitos com base na média de consumo dos 12 meses anteriores ao mês de maio/2023, no prazo de 15 dias, sob pena de multa diária de R$ 100,00, limitada a R$ 20.000,00;
+      b) DETERMINAR que, em relação à fatura de maio de 2023, a quantia depositada em juízo pela parte autora seja liberada à EMBASA até o limite do valor que vier a ser apurado na refatura, autorizando-se o levantamento do excedente pela parte autora;
+      c) CONDENAR a EMBASA à restituição em dobro dos valores pagos a maior relativamente às faturas de junho e julho de 2023, conforme o artigo 42, parágrafo único, do Código de Defesa do Consumidor, com atualização monetária pelo IPCA desde a data do pagamento indevido e juros de mora pela taxa SELIC, deduzido o IPCA, a contar da citação;
+      d) CONDENAR a EMBASA ao pagamento de indenização por danos morais no valor de R$ 4.000,00, corrigido monetariamente pelo IPCA desde a data da presente sentença e com incidência de juros de mora pela taxa SELIC, deduzido o IPCA, a partir da citação;
+      e) JULGAR IMPROCEDENTES os pedidos formulados em face do BANCO BRADESCO S/A.`,
+    });
+
+    expect(result.type).toBe("generic");
+
+    if (result.type !== "generic") {
+      throw new Error("Resultado inesperado para cálculo de sentença.");
+    }
+
+    expect(result.sentenceCalculation).toBeDefined();
+    expect(result.sentenceCalculation?.condemnedItems.length).toBeGreaterThanOrEqual(4);
+    expect(
+      result.sentenceCalculation?.condemnedItems.some(
+        (item) => item.nature === "RESTITUICAO",
+      ),
+    ).toBe(true);
+    expect(
+      result.sentenceCalculation?.condemnedItems.some(
+        (item) => item.nature === "INDENIZACAO",
+      ),
+    ).toBe(true);
+    expect(
+      result.sentenceCalculation?.condemnedItems.some(
+        (item) => item.nature === "LIBERACAO_DE_VALOR",
+      ),
+    ).toBe(true);
+    expect(
+      result.sentenceCalculation?.condemnedItems.some(
+        (item) => item.nature === "IMPROCEDENCIA",
+      ),
+    ).toBe(true);
+    expect(result.sentenceCalculation?.memorialDraft).toContain(
+      "Memorial preliminar de cálculo",
+    );
+  });
 });

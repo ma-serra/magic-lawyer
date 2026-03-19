@@ -1,4 +1,5 @@
 import { capturarProcesso } from "@/app/lib/juridical/capture-service";
+import { persistCapturedMovimentacoes } from "@/app/lib/juridical/process-movement-sync";
 import prisma from "@/app/lib/prisma";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import logger from "@/lib/logger";
@@ -47,10 +48,14 @@ export async function persistPortalProcessos(params: {
   processos: ProcessoJuridico[];
   clienteNome?: string;
   advogadoId?: string | null;
+  criadoPorId: string;
 }) {
   const persisted = [];
   let createdCount = 0;
   let updatedCount = 0;
+  let createdMovimentacoes = 0;
+  let skippedMovimentacoes = 0;
+  let notifiedRecipients = 0;
 
   for (const processo of params.processos) {
     const result = await upsertProcessoFromCapture({
@@ -66,6 +71,18 @@ export async function persistPortalProcessos(params: {
       ...result,
     });
 
+    const movimentacaoSummary = await persistCapturedMovimentacoes({
+      tenantId: params.tenantId,
+      processoId: result.processoId,
+      criadoPorId: params.criadoPorId,
+      movimentacoes: processo.movimentacoes,
+      notifyLawyers: result.updated,
+    });
+
+    createdMovimentacoes += movimentacaoSummary.created;
+    skippedMovimentacoes += movimentacaoSummary.skipped;
+    notifiedRecipients += movimentacaoSummary.notifiedRecipients;
+
     if (result.created) {
       createdCount += 1;
     } else if (result.updated) {
@@ -77,6 +94,9 @@ export async function persistPortalProcessos(params: {
     persisted,
     createdCount,
     updatedCount,
+    createdMovimentacoes,
+    skippedMovimentacoes,
+    notifiedRecipients,
   };
 }
 

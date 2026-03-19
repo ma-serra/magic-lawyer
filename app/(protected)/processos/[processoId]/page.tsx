@@ -50,6 +50,7 @@ import {
   FileSignature,
   UploadCloud,
   UserPlus,
+  Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -89,9 +90,22 @@ import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
 import { listRegimesPrazo } from "@/app/actions/regimes-prazo";
 import { getUsuariosParaSelect } from "@/app/actions/usuarios";
+import {
+  getProcessDeadlineNotificationPreference,
+  setProcessDeadlineNotificationMute,
+} from "@/app/actions/processo-deadline-preferences";
 import JuizModal from "@/components/juiz-modal";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/searchable-select";
+import {
+  buildPrazoWorkspaceSummary,
+  formatPrazoRelativeLabel,
+  getPrazoOperationalBucket,
+} from "@/app/lib/prazos/workspace";
 
 const parteFormInitial: {
   tipoPolo: ProcessoPolo;
@@ -135,20 +149,8 @@ interface ResponsavelOption {
   role: string;
 }
 
-type RegimePrazoSelectItem = {
-  id: string;
-  nome: string;
-  tipo?: string;
-  isNone?: boolean;
-};
-
-type ResponsavelPrazoSelectItem = {
-  id: string;
-  label: string;
-  email?: string;
-  role?: string;
-  isNone?: boolean;
-};
+type RegimePrazoSelectItem = SearchableSelectOption;
+type ResponsavelPrazoSelectItem = SearchableSelectOption;
 
 const MAX_PROCESSO_DOCUMENTOS_UPLOAD = 10;
 const PROCESSO_UPLOAD_LIMIT_BYTES = {
@@ -416,11 +418,68 @@ const getPrazoStatusLabel = (status: ProcessoPrazoStatus) => {
   }
 };
 
+const PRAZO_STATUS_FILTER_OPTIONS: SearchableSelectOption[] = [
+  { key: "all", label: "Todos os status" },
+  { key: ProcessoPrazoStatus.ABERTO, label: "Abertos" },
+  { key: ProcessoPrazoStatus.PRORROGADO, label: "Prorrogados" },
+  { key: ProcessoPrazoStatus.CONCLUIDO, label: "Concluídos" },
+  { key: ProcessoPrazoStatus.CANCELADO, label: "Cancelados" },
+];
+
+const getPrazoBucketColor = (
+  bucket: ReturnType<typeof getPrazoOperationalBucket>,
+) => {
+  switch (bucket) {
+    case "overdue":
+      return "danger";
+    case "today":
+      return "warning";
+    case "next_7d":
+      return "secondary";
+    case "next_30d":
+      return "primary";
+    case "completed":
+      return "success";
+    default:
+      return "default";
+  }
+};
+
+const getPrazoBucketLabel = (
+  bucket: ReturnType<typeof getPrazoOperationalBucket>,
+) => {
+  switch (bucket) {
+    case "overdue":
+      return "Em atraso";
+    case "today":
+      return "Hoje";
+    case "next_7d":
+      return "Próximos 7 dias";
+    case "next_30d":
+      return "Até 30 dias";
+    case "completed":
+      return "Concluído";
+    case "canceled":
+      return "Cancelado";
+    default:
+      return "Futuro";
+  }
+};
+
+function normalizePrazoSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export default function ProcessoDetalhesPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const processoId = params.processoId as string;
+  const highlightedPrazoId = searchParams.get("prazoId");
 
   const { processo, isCliente, isLoading, isError, mutate } =
     useProcessoDetalhado(processoId);
@@ -469,21 +528,28 @@ export default function ProcessoDetalhesPage() {
       return (result.usuarios || []) as ResponsavelOption[];
     },
   );
+  const {
+    data: prazoNotificationPreference,
+    mutate: mutatePrazoNotificationPreference,
+  } = useSWR(
+    isCliente ? null : ["processo-deadline-preference", processoId],
+    () => getProcessDeadlineNotificationPreference(processoId),
+    {
+      revalidateOnFocus: false,
+    },
+  );
 
   const polos = useMemo(() => Object.values(ProcessoPolo), []);
   const fases = useMemo(() => Object.values(ProcessoFase), []);
   const graus = useMemo(() => Object.values(ProcessoGrau), []);
-  const regimePrazoIdSet = useMemo(
-    () => new Set(regimesPrazo.map((regime) => regime.id)),
-    [regimesPrazo],
-  );
-  const responsavelPrazoIdSet = useMemo(
-    () => new Set(responsaveisPrazo.map((responsavel) => responsavel.id)),
-    [responsaveisPrazo],
-  );
+  const deadlineAlertsMuted =
+    prazoNotificationPreference?.success &&
+    prazoNotificationPreference.data?.deadlineAlertsMuted === true;
 
   const [parteForm, setParteForm] = useState(parteFormInitial);
   const [prazoForm, setPrazoForm] = useState(prazoFormInitial);
+  const [prazoSearch, setPrazoSearch] = useState("");
+  const [prazoStatusFilter, setPrazoStatusFilter] = useState<string>("all");
   const [selectedProcuracaoId, setSelectedProcuracaoId] = useState<string>("");
   const [parteActionId, setParteActionId] = useState<string | null>(null);
   const [prazoActionId, setPrazoActionId] = useState<string | null>(null);
@@ -492,6 +558,7 @@ export default function ProcessoDetalhesPage() {
   );
   const [isCreatingParte, setIsCreatingParte] = useState(false);
   const [isCreatingPrazo, setIsCreatingPrazo] = useState(false);
+  const [isUpdatingPrazoMute, setIsUpdatingPrazoMute] = useState(false);
   const [isLinkingProcuracao, setIsLinkingProcuracao] = useState(false);
   const [isJuizModalOpen, setIsJuizModalOpen] = useState(false);
   const [showSelectAutoridade, setShowSelectAutoridade] = useState(false);
@@ -606,11 +673,12 @@ export default function ProcessoDetalhesPage() {
       : [];
   const regimePrazoItems = useMemo<RegimePrazoSelectItem[]>(
     () => [
-      { id: "__none__", nome: "Sem regime", isNone: true },
+      { key: "__none__", label: "Sem regime" },
       ...regimesPrazo.map((regime) => ({
-        id: regime.id,
-        nome: regime.nome,
-        tipo: regime.tipo,
+        key: regime.id,
+        label: regime.nome,
+        textValue: `${regime.nome} ${regime.tipo}`,
+        description: regime.tipo,
       })),
     ],
     [regimesPrazo],
@@ -618,33 +686,54 @@ export default function ProcessoDetalhesPage() {
   const responsavelPrazoItems = useMemo<ResponsavelPrazoSelectItem[]>(
     () => [
       {
-        id: "__none__",
+        key: "__none__",
         label: "Sem responsável definido",
-        isNone: true,
       },
       ...responsaveisPrazo.map((responsavel) => {
         const nome =
           `${responsavel.firstName || ""} ${responsavel.lastName || ""}`.trim();
 
         return {
-          id: responsavel.id,
+          key: responsavel.id,
           label: nome || responsavel.email,
-          email: responsavel.email,
-          role: responsavel.role,
+          textValue: `${nome || responsavel.email} ${responsavel.email} ${responsavel.role}`,
+          description: `${responsavel.email} • ${responsavel.role}`,
         };
       }),
     ],
     [responsaveisPrazo],
   );
-  const selectedPrazoRegimeKeys =
-    prazoForm.regimePrazoId && regimePrazoIdSet.has(prazoForm.regimePrazoId)
-      ? [prazoForm.regimePrazoId]
-      : [];
-  const selectedPrazoResponsavelKeys =
-    prazoForm.responsavelId &&
-    responsavelPrazoIdSet.has(prazoForm.responsavelId)
-      ? [prazoForm.responsavelId]
-      : [];
+  const prazosSummary = useMemo(
+    () => buildPrazoWorkspaceSummary(prazosOrdenados),
+    [prazosOrdenados],
+  );
+  const prazosFiltrados = useMemo(() => {
+    const normalizedSearch = normalizePrazoSearch(prazoSearch);
+
+    return prazosOrdenados.filter((prazo) => {
+      if (prazoStatusFilter !== "all" && prazo.status !== prazoStatusFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = normalizePrazoSearch(
+        [
+          prazo.titulo,
+          prazo.descricao ?? "",
+          prazo.fundamentoLegal ?? "",
+          prazo.responsavel?.firstName ?? "",
+          prazo.responsavel?.lastName ?? "",
+          prazo.regimePrazo?.nome ?? "",
+          prazo.origemMovimentacao?.titulo ?? "",
+        ].join(" "),
+      );
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [prazoSearch, prazoStatusFilter, prazosOrdenados]);
 
   const {
     opcoes: catalogoGlobalAutoridades,
@@ -683,6 +772,22 @@ export default function ProcessoDetalhesPage() {
       setAbaAtual(tabFromUrl);
     }
   }, [searchParams, abaAtual]);
+
+  useEffect(() => {
+    if (abaAtual !== "prazos" || !highlightedPrazoId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const target = document.getElementById(
+        `processo-prazo-${highlightedPrazoId}`,
+      );
+
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 160);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [abaAtual, highlightedPrazoId, prazosFiltrados.length]);
 
   if (isLoading) {
     return (
@@ -897,6 +1002,38 @@ export default function ProcessoDetalhesPage() {
       toast.error("Erro ao remover prazo");
     } finally {
       setPrazoActionId(null);
+    }
+  };
+
+  const handleTogglePrazoNotifications = async () => {
+    setIsUpdatingPrazoMute(true);
+
+    try {
+      const result = await setProcessDeadlineNotificationMute({
+        processoId,
+        muted: !deadlineAlertsMuted,
+      });
+
+      if (!result.success) {
+        throw new Error(
+          result.error || "Nao foi possivel atualizar os alertas do processo.",
+        );
+      }
+
+      await mutatePrazoNotificationPreference();
+      toast.success(
+        !deadlineAlertsMuted
+          ? "Alertas de prazo deste processo foram silenciados."
+          : "Alertas de prazo deste processo foram reativados.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Falha ao atualizar alertas de prazo do processo.",
+      );
+    } finally {
+      setIsUpdatingPrazoMute(false);
     }
   };
 
@@ -2059,34 +2196,141 @@ export default function ProcessoDetalhesPage() {
           >
             <Card className="border border-default-200">
               <CardHeader>
-                <div className="flex items-center justify-between w-full">
-                  <h3 className="text-lg font-semibold">Prazos do processo</h3>
-                  <Chip variant="flat">{prazosOrdenados.length}</Chip>
+                <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold">Prazos do processo</h3>
+                    <p className="text-sm text-default-500">
+                      Trate este processo dentro das 3 frentes de prazo e decida se quer seguir com alerta forte ou silenciar notificações futuras.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Chip
+                      color={deadlineAlertsMuted ? "warning" : "success"}
+                      variant="flat"
+                    >
+                      {deadlineAlertsMuted
+                        ? "Alertas deste processo silenciados"
+                        : "Alertas deste processo ativos"}
+                    </Chip>
+                    <Chip variant="flat">{prazosOrdenados.length}</Chip>
+                    {!isCliente ? (
+                      <Button
+                        color={deadlineAlertsMuted ? "success" : "warning"}
+                        isLoading={isUpdatingPrazoMute}
+                        size="sm"
+                        variant="flat"
+                        onPress={handleTogglePrazoNotifications}
+                      >
+                        {deadlineAlertsMuted
+                          ? "Reativar alertas"
+                          : "Silenciar alertas"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </CardHeader>
               <Divider />
               <CardBody className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <Card className="border border-danger/20 bg-danger/5">
+                    <CardBody className="gap-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-danger/80">
+                        Vencidos
+                      </p>
+                      <p className="text-2xl font-semibold text-danger">
+                        {prazosSummary.vencidos}
+                      </p>
+                      <p className="text-xs text-default-400">
+                        Itens que já romperam o vencimento.
+                      </p>
+                    </CardBody>
+                  </Card>
+                  <Card className="border border-warning/20 bg-warning/5">
+                    <CardBody className="gap-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-warning/80">
+                        Vence hoje
+                      </p>
+                      <p className="text-2xl font-semibold text-warning">
+                        {prazosSummary.venceHoje}
+                      </p>
+                      <p className="text-xs text-default-400">
+                        Demandam ação no mesmo dia.
+                      </p>
+                    </CardBody>
+                  </Card>
+                  <Card className="border border-secondary/20 bg-secondary/5">
+                    <CardBody className="gap-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-secondary/80">
+                        Próximos 7 dias
+                      </p>
+                      <p className="text-2xl font-semibold text-secondary">
+                        {prazosSummary.proximos7Dias}
+                      </p>
+                      <p className="text-xs text-default-400">
+                        Radar imediato para o processo.
+                      </p>
+                    </CardBody>
+                  </Card>
+                  <Card className="border border-success/20 bg-success/5">
+                    <CardBody className="gap-1 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success/80">
+                        Concluídos
+                      </p>
+                      <p className="text-2xl font-semibold text-success">
+                        {prazosSummary.concluidos}
+                      </p>
+                      <p className="text-xs text-default-400">
+                        Histórico já tratado neste caso.
+                      </p>
+                    </CardBody>
+                  </Card>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <Input
+                    label="Buscar prazo"
+                    placeholder="Título, fundamento, origem ou responsável"
+                    startContent={<Search className="h-4 w-4 text-default-400" />}
+                    value={prazoSearch}
+                    onValueChange={setPrazoSearch}
+                  />
+                  <SearchableSelect
+                    items={PRAZO_STATUS_FILTER_OPTIONS}
+                    label="Status"
+                    placeholder="Todos os status"
+                    selectedKey={prazoStatusFilter}
+                    onSelectionChange={(key) =>
+                      setPrazoStatusFilter(key ?? "all")
+                    }
+                  />
+                </div>
+
                 {prazosOrdenados.length === 0 ? (
                   <p className="text-sm text-default-500">
                     Nenhum prazo cadastrado.
                   </p>
+                ) : prazosFiltrados.length === 0 ? (
+                  <p className="text-sm text-default-500">
+                    Nenhum prazo corresponde ao filtro aplicado.
+                  </p>
                 ) : (
-                  prazosOrdenados.map((prazo) => {
-                    const vencimento = DateUtils.formatDate(
-                      prazo.dataVencimento,
-                    );
-                    const diasRestantes = DateUtils.diffInDays(
-                      prazo.dataVencimento,
-                      new Date(),
-                    );
-                    const isVencido =
-                      diasRestantes < 0 &&
-                      prazo.status !== ProcessoPrazoStatus.CONCLUIDO;
+                  prazosFiltrados.map((prazo) => {
+                    const isHighlighted = highlightedPrazoId === prazo.id;
+                    const bucket = getPrazoOperationalBucket({
+                      status: prazo.status,
+                      dataVencimento: prazo.dataVencimento,
+                      responsavelId: prazo.responsavelId,
+                    });
 
                     return (
                       <Card
+                        id={`processo-prazo-${prazo.id}`}
                         key={prazo.id}
-                        className="border border-default-200"
+                        className={
+                          isHighlighted
+                            ? "border border-primary bg-primary/5 shadow-lg shadow-primary/10"
+                            : "border border-default-200"
+                        }
                       >
                         <CardBody className="gap-3">
                           <div className="flex items-start justify-between gap-3">
@@ -2099,19 +2343,32 @@ export default function ProcessoDetalhesPage() {
                                 >
                                   {getPrazoStatusLabel(prazo.status)}
                                 </Chip>
+                                <Chip
+                                  color={getPrazoBucketColor(bucket)}
+                                  size="sm"
+                                  variant="flat"
+                                >
+                                  {getPrazoBucketLabel(bucket)}
+                                </Chip>
                                 <span className="text-sm font-semibold text-default-700">
                                   {prazo.titulo}
                                 </span>
-                                <span
-                                  className={`text-xs ${isVencido ? "text-danger" : "text-default-400"}`}
-                                >
-                                  Vencimento: {vencimento}
-                                  {diasRestantes === 0 && " (vence hoje)"}
-                                  {diasRestantes > 0 &&
-                                    ` (em ${diasRestantes} dia${diasRestantes === 1 ? "" : "s"})`}
-                                  {diasRestantes < 0 &&
-                                    ` (${Math.abs(diasRestantes)} dia${Math.abs(diasRestantes) === 1 ? "" : "s"} em atraso)`}
+                                {isHighlighted ? (
+                                  <Chip color="primary" size="sm" variant="bordered">
+                                    Alvo da notificação
+                                  </Chip>
+                                ) : null}
+                              </div>
+                              <div className="text-xs text-default-400">
+                                <span className="font-medium">
+                                  Vencimento:{" "}
+                                  {DateUtils.formatDate(prazo.dataVencimento)}
                                 </span>
+                                {" • "}
+                                {formatPrazoRelativeLabel(
+                                  prazo.dataVencimento,
+                                  prazo.status,
+                                )}
                               </div>
                               {prazo.descricao && (
                                 <p className="text-xs text-default-500">
@@ -2135,6 +2392,15 @@ export default function ProcessoDetalhesPage() {
                                 <p className="text-xs text-default-500">
                                   <strong>Regime:</strong>{" "}
                                   {prazo.regimePrazo.nome}
+                                </p>
+                              )}
+                              {prazo.origemMovimentacao && (
+                                <p className="text-xs text-default-500">
+                                  <strong>Origem:</strong>{" "}
+                                  {prazo.origemMovimentacao.titulo} em{" "}
+                                  {DateUtils.formatDate(
+                                    prazo.origemMovimentacao.dataMovimentacao,
+                                  )}
                                 </p>
                               )}
                             </div>
@@ -2232,81 +2498,35 @@ export default function ProcessoDetalhesPage() {
                   />
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Select
+                    <SearchableSelect
                       items={regimePrazoItems}
                       isLoading={isLoadingRegimesPrazo}
                       label="Regime de prazo"
                       placeholder="Selecione um regime"
-                      selectedKeys={selectedPrazoRegimeKeys}
-                      onSelectionChange={(keys) => {
-                        const [value] = Array.from(keys) as string[];
+                      selectedKey={prazoForm.regimePrazoId || "__none__"}
+                      onSelectionChange={(value) => {
                         setPrazoForm((prev) => ({
                           ...prev,
                           regimePrazoId:
                             value && value !== "__none__" ? value : "",
                         }));
                       }}
-                    >
-                      {(item) => (
-                        <SelectItem
-                          key={item.id}
-                          textValue={
-                            item.isNone
-                              ? item.nome
-                              : `${item.nome} (${item.tipo || ""})`
-                          }
-                        >
-                          {item.isNone ? (
-                            item.nome
-                          ) : (
-                            <>
-                              {item.nome}{" "}
-                              <span className="text-xs text-default-400">
-                                ({item.tipo})
-                              </span>
-                            </>
-                          )}
-                        </SelectItem>
-                      )}
-                    </Select>
+                    />
 
-                    <Select
+                    <SearchableSelect
                       items={responsavelPrazoItems}
                       isLoading={isLoadingResponsaveisPrazo}
                       label="Responsável"
                       placeholder="Selecione o responsável"
-                      selectedKeys={selectedPrazoResponsavelKeys}
-                      onSelectionChange={(keys) => {
-                        const [value] = Array.from(keys) as string[];
+                      selectedKey={prazoForm.responsavelId || "__none__"}
+                      onSelectionChange={(value) => {
                         setPrazoForm((prev) => ({
                           ...prev,
                           responsavelId:
                             value && value !== "__none__" ? value : "",
                         }));
                       }}
-                    >
-                      {(item) => (
-                        <SelectItem
-                          key={item.id}
-                          textValue={
-                            item.isNone
-                              ? item.label
-                              : `${item.label} (${item.role || ""})`
-                          }
-                        >
-                          {item.isNone ? (
-                            item.label
-                          ) : (
-                            <div className="flex flex-col">
-                              <span>{item.label}</span>
-                              <span className="text-xs text-default-400">
-                                {item.email} • {item.role}
-                              </span>
-                            </div>
-                          )}
-                        </SelectItem>
-                      )}
-                    </Select>
+                    />
                   </div>
 
                   <Textarea

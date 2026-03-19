@@ -6,6 +6,7 @@ import {
   getRequestAuditMetadata,
   logOperationalEvent,
 } from "@/app/lib/audit/operational-events";
+import { persistCapturedMovimentacoes } from "@/app/lib/juridical/process-movement-sync";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -20,6 +21,9 @@ type TenantSyncSummary = {
   processosNormalizados: number;
   processosCriados: number;
   processosAtualizados: number;
+  movimentacoesCriadas: number;
+  movimentacoesIgnoradas: number;
+  advogadosNotificados: number;
 };
 
 async function syncTenantComunica(tenantId: string, tenantName: string | null) {
@@ -30,6 +34,9 @@ async function syncTenantComunica(tenantId: string, tenantName: string | null) {
 
   let createdCount = 0;
   let updatedCount = 0;
+  let createdMovimentacoes = 0;
+  let skippedMovimentacoes = 0;
+  let notifiedRecipients = 0;
 
   for (const processo of processos) {
     const persisted = await upsertProcessoFromCapture({
@@ -38,8 +45,19 @@ async function syncTenantComunica(tenantId: string, tenantName: string | null) {
       updateIfExists: true,
     });
 
+    const movimentacaoSummary = await persistCapturedMovimentacoes({
+      tenantId,
+      processoId: persisted.processoId,
+      criadoPorId: null,
+      movimentacoes: processo.movimentacoes,
+      notifyLawyers: persisted.updated,
+    });
+
     if (persisted.created) createdCount += 1;
     if (persisted.updated) updatedCount += 1;
+    createdMovimentacoes += movimentacaoSummary.created;
+    skippedMovimentacoes += movimentacaoSummary.skipped;
+    notifiedRecipients += movimentacaoSummary.notifiedRecipients;
   }
 
   const summary: TenantSyncSummary = {
@@ -49,6 +67,9 @@ async function syncTenantComunica(tenantId: string, tenantName: string | null) {
     processosNormalizados: processos.length,
     processosCriados: createdCount,
     processosAtualizados: updatedCount,
+    movimentacoesCriadas: createdMovimentacoes,
+    movimentacoesIgnoradas: skippedMovimentacoes,
+    advogadosNotificados: notifiedRecipients,
   };
 
   await prisma.auditLog.create({

@@ -58,6 +58,18 @@ function readGitFiles(args) {
   return output.split('\0').filter(Boolean);
 }
 
+function canReadGitIndex() {
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function toSizeLabel(bytes) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -106,6 +118,12 @@ function inspectFile(filePath, source) {
   }
 
   return null;
+}
+
+if (!canReadGitIndex()) {
+  console.log('Repo hygiene audit');
+  console.log('- git metadata indisponível no ambiente atual; auditoria ignorada.');
+  process.exit(0);
 }
 
 const trackedFiles = readGitFiles(['ls-files', '-z']);

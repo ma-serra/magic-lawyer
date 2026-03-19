@@ -12,7 +12,8 @@ import { Tabs, Tab } from "@heroui/tabs";
 import { Spinner } from "@heroui/spinner";
 import { toast } from "@/lib/toast";
 import {
-  User, Mail, Phone, Shield, Settings, BarChart3, UserCheck, Lock, Info, MapPin, Copy, CopyCheck, Briefcase, Save, CreditCard, Building2, PlusIcon, Star, Zap, Bell, ExternalLink, ShieldCheck, } from "lucide-react";
+  User, Mail, Phone, Shield, Settings, BarChart3, UserCheck, Lock, Info, MapPin, Copy, CopyCheck, Briefcase, Save, CreditCard, Building2, PlusIcon, Star, Zap, Bell, ExternalLink, ShieldCheck, Send, Link2, Bot, CheckCircle2, Unplug,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Textarea, Select, SelectItem } from "@heroui/react";
 
@@ -31,6 +32,12 @@ import {
   getDigitalCertificatePolicy,
   listMyDigitalCertificates,
 } from "@/app/actions/digital-certificates";
+import {
+  beginMyTelegramNotificationConnection,
+  confirmMyTelegramNotificationConnection,
+  disconnectMyTelegramNotificationConnection,
+  getMyTelegramNotificationStatus,
+} from "@/app/actions/telegram-notifications";
 import { DigitalCertificatesPanel } from "@/app/(protected)/configuracoes/digital-certificates-panel";
 import { useMeusDadosBancarios, useBancosDisponiveis, useTiposConta, useTiposContaBancaria, useTiposChavePix } from "@/app/hooks/use-dados-bancarios";
 import { DigitalCertificatePolicy } from "@/generated/prisma";
@@ -58,6 +65,15 @@ export function ProfileContent() {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("dados-pessoais");
   const [copied, setCopied] = useState(false);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramConnectionDraft, setTelegramConnectionDraft] = useState<{
+    code: string;
+    deepLink: string | null;
+    botUsername: string | null;
+    providerDisplayName: string | null;
+    providerSource: "TENANT" | "GLOBAL" | null;
+    expiresInSeconds: number;
+  } | null>(null);
   const router = useRouter();
 
   // Buscar dados com SWR
@@ -75,6 +91,10 @@ export function ProfileContent() {
   // Buscar certificados digitais do advogado atual
   const { data: myCertificates = [] } = useSWR(advogado ? "my-digital-certificates" : null, listMyDigitalCertificates);
   const { data: policyResult } = useSWR("digital-certificate-policy", getDigitalCertificatePolicy);
+  const { data: telegramStatusResult, mutate: mutateTelegramStatus } = useSWR(
+    "my-telegram-notification-status",
+    getMyTelegramNotificationStatus,
+  );
   const certificatePolicy =
     policyResult?.success && policyResult.policy
       ? (policyResult.policy as DigitalCertificatePolicy)
@@ -239,6 +259,73 @@ export function ProfileContent() {
     }
   };
 
+  const handleBeginTelegramConnection = async () => {
+    setTelegramBusy(true);
+    try {
+      const result = await beginMyTelegramNotificationConnection();
+
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível iniciar o Telegram.");
+        return;
+      }
+
+      setTelegramConnectionDraft({
+        code: result.code ?? "",
+        deepLink: result.deepLink ?? null,
+        botUsername: result.botUsername ?? null,
+        providerDisplayName: result.providerDisplayName ?? null,
+        providerSource: result.providerSource ?? null,
+        expiresInSeconds: result.expiresInSeconds ?? 0,
+      });
+      toast.success("Código de conexão gerado para o Telegram.");
+      await mutateTelegramStatus();
+    } catch (error) {
+      toast.error("Erro ao iniciar conexão com Telegram.");
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleConfirmTelegramConnection = async () => {
+    setTelegramBusy(true);
+    try {
+      const result = await confirmMyTelegramNotificationConnection();
+
+      if (!result.success) {
+        toast.error(result.error || "Ainda não encontrei sua mensagem no bot.");
+        return;
+      }
+
+      setTelegramConnectionDraft(null);
+      toast.success("Telegram conectado para alertas críticos.");
+      await mutateTelegramStatus();
+    } catch (error) {
+      toast.error("Erro ao confirmar conexão com Telegram.");
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    setTelegramBusy(true);
+    try {
+      const result = await disconnectMyTelegramNotificationConnection();
+
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível desconectar o Telegram.");
+        return;
+      }
+
+      setTelegramConnectionDraft(null);
+      toast.success("Telegram desconectado dos alertas.");
+      await mutateTelegramStatus();
+    } catch (error) {
+      toast.error("Erro ao desconectar Telegram.");
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -263,6 +350,19 @@ export function ProfileContent() {
       : certificatePolicy === DigitalCertificatePolicy.LAWYER
         ? "Certificados por advogado"
         : "Modo misto";
+  const telegramStatus =
+    telegramStatusResult?.success && telegramStatusResult.status
+      ? telegramStatusResult.status
+      : null;
+  const telegramProviderLabel =
+    telegramStatus?.providerDisplayName ||
+    (telegramStatus?.providerSource === "GLOBAL"
+      ? "Magic Radar"
+      : "Telegram do escritório");
+  const telegramProviderTypeLabel =
+    telegramStatus?.providerSource === "GLOBAL"
+      ? "Bot global da plataforma"
+      : "Bot dedicado do escritório";
 
   return (
     <div className="space-y-6">
@@ -400,6 +500,160 @@ export function ProfileContent() {
                   value={profileData.phone || ""}
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                 />
+
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardBody className="gap-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Bot className="h-4 w-4 text-primary" />
+                          <p className="text-sm font-semibold text-white">
+                            Alertas de prazo no Telegram
+                          </p>
+                        </div>
+                        <p className="text-xs text-default-400">
+                          Para prazos no limite, o sistema pode escalar via Telegram, email, notificações in-app e popup obrigatório.
+                        </p>
+                      </div>
+                      <Chip
+                        color={telegramStatus?.connected ? "success" : "warning"}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {telegramStatus?.connected ? "Conectado" : "Não conectado"}
+                      </Chip>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-default-500">
+                          Origem do bot
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-white">
+                          {telegramStatus?.providerReady
+                            ? `${telegramProviderLabel}${
+                                telegramStatus?.botUsername
+                                  ? ` • ${telegramStatus.botUsername}`
+                                  : ""
+                              }`
+                            : "Bot ainda não configurado"}
+                        </p>
+                        <p className="mt-2 text-xs text-default-400">
+                          {telegramStatus?.providerReady
+                            ? telegramProviderTypeLabel
+                            : "A plataforma ainda precisa configurar o bot global do Telegram."}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-default-500">
+                          Vínculo atual
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-white">
+                          {telegramStatus?.chatIdMasked || "Nenhum chat vinculado"}
+                        </p>
+                        <p className="mt-2 text-xs text-default-400">
+                          {telegramStatus?.username
+                            ? `Usuário ${telegramStatus.username}`
+                            : "Conecte seu chat para receber escalonamento crítico de prazo."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {telegramConnectionDraft ? (
+                      <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Código de conexão pronto
+                            </p>
+                            <p className="text-xs text-default-400">
+                              Abra o bot, envie o comando e confirme abaixo.
+                            </p>
+                          </div>
+                          <Chip color="warning" size="sm" variant="flat">
+                            expira em {Math.round(telegramConnectionDraft.expiresInSeconds / 60)} min
+                          </Chip>
+                        </div>
+                        <div className="mt-3 rounded-xl border border-white/10 bg-background/50 p-3">
+                          <p className="text-[11px] uppercase tracking-wide text-default-500">
+                            Comando
+                          </p>
+                          <p className="mt-1 font-mono text-sm text-white">
+                            /start ml_notify_{telegramConnectionDraft.code}
+                          </p>
+                          <p className="mt-2 text-xs text-default-400">
+                            {telegramConnectionDraft.providerSource === "GLOBAL"
+                              ? `Esse vínculo será feito no ${telegramConnectionDraft.providerDisplayName || "bot global da plataforma"}.`
+                              : `Esse vínculo será feito no ${telegramConnectionDraft.providerDisplayName || "bot do escritório"}.`}
+                          </p>
+                        </div>
+                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                          {telegramConnectionDraft.deepLink ? (
+                            <Button
+                              as="a"
+                              className="w-full sm:w-auto"
+                              color="primary"
+                              href={telegramConnectionDraft.deepLink}
+                              rel="noreferrer"
+                              startContent={<ExternalLink className="h-4 w-4" />}
+                              target="_blank"
+                            >
+                              Abrir bot no Telegram
+                            </Button>
+                          ) : null}
+                          <Button
+                            className="w-full sm:w-auto"
+                            color="warning"
+                            isLoading={telegramBusy}
+                            startContent={<CheckCircle2 className="h-4 w-4" />}
+                            variant="flat"
+                            onPress={handleConfirmTelegramConnection}
+                          >
+                            Confirmar conexão
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                      {!telegramStatus?.connected ? (
+                        <Button
+                          className="w-full sm:w-auto"
+                          color="primary"
+                          isDisabled={!telegramStatus?.providerReady}
+                          isLoading={telegramBusy}
+                          startContent={<Link2 className="h-4 w-4" />}
+                          variant="flat"
+                          onPress={handleBeginTelegramConnection}
+                        >
+                          Conectar Telegram
+                        </Button>
+                      ) : (
+                        <Button
+                          className="w-full sm:w-auto"
+                          color="danger"
+                          isLoading={telegramBusy}
+                          startContent={<Unplug className="h-4 w-4" />}
+                          variant="flat"
+                          onPress={handleDisconnectTelegram}
+                        >
+                          Desconectar Telegram
+                        </Button>
+                      )}
+                      {telegramStatus?.connected ? (
+                        <Button
+                          className="w-full sm:w-auto"
+                          isLoading={telegramBusy}
+                          startContent={<Send className="h-4 w-4" />}
+                          variant="bordered"
+                          onPress={handleBeginTelegramConnection}
+                        >
+                          Regenerar vínculo
+                        </Button>
+                      ) : null}
+                    </div>
+                  </CardBody>
+                </Card>
 
                 <Divider />
 

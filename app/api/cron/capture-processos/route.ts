@@ -5,6 +5,7 @@ import {
   logOperationalEvent,
 } from "@/app/lib/audit/operational-events";
 import { capturarProcesso } from "@/app/lib/juridical/capture-service";
+import { persistCapturedMovimentacoes } from "@/app/lib/juridical/process-movement-sync";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import logger from "@/lib/logger";
 import { DigitalCertificateScope } from "@/generated/prisma";
@@ -113,12 +114,23 @@ export async function POST(request: NextRequest) {
             updateIfExists: true,
           });
 
+          const movimentacaoSummary = await persistCapturedMovimentacoes({
+            tenantId: processo.tenantId,
+            processoId: persistido.processoId,
+            criadoPorId: null,
+            movimentacoes: resultado.processo.movimentacoes,
+            notifyLawyers: persistido.updated,
+          });
+
           resultados.push({
             processoId: persistido.processoId,
             numeroProcesso: resultado.processo.numeroProcesso,
             success: true,
             created: persistido.created,
             updated: persistido.updated,
+            createdMovimentacoes: movimentacaoSummary.created,
+            skippedMovimentacoes: movimentacaoSummary.skipped,
+            notifiedRecipients: movimentacaoSummary.notifiedRecipients,
           });
         } else {
           resultados.push({

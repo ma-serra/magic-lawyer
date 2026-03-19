@@ -5,6 +5,7 @@ import {
   logOperationalEvent,
 } from "@/app/lib/audit/operational-events";
 import { capturarProcesso } from "@/app/lib/juridical/capture-service";
+import { persistCapturedMovimentacoes } from "@/app/lib/juridical/process-movement-sync";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import { ProcessoJuridico } from "@/lib/api/juridical/types";
 import logger from "@/lib/logger";
@@ -311,6 +312,9 @@ async function handle(request: NextRequest) {
     const itens = [];
     let createdCount = 0;
     let updatedCount = 0;
+    let createdMovimentacoes = 0;
+    let skippedMovimentacoes = 0;
+    let notifiedRecipients = 0;
 
     for (const processoCapturado of limitedProcessos) {
       const persistido = await upsertProcessoFromCapture({
@@ -321,17 +325,32 @@ async function handle(request: NextRequest) {
         updateIfExists: true,
       });
 
+      const movimentacaoSummary = await persistCapturedMovimentacoes({
+        tenantId,
+        processoId: persistido.processoId,
+        criadoPorId: payload.usuarioId ?? null,
+        movimentacoes: processoCapturado.movimentacoes,
+        notifyLawyers: persistido.updated,
+      });
+
       if (persistido.created) {
         createdCount += 1;
       } else if (persistido.updated) {
         updatedCount += 1;
       }
 
+      createdMovimentacoes += movimentacaoSummary.created;
+      skippedMovimentacoes += movimentacaoSummary.skipped;
+      notifiedRecipients += movimentacaoSummary.notifiedRecipients;
+
       itens.push({
         processoId: persistido.processoId,
         numeroProcesso: processoCapturado.numeroProcesso,
         created: persistido.created,
         updated: persistido.updated,
+        createdMovimentacoes: movimentacaoSummary.created,
+        skippedMovimentacoes: movimentacaoSummary.skipped,
+        notifiedRecipients: movimentacaoSummary.notifiedRecipients,
         tribunal: processoCapturado.tribunalSigla,
         linkConsulta: processoCapturado.linkConsulta,
       });
@@ -355,6 +374,9 @@ async function handle(request: NextRequest) {
       payload: {
         createdCount,
         updatedCount,
+        createdMovimentacoes,
+        skippedMovimentacoes,
+        notifiedRecipients,
         total: itens.length,
         tenantId,
       },
@@ -368,6 +390,9 @@ async function handle(request: NextRequest) {
       truncated: processosCapturados.length > limitedProcessos.length,
       createdCount,
       updatedCount,
+      createdMovimentacoes,
+      skippedMovimentacoes,
+      notifiedRecipients,
       created: Boolean(firstItem?.created),
       updated: Boolean(firstItem?.updated),
       processoId: firstItem?.processoId,

@@ -30,7 +30,7 @@ Se o advogado perder esse prazo, pode prejudicar o cliente!
 - 🔔 Notificação do WhatsApp (aparece quando chega mensagem)
 
 **No nosso caso:**
-- ⏰ Todo dia às 8:00 UTC (5:00 da manhã no Brasil), o sistema verifica automaticamente quais prazos estão vencendo
+- ⏰ A cada 15 minutos, o sistema verifica automaticamente quais prazos estão vencendo
 
 ---
 
@@ -97,7 +97,7 @@ Cliente está protegido
 
 ### Quando o sistema verifica?
 
-**Todo dia às 8:00 UTC** (automaticamente via cron job)
+**A cada 15 minutos** (automaticamente via cron job)
 
 ### O que ele procura?
 
@@ -224,4 +224,3 @@ Não! Já está integrado no sistema. Funciona automaticamente.
 O **Deadline Scheduler** é uma funcionalidade essencial que protege o escritório e os clientes, avisando automaticamente sobre prazos importantes antes que expirem.
 
 É como ter um **assistente virtual** que nunca esquece de checar os prazos! 🤖⚖️
-

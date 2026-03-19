@@ -494,23 +494,32 @@ export function PortalAdvogadoContent() {
     <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 py-8 px-3 sm:px-6">
       <PeoplePageHeader
         actions={
-          isSyncRunning || isWaitingCaptcha ? (
-            <Chip
-              color={isWaitingCaptcha ? "warning" : "primary"}
-              startContent={
-                isSyncRunning ? (
-                  <Spinner color="primary" size="sm" />
-                ) : (
-                  <ShieldAlert className="h-4 w-4" />
-                )
-              }
-              variant="flat"
+          <div className="flex flex-wrap items-center gap-2">
+            {isSyncRunning || isWaitingCaptcha ? (
+              <Chip
+                color={isWaitingCaptcha ? "warning" : "primary"}
+                startContent={
+                  isSyncRunning ? (
+                    <Spinner color="primary" size="sm" />
+                  ) : (
+                    <ShieldAlert className="h-4 w-4" />
+                  )
+                }
+                variant="flat"
+              >
+                {isWaitingCaptcha
+                  ? "Sincronização pausada por captcha"
+                  : "Sincronização em andamento no background"}
+              </Chip>
+            ) : null}
+            <Button
+              endContent={<ExternalLink className="h-4 w-4" />}
+              variant="bordered"
+              onPress={() => router.push("/portal-advogado/operacoes")}
             >
-              {isWaitingCaptcha
-                ? "Sincronização pausada por captcha"
-                : "Sincronização em andamento no background"}
-            </Chip>
-          ) : undefined
+              Operações jurídicas
+            </Button>
+          </div>
         }
         description="Operação de captura de processos por OAB, monitoramento da sincronização e acesso rápido aos portais dos tribunais."
         tag="Atividade juridica"

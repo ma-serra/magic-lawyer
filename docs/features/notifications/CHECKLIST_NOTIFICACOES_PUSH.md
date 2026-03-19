@@ -55,7 +55,7 @@
 - [x] **Criar gateway WebSocket/Realtime integrando com Ably (ou solução escolhida)**.
   - **Critério**: [Gateway Ably implementado com autenticação e reconexão automática]
 - [x] **Implementar serviço de agendamento para notificações de prazo (cron + timezone)**.
-  - **Critério**: [Cron job implementado com suporte a timezone, alertas D-7, D-3, D-1, H-2] ✅ **CONCLUÍDO** - `DeadlineSchedulerService` implementado e cron job `/api/cron/check-deadlines` criado (executa diariamente às 8:00 UTC)
+  - **Critério**: [Cron job implementado com suporte a timezone, alertas D-7, D-3, D-1, H-2] ✅ **CONCLUÍDO** - `DeadlineSchedulerService` implementado e cron job `/api/cron/check-deadlines` criado (executa a cada 15 minutos)
 - [x] **Implementar serviço de escuta de pagamentos (webhooks Asaas) gerando eventos**.
   - **Critério**: [Webhook Asaas implementado, eventos de pagamento disparados automaticamente] ✅ **CONCLUÍDO** - `AsaasWebhookService` implementado e integrado no webhook existente `/api/webhooks/asaas`
 - [x] **Implementar rastreio de leitura (marcações read/unread) por usuário**.

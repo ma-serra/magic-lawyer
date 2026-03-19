@@ -22,6 +22,7 @@ export type JuridicalAiDockActionId =
   | "analisar-documento"
   | "pesquisar-jurisprudencia"
   | "validar-citacoes"
+  | "calcular-sentenca"
   | "resumir-processo"
   | "estrategia-caso"
   | "governanca-ia"
@@ -298,6 +299,38 @@ function buildTenantActions(context: JuridicalAiDockContext): JuridicalAiDockAct
       ],
     },
     {
+      id: "calcular-sentenca",
+      shortLabel: "Cálc",
+      title: "Calcular sentença",
+      tooltip:
+        "Ler dispositivo, separar condenações, indexadores e dependências do memorial de cálculo.",
+      description:
+        "Fluxo premium para decisões cíveis com condenação, obrigação de fazer, danos morais, restituição e atualização monetária.",
+      rolloutStage: "NEXT",
+      outcomes: [
+        "Extrair itens condenatórios e improcedências.",
+        "Classificar correção, juros e termo inicial.",
+        "Gerar memorial preliminar e lista do que ainda depende de dado humano.",
+      ],
+      quickLinks: [
+        {
+          label: "Documentos",
+          href: "/documentos",
+          description: "Selecionar a sentença ou decisão que será lida pela IA.",
+        },
+        {
+          label: "Financeiro",
+          href: "/financeiro",
+          description: "Cruzar o resultado com a leitura financeira e recebíveis do caso.",
+        },
+        {
+          label: "Processos",
+          href: "/processos",
+          description: "Voltar ao processo para anexar memorial, peça ou providência seguinte.",
+        },
+      ],
+    },
+    {
       id: "resumir-processo",
       shortLabel: "Resumo",
       title: "Resumir processo",
@@ -358,17 +391,20 @@ function buildTenantActions(context: JuridicalAiDockContext): JuridicalAiDockAct
     workspace: [
       "nova-peca",
       "analisar-documento",
+      "calcular-sentenca",
       "pesquisar-jurisprudencia",
       "resumir-processo",
     ],
     processos: [
       "nova-peca",
+      "calcular-sentenca",
       "resumir-processo",
       "estrategia-caso",
       "validar-citacoes",
     ],
     documentos: [
       "analisar-documento",
+      "calcular-sentenca",
       "nova-peca",
       "validar-citacoes",
       "estrategia-caso",
@@ -588,6 +624,8 @@ export function getJuridicalAiWorkspaceTabForAction(
       return "pesquisa";
     case "validar-citacoes":
       return "citacoes";
+    case "calcular-sentenca":
+      return "calculos";
     case "resumir-processo":
     case "estrategia-caso":
       return "pergunta";
@@ -614,6 +652,8 @@ export function getJuridicalAiTaskForAction(
       return "JURISPRUDENCE_BRIEF";
     case "validar-citacoes":
       return "CITATION_VALIDATION";
+    case "calcular-sentenca":
+      return "SENTENCE_CALCULATION";
     case "resumir-processo":
       return "PROCESS_SUMMARY";
     case "estrategia-caso":

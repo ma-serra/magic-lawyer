@@ -182,7 +182,7 @@ export class AsaasWebhookService {
   ): {
     type: string;
     urgency: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
-    channels: Array<"REALTIME" | "EMAIL" | "PUSH">;
+    channels: Array<"REALTIME" | "EMAIL" | "TELEGRAM" | "PUSH">;
     payload: Record<string, any>;
   } | null {
     const basePayload = {

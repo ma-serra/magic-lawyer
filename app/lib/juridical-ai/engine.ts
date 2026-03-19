@@ -1,6 +1,7 @@
 import type {
   JuridicalAiCitationCheck,
   JuridicalAiResearchPlan,
+  JuridicalAiSentenceCalculationResult,
   JuridicalAiSourceLead,
   JuridicalAiTaskKey,
 } from "@/app/lib/juridical-ai/types";
@@ -94,6 +95,7 @@ type LocalGenericResult = {
   bullets: string[];
   citationChecks?: JuridicalAiCitationCheck[];
   researchPlan?: JuridicalAiResearchPlan;
+  sentenceCalculation?: JuridicalAiSentenceCalculationResult;
   sourceLeads?: JuridicalAiSourceLead[];
   confidenceScore: number;
 };
@@ -806,6 +808,260 @@ function buildDocumentAnalysis(input: BaseEngineInput): LocalAnalysisResult {
   };
 }
 
+function extractSentenceSegments(text: string) {
+  const source = normalizeText(text);
+  if (!source) {
+    return [];
+  }
+
+  const matches = Array.from(
+    source.matchAll(/(?:^|\n)\s*([a-z])\)\s*([\s\S]*?)(?=(?:\n\s*[a-z]\)\s)|$)/gi),
+  ).map((match) => normalizeReference(match[2] || ""));
+
+  if (matches.length > 0) {
+    return matches;
+  }
+
+  return source
+    .split(/\n{2,}/)
+    .map((item) => normalizeReference(item))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function detectSentenceCalculationNature(
+  segment: string,
+): JuridicalAiSentenceCalculationResult["condemnedItems"][number]["nature"] {
+  const normalized = segment.toLowerCase();
+
+  if (/improcedent/.test(normalized)) {
+    return "IMPROCEDENCIA";
+  }
+  if (/danos?\s+morais|indeniza/.test(normalized)) {
+    return "INDENIZACAO";
+  }
+  if (/restitui|devolu[cç][aã]o|repeti[cç][aã]o.*dobro/.test(normalized)) {
+    return "RESTITUICAO";
+  }
+  if (/multa/.test(normalized) && /di[aá]ria/.test(normalized)) {
+    return "MULTA";
+  }
+  if (/liberad[ao]|levantamento|depositad[ao]\s+em\s+ju[ií]zo/.test(normalized)) {
+    return "LIBERACAO_DE_VALOR";
+  }
+  if (
+    /determinar|declara|refaturamento|obrig|providencie|apresente|forne[cç]a|cumprir/.test(
+      normalized,
+    )
+  ) {
+    return "OBRIGACAO_DE_FAZER";
+  }
+
+  return "OUTRO";
+}
+
+function extractAmountMentioned(segment: string) {
+  const match = segment.match(/R\$\s*[\d\.\,]+/i);
+  return match ? normalizeReference(match[0]) : null;
+}
+
+function extractSentenceCorrectionRule(segment: string) {
+  const normalized = segment.toLowerCase();
+
+  if (/ipca-?e/.test(normalized)) {
+    return "IPCA-E";
+  }
+  if (/ipca/.test(normalized)) {
+    return "IPCA";
+  }
+  if (/inpc/.test(normalized)) {
+    return "INPC";
+  }
+  if (/selic/.test(normalized) && !/juros\s+de\s+mora/.test(normalized)) {
+    return "SELIC";
+  }
+
+  return "Confirmar índice na sentença";
+}
+
+function extractSentenceInterestRule(segment: string) {
+  const normalized = segment.toLowerCase();
+
+  if (/juros\s+de\s+mora.*selic/.test(normalized) && /deduzid[oa]\s+o\s+ipca/.test(normalized)) {
+    return "SELIC, deduzido o IPCA";
+  }
+  if (/juros\s+de\s+mora.*selic/.test(normalized)) {
+    return "SELIC";
+  }
+  if (/juros\s+de\s+mora/.test(normalized)) {
+    return "Juros de mora conforme sentença";
+  }
+  if (/improcedent/.test(normalized)) {
+    return "Não aplicável";
+  }
+
+  return "Confirmar juros aplicáveis";
+}
+
+function extractSentenceStartTrigger(segment: string) {
+  const normalized = segment.toLowerCase();
+
+  if (/pagamento\s+indevido/.test(normalized)) {
+    return "Data do pagamento indevido";
+  }
+  if (/a\s+partir\s+da\s+cita[cç][aã]o|a\s+contar\s+da\s+cita[cç][aã]o/.test(normalized)) {
+    return "Citação";
+  }
+  if (/desde\s+a\s+data\s+da\s+presente\s+senten[cç]a|desde\s+a\s+presente\s+senten[cç]a|arbitramento/.test(normalized)) {
+    return "Sentença / arbitramento";
+  }
+  if (/prazo\s+de\s+\d+/.test(normalized)) {
+    const match = segment.match(/prazo\s+de\s+[^,.;]+/i);
+    return match ? normalizeReference(match[0]) : "Prazo judicial fixado";
+  }
+
+  return "Confirmar termo inicial";
+}
+
+function extractSentenceDependencies(segment: string) {
+  const normalized = segment.toLowerCase();
+  const dependencies: string[] = [];
+
+  if (/m[eé]dia\s+de\s+consumo\s+dos\s+12\s+meses/.test(normalized)) {
+    dependencies.push("Histórico de consumo dos 12 meses anteriores para refaturamento.");
+  }
+  if (/depositad[ao]\s+em\s+ju[ií]zo|levantamento/.test(normalized)) {
+    dependencies.push("Extrato do depósito judicial e limite liberável apurado.");
+  }
+  if (/pagamento\s+indevido/.test(normalized)) {
+    dependencies.push("Comprovantes de pagamento e datas de desembolso.");
+  }
+  if (/valor\s+que\s+vier\s+a\s+ser\s+apurado|limite\s+do\s+valor\s+que\s+vier\s+a\s+ser\s+apurado/.test(normalized)) {
+    dependencies.push("Apuração complementar do valor-base antes da liquidação.");
+  }
+  if (/multa\s+di[aá]ria/.test(normalized)) {
+    dependencies.push("Data de intimação, data de cumprimento e teto efetivo da multa.");
+  }
+  if (/danos?\s+morais|indeniza/.test(normalized) && !/R\$\s*[\d\.\,]+/i.test(segment)) {
+    dependencies.push("Valor arbitrado da indenização ou critério fixado em sentença.");
+  }
+
+  return dependencies;
+}
+
+function buildSentenceCalculation(input: BaseEngineInput): JuridicalAiSentenceCalculationResult {
+  const sourceText = [
+    normalizeText(input.documentText),
+    normalizeText(input.question),
+    normalizeText(input.objective),
+    normalizeText(input.notes),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const segments = extractSentenceSegments(sourceText);
+  const condemnedItems = segments.map((segment) => {
+    const nature = detectSentenceCalculationNature(segment);
+    const amountMentioned = extractAmountMentioned(segment);
+    const dependencies = extractSentenceDependencies(segment);
+    const automationStatus: JuridicalAiSentenceCalculationResult["condemnedItems"][number]["automationStatus"] =
+      nature === "IMPROCEDENCIA"
+        ? "MANUAL"
+        : dependencies.length > 0
+          ? "DEPENDENTE_DE_DADOS"
+          : amountMentioned
+            ? "AUTO_ESTIMAVEL"
+            : nature === "OBRIGACAO_DE_FAZER"
+              ? "MANUAL"
+              : "DEPENDENTE_DE_DADOS";
+
+    return {
+      label:
+        nature === "OBRIGACAO_DE_FAZER"
+          ? "Obrigação de fazer / ajuste operacional"
+          : nature === "MULTA"
+            ? "Multa diária / coercitiva"
+            : nature === "LIBERACAO_DE_VALOR"
+              ? "Liberação de valor depositado"
+              : nature === "RESTITUICAO"
+                ? "Restituição / repetição de indébito"
+                : nature === "INDENIZACAO"
+                  ? "Indenização"
+                  : nature === "IMPROCEDENCIA"
+                    ? "Pedido improcedente"
+                    : "Comando da sentença",
+      nature,
+      basis: segment,
+      amountMentioned,
+      correctionRule: extractSentenceCorrectionRule(segment),
+      interestRule: extractSentenceInterestRule(segment),
+      startTrigger: extractSentenceStartTrigger(segment),
+      dependencies,
+      automationStatus,
+    };
+  });
+
+  const calculableItems = condemnedItems
+    .filter((item) => item.automationStatus === "AUTO_ESTIMAVEL")
+    .map((item) => `${item.label}${item.amountMentioned ? ` • ${item.amountMentioned}` : ""}`);
+
+  const requiredInputs = Array.from(
+    new Set(
+      condemnedItems.flatMap((item) => item.dependencies).filter(Boolean),
+    ),
+  );
+
+  const manualReviewItems = [
+    ...condemnedItems
+      .filter((item) => item.nature === "OBRIGACAO_DE_FAZER" || item.nature === "IMPROCEDENCIA")
+      .map((item) => `${item.label}: exige leitura jurídica e validação operacional.`),
+    ...condemnedItems
+      .filter((item) => item.automationStatus !== "AUTO_ESTIMAVEL")
+      .map((item) => `${item.label}: revisar base de cálculo, índice e termo inicial.`),
+  ].slice(0, 8);
+
+  const favorableCount = condemnedItems.filter((item) => item.nature !== "IMPROCEDENCIA").length;
+  const outcomeSummary =
+    condemnedItems.length > 0
+      ? `Sentença com ${favorableCount} item(ns) potencialmente executáveis e ${condemnedItems.filter((item) => item.nature === "IMPROCEDENCIA").length} item(ns) improcedentes ou sem liquidação automática.`
+      : "Não foi possível extrair itens condenatórios confiáveis do texto informado.";
+
+  const memorialDraft = [
+    "## Memorial preliminar de cálculo",
+    condemnedItems.length > 0
+      ? condemnedItems
+          .map((item, index) =>
+            [
+              `### ${index + 1}. ${item.label}`,
+              `- Natureza: ${item.nature}`,
+              `- Base da sentença: ${item.basis}`,
+              `- Valor mencionado: ${item.amountMentioned ?? "Nao indicado na sentença"}`,
+              `- Correção monetária: ${item.correctionRule}`,
+              `- Juros: ${item.interestRule}`,
+              `- Termo inicial: ${item.startTrigger}`,
+              `- Status de automação: ${item.automationStatus}`,
+              item.dependencies.length > 0
+                ? `- Dependências: ${item.dependencies.join(" | ")}`
+                : "- Dependências: nenhuma dependência adicional explícita detectada",
+            ].join("\n"),
+          )
+          .join("\n\n")
+      : "- Sentença sem itens estruturados suficientes para memorial preliminar.",
+    requiredInputs.length > 0
+      ? `\n## Insumos ainda obrigatórios\n${requiredInputs.map((item) => `- ${item}`).join("\n")}`
+      : "\n## Insumos ainda obrigatórios\n- Nenhum insumo adicional explícito detectado para a estimativa inicial.",
+  ].join("\n\n");
+
+  return {
+    outcomeSummary,
+    condemnedItems,
+    requiredInputs,
+    calculableItems,
+    manualReviewItems,
+    memorialDraft,
+  };
+}
+
 function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
   const process = input.processContext;
   const citationChecks =
@@ -817,6 +1073,10 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
       : undefined;
   const researchPlan =
     input.taskKey === "JURISPRUDENCE_BRIEF" ? buildResearchPlan(input) : undefined;
+  const sentenceCalculation =
+    input.taskKey === "SENTENCE_CALCULATION"
+      ? buildSentenceCalculation(input)
+      : undefined;
   const sourceLeads = buildSourceLeads(input, citationChecks, researchPlan);
   const contextBullets = [
     process?.numero ? `Processo ${process.numero}` : null,
@@ -839,6 +1099,10 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
       "Plano inicial de atuacao estruturado com riscos e proxima providencia.",
     JURISPRUDENCE_BRIEF:
       "Briefing de pesquisa jurisprudencial preparado para busca externa controlada.",
+    SENTENCE_CALCULATION:
+      sentenceCalculation && sentenceCalculation.condemnedItems.length > 0
+        ? "Memorial preliminar da sentença estruturado com itens condenatórios, índices e dependências."
+        : "O texto ainda não trouxe material suficiente para estruturar cálculo de sentença com segurança.",
     PIECE_DRAFTING:
       "Rascunho inicial preparado.",
     DOCUMENT_ANALYSIS:
@@ -887,6 +1151,17 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
             "Validar cada precedente antes de usar em argumento escrito.",
           ]),
     ],
+    SENTENCE_CALCULATION:
+      sentenceCalculation && sentenceCalculation.condemnedItems.length > 0
+        ? sentenceCalculation.condemnedItems.slice(0, 5).map((item) => {
+            const amount = item.amountMentioned ? ` • ${item.amountMentioned}` : "";
+            return `${item.label}${amount} • ${item.correctionRule} • ${item.startTrigger}`;
+          })
+        : [
+            "Cole o dispositivo da sentença ou os comandos condenatórios principais.",
+            "Confirme índices, juros e termo inicial antes de liquidar.",
+            "Use o memorial preliminar apenas como apoio técnico, com revisão humana obrigatória.",
+          ],
     PIECE_DRAFTING: [],
     DOCUMENT_ANALYSIS: [],
   };
@@ -901,6 +1176,8 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
           ? "## Leitura executiva do caso"
           : input.taskKey === "CITATION_VALIDATION"
             ? "## Validacao inicial"
+            : input.taskKey === "SENTENCE_CALCULATION"
+              ? "## Memorial preliminar da sentença"
             : "## Resposta estruturada";
 
   return {
@@ -921,6 +1198,19 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
             `- Tribunais alvo: ${researchPlan.targetCourts.join(", ") || "definir"}`,
           ].join("\n")
         : null,
+      sentenceCalculation
+        ? [
+            "\n## Síntese do cálculo",
+            `- ${sentenceCalculation.outcomeSummary}`,
+            sentenceCalculation.calculableItems.length > 0
+              ? `- Itens com estimativa inicial: ${sentenceCalculation.calculableItems.join(" | ")}`
+              : "- Nenhum item está pronto para estimativa automática sem dados adicionais.",
+            sentenceCalculation.requiredInputs.length > 0
+              ? `- Insumos pendentes: ${sentenceCalculation.requiredInputs.join(" | ")}`
+              : "- Sem insumos pendentes explícitos para a leitura inicial.",
+            "\n" + sentenceCalculation.memorialDraft,
+          ].join("\n")
+        : null,
       input.notes ? `\n## Observacoes\n${input.notes}` : null,
     ]
       .filter(Boolean)
@@ -928,10 +1218,15 @@ function buildGenericResult(input: BaseEngineInput): LocalGenericResult {
     bullets,
     citationChecks,
     researchPlan,
+    sentenceCalculation,
     sourceLeads,
     confidenceScore:
       input.taskKey === "JURISPRUDENCE_BRIEF"
         ? 68
+        : input.taskKey === "SENTENCE_CALCULATION"
+          ? sentenceCalculation && sentenceCalculation.condemnedItems.length > 0
+            ? 79
+            : 55
         : input.taskKey === "CITATION_VALIDATION"
           ? citationChecks && citationChecks.some((item) => item.status === "FRAGIL")
             ? 58
