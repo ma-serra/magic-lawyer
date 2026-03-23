@@ -12,7 +12,7 @@ import { Tabs, Tab } from "@heroui/tabs";
 import { Spinner } from "@heroui/spinner";
 import { toast } from "@/lib/toast";
 import {
-  User, Mail, Phone, Shield, Settings, BarChart3, UserCheck, Lock, Info, MapPin, Copy, CopyCheck, Briefcase, Save, CreditCard, Building2, PlusIcon, Star, Zap, Bell, ExternalLink, ShieldCheck, Send, Link2, Bot, CheckCircle2, Unplug,
+  User, Mail, Phone, Shield, Settings, BarChart3, UserCheck, Lock, Info, MapPin, Copy, CopyCheck, Briefcase, Save, CreditCard, Building2, PlusIcon, Star, Zap, Bell, ExternalLink, ShieldCheck, Send, Link2, CheckCircle2, Unplug, MessageSquare, Smartphone,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Textarea, Select, SelectItem } from "@heroui/react";
@@ -39,7 +39,7 @@ import {
   getMyTelegramNotificationStatus,
 } from "@/app/actions/telegram-notifications";
 import { DigitalCertificatesPanel } from "@/app/(protected)/configuracoes/digital-certificates-panel";
-import { useMeusDadosBancarios, useBancosDisponiveis, useTiposConta, useTiposContaBancaria, useTiposChavePix } from "@/app/hooks/use-dados-bancarios";
+import { useMeusDadosBancarios } from "@/app/hooks/use-dados-bancarios";
 import { DigitalCertificatePolicy } from "@/generated/prisma";
 
 const especialidadeLabels: Record<string, string> = {
@@ -81,12 +81,7 @@ export function ProfileContent() {
   const { data: statsResult } = useSWR("user-stats", getUserStats);
   const { advogado, mutate: mutateAdvogado } = useCurrentUserAdvogado();
   const { ufs } = useEstadosBrasil();
-  const { dadosBancarios: minhasContas, mutate: mutateContas } = useMeusDadosBancarios();
-
-  const { bancos } = useBancosDisponiveis();
-  const { tipos: tiposConta } = useTiposConta();
-  const { tipos: tiposContaBancaria } = useTiposContaBancaria();
-  const { tipos: tiposChavePix } = useTiposChavePix();
+  const { dadosBancarios: minhasContas } = useMeusDadosBancarios();
 
   // Buscar certificados digitais do advogado atual
   const { data: myCertificates = [] } = useSWR(advogado ? "my-digital-certificates" : null, listMyDigitalCertificates);
@@ -371,7 +366,7 @@ export function ProfileContent() {
         <CardBody className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 p-4 sm:p-6">
           <AvatarUpload currentAvatarUrl={profile.avatarUrl} userName={profile.firstName || profile.email} onAvatarChange={handleAvatarChange} />
           <div className="flex-1 text-center sm:text-left">
-            <h1 className="text-xl sm:text-2xl font-bold text-white">{profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : profile.email}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">{profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : profile.email}</h1>
             <p className="text-sm sm:text-base text-default-400">{profile.email}</p>
             <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
               <Chip color="primary" size="sm" variant="flat">
@@ -396,28 +391,28 @@ export function ProfileContent() {
           <Card className="border border-primary/20 bg-linear-to-br from-primary/10 to-primary/5 backdrop-blur-xl">
             <CardBody className="text-center p-4">
               <BarChart3 className="w-8 h-8 mx-auto mb-2 text-primary" />
-              <p className="text-2xl font-bold text-white">{stats.totalProcessos}</p>
+              <p className="text-2xl font-bold text-foreground">{stats.totalProcessos}</p>
               <p className="text-sm text-primary-300">Processos</p>
             </CardBody>
           </Card>
           <Card className="border border-secondary/20 bg-linear-to-br from-secondary/10 to-secondary/5 backdrop-blur-xl">
             <CardBody className="text-center p-4">
               <User className="w-8 h-8 mx-auto mb-2 text-secondary" />
-              <p className="text-2xl font-bold text-white">{stats.totalDocumentos}</p>
+              <p className="text-2xl font-bold text-foreground">{stats.totalDocumentos}</p>
               <p className="text-sm text-secondary-300">Documentos</p>
             </CardBody>
           </Card>
           <Card className="border border-success/20 bg-linear-to-br from-success/10 to-success/5 backdrop-blur-xl">
             <CardBody className="text-center p-4">
               <Settings className="w-8 h-8 mx-auto mb-2 text-success" />
-              <p className="text-2xl font-bold text-white">{stats.totalEventos}</p>
+              <p className="text-2xl font-bold text-foreground">{stats.totalEventos}</p>
               <p className="text-sm text-success-300">Eventos</p>
             </CardBody>
           </Card>
           <Card className="border border-warning/20 bg-linear-to-br from-warning/10 to-warning/5 backdrop-blur-xl">
             <CardBody className="text-center p-4">
               <Shield className="w-8 h-8 mx-auto mb-2 text-warning" />
-              <p className="text-2xl font-bold text-white">{stats.totalTarefas}</p>
+              <p className="text-2xl font-bold text-foreground">{stats.totalTarefas}</p>
               <p className="text-sm text-warning-300">Tarefas</p>
             </CardBody>
           </Card>
@@ -432,13 +427,13 @@ export function ProfileContent() {
             className="w-full"
             color="primary"
             selectedKey={activeTab}
-            variant="bordered"
+            variant="underlined"
             placement="top"
             classNames={{
               base: "w-full",
-              tabList: "gap-2 w-full border-b border-divider overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
-              tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0",
-              tabContent: "text-sm font-medium",
+              tabList: "w-full justify-start gap-2 overflow-x-auto flex-nowrap px-3 sm:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+              tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0 outline-none data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/35 data-[focus-visible=true]:ring-offset-0",
+              tabContent: "text-sm font-medium whitespace-nowrap",
               panel: "w-full",
             }}
             onSelectionChange={(key) => setActiveTab(key as string)}
@@ -503,16 +498,13 @@ export function ProfileContent() {
 
                 <Card className="border border-primary/20 bg-primary/5">
                   <CardBody className="gap-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Bot className="h-4 w-4 text-primary" />
-                          <p className="text-sm font-semibold text-white">
-                            Alertas de prazo no Telegram
-                          </p>
-                        </div>
-                        <p className="text-xs text-default-400">
-                          Para prazos no limite, o sistema pode escalar via Telegram, email, notificações in-app e popup obrigatório.
+                        <p className="text-sm font-semibold text-foreground">
+                          Centro de alertas e escalonamento
+                        </p>
+                        <p className="text-xs text-default-500">
+                          Gerencie Telegram, email, in-app, popup obrigatório e canais futuros na aba <strong>Notificações</strong>.
                         </p>
                       </div>
                       <Chip
@@ -520,16 +512,16 @@ export function ProfileContent() {
                         size="sm"
                         variant="flat"
                       >
-                        {telegramStatus?.connected ? "Conectado" : "Não conectado"}
+                        Telegram {telegramStatus?.connected ? "conectado" : "pendente"}
                       </Chip>
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-default-500">
-                          Origem do bot
+                          Bot ativo
                         </p>
-                        <p className="mt-1 text-sm font-medium text-white">
+                        <p className="mt-1 text-sm font-medium text-foreground">
                           {telegramStatus?.providerReady
                             ? `${telegramProviderLabel}${
                                 telegramStatus?.botUsername
@@ -538,119 +530,33 @@ export function ProfileContent() {
                               }`
                             : "Bot ainda não configurado"}
                         </p>
-                        <p className="mt-2 text-xs text-default-400">
-                          {telegramStatus?.providerReady
-                            ? telegramProviderTypeLabel
-                            : "A plataforma ainda precisa configurar o bot global do Telegram."}
-                        </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/40 p-3">
+                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-default-500">
-                          Vínculo atual
+                          Vínculo Telegram
                         </p>
-                        <p className="mt-1 text-sm font-medium text-white">
+                        <p className="mt-1 text-sm font-medium text-foreground">
                           {telegramStatus?.chatIdMasked || "Nenhum chat vinculado"}
-                        </p>
-                        <p className="mt-2 text-xs text-default-400">
-                          {telegramStatus?.username
-                            ? `Usuário ${telegramStatus.username}`
-                            : "Conecte seu chat para receber escalonamento crítico de prazo."}
                         </p>
                       </div>
                     </div>
 
-                    {telegramConnectionDraft ? (
-                      <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-white">
-                              Código de conexão pronto
-                            </p>
-                            <p className="text-xs text-default-400">
-                              Abra o bot, envie o comando e confirme abaixo.
-                            </p>
-                          </div>
-                          <Chip color="warning" size="sm" variant="flat">
-                            expira em {Math.round(telegramConnectionDraft.expiresInSeconds / 60)} min
-                          </Chip>
-                        </div>
-                        <div className="mt-3 rounded-xl border border-white/10 bg-background/50 p-3">
-                          <p className="text-[11px] uppercase tracking-wide text-default-500">
-                            Comando
-                          </p>
-                          <p className="mt-1 font-mono text-sm text-white">
-                            /start ml_notify_{telegramConnectionDraft.code}
-                          </p>
-                          <p className="mt-2 text-xs text-default-400">
-                            {telegramConnectionDraft.providerSource === "GLOBAL"
-                              ? `Esse vínculo será feito no ${telegramConnectionDraft.providerDisplayName || "bot global da plataforma"}.`
-                              : `Esse vínculo será feito no ${telegramConnectionDraft.providerDisplayName || "bot do escritório"}.`}
-                          </p>
-                        </div>
-                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                          {telegramConnectionDraft.deepLink ? (
-                            <Button
-                              as="a"
-                              className="w-full sm:w-auto"
-                              color="primary"
-                              href={telegramConnectionDraft.deepLink}
-                              rel="noreferrer"
-                              startContent={<ExternalLink className="h-4 w-4" />}
-                              target="_blank"
-                            >
-                              Abrir bot no Telegram
-                            </Button>
-                          ) : null}
-                          <Button
-                            className="w-full sm:w-auto"
-                            color="warning"
-                            isLoading={telegramBusy}
-                            startContent={<CheckCircle2 className="h-4 w-4" />}
-                            variant="flat"
-                            onPress={handleConfirmTelegramConnection}
-                          >
-                            Confirmar conexão
-                          </Button>
-                        </div>
-                      </div>
-                    ) : null}
-
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                      {!telegramStatus?.connected ? (
-                        <Button
-                          className="w-full sm:w-auto"
-                          color="primary"
-                          isDisabled={!telegramStatus?.providerReady}
-                          isLoading={telegramBusy}
-                          startContent={<Link2 className="h-4 w-4" />}
-                          variant="flat"
-                          onPress={handleBeginTelegramConnection}
-                        >
-                          Conectar Telegram
-                        </Button>
-                      ) : (
-                        <Button
-                          className="w-full sm:w-auto"
-                          color="danger"
-                          isLoading={telegramBusy}
-                          startContent={<Unplug className="h-4 w-4" />}
-                          variant="flat"
-                          onPress={handleDisconnectTelegram}
-                        >
-                          Desconectar Telegram
-                        </Button>
-                      )}
-                      {telegramStatus?.connected ? (
-                        <Button
-                          className="w-full sm:w-auto"
-                          isLoading={telegramBusy}
-                          startContent={<Send className="h-4 w-4" />}
-                          variant="bordered"
-                          onPress={handleBeginTelegramConnection}
-                        >
-                          Regenerar vínculo
-                        </Button>
-                      ) : null}
+                      <Button
+                        className="w-full sm:w-auto"
+                        color="primary"
+                        variant="flat"
+                        onPress={() => setActiveTab("notificacoes")}
+                      >
+                        Gerenciar canais de notificação
+                      </Button>
+                      <Button
+                        className="w-full sm:w-auto"
+                        variant="bordered"
+                        onPress={() => router.push("/usuario/preferencias-notificacoes")}
+                      >
+                        Preferências por evento
+                      </Button>
                     </div>
                   </CardBody>
                 </Card>
@@ -929,7 +835,7 @@ export function ProfileContent() {
                         <Settings className="w-4 h-4 text-warning" />
                         <p className="text-sm font-medium text-warning-300">Último Login</p>
                       </div>
-                      <p className="text-white font-medium">{formatDate(profile.lastLoginAt)}</p>
+                      <p className="text-foreground font-medium">{formatDate(profile.lastLoginAt)}</p>
                     </div>
                   </div>
 
@@ -939,7 +845,7 @@ export function ProfileContent() {
                         <User className="w-4 h-4 text-secondary" />
                         <p className="text-sm font-medium text-secondary-300">Membro desde</p>
                       </div>
-                      <p className="text-white font-medium">{formatDate(profile.createdAt)}</p>
+                      <p className="text-foreground font-medium">{formatDate(profile.createdAt)}</p>
                     </div>
 
                     {profile.tenant && (
@@ -962,7 +868,7 @@ export function ProfileContent() {
                           {copied ? <CopyCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-default-400" />}
                         </button>
                       </div>
-                      <p className="text-white font-mono text-xs">{profile.id}</p>
+                      <p className="text-foreground font-mono text-xs">{profile.id}</p>
                     </div>
                   </div>
                 </div>
@@ -988,7 +894,7 @@ export function ProfileContent() {
                     <h3 className="text-base sm:text-lg font-semibold">Minhas Contas Bancárias</h3>
                   </div>
                   <Button color="primary" size="sm" className="w-full sm:w-auto flex-shrink-0" startContent={<PlusIcon className="w-4 h-4" />} onPress={() => setActiveTab("dados-bancarios")}>
-                    <a className="text-white" href="/financeiro/dados-bancarios">
+                    <a className="text-foreground" href="/financeiro/dados-bancarios">
                       <span className="hidden sm:inline">Gerenciar Contas</span>
                       <span className="sm:hidden">Gerenciar</span>
                     </a>
@@ -997,8 +903,8 @@ export function ProfileContent() {
 
                 {minhasContas.length === 0 ? (
                   <div className="text-center py-8">
-                    <CreditCard className="mx-auto text-gray-400 mb-4" size={48} />
-                    <p className="text-gray-500 mb-4">Nenhuma conta bancária cadastrada</p>
+                    <CreditCard className="mx-auto text-default-400 mb-4" size={48} />
+                    <p className="text-default-500 mb-4">Nenhuma conta bancária cadastrada</p>
                     <Button color="primary" startContent={<PlusIcon className="w-4 h-4" />} variant="flat">
                       <a className="text-primary" href="/financeiro/dados-bancarios">
                         Cadastrar Primeira Conta
@@ -1027,32 +933,32 @@ export function ProfileContent() {
 
                               <div className="grid grid-cols-2 gap-4 mt-3">
                                 <div>
-                                  <p className="text-xs text-gray-500">Agência</p>
-                                  <p className="font-medium">{conta.agencia}</p>
+                                  <p className="text-xs text-default-500">Agência</p>
+                                  <p className="font-medium text-foreground">{conta.agencia}</p>
                                 </div>
                                 <div>
-                                  <p className="text-xs text-gray-500">Conta</p>
-                                  <p className="font-medium">
+                                  <p className="text-xs text-default-500">Conta</p>
+                                  <p className="font-medium text-foreground">
                                     {conta.conta}
                                     {conta.digitoConta && `-${conta.digitoConta}`}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-xs text-gray-500">Tipo</p>
-                                  <p className="font-medium capitalize">{conta.tipoContaBancaria.toLowerCase()}</p>
+                                  <p className="text-xs text-default-500">Tipo</p>
+                                  <p className="font-medium capitalize text-foreground">{conta.tipoContaBancaria.toLowerCase()}</p>
                                 </div>
                                 {conta.chavePix && (
                                   <div>
-                                    <p className="text-xs text-gray-500">Chave PIX</p>
-                                    <p className="font-medium text-sm">{conta.chavePix}</p>
+                                    <p className="text-xs text-default-500">Chave PIX</p>
+                                    <p className="font-medium text-sm text-foreground">{conta.chavePix}</p>
                                   </div>
                                 )}
                               </div>
 
                               <div className="mt-3 pt-3 border-t">
-                                <p className="text-xs text-gray-500">Titular</p>
-                                <p className="font-medium">{conta.titularNome}</p>
-                                <p className="text-sm text-gray-500">{conta.titularDocumento}</p>
+                                <p className="text-xs text-default-500">Titular</p>
+                                <p className="font-medium text-foreground">{conta.titularNome}</p>
+                                <p className="text-sm text-default-500">{conta.titularDocumento}</p>
                               </div>
                             </div>
                           </div>
@@ -1060,9 +966,9 @@ export function ProfileContent() {
                       </Card>
                     ))}
 
-                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-sm text-blue-700">
-                        💡 <strong>Dica:</strong> Use a página de Dados Bancários para adicionar, editar ou remover contas.
+                    <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
+                      <p className="text-sm text-primary-300">
+                        <strong>Dica:</strong> Use a página de Dados Bancários para adicionar, editar ou remover contas.
                       </p>
                     </div>
                   </div>
@@ -1097,7 +1003,7 @@ export function ProfileContent() {
                 <div className="p-3 sm:p-6 space-y-4 min-w-0 overflow-x-hidden">
                   <Card className="border border-primary/20 bg-primary/5">
                     <CardBody className="space-y-2 text-sm text-default-300">
-                      <p className="font-medium text-white">Escopo desta aba: certificado do advogado logado</p>
+                      <p className="font-medium text-foreground">Escopo desta aba: certificado do advogado logado</p>
                       <p>
                         Aqui você gerencia apenas o seu certificado pessoal para autenticação no
                         PJe. Política ativa do escritório: <strong>{certificatePolicyLabel}</strong>.
@@ -1172,30 +1078,316 @@ export function ProfileContent() {
               }
             >
               <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                    <h3 className="text-base sm:text-lg font-semibold">Preferências de Notificações</h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-5 h-5 text-primary" />
+                      <h3 className="text-base sm:text-lg font-semibold text-foreground">
+                        Central de canais de notificação
+                      </h3>
+                    </div>
+                    <p className="text-xs sm:text-sm text-default-500">
+                      Configure canais para alertas críticos e ajustes finos por evento.
+                    </p>
                   </div>
                   <Button
                     color="primary"
                     endContent={<ExternalLink className="w-4 h-4" />}
                     size="sm"
-                    className="w-full sm:w-auto flex-shrink-0"
                     onPress={() => router.push("/usuario/preferencias-notificacoes")}
                   >
-                    Configurar
+                    Preferências por evento
                   </Button>
                 </div>
 
-                <div className="text-center py-8">
-                  <Bell className="mx-auto text-gray-400 mb-4" size={48} />
-                  <p className="text-gray-500 mb-4">Configure como receber notificações do sistema</p>
-                  <p className="text-sm text-gray-400 mb-6">Escolha quais eventos deseja receber e em quais canais (in-app, email, push)</p>
-                  <Button color="primary" startContent={<Bell className="w-4 h-4" />} className="w-full sm:w-auto flex-shrink-0" onPress={() => router.push("/usuario/preferencias-notificacoes")}>
-                    Abrir Preferências
-                  </Button>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <Card className="border border-success/25 bg-success/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Bell className="h-4 w-4 text-success" />
+                          <p className="text-sm font-semibold text-foreground">
+                            In-app
+                          </p>
+                        </div>
+                        <Chip color="success" size="sm" variant="flat">
+                          Ativo
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Notificações em tempo real dentro do sistema com feed por prioridade.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-success/25 bg-success/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-success" />
+                          <p className="text-sm font-semibold text-foreground">
+                            Pop-up obrigatório
+                          </p>
+                        </div>
+                        <Chip color="success" size="sm" variant="flat">
+                          Ativo
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Para alertas críticos de prazo: exige confirmação de leitura na entrada.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-primary/25 bg-primary/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-primary" />
+                          <p className="text-sm font-semibold text-foreground">
+                            Email
+                          </p>
+                        </div>
+                        <Chip
+                          color={profile.email ? "success" : "warning"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {profile.email ? "Pronto" : "Sem email"}
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Endereço atual: {profile.email || "não informado"}.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-secondary/25 bg-secondary/5 sm:col-span-2 xl:col-span-2">
+                    <CardBody className="space-y-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Send className="h-4 w-4 text-secondary" />
+                            <p className="text-sm font-semibold text-foreground">
+                              Telegram
+                            </p>
+                          </div>
+                          <p className="text-xs text-default-500">
+                            Canal de escalonamento para alertas de prazo no limite.
+                          </p>
+                        </div>
+                        <Chip
+                          color={telegramStatus?.connected ? "success" : "warning"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {telegramStatus?.connected ? "Conectado" : "Pendente"}
+                        </Chip>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                          <p className="text-[11px] uppercase tracking-wide text-default-500">
+                            Provedor
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-foreground">
+                            {telegramStatus?.providerReady
+                              ? `${telegramProviderLabel}${
+                                  telegramStatus?.botUsername
+                                    ? ` • ${telegramStatus.botUsername}`
+                                    : ""
+                                }`
+                              : "Bot não configurado"}
+                          </p>
+                          <p className="mt-2 text-xs text-default-500">
+                            {telegramStatus?.providerReady
+                              ? telegramProviderTypeLabel
+                              : "Defina o bot global ou o bot dedicado do tenant em Configurações → Integrações."}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                          <p className="text-[11px] uppercase tracking-wide text-default-500">
+                            Vínculo atual
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-foreground">
+                            {telegramStatus?.chatIdMasked || "Nenhum chat vinculado"}
+                          </p>
+                          <p className="mt-2 text-xs text-default-500">
+                            {telegramStatus?.username
+                              ? `Usuário ${telegramStatus.username}`
+                              : "Conecte seu usuário para receber alertas em tempo real."}
+                          </p>
+                        </div>
+                      </div>
+
+                      {telegramConnectionDraft ? (
+                        <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">
+                                Código de conexão pronto
+                              </p>
+                              <p className="text-xs text-default-500">
+                                Abra o bot, envie o comando e confirme abaixo.
+                              </p>
+                            </div>
+                            <Chip color="warning" size="sm" variant="flat">
+                              expira em {Math.round(telegramConnectionDraft.expiresInSeconds / 60)} min
+                            </Chip>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-white/10 bg-background/50 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-default-500">
+                              Comando
+                            </p>
+                            <p className="mt-1 font-mono text-sm text-foreground">
+                              /start ml_notify_{telegramConnectionDraft.code}
+                            </p>
+                          </div>
+                          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                            {telegramConnectionDraft.deepLink ? (
+                              <Button
+                                as="a"
+                                className="w-full sm:w-auto"
+                                color="primary"
+                                href={telegramConnectionDraft.deepLink}
+                                rel="noreferrer"
+                                startContent={<ExternalLink className="h-4 w-4" />}
+                                target="_blank"
+                              >
+                                Abrir bot no Telegram
+                              </Button>
+                            ) : null}
+                            <Button
+                              className="w-full sm:w-auto"
+                              color="warning"
+                              isLoading={telegramBusy}
+                              startContent={<CheckCircle2 className="h-4 w-4" />}
+                              variant="flat"
+                              onPress={handleConfirmTelegramConnection}
+                            >
+                              Confirmar conexão
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        {!telegramStatus?.connected ? (
+                          <Button
+                            className="w-full sm:w-auto"
+                            color="primary"
+                            isDisabled={!telegramStatus?.providerReady}
+                            isLoading={telegramBusy}
+                            startContent={<Link2 className="h-4 w-4" />}
+                            variant="flat"
+                            onPress={handleBeginTelegramConnection}
+                          >
+                            Conectar Telegram
+                          </Button>
+                        ) : (
+                          <Button
+                            className="w-full sm:w-auto"
+                            color="danger"
+                            isLoading={telegramBusy}
+                            startContent={<Unplug className="h-4 w-4" />}
+                            variant="flat"
+                            onPress={handleDisconnectTelegram}
+                          >
+                            Desconectar Telegram
+                          </Button>
+                        )}
+                        {telegramStatus?.connected ? (
+                          <Button
+                            className="w-full sm:w-auto"
+                            isLoading={telegramBusy}
+                            startContent={<Send className="h-4 w-4" />}
+                            variant="bordered"
+                            onPress={handleBeginTelegramConnection}
+                          >
+                            Regenerar vínculo
+                          </Button>
+                        ) : null}
+                      </div>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-warning/25 bg-warning/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 text-warning" />
+                          <p className="text-sm font-semibold text-foreground">
+                            WhatsApp
+                          </p>
+                        </div>
+                        <Chip color="warning" size="sm" variant="flat">
+                          Em breve
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Canal previsto para alertas transacionais e comunicação com cliente.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-warning/25 bg-warning/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4 text-warning" />
+                          <p className="text-sm font-semibold text-foreground">
+                            SMS
+                          </p>
+                        </div>
+                        <Chip color="warning" size="sm" variant="flat">
+                          Em breve
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Fallback para alertas críticos quando email e Telegram falharem.
+                      </p>
+                    </CardBody>
+                  </Card>
+
+                  <Card className="border border-warning/25 bg-warning/5">
+                    <CardBody className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Smartphone className="h-4 w-4 text-warning" />
+                          <p className="text-sm font-semibold text-foreground">
+                            Push mobile/web
+                          </p>
+                        </div>
+                        <Chip color="warning" size="sm" variant="flat">
+                          Em breve
+                        </Chip>
+                      </div>
+                      <p className="text-xs text-default-500">
+                        Entrega instantânea por navegador e aplicativo móvel.
+                      </p>
+                    </CardBody>
+                  </Card>
                 </div>
+
+                <Card className="border border-white/10 bg-background/50">
+                  <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Matriz de eventos, urgência e canais
+                      </p>
+                      <p className="text-xs text-default-500">
+                        Defina evento por evento quais canais são usados (ex.: prazo 30d, 10d, 3d, 1d, vencido).
+                      </p>
+                    </div>
+                    <Button
+                      color="primary"
+                      endContent={<ExternalLink className="w-4 h-4" />}
+                      onPress={() => router.push("/usuario/preferencias-notificacoes")}
+                    >
+                      Abrir preferências detalhadas
+                    </Button>
+                  </CardBody>
+                </Card>
               </div>
             </Tab>
           </Tabs>

@@ -92,51 +92,65 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
   };
 
   const renderAdminInfo = () => {
+    const tenantName = profile.tenant?.name || "Escritório não identificado";
+    const tenantSlug = profile.tenant?.slug || "sem-slug";
+
     return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardHeader className="flex flex-col gap-2 pb-0">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-primary" />
-            <h3 className="text-lg font-semibold">
-              Informações Administrativas
-            </h3>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl overflow-hidden">
+        <CardHeader className="relative pb-4">
+          <div className="absolute inset-0 bg-linear-to-r from-primary/10 via-secondary/5 to-primary/10 opacity-40" />
+          <div className="relative flex items-center gap-3">
+            <div className="rounded-xl border border-primary/30 bg-primary/10 p-2">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-foreground">
+                Contexto administrativo do escritório
+              </h3>
+              <p className="text-sm text-default-400">
+                Visão rápida de identificação do tenant e escopo de gestão.
+              </p>
+            </div>
           </div>
         </CardHeader>
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium text-default-600">Escritório</p>
-              <p className="text-white">{profile.tenant?.name || "N/A"}</p>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">
+                Escritório
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {tenantName}
+              </p>
             </div>
 
-            <div>
-              <p className="text-sm font-medium text-default-600">
-                Slug do Escritório
+            <div className="rounded-xl border border-secondary/20 bg-secondary/5 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-secondary/70">
+                Identificador do tenant
               </p>
-              <p className="text-white font-mono text-sm">
-                {profile.tenant?.slug || "N/A"}
+              <p className="mt-2 font-mono text-sm text-foreground">
+                {tenantSlug}
               </p>
             </div>
           </div>
 
-          <Divider />
-
-          <div>
-            <p className="text-sm font-medium text-default-600 mb-2 block">
-              Permissões Administrativas
+          <div className="rounded-xl border border-white/10 bg-background/40 p-4">
+            <p className="text-sm font-medium text-default-300 mb-3">
+              Escopo administrativo disponível neste perfil
             </p>
-            <div className="flex flex-wrap gap-2">
-              <Badge color="success" variant="flat">
+            <div className="flex flex-wrap gap-2.5">
+              <Badge color="primary" variant="flat">
                 <Shield className="w-3 h-3 mr-1" />
-                Gerenciar Equipe
+                Gestão de equipe
               </Badge>
-              <Badge color="success" variant="flat">
+              <Badge color="primary" variant="flat">
                 <FileText className="w-3 h-3 mr-1" />
-                Configurações
+                Configurações do tenant
               </Badge>
-              <Badge color="success" variant="flat">
+              <Badge color="primary" variant="flat">
                 <DollarSign className="w-3 h-3 mr-1" />
-                Financeiro
+                Operação financeira
               </Badge>
             </div>
           </div>
