@@ -5,29 +5,36 @@ import type {
   NotificationUrgency,
 } from "@/app/lib/notifications/notification-service";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  Card, CardBody, CardHeader, Button, Switch, Chip, Spinner, Tooltip, Select, SelectItem } from "@heroui/react";
+  Button,
+  Card,
+  CardBody,
+  Chip,
+  Select,
+  SelectItem,
+  Spinner,
+  Switch,
+  Tooltip,
+} from "@heroui/react";
 import {
-  SearchIcon,
+  AlertCircle,
   Bell,
-  Mail,
-  Smartphone,
-  Send,
-  RefreshCw,
+  CheckCircle,
+  Filter,
   HelpCircle,
   Info,
-  Filter,
-  XCircle,
+  Mail,
+  RefreshCw,
   RotateCcw,
-  CheckCircle,
-  AlertCircle,
-  Zap,
+  SearchIcon,
+  Send,
+  Smartphone,
   TrendingUp,
+  XCircle,
+  Zap,
 } from "lucide-react";
-import { toast } from "@/lib/toast";
 import { Input } from "@heroui/input";
 
 import {
@@ -35,24 +42,36 @@ import {
   updateNotificationPreference,
 } from "@/app/actions/notifications";
 import { getMyTelegramNotificationStatus } from "@/app/actions/telegram-notifications";
+import {
+  PeopleEmptyState,
+  PeopleMetricCard,
+  PeoplePanel,
+} from "@/components/people-ui";
+import { toast } from "@/lib/toast";
 
-// Agrupar eventos por categoria com ícones e descrições
-const EVENT_CATEGORIES: Record<
-  string,
-  {
-    label: string;
-    icon: any;
-    description: string;
-    color: string;
-    events: string[];
-  }
-> = {
+type CategoryTone =
+  | "primary"
+  | "danger"
+  | "success"
+  | "secondary"
+  | "warning"
+  | "default";
+
+type EventCategory = {
+  label: string;
+  icon: typeof Bell;
+  description: string;
+  tone: CategoryTone;
+  events: string[];
+};
+
+const EVENT_CATEGORIES: Record<string, EventCategory> = {
   processos: {
     label: "Processos",
     icon: TrendingUp,
     description:
-      "Notificações sobre criação, atualização e mudanças de status em processos judiciais",
-    color: "primary",
+      "Criação, atualização e mudanças de status em processos judiciais.",
+    tone: "primary",
     events: [
       "processo.created",
       "processo.updated",
@@ -64,8 +83,8 @@ const EVENT_CATEGORIES: Record<
     label: "Prazos",
     icon: AlertCircle,
     description:
-      "Alertas sobre prazos judiciais: criação, avisos de expiração e vencidos",
-    color: "danger",
+      "Alertas de criação, digests e escalonamento por proximidade de vencimento.",
+    tone: "danger",
     events: [
       "prazo.created",
       "prazo.digest_30d",
@@ -80,9 +99,8 @@ const EVENT_CATEGORIES: Record<
   financeiro: {
     label: "Financeiro",
     icon: Zap,
-    description:
-      "Avisos sobre pagamentos, boletos gerados, PIX e questões financeiras",
-    color: "success",
+    description: "Pagamentos, boletos, PIX e eventos de cobrança.",
+    tone: "success",
     events: [
       "pagamento.created",
       "pagamento.paid",
@@ -96,9 +114,8 @@ const EVENT_CATEGORIES: Record<
   contratos: {
     label: "Contratos",
     icon: CheckCircle,
-    description:
-      "Informações sobre contratos: assinatura, expiração e cancelamento",
-    color: "secondary",
+    description: "Eventos de assinatura, expiração e cancelamento.",
+    tone: "secondary",
     events: [
       "contrato.created",
       "contrato.signed",
@@ -110,8 +127,8 @@ const EVENT_CATEGORIES: Record<
   agenda: {
     label: "Agenda",
     icon: Bell,
-    description: "Lembretes de eventos, audiências, reuniões e compromissos",
-    color: "warning",
+    description: "Lembretes de audiências, reuniões e compromissos.",
+    tone: "warning",
     events: [
       "evento.created",
       "evento.updated",
@@ -124,9 +141,8 @@ const EVENT_CATEGORIES: Record<
   documentos: {
     label: "Documentos",
     icon: Smartphone,
-    description:
-      "Notificações sobre upload, aprovação, rejeição e expiração de documentos",
-    color: "default",
+    description: "Upload, aprovação, rejeição e expiração de documentos.",
+    tone: "default",
     events: [
       "documento.uploaded",
       "documento.approved",
@@ -136,29 +152,65 @@ const EVENT_CATEGORIES: Record<
   },
 };
 
+const CATEGORY_TONE_CLASSES: Record<
+  CategoryTone,
+  { iconWrap: string; icon: string; box: string }
+> = {
+  primary: {
+    iconWrap: "bg-primary/15",
+    icon: "text-primary",
+    box: "border-primary/20 bg-primary/5",
+  },
+  danger: {
+    iconWrap: "bg-danger/15",
+    icon: "text-danger",
+    box: "border-danger/20 bg-danger/5",
+  },
+  success: {
+    iconWrap: "bg-success/15",
+    icon: "text-success",
+    box: "border-success/20 bg-success/5",
+  },
+  secondary: {
+    iconWrap: "bg-secondary/15",
+    icon: "text-secondary",
+    box: "border-secondary/20 bg-secondary/5",
+  },
+  warning: {
+    iconWrap: "bg-warning/15",
+    icon: "text-warning",
+    box: "border-warning/20 bg-warning/5",
+  },
+  default: {
+    iconWrap: "bg-white/10",
+    icon: "text-default-300",
+    box: "border-white/10 bg-background/40",
+  },
+};
+
 const CHANNEL_LABELS: Record<
   NotificationChannel,
-  { label: string; icon: any; description: string }
+  { label: string; icon: typeof Bell; description: string }
 > = {
   REALTIME: {
     label: "In-app",
     icon: Bell,
-    description: "Notificações em tempo real dentro do sistema",
+    description: "Notificação imediata dentro do sistema.",
   },
   EMAIL: {
     label: "Email",
     icon: Mail,
-    description: "Receba notificações por email",
+    description: "Entrega por email para alertas operacionais.",
   },
   TELEGRAM: {
     label: "Telegram",
     icon: Send,
-    description: "Escalonamento via bot do Telegram do escritório",
+    description: "Escalonamento no bot conectado do escritório/plataforma.",
   },
   PUSH: {
     label: "Push",
     icon: Smartphone,
-    description: "Notificações push no dispositivo móvel",
+    description: "Notificações push (canal em evolução).",
   },
 };
 
@@ -167,27 +219,6 @@ const URGENCY_LABELS: Record<NotificationUrgency, string> = {
   HIGH: "Alto",
   MEDIUM: "Médio",
   INFO: "Informativo",
-};
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.3,
-    },
-  },
 };
 
 export function NotificationPreferencesContent() {
@@ -210,12 +241,49 @@ export function NotificationPreferencesContent() {
     },
   );
 
-  const preferences = data?.preferences || [];
-  const preferencesMap = new Map(preferences.map((p) => [p.eventType, p]));
+  const preferences = data?.preferences ?? [];
+  const preferencesMap = useMemo(
+    () => new Map(preferences.map((preference) => [preference.eventType, preference])),
+    [preferences],
+  );
   const telegramStatus =
     telegramStatusResult?.success && telegramStatusResult.status
       ? telegramStatusResult.status
       : null;
+
+  const totalEvents = useMemo(
+    () =>
+      Object.values(EVENT_CATEGORIES).reduce(
+        (sum, category) => sum + category.events.length,
+        0,
+      ),
+    [],
+  );
+
+  const enabledEvents = preferences.filter((preference) => preference.enabled).length;
+  const disabledEvents = preferences.filter((preference) => !preference.enabled).length;
+
+  const filteredCategories = useMemo(
+    () =>
+      Object.entries(EVENT_CATEGORIES).filter(([categoryKey, category]) => {
+        if (!searchTerm && selectedCategory === "all") {
+          return true;
+        }
+
+        const normalizedSearch = searchTerm.toLowerCase();
+        if (selectedCategory !== "all" && selectedCategory !== categoryKey) {
+          return false;
+        }
+
+        return (
+          category.label.toLowerCase().includes(normalizedSearch) ||
+          category.events.some((eventType) =>
+            eventType.toLowerCase().includes(normalizedSearch),
+          )
+        );
+      }),
+    [searchTerm, selectedCategory],
+  );
 
   const handleUpdatePreference = async (
     eventType: string,
@@ -225,7 +293,7 @@ export function NotificationPreferencesContent() {
       urgency?: NotificationUrgency;
     },
   ) => {
-    setLoadingEvents((prev) => new Set(prev).add(eventType));
+    setLoadingEvents((previous) => new Set(previous).add(eventType));
 
     try {
       const result = await updateNotificationPreference({
@@ -233,565 +301,438 @@ export function NotificationPreferencesContent() {
         ...updates,
       });
 
-      if (result.success) {
-        toast.success("Preferência atualizada com sucesso");
-        await mutate();
-      } else {
+      if (!result.success) {
         toast.error(result.error || "Erro ao atualizar preferência");
+        return;
       }
-    } catch (error) {
+
+      toast.success("Preferência atualizada com sucesso.");
+      await mutate();
+    } catch {
       toast.error("Erro ao atualizar preferência");
     } finally {
-      setLoadingEvents((prev) => {
-        const next = new Set(prev);
-
+      setLoadingEvents((previous) => {
+        const next = new Set(previous);
         next.delete(eventType);
-
         return next;
       });
     }
   };
 
-  const filteredCategories = Object.entries(EVENT_CATEGORIES).filter(
-    ([_, category]) => {
-      if (!searchTerm && selectedCategory === "all") return true;
-      const searchLower = searchTerm.toLowerCase();
-
-      if (
-        selectedCategory !== "all" &&
-        selectedCategory !== category.label.toLowerCase()
-      ) {
-        return false;
-      }
-
-      return (
-        category.label.toLowerCase().includes(searchLower) ||
-        category.events.some((event) =>
-          event.toLowerCase().includes(searchLower),
-        )
-      );
-    },
-  );
-
   if (error) {
     return (
-      <motion.div
-        animate={{ opacity: 1, scale: 1 }}
-        initial={{ opacity: 0, scale: 0.95 }}
+      <PeoplePanel
+        title="Falha ao carregar preferências"
+        description={
+          error instanceof Error
+            ? error.message
+            : "Erro inesperado ao carregar preferências de notificação."
+        }
       >
-        <Card className="border border-danger/20 bg-danger/5">
-          <CardBody>
-            <p className="text-danger">
-              Erro ao carregar preferências:{" "}
-              {error instanceof Error ? error.message : "Erro desconhecido"}
-            </p>
-            <Button
-              className="mt-4"
-              color="primary"
-              startContent={<RefreshCw size={16} />}
-              variant="flat"
-              onPress={() => mutate()}
-            >
-              Tentar novamente
-            </Button>
-          </CardBody>
-        </Card>
-      </motion.div>
+        <div className="flex justify-end">
+          <Button
+            color="primary"
+            startContent={<RefreshCw className="h-4 w-4" />}
+            variant="flat"
+            onPress={() => mutate()}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      </PeoplePanel>
     );
   }
 
-  const totalEvents = Object.values(EVENT_CATEGORIES).reduce(
-    (sum, cat) => sum + cat.events.length,
-    0,
-  );
-
   return (
     <div className="space-y-6">
-      {/* Resumo com Animação */}
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: -20 }}
-      >
-        <Card className="bg-linear-to-br from-primary/10 via-secondary/10 to-warning/10 border border-primary/20">
-          <CardBody>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-default-600 dark:text-default-400 mb-1 flex items-center gap-1">
-                  <Bell className="w-3 h-3" />
-                  Total de eventos
-                </p>
-                <motion.p
-                  animate={{ scale: 1 }}
-                  className="text-3xl font-bold text-default-900"
-                  initial={{ scale: 0 }}
-                  transition={{ delay: 0.1 }}
-                >
-                  {totalEvents}
-                </motion.p>
-              </div>
-              <div>
-                <p className="text-xs text-default-600 dark:text-default-400 mb-1 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" />
-                  Habilitados
-                </p>
-                <motion.p
-                  animate={{ scale: 1 }}
-                  className="text-3xl font-bold text-success"
-                  initial={{ scale: 0 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  {preferences.filter((p) => p.enabled).length}
-                </motion.p>
-              </div>
-              <div>
-                <p className="text-xs text-default-600 dark:text-default-400 mb-1 flex items-center gap-1">
-                  <XCircle className="w-3 h-3" />
-                  Desabilitados
-                </p>
-                <motion.p
-                  animate={{ scale: 1 }}
-                  className="text-3xl font-bold text-danger"
-                  initial={{ scale: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  {preferences.filter((p) => !p.enabled).length}
-                </motion.p>
-              </div>
-              <div>
-                <p className="text-xs text-default-600 dark:text-default-400 mb-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  Customizados
-                </p>
-                <motion.p
-                  animate={{ scale: 1 }}
-                  className="text-3xl font-bold text-primary"
-                  initial={{ scale: 0 }}
-                  transition={{ delay: 0.4 }}
-                >
-                  {preferences.length}
-                </motion.p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </motion.div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PeopleMetricCard
+          helper="Quantidade total de eventos monitorados."
+          icon={<Bell className="h-4 w-4" />}
+          label="Total de eventos"
+          tone="primary"
+          value={totalEvents}
+        />
+        <PeopleMetricCard
+          helper="Eventos atualmente ativos para envio."
+          icon={<CheckCircle className="h-4 w-4" />}
+          label="Habilitados"
+          tone="success"
+          value={enabledEvents}
+        />
+        <PeopleMetricCard
+          helper="Eventos pausados para este usuário."
+          icon={<XCircle className="h-4 w-4" />}
+          label="Desabilitados"
+          tone="danger"
+          value={disabledEvents}
+        />
+        <PeopleMetricCard
+          helper="Preferências customizadas salvas."
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Customizados"
+          tone="secondary"
+          value={preferences.length}
+        />
+      </div>
 
-      {/* Busca e Filtros Melhorados */}
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: 20 }}
-        transition={{ delay: 0.1 }}
+      <PeoplePanel
+        title="Busca e recorte operacional"
+        description="Filtre categorias e eventos para ajustar a matriz de notificações com rapidez."
       >
-        <Card>
-          <CardBody className="gap-4">
-            <Input
-              endContent={
-                searchTerm ? (
-                  <button
-                    className="cursor-pointer hover:opacity-70"
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                  >
-                    <XCircle className="w-4 h-4 text-default-400" />
-                  </button>
-                ) : null
-              }
-              placeholder="Buscar por categoria ou evento..."
-              startContent={
-                <SearchIcon className="text-default-400" size={20} />
-              }
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        <div className="space-y-4">
+          <Input
+            endContent={
+              searchTerm ? (
+                <button
+                  className="cursor-pointer hover:opacity-70"
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                >
+                  <XCircle className="h-4 w-4 text-default-400" />
+                </button>
+              ) : null
+            }
+            placeholder="Buscar por categoria ou tipo de evento..."
+            startContent={<SearchIcon className="h-4 w-4 text-default-400" />}
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
 
-            {/* Filtro por Categoria */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="w-4 h-4 text-default-500" />
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-4 w-4 text-default-500" />
+            <Chip
+              className="cursor-pointer"
+              color={selectedCategory === "all" ? "primary" : "default"}
+              size="sm"
+              variant={selectedCategory === "all" ? "solid" : "flat"}
+              onClick={() => setSelectedCategory("all")}
+            >
+              Todas
+            </Chip>
+            {Object.entries(EVENT_CATEGORIES).map(([key, category]) => (
               <Chip
+                key={key}
                 className="cursor-pointer"
-                color={selectedCategory === "all" ? "primary" : "default"}
+                color={selectedCategory === key ? (category.tone as any) : "default"}
                 size="sm"
-                variant={selectedCategory === "all" ? "solid" : "flat"}
-                onClick={() => setSelectedCategory("all")}
+                startContent={<category.icon className="h-3 w-3" />}
+                variant={selectedCategory === key ? "solid" : "flat"}
+                onClick={() => setSelectedCategory(key)}
               >
-                Todas
+                {category.label}
               </Chip>
-              {Object.entries(EVENT_CATEGORIES).map(([key, category]) => (
-                <Chip
-                  key={key}
-                  className="cursor-pointer"
-                  color={
-                    selectedCategory === category.label.toLowerCase()
-                      ? (category.color as any)
-                      : "default"
-                  }
-                  size="sm"
-                  startContent={<category.icon className="w-3 h-3" />}
-                  variant={
-                    selectedCategory === category.label.toLowerCase()
-                      ? "solid"
-                      : "flat"
-                  }
-                  onClick={() =>
-                    setSelectedCategory(category.label.toLowerCase())
-                  }
-                >
-                  {category.label}
-                </Chip>
-              ))}
-              {(searchTerm || selectedCategory !== "all") && (
-                <Button
-                  size="sm"
-                  startContent={<RotateCcw className="w-3 h-3" />}
-                  variant="light"
-                  onPress={() => {
-                    setSearchTerm("");
-                    setSelectedCategory("all");
-                  }}
-                >
-                  Limpar
-                </Button>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-      </motion.div>
+            ))}
+            {(searchTerm || selectedCategory !== "all") && (
+              <Button
+                size="sm"
+                startContent={<RotateCcw className="h-3 w-3" />}
+                variant="light"
+                onPress={() => {
+                  setSearchTerm("");
+                  setSelectedCategory("all");
+                }}
+              >
+                Limpar
+              </Button>
+            )}
+          </div>
+        </div>
+      </PeoplePanel>
 
       {telegramStatus && (!telegramStatus.providerReady || !telegramStatus.connected) ? (
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          initial={{ opacity: 0, y: 20 }}
-          transition={{ delay: 0.15 }}
+        <PeoplePanel
+          title="Telegram pendente para escalonamento"
+          description={
+            !telegramStatus.providerReady
+              ? "O bot global/tenant ainda não está configurado."
+              : "Conecte seu chat no perfil para receber alertas críticos de prazo."
+          }
+          actions={
+            <Chip color="warning" size="sm" variant="flat">
+              {!telegramStatus.providerReady ? "Bot pendente" : "Vínculo pendente"}
+            </Chip>
+          }
         >
-          <Card className="border border-warning/20 bg-warning/5">
-            <CardBody>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    Telegram ainda não está pronto para escalonamento total
-                  </p>
-                  <p className="text-xs text-default-400">
-                    {!telegramStatus.providerReady
-                      ? "A plataforma ainda precisa configurar o bot global do Telegram."
-                      : "Conecte seu chat no perfil para receber alertas críticos de prazo via Telegram."}
-                  </p>
-                </div>
-                <Chip color="warning" size="sm" variant="flat">
-                  {!telegramStatus.providerReady ? "Bot pendente" : "Vínculo pendente"}
-                </Chip>
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
+          <p className="text-sm text-default-400">
+            Sem Telegram pronto, os alertas continuam por canais disponíveis, mas sem escalonamento completo.
+          </p>
+        </PeoplePanel>
       ) : null}
 
-      {/* Legendas e Ajuda */}
-      <motion.div
-        animate={{ opacity: 1, y: 0 }}
-        initial={{ opacity: 0, y: 20 }}
-        transition={{ delay: 0.2 }}
+      <PeoplePanel
+        title="Como configurar"
+        description="Cada evento pode ser ligado/desligado, receber múltiplos canais e ter sua urgência definida."
       >
-        <Card className="bg-default-50 border border-default-200">
-          <CardBody>
-            <div className="flex items-start gap-4">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Info className="w-5 h-5 text-primary" />
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card className="border border-white/10 bg-background/40">
+            <CardBody className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Canais</p>
               </div>
-              <div className="flex-1">
-                <h4 className="font-semibold mb-2">Como funciona?</h4>
-                <ul className="space-y-2 text-sm text-default-600">
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">•</span>
-                    <span>
-                      <strong>Canais:</strong> Escolha como receber cada
-                      notificação
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">•</span>
-                    <span>
-                      <strong>Urgência:</strong> Defina a prioridade de cada
-                      tipo de evento
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">•</span>
-                    <span>
-                      <strong>Desabilitar:</strong> Desative eventos que não
-                      deseja receber
-                    </span>
-                  </li>
-                </ul>
+              <p className="text-xs text-default-400">
+                Selecione os meios de entrega por evento (in-app, email, Telegram, push).
+              </p>
+            </CardBody>
+          </Card>
+          <Card className="border border-white/10 bg-background/40">
+            <CardBody className="space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Urgência</p>
               </div>
-            </div>
-          </CardBody>
-        </Card>
-      </motion.div>
+              <p className="text-xs text-default-400">
+                Use níveis diferentes para priorizar escalonamento e leitura na rotina.
+              </p>
+            </CardBody>
+          </Card>
+          <Card className="border border-white/10 bg-background/40">
+            <CardBody className="space-y-2">
+              <div className="flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Pausar evento</p>
+              </div>
+              <p className="text-xs text-default-400">
+                Desative tipos de evento não relevantes para evitar ruído operacional.
+              </p>
+            </CardBody>
+          </Card>
+        </div>
+      </PeoplePanel>
 
-      {/* Categorias com Animação */}
-      <AnimatePresence mode="wait">
+      <PeoplePanel
+        title="Matriz de notificações por categoria"
+        description="Ajuste evento por evento com total controle sobre ativação, canais e urgência."
+      >
         {isLoading ? (
-          <motion.div
-            key="loading"
-            animate={{ opacity: 1 }}
-            className="flex justify-center py-12"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-          >
-            <Spinner size="lg" />
-          </motion.div>
+          <div className="flex min-h-40 items-center justify-center">
+            <Spinner label="Carregando preferências..." />
+          </div>
+        ) : filteredCategories.length === 0 ? (
+          <PeopleEmptyState
+            title="Nenhum evento encontrado"
+            description="Ajuste os filtros para visualizar novamente as categorias de notificação."
+            icon={<Filter className="h-5 w-5" />}
+            action={
+              <Button
+                size="sm"
+                startContent={<RotateCcw className="h-4 w-4" />}
+                variant="flat"
+                onPress={() => {
+                  setSearchTerm("");
+                  setSelectedCategory("all");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            }
+          />
         ) : (
-          <motion.div
-            key="categories"
-            animate="visible"
-            className="space-y-6"
-            initial="hidden"
-            variants={containerVariants}
-          >
-            {filteredCategories.length === 0 ? (
-              <Card className="border border-default-200">
-                <CardBody className="text-center py-8">
-                  <Filter className="w-12 h-12 mx-auto text-default-400 mb-4" />
-                  <p className="text-default-600">
-                    Nenhum evento encontrado com esses filtros
-                  </p>
-                  <Button
-                    className="mt-4"
-                    startContent={<RotateCcw className="w-4 h-4" />}
-                    variant="flat"
-                    onPress={() => {
-                      setSearchTerm("");
-                      setSelectedCategory("all");
-                    }}
-                  >
-                    Limpar filtros
-                  </Button>
-                </CardBody>
-              </Card>
-            ) : (
-              filteredCategories.map(([categoryKey, category]) => (
-                <motion.div key={categoryKey} variants={itemVariants}>
-                  <Card className="border border-default-200 hover:border-primary/50 transition-colors">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center gap-3 w-full">
-                        <div
-                          className={`p-2 rounded-lg bg-${category.color}/10`}
-                        >
-                          <category.icon
-                            className={`w-5 h-5 text-${category.color}`}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <h2 className="text-xl font-semibold flex items-center gap-2">
-                            {category.label}
-                            <Tooltip content={category.description}>
-                              <HelpCircle className="w-4 h-4 text-default-400 hover:text-primary cursor-help" />
-                            </Tooltip>
-                          </h2>
-                        </div>
-                        <Chip
-                          color={category.color as any}
-                          size="sm"
-                          variant="flat"
-                        >
-                          {category.events.length} eventos
-                        </Chip>
-                      </div>
-                    </CardHeader>
-                    <CardBody className="pt-0">
-                      <div className="space-y-3">
-                        {category.events.map((eventType, index) => {
-                          const preference = preferencesMap.get(eventType);
-                          const isEnabled = preference?.enabled ?? true;
-                          const channels = preference?.channels ?? ["REALTIME"];
-                          const urgency = preference?.urgency ?? "MEDIUM";
-                          const isLoadingEvent = loadingEvents.has(eventType);
+          <div className="space-y-4">
+            {filteredCategories.map(([categoryKey, category]) => {
+              const toneStyles = CATEGORY_TONE_CLASSES[category.tone];
 
-                          return (
-                            <motion.div
-                              key={eventType}
-                              animate={{ opacity: 1, x: 0 }}
-                              className={`flex items-start justify-between gap-4 p-4 rounded-lg border transition-all ${
-                                isEnabled
-                                  ? "border-default-200 bg-default-50/50"
-                                  : "border-default-100 bg-default-50/20 opacity-60"
-                              }`}
-                              initial={{ opacity: 0, x: -20 }}
-                              transition={{ delay: index * 0.02 }}
-                            >
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-3">
+              return (
+                <Card key={categoryKey} className="border border-white/10 bg-background/50">
+                  <CardBody className="space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`flex h-9 w-9 items-center justify-center rounded-xl ${toneStyles.iconWrap}`}
+                        >
+                          <category.icon className={`h-4 w-4 ${toneStyles.icon}`} />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-semibold text-foreground">
+                              {category.label}
+                            </h3>
+                            <Tooltip content={category.description}>
+                              <HelpCircle className="h-4 w-4 cursor-help text-default-500" />
+                            </Tooltip>
+                          </div>
+                          <p className="text-xs text-default-500">
+                            {category.description}
+                          </p>
+                        </div>
+                      </div>
+                      <Chip color={category.tone as any} size="sm" variant="flat">
+                        {category.events.length} evento(s)
+                      </Chip>
+                    </div>
+
+                    <div className="space-y-3">
+                      {category.events.map((eventType) => {
+                        const preference = preferencesMap.get(eventType);
+                        const isEnabled = preference?.enabled ?? true;
+                        const channels = preference?.channels ?? ["REALTIME"];
+                        const urgency = preference?.urgency ?? "MEDIUM";
+                        const isLoadingEvent = loadingEvents.has(eventType);
+
+                        return (
+                          <div
+                            key={eventType}
+                            className={`rounded-2xl border p-4 transition-colors ${
+                              isEnabled
+                                ? `${toneStyles.box}`
+                                : "border-white/10 bg-background/30 opacity-70"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
                                   <Switch
-                                    color={category.color as any}
+                                    color={category.tone as any}
                                     isDisabled={isLoadingEvent}
                                     isSelected={isEnabled}
                                     size="sm"
                                     onValueChange={(enabled) =>
-                                      handleUpdatePreference(eventType, {
-                                        enabled,
-                                      })
+                                      handleUpdatePreference(eventType, { enabled })
                                     }
                                   />
-                                  <span className="font-medium text-sm">
+                                  <p className="text-sm font-medium text-foreground">
                                     {eventType
                                       .replace(/\./g, " ")
                                       .replace(/_/g, " ")
-                                      .replace(/\b\w/g, (c) => c.toUpperCase())}
-                                  </span>
+                                      .replace(/\b\w/g, (char) => char.toUpperCase())}
+                                  </p>
                                 </div>
 
-                                <AnimatePresence>
-                                  {isEnabled && (
-                                    <motion.div
-                                      animate={{ opacity: 1, height: "auto" }}
-                                      className="space-y-3 ml-8 mt-3"
-                                      exit={{ opacity: 0, height: 0 }}
-                                      initial={{ opacity: 0, height: 0 }}
-                                    >
-                                      {/* Canais */}
-                                      <div>
-                                        <label className="text-xs font-semibold text-default-600 dark:text-default-400 mb-2 flex items-center gap-1">
+                                {isEnabled ? (
+                                  <div className="mt-4 space-y-4 pl-8">
+                                    <div>
+                                      <div className="mb-2 flex items-center gap-2">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
                                           Canais
-                                          <Tooltip content="Clique nos canais para ativar/desativar. Deve haver pelo menos um selecionado.">
-                                            <HelpCircle className="w-3 h-3" />
-                                          </Tooltip>
-                                        </label>
-                                        <div className="flex gap-2 flex-wrap">
-                                          {Object.entries(CHANNEL_LABELS).map(
-                                            ([
-                                              channelKey,
-                                              {
-                                                label,
-                                                icon: Icon,
-                                                description,
-                                              },
-                                            ]) => {
-                                              const channel =
-                                                channelKey as NotificationChannel;
-                                              const isSelected =
-                                                channels.includes(channel);
+                                        </p>
+                                        <Tooltip content="Pelo menos um canal deve permanecer selecionado.">
+                                          <HelpCircle className="h-3.5 w-3.5 text-default-500" />
+                                        </Tooltip>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {Object.entries(CHANNEL_LABELS).map(
+                                          ([channelKey, channelMeta]) => {
+                                            const channel = channelKey as NotificationChannel;
+                                            const isSelected = channels.includes(channel);
+                                            const isTelegramChannel = channel === "TELEGRAM";
 
-                                              return (
-                                                <Tooltip
-                                                  key={channelKey}
-                                                  content={description}
+                                            return (
+                                              <Tooltip
+                                                key={channelKey}
+                                                content={channelMeta.description}
+                                              >
+                                                <Chip
+                                                  className="cursor-pointer"
+                                                  color={
+                                                    isSelected
+                                                      ? (category.tone as any)
+                                                      : "default"
+                                                  }
+                                                  size="sm"
+                                                  startContent={
+                                                    <channelMeta.icon className="h-3.5 w-3.5" />
+                                                  }
+                                                  variant={isSelected ? "solid" : "flat"}
+                                                  onClick={() => {
+                                                    if (isTelegramChannel) {
+                                                      if (!telegramStatus?.providerReady) {
+                                                        toast.error(
+                                                          "Telegram indisponível: bot não configurado.",
+                                                        );
+                                                        return;
+                                                      }
+                                                      if (!telegramStatus.connected) {
+                                                        toast.error(
+                                                          "Conecte seu Telegram no perfil para habilitar esse canal.",
+                                                        );
+                                                        return;
+                                                      }
+                                                    }
+
+                                                    const newChannels = isSelected
+                                                      ? channels.filter(
+                                                          (existingChannel) =>
+                                                            existingChannel !== channel,
+                                                        )
+                                                      : [
+                                                          ...channels,
+                                                          channel,
+                                                        ];
+
+                                                    if (newChannels.length === 0) {
+                                                      toast.error(
+                                                        "Pelo menos um canal deve estar selecionado.",
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    handleUpdatePreference(eventType, {
+                                                      channels:
+                                                        newChannels as NotificationChannel[],
+                                                    });
+                                                  }}
                                                 >
-                                                  <motion.div
-                                                    whileHover={{ scale: 1.05 }}
-                                                    whileTap={{ scale: 0.95 }}
-                                                  >
-                                                    <Chip
-                                                      className="cursor-pointer transition-all"
-                                                      color={
-                                                        isSelected
-                                                          ? (category.color as any)
-                                                          : "default"
-                                                      }
-                                                      size="sm"
-                                                      startContent={
-                                                        <Icon size={14} />
-                                                      }
-                                                      variant={
-                                                        isSelected
-                                                          ? "solid"
-                                                          : "flat"
-                                                      }
-                                                      onClick={() => {
-                                                        const newChannels =
-                                                          isSelected
-                                                            ? channels.filter(
-                                                                (c) =>
-                                                                  c !== channel,
-                                                              )
-                                                            : [
-                                                                ...channels,
-                                                                channel,
-                                                              ];
-
-                                                        if (
-                                                          newChannels.length > 0
-                                                        ) {
-                                                          handleUpdatePreference(
-                                                            eventType,
-                                                            {
-                                                              channels:
-                                                                newChannels as NotificationChannel[],
-                                                            },
-                                                          );
-                                                        } else {
-                                                          toast.error(
-                                                            "Pelo menos um canal deve estar selecionado",
-                                                          );
-                                                        }
-                                                      }}
-                                                    >
-                                                      {label}
-                                                    </Chip>
-                                                  </motion.div>
-                                                </Tooltip>
-                                              );
-                                            },
-                                          )}
-                                        </div>
+                                                  {channelMeta.label}
+                                                </Chip>
+                                              </Tooltip>
+                                            );
+                                          },
+                                        )}
                                       </div>
+                                    </div>
 
-                                      {/* Urgência */}
-                                      <div>
-                                        <label className="text-xs font-semibold text-default-600 dark:text-default-400 mb-2 block">
-                                          Nível de Urgência
-                                        </label>
-                                        <Select
-                                          className="max-w-xs"
-                                          selectedKeys={[urgency]}
-                                          size="sm"
-                                          variant="bordered"
-                                          onSelectionChange={(keys) => {
-                                            const selected = Array.from(
-                                              keys,
-                                            )[0] as NotificationUrgency;
+                                    <div>
+                                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                                        Urgência
+                                      </p>
+                                      <Select
+                                        className="max-w-xs"
+                                        selectedKeys={[urgency]}
+                                        size="sm"
+                                        variant="bordered"
+                                        onSelectionChange={(keys) => {
+                                          const selected = Array.from(keys)[0];
 
-                                            handleUpdatePreference(eventType, {
-                                              urgency: selected,
-                                            });
-                                          }}
-                                        >
-                                          {Object.entries(URGENCY_LABELS).map(
-                                            ([key, label]) => (
-                                              <SelectItem key={key} textValue={label}>
-                                                {label}
-                                              </SelectItem>
-                                            ),
-                                          )}
-                                        </Select>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
+                                          if (!selected || typeof selected !== "string") {
+                                            return;
+                                          }
+
+                                          handleUpdatePreference(eventType, {
+                                            urgency: selected as NotificationUrgency,
+                                          });
+                                        }}
+                                      >
+                                        {Object.entries(URGENCY_LABELS).map(
+                                          ([urgencyKey, urgencyLabel]) => (
+                                            <SelectItem
+                                              key={urgencyKey}
+                                              textValue={urgencyLabel}
+                                            >
+                                              {urgencyLabel}
+                                            </SelectItem>
+                                          ),
+                                        )}
+                                      </Select>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
 
-                              <AnimatePresence>
-                                {isLoadingEvent && (
-                                  <motion.div
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    initial={{ opacity: 0 }}
-                                  >
-                                    <Spinner className="mt-1" size="sm" />
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    </CardBody>
-                  </Card>
-                </motion.div>
-              ))
-            )}
-          </motion.div>
+                              {isLoadingEvent ? <Spinner size="sm" /> : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
         )}
-      </AnimatePresence>
+      </PeoplePanel>
     </div>
   );
 }
+

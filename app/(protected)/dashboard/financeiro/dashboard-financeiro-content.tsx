@@ -18,7 +18,7 @@ import { GraficoParcelasComponent } from "@/components/dashboard-financeiro/graf
 import { HonorariosAdvogado } from "@/components/dashboard-financeiro/honorarios-advogado";
 import { FiltrosDashboardComponent } from "@/components/dashboard-financeiro/filtros-dashboard";
 import { FiltrosDashboard } from "@/app/actions/dashboard-financeiro";
-import { title, subtitle } from "@/components/primitives";
+import { PeoplePageHeader } from "@/components/people-ui";
 
 export default function DashboardFinanceiroPage() {
   const [filtros, setFiltros] = useState<FiltrosDashboard>({});
@@ -65,34 +65,28 @@ export default function DashboardFinanceiroPage() {
   return (
     <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12 px-3 sm:px-6">
       {/* Header */}
-      <motion.header
+      <motion.div
         animate={{ opacity: 1, y: 0 }}
         className="space-y-4"
         initial={{ opacity: 0, y: 20 }}
         transition={{ duration: 0.5 }}
       >
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-          Visão geral
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className={title({ size: "lg", color: "blue" })}>
-              Dashboard Financeiro
-            </h1>
-            <p className={subtitle({ fullWidth: true })}>
-              Visão geral das receitas, despesas e performance financeira
-            </p>
-          </div>
-          <Button
-            color="primary"
-            startContent={<Download className="h-4 w-4" />}
-            variant="flat"
-            onPress={handleExport}
-          >
-            Exportar
-          </Button>
-        </div>
-      </motion.header>
+        <PeoplePageHeader
+          title="Dashboard financeiro"
+          description="Visão geral das receitas, despesas e performance financeira."
+          tag="Visão geral"
+          actions={
+            <Button
+              color="primary"
+              startContent={<Download className="h-4 w-4" />}
+              variant="flat"
+              onPress={handleExport}
+            >
+              Exportar
+            </Button>
+          }
+        />
+      </motion.div>
 
       {/* Filtros */}
       <motion.div
@@ -175,7 +169,7 @@ export default function DashboardFinanceiroPage() {
           {/* Métricas Cards */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Resumo Financeiro
               </h2>
               <p className="text-sm text-default-400">
@@ -210,7 +204,7 @@ export default function DashboardFinanceiroPage() {
           {/* Gráfico de Parcelas */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Evolução das Parcelas
               </h2>
               <p className="text-sm text-default-400">
@@ -229,7 +223,7 @@ export default function DashboardFinanceiroPage() {
           {/* Honorários por Advogado */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Honorários por Advogado
               </h2>
               <p className="text-sm text-default-400">
@@ -248,7 +242,7 @@ export default function DashboardFinanceiroPage() {
           {/* Informações Adicionais */}
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Resumo do Sistema
               </h2>
               <p className="text-sm text-default-400">
@@ -268,7 +262,7 @@ export default function DashboardFinanceiroPage() {
                       <p className="text-xs uppercase tracking-[0.2em] text-default-400">
                         Contas Bancárias
                       </p>
-                      <p className="truncate text-xl font-semibold text-white">
+                      <p className="truncate text-xl font-semibold text-foreground">
                         {dadosBancarios.length}
                       </p>
                       <p className="text-xs text-default-400">
@@ -289,7 +283,7 @@ export default function DashboardFinanceiroPage() {
                       <p className="text-xs uppercase tracking-[0.2em] text-default-400">
                         Advogados Ativos
                       </p>
-                      <p className="truncate text-xl font-semibold text-white">
+                      <p className="truncate text-xl font-semibold text-foreground">
                         {advogados.length}
                       </p>
                       <p className="text-xs text-default-400">
@@ -309,7 +303,7 @@ export default function DashboardFinanceiroPage() {
                       <p className="text-xs uppercase tracking-[0.2em] text-default-400">
                         Clientes Ativos
                       </p>
-                      <p className="truncate text-xl font-semibold text-white">
+                      <p className="truncate text-xl font-semibold text-foreground">
                         {clientes.length}
                       </p>
                       <p className="text-xs text-default-400">

@@ -3,7 +3,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Divider } from "@heroui/divider";
 import { Button } from "@heroui/button";
 
-import { title, subtitle } from "@/components/primitives";
+import { PeoplePageHeader } from "@/components/people-ui";
 import { PermissionGuard } from "@/components/permission-guard";
 
 export const metadata: Metadata = {
@@ -14,24 +14,17 @@ export const metadata: Metadata = {
 export default function ProcuracoesPage() {
   return (
     <PermissionGuard permission="canViewAllProcesses">
-      <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 py-12">
-        <header className="space-y-4">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-            Poderes jurídicos
-          </p>
-          <h1 className={title({ size: "lg", color: "blue" })}>
-            Gestão de Procurações
-          </h1>
-          <p className={subtitle({ fullWidth: true })}>
-            Controle todas as procurações do escritório, gerencie poderes
-            específicos e mantenha o controle de validade e escopo de atuação.
-          </p>
-        </header>
+      <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 py-10">
+        <PeoplePageHeader
+          title="Gestão de procurações"
+          description="Controle procurações do escritório, poderes específicos, validade e escopo de atuação."
+          tag="Poderes jurídicos"
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Controle de Procurações
               </h2>
               <p className="text-sm text-default-400">
@@ -69,7 +62,7 @@ export default function ProcuracoesPage() {
 
           <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
             <CardHeader className="flex flex-col gap-2 pb-2">
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 Automação e Controle
               </h2>
               <p className="text-sm text-default-400">
@@ -107,7 +100,7 @@ export default function ProcuracoesPage() {
         <Card className="border border-white/10 bg-white/5">
           <CardBody className="flex flex-wrap items-center justify-between gap-3 text-sm text-default-400">
             <div>
-              <p className="text-white">Precisa de integração com cartórios?</p>
+              <p className="text-foreground">Precisa de integração com cartórios?</p>
               <p>Conecte com sistemas de registro e reconhecimento de firma.</p>
             </div>
             <Button as="a" color="primary" href="/suporte" radius="full">

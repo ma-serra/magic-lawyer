@@ -329,7 +329,7 @@ export function AdvogadoFormModal({
                   {...cardMotionProps}
                   whileHover={{ translateY: -4 }}
                 >
-                  <Card className="bg-linear-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
+                  <Card className="border border-white/10 bg-background/50">
                     <CardHeader className="flex flex-col items-start gap-1">
                       <Chip
                         color="primary"
@@ -479,7 +479,7 @@ export function AdvogadoFormModal({
                   {...cardMotionProps}
                   whileHover={{ translateY: -6 }}
                 >
-                  <Card className="bg-linear-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-700">
+                  <Card className="border border-white/10 bg-background/50">
                     <CardHeader className="flex flex-col items-start gap-1">
                       <Chip
                         color="secondary"
@@ -780,7 +780,7 @@ export function AdvogadoFormModal({
                     whileHover={{ translateY: -6 }}
                   >
                     <Card
-                      className={`border ${endereco.principal ? "border-green-500 shadow-lg" : "border-green-200 dark:border-green-800"} bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20`}
+                      className={`border ${endereco.principal ? "border-primary/50 shadow-lg" : "border-white/10"} bg-background/50`}
                     >
                       <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
@@ -1038,7 +1038,7 @@ export function AdvogadoFormModal({
                     whileHover={{ translateY: -6 }}
                   >
                     <Card
-                      className={`border ${conta.principal ? "border-teal-500 shadow-lg" : "border-teal-200 dark:border-teal-800"} bg-linear-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20`}
+                      className={`border ${conta.principal ? "border-primary/50 shadow-lg" : "border-white/10"} bg-background/50`}
                     >
                       <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">

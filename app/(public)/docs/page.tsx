@@ -3,8 +3,6 @@ import { Divider } from "@heroui/divider";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 
-import { title, subtitle } from "@/components/primitives";
-
 const docSections = [
   {
     id: 1,
@@ -81,10 +79,10 @@ export default function DocsPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
           Documentação
         </p>
-        <h1 className={title({ size: "lg", color: "blue" })}>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Centro de ajuda e documentação
         </h1>
-        <p className={subtitle({ fullWidth: true })}>
+        <p className="mx-auto max-w-3xl text-sm text-default-400 sm:text-base">
           Tudo que você precisa para dominar a plataforma Magic Lawyer. Guias,
           tutoriais, API docs e muito mais.
         </p>
@@ -102,7 +100,7 @@ export default function DocsPage() {
                   {section.title}
                 </Chip>
               </div>
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-foreground">
                 {section.title}
               </h2>
               <p className="text-sm text-default-400">{section.description}</p>
@@ -135,7 +133,7 @@ export default function DocsPage() {
 
       <Card className="border border-white/10 bg-white/5">
         <CardHeader className="flex flex-col gap-2 pb-2">
-          <h2 className="text-xl font-semibold text-white text-center">
+          <h2 className="text-xl font-semibold text-foreground text-center">
             Guia de Início Rápido
           </h2>
           <p className="text-sm text-default-400 text-center">
@@ -158,7 +156,7 @@ export default function DocsPage() {
                     {item.time}
                   </Chip>
                 </div>
-                <h3 className="font-semibold text-white mb-2">{item.title}</h3>
+                <h3 className="font-semibold text-foreground mb-2">{item.title}</h3>
                 <p className="text-sm text-default-400">{item.description}</p>
               </div>
             ))}

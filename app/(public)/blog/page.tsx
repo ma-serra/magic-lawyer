@@ -3,8 +3,6 @@ import { Divider } from "@heroui/divider";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 
-import { title, subtitle } from "@/components/primitives";
-
 const blogPosts = [
   {
     id: 1,
@@ -55,10 +53,10 @@ export default function BlogPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
           Blog
         </p>
-        <h1 className={title({ size: "lg", color: "blue" })}>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Insights e tendências do mundo jurídico
         </h1>
-        <p className={subtitle({ fullWidth: true })}>
+        <p className="mx-auto max-w-3xl text-sm text-default-400 sm:text-base">
           Artigos, dicas e análises sobre tecnologia jurídica, automação, gestão
           de escritórios e as últimas tendências do mercado.
         </p>
@@ -77,7 +75,7 @@ export default function BlogPage() {
                 </Chip>
                 <span className="text-xs text-default-500">{post.date}</span>
               </div>
-              <h2 className="text-lg font-semibold text-white line-clamp-2">
+              <h2 className="text-lg font-semibold text-foreground line-clamp-2">
                 {post.title}
               </h2>
               <p className="text-sm text-default-400">
@@ -106,7 +104,7 @@ export default function BlogPage() {
 
       <Card className="border border-white/10 bg-white/5">
         <CardBody className="text-center">
-          <h3 className="mb-4 text-xl font-semibold text-white">
+          <h3 className="mb-4 text-xl font-semibold text-foreground">
             Quer receber nossos artigos por email?
           </h3>
           <p className="mb-6 text-default-400">
@@ -119,7 +117,7 @@ export default function BlogPage() {
             </Button>
             <Button
               as="a"
-              className="border-white/20 text-white"
+              className="border-white/20 text-foreground"
               href="/login"
               radius="full"
               size="lg"

@@ -1742,7 +1742,7 @@ export default function AdvogadosContent() {
               </Dropdown>
 
               <Button
-                className="bg-linear-to-r from-blue-600 to-blue-700 text-white"
+                className="bg-primary text-primary-foreground"
                 size="sm"
                 startContent={<Plus size={16} />}
                 onPress={() => {
@@ -2307,7 +2307,7 @@ export default function AdvogadosContent() {
             transition={{ duration: 0.3 }}
           >
             <Card className="shadow-lg border-2 border-green-200 dark:border-green-700">
-              <CardHeader className="bg-linear-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 border-b border-green-200 dark:border-green-700">
+              <CardHeader className="border-b border-white/10 bg-background/50">
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-linear-to-br from-green-500 to-green-600 rounded-lg">
@@ -2369,7 +2369,7 @@ export default function AdvogadosContent() {
                     {/* Estatísticas Gerais */}
                     {performanceGeral && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Card className="bg-linear-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 border-blue-300 dark:border-blue-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-blue-500 rounded-full w-fit mx-auto mb-2">
                               <Users className="h-5 w-5 text-white" />
@@ -2383,7 +2383,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 border-green-300 dark:border-green-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-green-500 rounded-full w-fit mx-auto mb-2">
                               <Scale className="h-5 w-5 text-white" />
@@ -2397,7 +2397,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 border-purple-300 dark:border-purple-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-purple-500 rounded-full w-fit mx-auto mb-2">
                               <TrendingUp className="h-5 w-5 text-white" />
@@ -2411,7 +2411,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-orange-50 to-orange-100 dark:from-orange-900/30 dark:to-orange-800/20 border-orange-300 dark:border-orange-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-orange-500 rounded-full w-fit mx-auto mb-2">
                               <DollarSign className="h-5 w-5 text-white" />
@@ -2556,7 +2556,7 @@ export default function AdvogadosContent() {
             transition={{ duration: 0.3 }}
           >
             <Card className="shadow-lg border-2 border-purple-200 dark:border-purple-700">
-              <CardHeader className="bg-linear-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 border-b border-purple-200 dark:border-purple-700">
+              <CardHeader className="border-b border-white/10 bg-background/50">
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-linear-to-br from-purple-500 to-purple-600 rounded-lg">
@@ -2595,7 +2595,7 @@ export default function AdvogadosContent() {
                     {/* Estatísticas Gerais de Comissões */}
                     {comissoesGeral && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Card className="bg-linear-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 border-green-300 dark:border-green-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-green-500 rounded-full w-fit mx-auto mb-2">
                               <DollarSign className="h-5 w-5 text-white" />
@@ -2613,7 +2613,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 border-blue-300 dark:border-blue-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-blue-500 rounded-full w-fit mx-auto mb-2">
                               <CheckCircle className="h-5 w-5 text-white" />
@@ -2631,7 +2631,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-orange-50 to-orange-100 dark:from-orange-900/30 dark:to-orange-800/20 border-orange-300 dark:border-orange-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-orange-500 rounded-full w-fit mx-auto mb-2">
                               <Clock className="h-5 w-5 text-white" />
@@ -2649,7 +2649,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 border-purple-300 dark:border-purple-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-purple-500 rounded-full w-fit mx-auto mb-2">
                               <TrendingUp className="h-5 w-5 text-white" />
@@ -2672,7 +2672,7 @@ export default function AdvogadosContent() {
                     {/* Status das Comissões */}
                     {comissoesGeral && (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <Card className="bg-linear-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 border-green-300 dark:border-green-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-green-500 rounded-full w-fit mx-auto mb-2">
                               <CheckCircle className="h-5 w-5 text-white" />
@@ -2686,7 +2686,7 @@ export default function AdvogadosContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="bg-linear-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/20 border-yellow-300 dark:border-yellow-600">
+                        <Card className="border border-white/10 bg-background/60">
                           <CardBody className="p-4 text-center">
                             <div className="p-2 bg-yellow-500 rounded-full w-fit mx-auto mb-2">
                               <Clock className="h-5 w-5 text-white" />
@@ -3960,7 +3960,7 @@ export default function AdvogadosContent() {
                     Estatísticas
                   </h4>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div className="p-4 bg-linear-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                    <div className="rounded-lg border border-white/10 bg-background/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="p-2 bg-blue-500 rounded-lg">
                           <ScaleIcon className="h-4 w-4 text-white" />
@@ -3977,7 +3977,7 @@ export default function AdvogadosContent() {
                       </p>
                     </div>
 
-                    <div className="p-4 bg-linear-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/20 rounded-lg border border-green-200 dark:border-green-700">
+                    <div className="rounded-lg border border-white/10 bg-background/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="p-2 bg-green-500 rounded-lg">
                           <Percent className="h-4 w-4 text-white" />
@@ -3994,7 +3994,7 @@ export default function AdvogadosContent() {
                       </p>
                     </div>
 
-                    <div className="p-4 bg-linear-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                    <div className="rounded-lg border border-white/10 bg-background/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="p-2 bg-purple-500 rounded-lg">
                           <Star className="h-4 w-4 text-white" />
@@ -4011,7 +4011,7 @@ export default function AdvogadosContent() {
                       </p>
                     </div>
 
-                    <div className="p-4 bg-linear-to-br from-orange-50 to-orange-100 dark:from-orange-900/30 dark:to-orange-800/20 rounded-lg border border-orange-200 dark:border-orange-700">
+                    <div className="rounded-lg border border-white/10 bg-background/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="p-2 bg-orange-500 rounded-lg">
                           <Clock className="h-4 w-4 text-white" />

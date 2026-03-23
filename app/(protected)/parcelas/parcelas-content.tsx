@@ -889,8 +889,8 @@ export default function ParcelasContratoPage() {
                 }
               >
                 <div className="px-6 pb-6 space-y-6">
-                  <div className="bg-linear-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                  <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                       <FileTextIcon size={20} />
                       Informações Básicas
                     </h3>
@@ -973,8 +973,8 @@ export default function ParcelasContratoPage() {
                 }
               >
                 <div className="px-6 pb-6 space-y-6">
-                  <div className="bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-green-700 dark:text-green-300">
+                  <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                       <DollarSignIcon size={20} />
                       Valores e Status
                     </h3>
@@ -1090,8 +1090,8 @@ export default function ParcelasContratoPage() {
                 }
               >
                 <div className="px-6 pb-6 space-y-6">
-                  <div className="bg-linear-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-orange-700 dark:text-orange-300">
+                  <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                       <CalendarIcon size={20} />
                       Datas e Pagamento
                     </h3>
@@ -1178,8 +1178,8 @@ export default function ParcelasContratoPage() {
                 }
               >
                 <div className="px-6 pb-6 space-y-6">
-                  <div className="bg-linear-to-r from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-purple-700 dark:text-purple-300">
+                  <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                       <FileTextIcon size={20} />
                       Informações Adicionais
                     </h3>
@@ -1246,8 +1246,8 @@ export default function ParcelasContratoPage() {
                 >
                   <div className="px-6 pb-6 space-y-6">
                     {/* Validação da Conta */}
-                    <div className="bg-linear-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800">
-                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-cyan-700 dark:text-cyan-300">
+                    <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                         <ShieldIcon className="text-cyan-600" size={20} />
                         Validação da Conta Bancária
                       </h3>
@@ -1259,8 +1259,8 @@ export default function ParcelasContratoPage() {
 
                     {/* Dados Bancários - apenas se valor > 0 e conta válida */}
                     {formData.valor > 0 && contaValida && (
-                      <div className="bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-green-700 dark:text-green-300">
+                      <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                        <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                           <CreditCardIcon size={20} />
                           Dados Bancários para Pagamento
                         </h3>
@@ -1297,8 +1297,8 @@ export default function ParcelasContratoPage() {
 
                     {/* Comprovante de Pagamento - apenas para parcelas existentes */}
                     {editingId && (
-                      <div className="bg-linear-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-yellow-700 dark:text-yellow-300">
+                      <div className="rounded-lg border border-white/10 bg-background/50 p-4">
+                        <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
                           <FileTextIcon size={20} />
                           Comprovante de Pagamento
                         </h3>

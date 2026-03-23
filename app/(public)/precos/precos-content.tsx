@@ -29,7 +29,6 @@ import {
   type ResponsePriorityValue,
 } from "@/app/lib/pricing-chat";
 import { CheckoutModal } from "@/components/checkout-modal";
-import { subtitle, title } from "@/components/primitives";
 
 interface Plano {
   id: string;
@@ -637,10 +636,10 @@ export function PrecosContent({ planos, matrix }: PrecosContentProps) {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
             Comercial
           </p>
-          <h1 className={title({ size: "lg", color: "blue" })}>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Planos do Magic Lawyer
           </h1>
-          <p className={subtitle({ fullWidth: true })}>
+          <p className="mx-auto max-w-3xl text-sm text-default-400 sm:text-base">
             Matriz completa de módulos por plano, contratação guiada e captação
             assistida para seu escritório entrar em produção sem ruído.
           </p>

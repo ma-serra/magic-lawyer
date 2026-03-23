@@ -24,7 +24,7 @@ export default async function ConvitePage({ params }: ConvitePageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         <ConviteAcceptForm convite={convite} />
       </div>

@@ -41,6 +41,7 @@ import {
 import { DigitalCertificatesPanel } from "@/app/(protected)/configuracoes/digital-certificates-panel";
 import { useMeusDadosBancarios } from "@/app/hooks/use-dados-bancarios";
 import { DigitalCertificatePolicy } from "@/generated/prisma";
+import { PeopleMetricCard, PeoplePanel } from "@/components/people-ui";
 
 const especialidadeLabels: Record<string, string> = {
   CIVIL: "Civil",
@@ -387,41 +388,43 @@ export function ProfileContent() {
 
       {/* Estatísticas */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-          <Card className="border border-primary/20 bg-linear-to-br from-primary/10 to-primary/5 backdrop-blur-xl">
-            <CardBody className="text-center p-4">
-              <BarChart3 className="w-8 h-8 mx-auto mb-2 text-primary" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalProcessos}</p>
-              <p className="text-sm text-primary-300">Processos</p>
-            </CardBody>
-          </Card>
-          <Card className="border border-secondary/20 bg-linear-to-br from-secondary/10 to-secondary/5 backdrop-blur-xl">
-            <CardBody className="text-center p-4">
-              <User className="w-8 h-8 mx-auto mb-2 text-secondary" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalDocumentos}</p>
-              <p className="text-sm text-secondary-300">Documentos</p>
-            </CardBody>
-          </Card>
-          <Card className="border border-success/20 bg-linear-to-br from-success/10 to-success/5 backdrop-blur-xl">
-            <CardBody className="text-center p-4">
-              <Settings className="w-8 h-8 mx-auto mb-2 text-success" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalEventos}</p>
-              <p className="text-sm text-success-300">Eventos</p>
-            </CardBody>
-          </Card>
-          <Card className="border border-warning/20 bg-linear-to-br from-warning/10 to-warning/5 backdrop-blur-xl">
-            <CardBody className="text-center p-4">
-              <Shield className="w-8 h-8 mx-auto mb-2 text-warning" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalTarefas}</p>
-              <p className="text-sm text-warning-300">Tarefas</p>
-            </CardBody>
-          </Card>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <PeopleMetricCard
+            helper="Volume total de processos associados ao seu usuário."
+            icon={<BarChart3 className="h-4 w-4" />}
+            label="Processos"
+            tone="primary"
+            value={stats.totalProcessos}
+          />
+          <PeopleMetricCard
+            helper="Documentos vinculados na sua operação."
+            icon={<User className="h-4 w-4" />}
+            label="Documentos"
+            tone="secondary"
+            value={stats.totalDocumentos}
+          />
+          <PeopleMetricCard
+            helper="Eventos de agenda e operação registrados."
+            icon={<Settings className="h-4 w-4" />}
+            label="Eventos"
+            tone="success"
+            value={stats.totalEventos}
+          />
+          <PeopleMetricCard
+            helper="Tarefas ativas no seu contexto atual."
+            icon={<Shield className="h-4 w-4" />}
+            label="Tarefas"
+            tone="warning"
+            value={stats.totalTarefas}
+          />
         </div>
       )}
 
-      {/* Tabs de Configuração */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
-        <CardBody className="p-0">
+      <PeoplePanel
+        title="Configurações do perfil"
+        description="Navegue pelas abas para atualizar dados pessoais, segurança, integrações e preferências de notificação."
+      >
+        <div className="-mx-6 -mb-6">
           <Tabs
             aria-label="Configurações do perfil"
             className="w-full"
@@ -431,7 +434,7 @@ export function ProfileContent() {
             placement="top"
             classNames={{
               base: "w-full",
-              tabList: "w-full justify-start gap-2 overflow-x-auto flex-nowrap px-3 sm:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+              tabList: "w-full justify-center gap-2 overflow-x-auto flex-nowrap px-3 sm:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
               tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0 outline-none data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/35 data-[focus-visible=true]:ring-offset-0",
               tabContent: "text-sm font-medium whitespace-nowrap",
               panel: "w-full",
@@ -810,49 +813,49 @@ export function ProfileContent() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg bg-linear-to-r from-primary/10 to-primary/5 border border-primary/20">
+                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                       <div className="flex items-center gap-2 mb-2">
                         <Shield className="w-4 h-4 text-primary" />
-                        <p className="text-sm font-medium text-primary-300">Função</p>
+                        <p className="text-sm font-medium text-default-500">Função</p>
                       </div>
                       <Chip color="primary" size="sm" variant="flat">
                         {getRoleLabel(profile.role)}
                       </Chip>
                     </div>
 
-                    <div className="p-4 rounded-lg bg-linear-to-r from-success/10 to-success/5 border border-success/20">
+                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                       <div className="flex items-center gap-2 mb-2">
                         <UserCheck className="w-4 h-4 text-success" />
-                        <p className="text-sm font-medium text-success-300">Status</p>
+                        <p className="text-sm font-medium text-default-500">Status</p>
                       </div>
                       <Chip color={profile.active ? "success" : "danger"} size="sm" variant="flat">
                         {profile.active ? "Ativo" : "Inativo"}
                       </Chip>
                     </div>
 
-                    <div className="p-4 rounded-lg bg-linear-to-r from-warning/10 to-warning/5 border border-warning/20">
+                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                       <div className="flex items-center gap-2 mb-2">
                         <Settings className="w-4 h-4 text-warning" />
-                        <p className="text-sm font-medium text-warning-300">Último Login</p>
+                        <p className="text-sm font-medium text-default-500">Último Login</p>
                       </div>
                       <p className="text-foreground font-medium">{formatDate(profile.lastLoginAt)}</p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg bg-linear-to-r from-secondary/10 to-secondary/5 border border-secondary/20">
+                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                       <div className="flex items-center gap-2 mb-2">
                         <User className="w-4 h-4 text-secondary" />
-                        <p className="text-sm font-medium text-secondary-300">Membro desde</p>
+                        <p className="text-sm font-medium text-default-500">Membro desde</p>
                       </div>
                       <p className="text-foreground font-medium">{formatDate(profile.createdAt)}</p>
                     </div>
 
                     {profile.tenant && (
-                      <div className="p-4 rounded-lg bg-linear-to-r from-info/10 to-info/5 border border-info/20">
+                      <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                         <div className="flex items-center gap-2 mb-2">
                           <Mail className="w-4 h-4 text-info" />
-                          <p className="text-sm font-medium text-info-300">Escritório</p>
+                          <p className="text-sm font-medium text-default-500">Escritório</p>
                         </div>
                         <Chip color="secondary" size="sm" variant="flat">
                           {profile.tenant.name}
@@ -860,10 +863,10 @@ export function ProfileContent() {
                       </div>
                     )}
 
-                    <div className="p-4 rounded-lg bg-linear-to-r from-default/10 to-default/5 border border-default/20">
+                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
                       <div className="flex items-center gap-2 mb-2">
                         <Info className="w-4 h-4 text-default-400" />
-                        <p className="text-sm font-medium text-default-400">ID do Usuário</p>
+                        <p className="text-sm font-medium text-default-500">ID do Usuário</p>
                         <button className="ml-2 p-1 rounded hover:bg-default-200 transition cursor-pointer" title="Copiar ID" type="button" onClick={handleCopyId}>
                           {copied ? <CopyCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-default-400" />}
                         </button>
@@ -1391,8 +1394,8 @@ export function ProfileContent() {
               </div>
             </Tab>
           </Tabs>
-        </CardBody>
-      </Card>
+        </div>
+      </PeoplePanel>
     </div>
   );
 }

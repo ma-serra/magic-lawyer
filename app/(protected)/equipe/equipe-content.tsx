@@ -1717,7 +1717,7 @@ function UsuariosTab() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 2xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-6 auto-rows-fr">
         {/* Card Total de Funcionários */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.1 }}>
-          <Card className="bg-linear-to-br from-blue-50 via-blue-100 to-indigo-200 dark:from-blue-900/30 dark:via-blue-800/20 dark:to-indigo-900/30 border-blue-300 dark:border-blue-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-blue-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -1738,7 +1738,7 @@ function UsuariosTab() {
 
         {/* Card Ativos */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.2 }}>
-          <Card className="bg-linear-to-br from-green-50 via-emerald-100 to-teal-200 dark:from-green-900/30 dark:via-emerald-800/20 dark:to-teal-900/30 border-green-300 dark:border-green-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-green-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -1759,7 +1759,7 @@ function UsuariosTab() {
 
         {/* Card Inativos */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.3 }}>
-          <Card className="bg-linear-to-br from-rose-50 via-pink-100 to-red-200 dark:from-rose-900/30 dark:via-pink-800/20 dark:to-red-900/30 border-rose-300 dark:border-rose-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-rose-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -1780,7 +1780,7 @@ function UsuariosTab() {
 
         {/* Card Com Cargo */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.4 }}>
-          <Card className="bg-linear-to-br from-purple-50 via-violet-100 to-purple-200 dark:from-purple-900/30 dark:via-violet-800/20 dark:to-purple-900/30 border-purple-300 dark:border-purple-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-purple-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -1801,7 +1801,7 @@ function UsuariosTab() {
 
         {/* Card Vinculados */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.5 }}>
-          <Card className="bg-linear-to-br from-orange-50 via-amber-100 to-yellow-200 dark:from-orange-900/30 dark:via-amber-800/20 dark:to-yellow-900/30 border-orange-300 dark:border-orange-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-orange-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -1822,7 +1822,7 @@ function UsuariosTab() {
 
         {/* Card Administradores */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.6 }}>
-          <Card className="bg-linear-to-br from-indigo-50 via-blue-100 to-indigo-200 dark:from-indigo-900/30 dark:via-blue-800/20 dark:to-indigo-900/30 border-indigo-300 dark:border-indigo-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-indigo-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -3393,7 +3393,7 @@ function ConvitesTab() {
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-6 auto-rows-fr">
         {/* Card Pendentes */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.1 }}>
-          <Card className="bg-linear-to-br from-amber-50 via-yellow-100 to-orange-200 dark:from-amber-900/30 dark:via-yellow-800/20 dark:to-orange-900/30 border-amber-300 dark:border-amber-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-amber-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -3414,7 +3414,7 @@ function ConvitesTab() {
 
         {/* Card Aceitos */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.2 }}>
-          <Card className="bg-linear-to-br from-green-50 via-emerald-100 to-teal-200 dark:from-green-900/30 dark:via-emerald-800/20 dark:to-teal-900/30 border-green-300 dark:border-green-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-green-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -3435,7 +3435,7 @@ function ConvitesTab() {
 
         {/* Card Expirados */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.3 }}>
-          <Card className="bg-linear-to-br from-rose-50 via-pink-100 to-red-200 dark:from-rose-900/30 dark:via-pink-800/20 dark:to-red-900/30 border-rose-300 dark:border-rose-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-rose-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -3456,7 +3456,7 @@ function ConvitesTab() {
 
         {/* Card Total */}
         <motion.div animate={{ opacity: 1, y: 0 }} className="flex" initial={{ opacity: 0, y: 20 }} transition={{ duration: 0.5, delay: 0.4 }}>
-          <Card className="bg-linear-to-br from-purple-50 via-violet-100 to-purple-200 dark:from-purple-900/30 dark:via-violet-800/20 dark:to-purple-900/30 border-purple-300 dark:border-purple-600 shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
+          <Card className="border border-white/10 bg-background/70 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-500 group h-full w-full">
             <CardBody className="p-3 sm:p-4 md:p-6">
               <div className="flex items-center justify-between mb-2 sm:mb-3 md:mb-4">
                 <div className="p-2 sm:p-2.5 md:p-3 bg-purple-500 rounded-xl shadow-lg group-hover:scale-110 transition-transform duration-300">

@@ -96,19 +96,16 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
     const tenantSlug = profile.tenant?.slug || "sem-slug";
 
     return (
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl overflow-hidden">
-        <CardHeader className="relative pb-4">
-          <div className="absolute inset-0 bg-linear-to-r from-primary/10 via-secondary/5 to-primary/10 opacity-40" />
-          <div className="relative flex items-center gap-3">
-            <div className="rounded-xl border border-primary/30 bg-primary/10 p-2">
-              <Building2 className="h-5 w-5 text-primary" />
-            </div>
-            <div className="space-y-1">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-5 w-5 text-primary" />
+            <div>
               <h3 className="text-lg font-semibold text-foreground">
                 Contexto administrativo do escritório
               </h3>
-              <p className="text-sm text-default-400">
-                Visão rápida de identificação do tenant e escopo de gestão.
+              <p className="text-sm text-default-500">
+                Identificação do tenant e escopo operacional da sua conta.
               </p>
             </div>
           </div>
@@ -116,8 +113,8 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
         <Divider className="border-white/10" />
         <CardBody className="space-y-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">
+            <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-default-500">
                 Escritório
               </p>
               <p className="mt-2 text-sm font-semibold text-foreground">
@@ -125,8 +122,8 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
               </p>
             </div>
 
-            <div className="rounded-xl border border-secondary/20 bg-secondary/5 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-secondary/70">
+            <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-default-500">
                 Identificador do tenant
               </p>
               <p className="mt-2 font-mono text-sm text-foreground">
@@ -140,15 +137,15 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
               Escopo administrativo disponível neste perfil
             </p>
             <div className="flex flex-wrap gap-2.5">
-              <Badge color="primary" variant="flat">
+              <Badge color="default" variant="flat">
                 <Shield className="w-3 h-3 mr-1" />
                 Gestão de equipe
               </Badge>
-              <Badge color="primary" variant="flat">
+              <Badge color="default" variant="flat">
                 <FileText className="w-3 h-3 mr-1" />
                 Configurações do tenant
               </Badge>
-              <Badge color="primary" variant="flat">
+              <Badge color="default" variant="flat">
                 <DollarSign className="w-3 h-3 mr-1" />
                 Operação financeira
               </Badge>
@@ -161,43 +158,40 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
 
   const renderClienteInfo = () => {
     return (
-      <Card className="border border-white/10 bg-linear-to-br from-background/80 to-background/60 backdrop-blur-xl overflow-hidden">
-        <CardHeader className="relative pb-4">
-          <div className="absolute inset-0 bg-linear-to-r from-primary/10 via-secondary/5 to-primary/10 opacity-50" />
-          <div className="relative flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-linear-to-br from-primary/20 to-secondary/20 border border-primary/30">
-              <Users className="w-6 h-6 text-primary" />
-            </div>
+      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" />
             <div>
-              <h3 className="text-xl font-bold text-white">
-                Informações do Cliente
+              <h3 className="text-lg font-semibold text-foreground">
+                Informações do cliente
               </h3>
-              <p className="text-sm text-primary-300">
-                Portal de acesso aos seus serviços jurídicos
+              <p className="text-sm text-default-500">
+                Escopo de acesso do portal do cliente vinculado ao escritório.
               </p>
             </div>
           </div>
         </CardHeader>
+        <Divider className="border-white/10" />
 
-        <CardBody className="space-y-6">
-          {/* Informações Principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-4 rounded-xl bg-linear-to-br from-primary/10 to-primary/5 border border-primary/20">
-              <div className="flex items-center gap-3 mb-2">
-                <Building2 className="w-5 h-5 text-primary" />
-                <p className="text-sm font-medium text-primary-300">
+        <CardBody className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
                   Escritório Vinculado
                 </p>
               </div>
-              <p className="text-white font-semibold text-lg">
+              <p className="text-base font-semibold text-foreground">
                 {profile.tenant?.name || "N/A"}
               </p>
             </div>
 
-            <div className="p-4 rounded-xl bg-linear-to-br from-success/10 to-success/5 border border-success/20">
-              <div className="flex items-center gap-3 mb-2">
-                <Shield className="w-5 h-5 text-success" />
-                <p className="text-sm font-medium text-success-300">
+            <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary" />
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
                   Status da Conta
                 </p>
               </div>
@@ -207,66 +201,55 @@ export function RoleSpecificInfo({ profile }: RoleSpecificInfoProps) {
                 size="lg"
                 variant="flat"
               >
-                {profile.active ? "✓ Ativo" : "✗ Inativo"}
+                {profile.active ? "Ativo" : "Inativo"}
               </Badge>
             </div>
           </div>
 
-          {/* Acesso Permitido */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary" />
-              <h4 className="text-lg font-semibold text-white">
-                Acesso Permitido
-              </h4>
-            </div>
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-default-500">
+              Acesso permitido
+            </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="group p-4 rounded-xl bg-linear-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 hover:border-blue-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-blue-500/20 group-hover:bg-blue-400/30 transition-colors">
-                    <FileText className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Meus Documentos</h5>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <h5 className="font-semibold text-foreground">Meus documentos</h5>
                 </div>
-                <p className="text-sm text-blue-300">
+                <p className="text-sm text-default-400">
                   Acesse seus contratos, procurações e documentos jurídicos
                 </p>
               </div>
 
-              <div className="group p-4 rounded-xl bg-linear-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 hover:border-purple-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-purple-500/20 group-hover:bg-purple-400/30 transition-colors">
-                    <Users className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Meus Processos</h5>
+              <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <h5 className="font-semibold text-foreground">Meus processos</h5>
                 </div>
-                <p className="text-sm text-purple-300">
+                <p className="text-sm text-default-400">
                   Acompanhe o andamento dos seus processos jurídicos
                 </p>
               </div>
 
-              <div className="group p-4 rounded-xl bg-linear-to-br from-green-500/10 to-green-600/5 border border-green-500/20 hover:border-green-400/40 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-green-500/20 group-hover:bg-green-400/30 transition-colors">
-                    <DollarSign className="w-5 h-5 text-green-400" />
-                  </div>
-                  <h5 className="font-semibold text-white">Minhas Faturas</h5>
+              <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-primary" />
+                  <h5 className="font-semibold text-foreground">Minhas faturas</h5>
                 </div>
-                <p className="text-sm text-green-300">
+                <p className="text-sm text-default-400">
                   Visualize e gerencie suas faturas e pagamentos
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Informações Adicionais */}
-          <div className="p-4 rounded-xl bg-linear-to-r from-default/10 to-default/5 border border-default/20">
-            <div className="flex items-center gap-3 mb-3">
-              <Phone className="w-5 h-5 text-default-400" />
-              <h5 className="font-semibold text-white">Contato</h5>
+          <div className="rounded-xl border border-white/10 bg-background/50 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Phone className="h-4 w-4 text-primary" />
+              <h5 className="font-semibold text-foreground">Contato</h5>
             </div>
-            <p className="text-sm text-default-300">
+            <p className="text-sm text-default-400">
               Para dúvidas ou suporte, entre em contato com seu escritório de
               advocacia.
             </p>
