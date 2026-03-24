@@ -120,7 +120,7 @@ export function FloatingAssistantDock({
   }
 
   return (
-    <div className="fixed bottom-24 right-4 z-[74] flex flex-col items-end gap-3">
+    <div className="pointer-events-none fixed bottom-24 right-4 z-[74] flex flex-col items-end gap-3">
       {isExpanded ? (
         <div className="hidden max-w-[260px] rounded-3xl border border-white/10 bg-content1/92 p-4 text-right shadow-2xl backdrop-blur sm:block">
           <div className="space-y-1">
