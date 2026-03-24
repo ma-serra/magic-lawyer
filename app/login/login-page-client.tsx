@@ -919,7 +919,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
         <section className="order-2 space-y-8 lg:order-1">
           <div className="space-y-5">
             <Chip
-              className="border border-amber-200/80 bg-amber-100/80 px-4 text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-900 dark:border-primary/20 dark:bg-primary/10 dark:text-primary-200"
+              className="border border-amber-200/80 bg-amber-100/80 px-4 text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-900 dark:border-white/20 dark:bg-white/10 dark:text-white"
               radius="full"
               variant="flat"
             >
@@ -1014,14 +1014,16 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
                 Suas credenciais e ações sensíveis trafegam com proteção e
                 rastreabilidade.
               </p>
-              <div className="mt-2 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="mt-2 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-4 dark:border-white/15 dark:bg-white/5">
                 <div className="flex items-start gap-3">
-                  <span className="text-sm text-primary">💡</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-200">
+                    💡
+                  </span>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary-700 dark:text-primary-300">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-slate-100">
                       Dica operacional
                     </p>
-                    <p className="mt-1 text-xs leading-6 text-primary-800 dark:text-primary-200">
+                    <p className="mt-1 text-xs leading-6 text-slate-700 dark:text-slate-200">
                       O acesso ao escritório é identificado automaticamente pelo
                       domínio deste link.
                     </p>
