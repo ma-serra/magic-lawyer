@@ -122,7 +122,7 @@ export function FloatingAssistantDock({
   return (
     <div className="pointer-events-none fixed bottom-24 right-4 z-[74] flex flex-col items-end gap-3">
       {isExpanded ? (
-        <div className="hidden max-w-[260px] rounded-3xl border border-white/10 bg-content1/92 p-4 text-right shadow-2xl backdrop-blur sm:block">
+        <div className="pointer-events-auto hidden max-w-[260px] rounded-3xl border border-white/10 bg-content1/92 p-4 text-right shadow-2xl backdrop-blur sm:block">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
               Treinada para jurídico
@@ -179,40 +179,42 @@ export function FloatingAssistantDock({
         </div>
       ))}
 
-      <Tooltip
-        className="max-w-xs"
-        content={
-          <div className="space-y-1 p-1">
-            <p className="text-xs font-semibold">Treinada para jurídico</p>
-            <p className="text-xs text-default-400">
-              Gere peças, analise documentos e receba sugestões sobre seus processos.
-            </p>
-          </div>
-        }
-        placement="left"
-      >
-        <Button
-          isIconOnly
-          aria-label="Abrir speed dial do assistente jurídico"
-          className="h-16 w-16 rounded-full border-4 border-content1 bg-gradient-to-br from-primary via-sky-500 to-cyan-400 text-white shadow-[0_22px_48px_rgba(37,99,235,0.35)] transition hover:scale-[1.03]"
-          onPress={() => {
-            setIsExpanded((current) => {
-              const nextValue = !current;
-              if (nextValue) {
-                void trackJuridicalAiInteraction({
-                  scope,
-                  interaction: "FAB_OPENED",
-                  route: pathname,
-                });
-              }
-
-              return nextValue;
-            });
-          }}
+      <div className="pointer-events-auto">
+        <Tooltip
+          className="max-w-xs"
+          content={
+            <div className="space-y-1 p-1">
+              <p className="text-xs font-semibold">Treinada para jurídico</p>
+              <p className="text-xs text-default-400">
+                Gere peças, analise documentos e receba sugestões sobre seus processos.
+              </p>
+            </div>
+          }
+          placement="left"
         >
-          {isExpanded ? <X className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
-        </Button>
-      </Tooltip>
+          <Button
+            isIconOnly
+            aria-label="Abrir speed dial do assistente jurídico"
+            className="h-16 w-16 rounded-full border-4 border-content1 bg-gradient-to-br from-primary via-sky-500 to-cyan-400 text-white shadow-[0_22px_48px_rgba(37,99,235,0.35)] transition hover:scale-[1.03]"
+            onPress={() => {
+              setIsExpanded((current) => {
+                const nextValue = !current;
+                if (nextValue) {
+                  void trackJuridicalAiInteraction({
+                    scope,
+                    interaction: "FAB_OPENED",
+                    route: pathname,
+                  });
+                }
+
+                return nextValue;
+              });
+            }}
+          >
+            {isExpanded ? <X className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
+          </Button>
+        </Tooltip>
+      </div>
     </div>
   );
 }
