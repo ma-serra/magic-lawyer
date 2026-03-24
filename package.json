@@ -6,7 +6,7 @@
     "dev": "cross-env PORT=9192 next dev --turbopack",
     "dev:ngrok": "concurrently \"npm run dev\" \"ngrok http 9192\"",
     "dev:asaas": "concurrently \"npm run dev\" \"ngrok http 9192\" \"node scripts/wait-and-cleanup.js\"",
-    "build": "prisma generate && npm run repo:hygiene && next build --webpack",
+    "build": "prisma generate && npm run repo:hygiene && next build",
     "build:turbopack": "prisma generate && npm run repo:hygiene && next build",
     "build:webpack": "prisma generate && next build --webpack",
     "postinstall": "prisma generate",
