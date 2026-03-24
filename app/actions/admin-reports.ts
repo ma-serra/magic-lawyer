@@ -60,6 +60,13 @@ const CRITICAL_ACTION_KEYWORDS = [
   "PAYMENT",
 ];
 
+const PRODUCTION_TENANT_WHERE = {
+  slug: {
+    not: "global",
+  },
+  isTestEnvironment: false,
+} as const;
+
 type ActionResponse<T> = {
   success: boolean;
   data?: T;
@@ -257,9 +264,16 @@ export async function getAdminReportsHub(
           ? startOfDay(range.start)
           : startOfDay(trendStart);
     const scopeTenantWhere =
-      filters.tenantId === "ALL" ? undefined : { id: filters.tenantId };
+      filters.tenantId === "ALL"
+        ? { ...PRODUCTION_TENANT_WHERE }
+        : { ...PRODUCTION_TENANT_WHERE, id: filters.tenantId };
     const modelTenantWhere =
-      filters.tenantId === "ALL" ? undefined : { tenantId: filters.tenantId };
+      filters.tenantId === "ALL"
+        ? { tenant: { ...PRODUCTION_TENANT_WHERE } }
+        : {
+            tenantId: filters.tenantId,
+            tenant: { ...PRODUCTION_TENANT_WHERE },
+          };
 
     const [
       tenantOptions,
@@ -285,6 +299,7 @@ export async function getAdminReportsHub(
       inpiCriticalRisk,
     ] = await Promise.all([
       prisma.tenant.findMany({
+        where: PRODUCTION_TENANT_WHERE,
         orderBy: [{ status: "asc" }, { name: "asc" }],
         select: {
           id: true,
@@ -414,7 +429,10 @@ export async function getAdminReportsHub(
         },
       }),
       prisma.ticket.findMany({
-        where: filters.tenantId === "ALL" ? undefined : { tenantId: filters.tenantId },
+        where: {
+          ...(filters.tenantId === "ALL" ? {} : { tenantId: filters.tenantId }),
+          tenant: PRODUCTION_TENANT_WHERE,
+        },
         select: {
           id: true,
           title: true,
@@ -577,7 +595,10 @@ export async function getAdminReportsHub(
         },
       }),
       prisma.assinaturaPacoteJuiz.findMany({
-        where: filters.tenantId === "ALL" ? undefined : { tenantId: filters.tenantId },
+        where: {
+          ...(filters.tenantId === "ALL" ? {} : { tenantId: filters.tenantId }),
+          tenant: PRODUCTION_TENANT_WHERE,
+        },
         select: {
           id: true,
           status: true,

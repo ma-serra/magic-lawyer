@@ -17,9 +17,9 @@ const seedCategoriasTarefa = require("./seeds/categoriasTarefa");
 const seedPlanos = require("./seeds/planos");
 const seedModulos = require("./seeds/modulos");
 const { seedTenantSandra } = require("./seeds/tenants/tenantSandra");
-const { seedTenantLuana } = require("./seeds/tenants/tenantLuana");
 const { seedSalbaAdvocacia } = require("./seeds/tenants/salbaAdvocacia");
-const { seedTenantFred } = require("./seeds/tenants/tenantFred");
+const { seedTenantRvb } = require("./seeds/tenants/tenantRvb");
+const { seedTenantInternalTest } = require("./seeds/tenants/tenantInternalTest");
 const { seedEventos } = require("./seeds/eventos");
 const { seedJuizes } = require("./seeds/juizes");
 const { seedSuperAdmin } = require("./seeds/superAdmin");
@@ -145,40 +145,27 @@ const TENANT_CREDENTIAL_SUMMARIES = [
     ],
   },
   {
-    name: "Luana Morais Advocacia",
-    slug: "luana",
-    accessUrl: "http://localhost:9192/login",
-    credentials: [
-      "👑 ADMIN: luana@adv.br / Luana@123",
-      "⚖️ ADVOGADO: gabriel@luanamorais.adv.br / Advogado@123",
-      "⚖️ ADVOGADO: juliana@luanamorais.adv.br / Advogado@123",
-      "👤 CLIENTE: paulo@luanamorais.adv.br / Cliente@123",
-      "👤 CLIENTE: maria@luanamorais.adv.br / Cliente@123",
-      "👤 CLIENTE: tech@luanamorais.adv.br / Cliente@123",
-    ],
-  },
-  {
     name: "Salba Advocacia",
     slug: "salba",
     accessUrl: "http://localhost:9192/login",
     credentials: [
       "👑 ADMIN: luciano@salbaadvocacia.com.br / Luciano@123",
-      "⚖️ ADVOGADA: mariana@salbaadvocacia.com.br / Mariana@123",
-      "⚖️ ADVOGADO: pedro@salbaadvocacia.com.br / Pedro@123",
-      "👤 CLIENTE: joao.silva@email.com / Cliente1@123",
-      "👤 CLIENTE: maria.oliveira@email.com / Cliente2@123",
-      "👤 CLIENTE: carlos.pereira@email.com / Cliente3@123",
     ],
   },
   {
-    name: "Frederico Leitão Advocacia",
-    slug: "fred",
+    name: "RVB Advocacia",
+    slug: "rvb",
     accessUrl: "http://localhost:9192/login",
     credentials: [
-      "👑 ADMIN: fredericopleitaoadv@gmail.com / Fred@123",
-      "⚖️ ADVOGADO: associado@fred.magiclawyer.com.br / Advogado@123",
-      "🗂️ SECRETARIA: secretaria@fred.magiclawyer.com.br / Funcionario@123",
-      "👤 CLIENTE: cliente.demo@fred.magiclawyer.com.br / Cliente@123",
+      "👑 ADMIN: admin@rvb.adv.br / Rvb@123",
+    ],
+  },
+  {
+    name: "Tenant Interno de Testes",
+    slug: "ml-test",
+    accessUrl: "http://localhost:9192/login",
+    credentials: [
+      "👑 ADMIN: admin.testes@magiclawyer.com.br / Teste@123",
     ],
   },
 ];
@@ -250,9 +237,9 @@ async function main() {
   // Seeds de tenants
   try {
     await seedTenantSandra(prisma, Prisma);
-    await seedTenantLuana(prisma, Prisma);
     await seedSalbaAdvocacia(prisma);
-    await seedTenantFred(prisma);
+    await seedTenantRvb(prisma);
+    await seedTenantInternalTest(prisma);
   } catch (error) {
     console.warn("⚠️ Tenants já criados:", error.message);
   }

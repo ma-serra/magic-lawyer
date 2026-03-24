@@ -4,6 +4,14 @@ import { TenantStatus } from "@/generated/prisma";
 
 import prisma from "./prisma";
 
+const PRODUCTION_TENANT_FILTER = {
+  status: TenantStatus.ACTIVE,
+  slug: {
+    not: "global",
+  },
+  isTestEnvironment: false,
+} as const;
+
 type MetricFormatOptions = {
   step: number;
   exactUntil?: number;
@@ -48,7 +56,7 @@ export const getPublicMarketingMetrics = cache(
         where: {
           deletedAt: null,
           tenant: {
-            status: TenantStatus.ACTIVE,
+            ...PRODUCTION_TENANT_FILTER,
           },
         },
       }),
@@ -56,20 +64,20 @@ export const getPublicMarketingMetrics = cache(
         where: {
           deletedAt: null,
           tenant: {
-            status: TenantStatus.ACTIVE,
+            ...PRODUCTION_TENANT_FILTER,
           },
         },
       }),
       prisma.tenant.count({
         where: {
-          status: TenantStatus.ACTIVE,
+          ...PRODUCTION_TENANT_FILTER,
         },
       }),
       prisma.usuario.count({
         where: {
           active: true,
           tenant: {
-            status: TenantStatus.ACTIVE,
+            ...PRODUCTION_TENANT_FILTER,
           },
         },
       }),

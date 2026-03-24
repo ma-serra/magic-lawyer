@@ -1,6 +1,6 @@
 {
   "name": "magic-lawyer",
-  "version": "1.0.12-beta.0",
+  "version": "1.0.13-beta.0",
   "private": true,
   "scripts": {
     "dev": "cross-env PORT=9192 next dev --turbopack",

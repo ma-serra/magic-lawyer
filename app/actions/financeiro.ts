@@ -17,6 +17,13 @@ import {
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 
+const PRODUCTION_TENANT_WHERE = {
+  slug: {
+    not: "global",
+  },
+  isTestEnvironment: false,
+} as const;
+
 // ==================== TIPOS ====================
 
 export type EstatisticasFinanceiras = {
@@ -141,6 +148,7 @@ export async function getEstatisticasFinanceiras(): Promise<{
     const receitaTotalResult = await prisma.pagamento.aggregate({
       where: {
         status: "PAGO",
+        tenant: PRODUCTION_TENANT_WHERE,
       },
       _sum: {
         valor: true,
@@ -151,6 +159,7 @@ export async function getEstatisticasFinanceiras(): Promise<{
     const receitaMensalResult = await prisma.pagamento.aggregate({
       where: {
         status: "PAGO",
+        tenant: PRODUCTION_TENANT_WHERE,
         confirmadoEm: {
           gte: startOfMonth,
         },
@@ -164,6 +173,7 @@ export async function getEstatisticasFinanceiras(): Promise<{
     const receitaAnualResult = await prisma.pagamento.aggregate({
       where: {
         status: "PAGO",
+        tenant: PRODUCTION_TENANT_WHERE,
         confirmadoEm: {
           gte: startOfYear,
         },
@@ -176,30 +186,90 @@ export async function getEstatisticasFinanceiras(): Promise<{
     // Assinaturas
     const [totalAssinaturas, assinaturasAtivas, assinaturasInadimplentes] =
       await Promise.all([
-        prisma.tenantSubscription.count(),
-        prisma.tenantSubscription.count({ where: { status: "ATIVA" } }),
-        prisma.tenantSubscription.count({ where: { status: "INADIMPLENTE" } }),
+        prisma.tenantSubscription.count({
+          where: {
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
+        prisma.tenantSubscription.count({
+          where: {
+            status: "ATIVA",
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
+        prisma.tenantSubscription.count({
+          where: {
+            status: "INADIMPLENTE",
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
       ]);
 
     // Faturas
     const [totalFaturas, faturasPagas, faturasPendentes, faturasVencidas] =
       await Promise.all([
-        prisma.fatura.count(),
-        prisma.fatura.count({ where: { status: "PAGA" } }),
-        prisma.fatura.count({ where: { status: "ABERTA" } }),
-        prisma.fatura.count({ where: { status: "VENCIDA" } }),
+        prisma.fatura.count({
+          where: {
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
+        prisma.fatura.count({
+          where: {
+            status: "PAGA",
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
+        prisma.fatura.count({
+          where: {
+            status: "ABERTA",
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
+        prisma.fatura.count({
+          where: {
+            status: "VENCIDA",
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        }),
       ]);
 
     // Pagamentos
     const [totalPagamentos, pagamentosConfirmados] = await Promise.all([
-      prisma.pagamento.count(),
-      prisma.pagamento.count({ where: { status: "PAGO" } }),
+      prisma.pagamento.count({
+        where: {
+          tenant: PRODUCTION_TENANT_WHERE,
+        },
+      }),
+      prisma.pagamento.count({
+        where: {
+          status: "PAGO",
+          tenant: PRODUCTION_TENANT_WHERE,
+        },
+      }),
     ]);
 
     // Comissões
     const [comissoesPendentes, comissoesPagas] = await Promise.all([
-      prisma.pagamentoComissao.count({ where: { status: "PENDENTE" } }),
-      prisma.pagamentoComissao.count({ where: { status: "PAGO" } }),
+      prisma.pagamentoComissao.count({
+        where: {
+          status: "PENDENTE",
+          pagamento: {
+            fatura: {
+              tenant: PRODUCTION_TENANT_WHERE,
+            },
+          },
+        },
+      }),
+      prisma.pagamentoComissao.count({
+        where: {
+          status: "PAGO",
+          pagamento: {
+            fatura: {
+              tenant: PRODUCTION_TENANT_WHERE,
+            },
+          },
+        },
+      }),
     ]);
 
     const estatisticas: EstatisticasFinanceiras = {
@@ -261,6 +331,7 @@ export async function getResumoMensal(): Promise<{
         prisma.pagamento.aggregate({
           where: {
             status: "PAGO",
+            tenant: PRODUCTION_TENANT_WHERE,
             confirmadoEm: {
               gte: date,
               lt: nextMonth,
@@ -272,6 +343,7 @@ export async function getResumoMensal(): Promise<{
         }),
         prisma.tenantSubscription.count({
           where: {
+            tenant: PRODUCTION_TENANT_WHERE,
             createdAt: {
               gte: date,
               lt: nextMonth,
@@ -280,6 +352,7 @@ export async function getResumoMensal(): Promise<{
         }),
         prisma.fatura.count({
           where: {
+            tenant: PRODUCTION_TENANT_WHERE,
             createdAt: {
               gte: date,
               lt: nextMonth,
@@ -288,6 +361,7 @@ export async function getResumoMensal(): Promise<{
         }),
         prisma.pagamento.count({
           where: {
+            tenant: PRODUCTION_TENANT_WHERE,
             confirmadoEm: {
               gte: date,
               lt: nextMonth,
@@ -334,6 +408,7 @@ export async function getTopTenants(): Promise<{
     await ensureSuperAdmin();
 
     const tenants = await prisma.tenant.findMany({
+      where: PRODUCTION_TENANT_WHERE,
       include: {
         subscription: {
           include: {
@@ -409,6 +484,9 @@ export async function getFaturasRecentes(): Promise<{
     await ensureSuperAdmin();
 
     const faturas = await prisma.fatura.findMany({
+      where: {
+        tenant: PRODUCTION_TENANT_WHERE,
+      },
       include: {
         tenant: {
           select: {
@@ -463,6 +541,11 @@ export async function getPagamentosRecentes(): Promise<{
     await ensureSuperAdmin();
 
     const pagamentos = await prisma.pagamento.findMany({
+      where: {
+        fatura: {
+          tenant: PRODUCTION_TENANT_WHERE,
+        },
+      },
       include: {
         fatura: {
           include: {
@@ -523,6 +606,11 @@ export async function getComissoesPendentes(): Promise<{
     const comissoes = await prisma.pagamentoComissao.findMany({
       where: {
         status: "PENDENTE",
+        pagamento: {
+          fatura: {
+            tenant: PRODUCTION_TENANT_WHERE,
+          },
+        },
       },
       include: {
         advogado: {
@@ -614,9 +702,7 @@ export async function getFinanceiroDashboardAdmin(
       await Promise.all([
         prisma.tenant.findMany({
           where: {
-            slug: {
-              not: "global",
-            },
+            ...PRODUCTION_TENANT_WHERE,
           },
           select: {
             id: true,
@@ -632,9 +718,7 @@ export async function getFinanceiroDashboardAdmin(
           where: {
             ...(tenantId ? { tenantId } : {}),
             tenant: {
-              slug: {
-                not: "global",
-              },
+              ...PRODUCTION_TENANT_WHERE,
             },
           },
           select: {
@@ -666,9 +750,7 @@ export async function getFinanceiroDashboardAdmin(
             ...(tenantId ? { tenantId } : {}),
             fatura: {
               tenant: {
-                slug: {
-                  not: "global",
-                },
+                ...PRODUCTION_TENANT_WHERE,
               },
             },
           },
@@ -706,9 +788,7 @@ export async function getFinanceiroDashboardAdmin(
           where: {
             ...(tenantId ? { tenantId } : {}),
             tenant: {
-              slug: {
-                not: "global",
-              },
+              ...PRODUCTION_TENANT_WHERE,
             },
           },
           select: {
@@ -730,9 +810,7 @@ export async function getFinanceiroDashboardAdmin(
             pagamento: {
               fatura: {
                 tenant: {
-                  slug: {
-                    not: "global",
-                  },
+                  ...PRODUCTION_TENANT_WHERE,
                 },
               },
             },
