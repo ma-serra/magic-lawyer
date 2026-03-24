@@ -64,7 +64,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
   const tenantFromDomain = useTenantFromDomain();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenant, setTenant] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Buscar branding do tenant pelo domínio
@@ -122,7 +121,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
   const loginInFlightRef = useRef(false);
   const emailInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
-  const tenantInputRef = useRef<HTMLInputElement | null>(null);
 
   const resolveRedirectTarget = useCallback(
     (role?: string | null) => {
@@ -178,16 +176,12 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     async ({
       email: rawEmail,
       password: rawPassword,
-      tenantOverride,
     }: {
       email: string;
       password: string;
-      tenantOverride?: string;
     }) => {
       const sanitizedEmail = rawEmail.trim();
       const sanitizedPassword = rawPassword.trim();
-      const baseTenant = tenantOverride !== undefined ? tenantOverride : tenant;
-      const sanitizedTenant = baseTenant ? baseTenant.trim() : "";
 
       if (!sanitizedEmail || !sanitizedPassword) {
         addToast({
@@ -222,7 +216,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
         const response = await signIn("credentials", {
           email: sanitizedEmail,
           password: sanitizedPassword,
-          tenant: sanitizedTenant || tenantFromDomain || undefined,
+          tenant: tenantFromDomain || undefined,
           redirect: false,
         });
 
@@ -375,7 +369,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
         setLoading(false);
       }
     },
-    [emailRegex, resolveRedirectTarget, router, tenant, tenantFromDomain],
+    [emailRegex, resolveRedirectTarget, router, tenantFromDomain],
   );
 
   // Exibir mensagem de motivo do redirecionamento
@@ -583,11 +577,9 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     }
 
     const currentEmail = emailInputRef.current?.value ?? email;
-    const currentTenant = tenantInputRef.current?.value ?? tenant;
     const currentPassword = passwordInputRef.current?.value ?? password;
 
     const sanitizedEmail = currentEmail.trim();
-    const sanitizedTenant = currentTenant.trim();
     const sanitizedPassword = currentPassword.trim();
 
     if (isFirstAccessEmail && !sanitizedPassword) {
@@ -603,7 +595,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
       setLoading(true);
       const response = await enviarLinkPrimeiroAcesso({
         email: sanitizedEmail,
-        tenantHint: sanitizedTenant || undefined,
+        tenantHint: tenantFromDomain?.trim() || undefined,
       });
       setLoading(false);
 
@@ -631,7 +623,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     await attemptLogin({
       email: sanitizedEmail,
       password: sanitizedPassword,
-      tenantOverride: sanitizedTenant,
     });
   }, [
     attemptLogin,
@@ -640,7 +631,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     isFirstAccessEmail,
     loading,
     password,
-    tenant,
+    tenantFromDomain,
   ]);
 
   const handleDevQuickLogin = useCallback(
@@ -652,14 +643,9 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
       setEmail(option.email);
       setPassword(option.password);
 
-      if (option.tenant !== undefined) {
-        setTenant(option.tenant);
-      }
-
       await attemptLogin({
         email: option.email,
         password: option.password,
-        tenantOverride: option.tenant,
       });
     },
     [attemptLogin, loading],
@@ -678,7 +664,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
 
   const handleEmailBlur = useCallback(async () => {
     const sanitizedEmail = email.trim().toLowerCase();
-    const sanitizedTenant = tenant.trim();
     const sanitizedPassword = password.trim();
 
     // Se o usuário já informou senha, priorizamos o fluxo de login normal
@@ -703,7 +688,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     try {
       const response = await checkPrimeiroAcessoPorEmail({
         email: sanitizedEmail,
-        tenantHint: sanitizedTenant || undefined,
+        tenantHint: tenantFromDomain?.trim() || undefined,
       });
 
       if (response.success && response.firstAccess) {
@@ -721,7 +706,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
     } finally {
       setIsCheckingFirstAccess(false);
     }
-  }, [checkedEmail, email, emailRegex, password, tenant]);
+  }, [checkedEmail, email, emailRegex, password, tenantFromDomain]);
 
   useEffect(() => {
     const sanitizedEmail = email.trim().toLowerCase();
@@ -1037,8 +1022,8 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
                       Dica operacional
                     </p>
                     <p className="mt-1 text-xs leading-6 text-primary-800 dark:text-primary-200">
-                      Se não souber o slug do escritório, deixe o campo vazio. O
-                      sistema tentará identificar o tenant automaticamente.
+                      O acesso ao escritório é identificado automaticamente pelo
+                      domínio deste link.
                     </p>
                   </div>
                 </div>
@@ -1087,19 +1072,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
                     onKeyDown={handleSubmitOnEnter}
                   />
                 )}
-                <Input
-                  className="mb-6"
-                  description="Opcional. Se não souber, deixe vazio. Exemplo: meu-escritorio ou meuescritorio.com.br"
-                  label="Escritório (slug/domínio)"
-                  placeholder="meu-escritorio"
-                  ref={tenantInputRef}
-                  startContent={
-                    <span className="text-default-400 text-sm">🏢</span>
-                  }
-                  value={tenant}
-                  onChange={(e) => setTenant(e.target.value)}
-                  onKeyDown={handleSubmitOnEnter}
-                />
                 <Button
                   fullWidth
                   color="primary"
