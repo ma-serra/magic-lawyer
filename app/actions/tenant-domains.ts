@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import prisma from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
+import { getTenantHostHints } from "@/lib/tenant-host";
 
 /**
  * Atualiza o domínio de um tenant
@@ -31,10 +32,12 @@ export async function updateTenantDomain(
   }
 
   // Se domain não é null, verificar se já existe
-  if (domain) {
+  const normalizedDomain = domain?.trim().toLowerCase() || null;
+
+  if (normalizedDomain) {
     const existingTenant = await prisma.tenant.findFirst({
       where: {
-        domain,
+        domain: { equals: normalizedDomain, mode: "insensitive" },
         id: { not: tenantId },
       },
       select: { id: true, name: true },
@@ -50,7 +53,7 @@ export async function updateTenantDomain(
   // Atualizar o domínio
   await prisma.tenant.update({
     where: { id: tenantId },
-    data: { domain },
+    data: { domain: normalizedDomain },
   });
 
   revalidatePath("/admin/tenants");
@@ -91,19 +94,20 @@ export async function getTenantDomains() {
  */
 export async function validateDomain(domain: string, excludeTenantId?: string) {
   if (!domain) return { valid: true, message: "" };
+  const normalizedDomain = domain.trim().toLowerCase();
 
   // Verificar formato básico do domínio
   const domainRegex =
     /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.([a-zA-Z]{2,}|[a-zA-Z]{2,}\.[a-zA-Z]{2,})$/;
 
-  if (!domainRegex.test(domain)) {
+  if (!domainRegex.test(normalizedDomain)) {
     return { valid: false, message: "Formato de domínio inválido" };
   }
 
   // Verificar se já existe
   const existingTenant = await prisma.tenant.findFirst({
-    where: {
-      domain,
+      where: {
+      domain: { equals: normalizedDomain, mode: "insensitive" },
       ...(excludeTenantId ? { id: { not: excludeTenantId } } : {}),
     },
     select: { id: true, name: true },
@@ -123,12 +127,12 @@ export async function validateDomain(domain: string, excludeTenantId?: string) {
  * Detecta o tenant baseado no domínio
  */
 export async function getTenantByDomain(host: string) {
-  const cleanHost = host.split(":")[0];
+  const { cleanHost, slugHint } = getTenantHostHints(host);
 
   // Buscar por domínio exato
   const tenant = await prisma.tenant.findFirst({
     where: {
-      domain: cleanHost,
+      domain: { equals: cleanHost, mode: "insensitive" },
     },
     select: {
       id: true,
@@ -143,44 +147,19 @@ export async function getTenantByDomain(host: string) {
     return tenant;
   }
 
-  // Buscar por subdomínio localhost (ex: sandra.localhost:9192)
-  if (cleanHost.includes(".localhost")) {
-    const subdomain = cleanHost.split(".localhost")[0];
-
-    if (subdomain) {
-      return await prisma.tenant.findFirst({
-        where: {
-          slug: subdomain,
-        },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          domain: true,
-          status: true,
-        },
-      });
-    }
-  }
-
-  // Buscar por subdomínio (ex: sandra.magiclawyer.vercel.app)
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-
-    if (subdomain && subdomain !== "magiclawyer") {
-      return await prisma.tenant.findFirst({
-        where: {
-          slug: subdomain,
-        },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          domain: true,
-          status: true,
-        },
-      });
-    }
+  if (slugHint) {
+    return await prisma.tenant.findFirst({
+      where: {
+        slug: slugHint,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        domain: true,
+        status: true,
+      },
+    });
   }
 
   return null;

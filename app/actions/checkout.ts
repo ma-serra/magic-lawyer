@@ -10,6 +10,7 @@ import {
   formatDateForAsaas,
   type AsaasPayment,
 } from "@/lib/asaas";
+import { buildDefaultTenantDomainBySlug } from "@/lib/tenant-host";
 
 export async function validarDisponibilidadeSlug(slug: string) {
   try {
@@ -162,7 +163,7 @@ export async function processarCheckout(data: CheckoutData) {
 
     // Usar slug personalizado (sempre minúsculo)
     const tenantSlug = data.slugPersonalizado.toLowerCase();
-    const tenantDomain = `${tenantSlug}.magiclawyer.vercel.app`;
+    const tenantDomain = buildDefaultTenantDomainBySlug(tenantSlug);
 
     // Validar credenciais do Asaas
     const apiKey = process.env.ASAAS_API_KEY;

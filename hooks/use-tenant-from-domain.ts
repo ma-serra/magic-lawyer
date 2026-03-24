@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { extractTenantHintFromHost } from "@/lib/tenant-host";
 
 /**
  * Hook para detectar o tenant baseado no domínio atual
@@ -25,38 +26,7 @@ export function useTenantFromDomain() {
  * Função para extrair tenant do domínio (mesma lógica do middleware)
  */
 function extractTenantFromDomain(host: string): string | null {
-  // Remove porta se existir
-  const cleanHost = host.split(":")[0];
-
-  // Para domínios Vercel: subdomain.magiclawyer.vercel.app
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-
-    // Se não é o domínio principal, retorna o subdomínio
-    if (subdomain && subdomain !== "magiclawyer") {
-      return subdomain;
-    }
-  }
-
-  // Para domínios customizados: subdomain.magiclawyer.com.br
-  if (cleanHost.endsWith(".magiclawyer.com.br")) {
-    const subdomain = cleanHost.replace(".magiclawyer.com.br", "");
-
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  // Para desenvolvimento local: subdomain.localhost
-  if (cleanHost.endsWith(".localhost")) {
-    const subdomain = cleanHost.replace(".localhost", "");
-
-    if (subdomain) {
-      return subdomain; // Manter case original
-    }
-  }
-
-  return null;
+  return extractTenantHintFromHost(host);
 }
 
 /**

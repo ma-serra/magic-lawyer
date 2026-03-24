@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import prisma from "@/app/lib/prisma";
 import { enviarEmailPrimeiroAcesso, maskEmail } from "@/app/lib/first-access-email";
 import { validarTokenPrimeiroAcesso } from "@/app/lib/first-access-token";
+import { getTenantHostHints } from "@/lib/tenant-host";
 
 type UsuarioPrimeiroAcesso = {
   id: string;
@@ -25,24 +26,8 @@ type UsuarioPrimeiroAcesso = {
 };
 
 function extractTenantFromDomain(host: string) {
-  const cleanHost = host.split(":")[0].toLowerCase();
-
-  if (cleanHost.endsWith(".localhost")) {
-    return cleanHost.replace(".localhost", "");
-  }
-
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-    if (subdomain && subdomain !== "magiclawyer") {
-      return subdomain;
-    }
-  }
-
-  if (cleanHost.endsWith(".magiclawyer.com.br")) {
-    return cleanHost.replace(".magiclawyer.com.br", "");
-  }
-
-  return null;
+  const { slugHint, domainHint } = getTenantHostHints(host);
+  return slugHint || domainHint;
 }
 
 async function resolveTenantHint(tenantHint?: string) {

@@ -2,6 +2,7 @@ import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
 import { isRouteAllowedByModulesEdge } from "@/app/lib/module-map-edge";
+import { getTenantHostHints } from "@/lib/tenant-host";
 
 // Função para detectar dinamicamente o NEXTAUTH_URL baseado no ambiente
 function getDynamicNextAuthUrl(host: string): string {
@@ -30,73 +31,10 @@ function getDynamicNextAuthUrl(host: string): string {
   return `https://${cleanHost}`;
 }
 
-// Função para detectar se é um preview deployment com subdomínio
-function isPreviewWithSubdomain(host: string): boolean {
-  const cleanHost = host.split(":")[0];
-
-  // Detecta padrões como: sandra.magic-lawyer-4ye22ftxh-magiclawyer.vercel.app
-  return (
-    cleanHost.includes("vercel.app") &&
-    !cleanHost.includes("magiclawyer.vercel.app") &&
-    cleanHost.includes(".")
-  );
-}
-
-// Função para extrair o subdomínio de um preview deployment
-function extractSubdomainFromPreview(host: string): string | null {
-  const cleanHost = host.split(":")[0];
-
-  if (isPreviewWithSubdomain(cleanHost)) {
-    const parts = cleanHost.split(".");
-
-    if (parts.length > 0) {
-      return parts[0]; // Retorna o primeiro parte (ex: "sandra")
-    }
-  }
-
-  return null;
-}
-
 // Função para extrair tenant do domínio
 function extractTenantFromDomain(host: string): string | null {
-  // Remove porta se existir
-  const cleanHost = host.split(":")[0];
-
-  // Para preview deployments com subdomínio: sandra.magic-lawyer-4ye22ftxh-magiclawyer.vercel.app
-  if (isPreviewWithSubdomain(cleanHost)) {
-    const subdomain = extractSubdomainFromPreview(cleanHost);
-
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  // Para domínios Vercel: subdomain.magiclawyer.vercel.app
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-
-    // Se não é o domínio principal, retorna o subdomínio
-    if (subdomain && subdomain !== "magiclawyer") {
-      return subdomain;
-    }
-  }
-
-  // Para domínios customizados: subdomain.magiclawyer.com.br
-  if (cleanHost.endsWith(".magiclawyer.com.br")) {
-    const subdomain = cleanHost.replace(".magiclawyer.com.br", "");
-
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  // Para domínios diretos: sandra.com.br
-  // Neste caso, o domínio completo é o identificador do tenant
-  if (!cleanHost.includes("magiclawyer") && !cleanHost.includes("vercel.app")) {
-    return cleanHost;
-  }
-
-  return null;
+  const { slugHint, domainHint } = getTenantHostHints(host);
+  return slugHint || domainHint;
 }
 
 export default withAuth(
@@ -270,16 +208,9 @@ export default withAuth(
     // Continuar com o fluxo normal do middleware...
     // cookie será setado no final se sessionChecked for true
 
-    // Detectar tenant baseado no domínio
+    // Detectar tenant baseado no domínio (mantido para depuração/compatibilidade)
     const host = req.headers.get("host") || "";
-    const tenantFromDomain = extractTenantFromDomain(host);
-
-    // Se detectamos um tenant pelo domínio, adicionar aos headers
-    if (tenantFromDomain) {
-      const response = NextResponse.next();
-
-      response.headers.set("x-tenant-from-domain", tenantFromDomain);
-    }
+    void extractTenantFromDomain(host);
 
     // Se não está logado e não está na página de login, redireciona para login
     if (!isAuth && !isAuthPage) {

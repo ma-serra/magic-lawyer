@@ -4,6 +4,11 @@ import {
   getTenantByDomainWithBranding,
   getTenantBySlugWithBranding,
 } from "@/app/lib/tenant";
+import {
+  extractTenantHintFromHost,
+  getTenantHostHints,
+  normalizeHost as normalizeTenantHost,
+} from "@/lib/tenant-host";
 
 export type TenantBrandingData = {
   name: string | null;
@@ -16,11 +21,7 @@ export type TenantBrandingData = {
 };
 
 export function normalizeHost(host: string): string {
-  if (!host) {
-    return "";
-  }
-
-  return host.split(":")[0]?.toLowerCase() ?? "";
+  return normalizeTenantHost(host);
 }
 
 function isPlatformHostWithoutTenant(cleanHost: string): boolean {
@@ -41,50 +42,7 @@ function isPlatformHostWithoutTenant(cleanHost: string): boolean {
 }
 
 export function extractTenantFromHost(host: string): string | null {
-  const cleanHost = normalizeHost(host);
-
-  if (!cleanHost) {
-    return null;
-  }
-
-  if (cleanHost.endsWith(".localhost")) {
-    const subdomain = cleanHost.replace(".localhost", "");
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-    if (subdomain && subdomain !== "magiclawyer") {
-      return subdomain;
-    }
-  }
-
-  if (
-    cleanHost.endsWith(".vercel.app") &&
-    cleanHost.split(".").length >= 4 &&
-    cleanHost.includes("magiclawyer")
-  ) {
-    return cleanHost.split(".")[0] ?? null;
-  }
-
-  if (cleanHost.endsWith(".magiclawyer.com.br")) {
-    const subdomain = cleanHost.replace(".magiclawyer.com.br", "");
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  if (
-    !cleanHost.includes("magiclawyer") &&
-    !cleanHost.includes("vercel.app") &&
-    !cleanHost.includes("localhost")
-  ) {
-    return cleanHost;
-  }
-
-  return null;
+  return extractTenantHintFromHost(host);
 }
 
 function mapTenantBranding(
@@ -114,21 +72,22 @@ const getTenantBrandingByNormalizedHost = cache(
         return null;
       }
 
-      const tenantSlug = extractTenantFromHost(cleanHost);
+      const { slugHint, domainHint } = getTenantHostHints(cleanHost);
 
-      if (
-        tenantSlug &&
-        (cleanHost.endsWith(".localhost") ||
-          cleanHost.endsWith(".magiclawyer.vercel.app") ||
-          cleanHost.endsWith(".magiclawyer.com.br") ||
-          (cleanHost.endsWith(".vercel.app") && cleanHost.split(".").length >= 4))
-      ) {
+      if (slugHint) {
+        const bySlug = await getTenantBySlugWithBranding(slugHint.toLowerCase());
+        if (bySlug) {
+          return mapTenantBranding(bySlug);
+        }
+      }
+
+      if (domainHint) {
         return mapTenantBranding(
-          await getTenantBySlugWithBranding(tenantSlug.toLowerCase()),
+          await getTenantByDomainWithBranding(domainHint),
         );
       }
 
-      return mapTenantBranding(await getTenantByDomainWithBranding(cleanHost));
+      return null;
     } catch (error) {
       console.error("[tenant-branding] Erro ao buscar branding:", error);
       return null;

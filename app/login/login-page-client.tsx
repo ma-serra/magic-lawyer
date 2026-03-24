@@ -241,47 +241,32 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
           }
 
           if (response.error === "CredentialsSignin") {
-            const currentHost = window.location.hostname;
-
-            if (currentHost === "magiclawyer.vercel.app") {
-              const tenantMappings: Record<string, string[]> = {
-                sandra: ["sandra@adv.br", "ana@sandraadv.br"],
-                salba: ["luciano@salbaadvocacia.com.br"],
-              };
-
-              for (const [tenantSlug, emails] of Object.entries(
-                tenantMappings,
-              )) {
-                if (emails.includes(sanitizedEmail)) {
-                  const redirectUrl = `https://${tenantSlug}.magiclawyer.vercel.app/login`;
-
-                  addToast({
-                    title: "Redirecionamento automático",
-                    description:
-                      "Você será redirecionado para o domínio correto do seu escritório.",
-                    color: "primary",
-                    timeout: 3000,
-                  });
-
-                  setTimeout(() => {
-                    window.location.href = redirectUrl;
-                  }, 2000);
-
-                  return;
-                }
-              }
-            }
-
             throw new Error(
               "Email ou senha incorretos. Verifique suas credenciais e tente novamente.",
             );
           }
 
+          if (response.error?.startsWith("REDIRECT_TO_HOST:")) {
+            const redirectHost = response.error.replace("REDIRECT_TO_HOST:", "");
+            const redirectUrl = `https://${redirectHost}/login`;
+
+            addToast({
+              title: "Redirecionamento automático",
+              description:
+                "Você será redirecionado para o domínio correto do seu escritório.",
+              color: "primary",
+              timeout: 3000,
+            });
+
+            setTimeout(() => {
+              window.location.href = redirectUrl;
+            }, 2000);
+
+            return;
+          }
+
           if (response.error?.startsWith("REDIRECT_TO_TENANT:")) {
-            const tenantSlug = response.error.replace(
-              "REDIRECT_TO_TENANT:",
-              "",
-            );
+            const tenantSlug = response.error.replace("REDIRECT_TO_TENANT:", "");
             const redirectUrl = `https://${tenantSlug}.magiclawyer.vercel.app/login`;
 
             addToast({

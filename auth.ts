@@ -13,88 +13,10 @@ import {
   logOperationalEvent,
 } from "./app/lib/audit/operational-events";
 import { getTenantAccessibleModules } from "./app/lib/tenant-modules";
-
-// Função para detectar se é um preview deployment com subdomínio
-function isPreviewWithSubdomain(host: string): boolean {
-  const cleanHost = host.split(":")[0];
-
-  // Detecta padrões como: sandra.magic-lawyer-4ye22ftxh-magiclawyer.vercel.app
-  return (
-    cleanHost.includes("vercel.app") &&
-    !cleanHost.includes("magiclawyer.vercel.app") &&
-    cleanHost.includes(".")
-  );
-}
-
-// Função para extrair o subdomínio de um preview deployment
-function extractSubdomainFromPreview(host: string): string | null {
-  const cleanHost = host.split(":")[0];
-
-  if (isPreviewWithSubdomain(cleanHost)) {
-    const parts = cleanHost.split(".");
-
-    if (parts.length > 0) {
-      return parts[0]; // Retorna o primeiro parte (ex: "sandra")
-    }
-  }
-
-  return null;
-}
-
-// Função para extrair tenant do domínio
-function extractTenantFromDomain(host: string): string | null {
-  // Remove porta se existir
-  const cleanHost = host.split(":")[0];
-
-  // Para preview deployments com subdomínio: sandra.magic-lawyer-4ye22ftxh-magiclawyer.vercel.app
-  if (isPreviewWithSubdomain(cleanHost)) {
-    const subdomain = extractSubdomainFromPreview(cleanHost);
-
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  // Para domínios Vercel: subdomain.magiclawyer.vercel.app
-  if (cleanHost.endsWith(".magiclawyer.vercel.app")) {
-    const subdomain = cleanHost.replace(".magiclawyer.vercel.app", "");
-
-    // Se não é o domínio principal, retorna o subdomínio
-    if (subdomain && subdomain !== "magiclawyer") {
-      return subdomain;
-    }
-  }
-
-  // Para domínios customizados: subdomain.magiclawyer.com.br
-  if (cleanHost.endsWith(".magiclawyer.com.br")) {
-    const subdomain = cleanHost.replace(".magiclawyer.com.br", "");
-
-    if (subdomain) {
-      return subdomain;
-    }
-  }
-
-  // Para desenvolvimento local: subdomain.localhost
-  if (cleanHost.endsWith(".localhost")) {
-    const subdomain = cleanHost.replace(".localhost", "");
-
-    if (subdomain) {
-      return subdomain; // Manter case original
-    }
-  }
-
-  // Para domínios diretos: sandra.com.br
-  // Neste caso, o domínio completo é o identificador do tenant
-  if (
-    !cleanHost.includes("magiclawyer") &&
-    !cleanHost.includes("vercel.app") &&
-    !cleanHost.includes("localhost")
-  ) {
-    return cleanHost;
-  }
-
-  return null;
-}
+import {
+  buildDefaultTenantDomainBySlug,
+  getTenantHostHints,
+} from "./lib/tenant-host";
 
 // Campos extras que vamos guardar no token
 // - id, tenantId, role, name, email
@@ -127,7 +49,8 @@ export const authOptions: NextAuthOptions = {
 
         // Tentar detectar tenant pelo domínio da requisição
         const host = req?.headers?.host || "";
-        const tenantFromDomain = extractTenantFromDomain(host)?.toLowerCase();
+        const { cleanHost, slugHint, domainHint } = getTenantHostHints(host);
+        const tenantFromDomain = (slugHint || domainHint)?.toLowerCase() ?? null;
 
         // Se o tenant está vazio, undefined ou 'undefined', tratamos como auto-detect
         // Mas se detectamos pelo domínio, usamos esse
@@ -146,6 +69,7 @@ export const authOptions: NextAuthOptions = {
           normalizedTenant,
           shouldAutoDetect,
           finalTenant,
+          hostHints: { cleanHost, slugHint, domainHint },
         };
 
         if (!credentials?.email || !credentials?.password) {
@@ -182,6 +106,7 @@ export const authOptions: NextAuthOptions = {
             tenantWhere: shouldAutoDetect ? "todos os tenants" : "específico",
             tenant: shouldAutoDetect ? "(auto-detect)" : finalTenant,
             tenantFromDomain,
+            hostHints: { cleanHost, slugHint, domainHint },
             shouldAutoDetect,
             currentDomain: host,
           });
@@ -326,6 +251,7 @@ export const authOptions: NextAuthOptions = {
                   select: {
                     id: true,
                     slug: true,
+                    domain: true,
                     name: true,
                     status: true,
                   },
@@ -335,14 +261,15 @@ export const authOptions: NextAuthOptions = {
 
             console.info("[auth] Usuários encontrados em todos os tenants", {
               count: allUsers.length,
-              users: allUsers.map((u) => ({
-                id: u.id,
-                email: u.email,
-                tenantSlug: u.tenant?.slug,
-                tenantName: u.tenant?.name,
-                tenantStatus: u.tenant?.status,
-              })),
-            });
+                users: allUsers.map((u) => ({
+                  id: u.id,
+                  email: u.email,
+                  tenantSlug: u.tenant?.slug,
+                  tenantDomain: u.tenant?.domain,
+                  tenantName: u.tenant?.name,
+                  tenantStatus: u.tenant?.status,
+                })),
+              });
 
             // IMPORTANTE: Verificar se algum tenant está suspenso/cancelado ANTES de continuar
             const suspendedTenant = allUsers.find(
@@ -389,15 +316,22 @@ export const authOptions: NextAuthOptions = {
 
               if (userWithSpecificTenant) {
                 const tenantSlug = userWithSpecificTenant.tenant?.slug;
+                const tenantDomain = userWithSpecificTenant.tenant?.domain?.trim();
+                const redirectHost =
+                  tenantDomain ||
+                  (tenantSlug ? buildDefaultTenantDomainBySlug(tenantSlug) : "");
 
                 console.info("[auth] REDIRECIONANDO para tenant específico", {
                   userEmail: email,
                   userTenant: tenantSlug,
+                  redirectHost,
                   currentDomain: host,
                 });
 
                 // Retornar erro com redirecionamento
-                throw new Error(`REDIRECT_TO_TENANT:${tenantSlug}`);
+                if (redirectHost) {
+                  throw new Error(`REDIRECT_TO_HOST:${redirectHost}`);
+                }
               } else {
                 console.info(
                   "[auth] Usuário encontrado mas não precisa redirecionar",
@@ -663,11 +597,16 @@ export const authOptions: NextAuthOptions = {
           // Verificar se é erro de redirecionamento
           if (
             error instanceof Error &&
-            error.message.startsWith("REDIRECT_TO_TENANT:")
+            (error.message.startsWith("REDIRECT_TO_TENANT:") ||
+              error.message.startsWith("REDIRECT_TO_HOST:"))
           ) {
+            const redirectTarget = error.message.startsWith("REDIRECT_TO_HOST:")
+              ? error.message.replace("REDIRECT_TO_HOST:", "")
+              : error.message.replace("REDIRECT_TO_TENANT:", "");
+
             console.info("[auth] Redirecionamento para tenant específico", {
               ...attemptContext,
-              redirectTenant: error.message.replace("REDIRECT_TO_TENANT:", ""),
+              redirectTarget,
             });
 
             // Re-lançar o erro para ser tratado pelo cliente
