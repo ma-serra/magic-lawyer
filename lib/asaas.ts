@@ -132,6 +132,36 @@ export interface AsaasWebhook {
   customer?: AsaasCustomer;
 }
 
+export function normalizeAsaasApiKey(
+  apiKey: string | null | undefined,
+): string {
+  if (!apiKey) {
+    return "";
+  }
+
+  let normalized = apiKey.trim();
+  if (
+    (normalized.startsWith("'") && normalized.endsWith("'")) ||
+    (normalized.startsWith('"') && normalized.endsWith('"'))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  if (normalized.startsWith("\\$")) {
+    normalized = normalized.slice(1);
+  }
+
+  return normalized;
+}
+
+export function resolveAsaasEnvironment(
+  environment: string | null | undefined,
+): "sandbox" | "production" {
+  return environment?.trim().toLowerCase() === "production"
+    ? "production"
+    : "sandbox";
+}
+
 export class AsaasClient {
   private config: AsaasConfig;
 
@@ -139,8 +169,9 @@ export class AsaasClient {
     apiKey: string,
     environment: "sandbox" | "production" = "sandbox",
   ) {
+    const normalizedApiKey = normalizeAsaasApiKey(apiKey);
     this.config = {
-      apiKey,
+      apiKey: normalizedApiKey,
       environment,
       baseUrl:
         environment === "production"
@@ -396,8 +427,9 @@ export function encryptAsaasCredentials(apiKey: string): string {
  * Valida formato da API key do Asaas
  */
 export function validateAsaasApiKey(apiKey: string): boolean {
+  const normalizedApiKey = normalizeAsaasApiKey(apiKey);
   // Asaas API keys geralmente começam com $aact_
-  return apiKey.startsWith("$aact_") && apiKey.length > 20;
+  return normalizedApiKey.startsWith("$aact_") && normalizedApiKey.length > 20;
 }
 
 /**

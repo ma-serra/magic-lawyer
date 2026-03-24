@@ -7,7 +7,11 @@ import { v2 as cloudinary } from "cloudinary";
 
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
-import { AsaasClient } from "@/lib/asaas";
+import {
+  AsaasClient,
+  normalizeAsaasApiKey,
+  resolveAsaasEnvironment,
+} from "@/lib/asaas";
 import { getModuleRouteMap } from "@/app/lib/module-map";
 
 export type ExternalServiceStatus = {
@@ -153,11 +157,8 @@ async function checkCloudinary(): Promise<ExternalServiceStatus> {
 }
 
 async function checkAsaas(): Promise<ExternalServiceStatus> {
-  const environment =
-    process.env.ASAAS_ENVIRONMENT?.toLowerCase() === "production"
-      ? "production"
-      : "sandbox";
-  const asaasApiKey = process.env.ASAAS_API_KEY?.trim();
+  const environment = resolveAsaasEnvironment(process.env.ASAAS_ENVIRONMENT);
+  const asaasApiKey = normalizeAsaasApiKey(process.env.ASAAS_API_KEY);
 
   if (!asaasApiKey) {
     return buildServiceStatus({

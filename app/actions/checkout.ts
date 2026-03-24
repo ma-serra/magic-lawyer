@@ -8,6 +8,8 @@ import {
   AsaasClient,
   formatCpfCnpjForAsaas,
   formatDateForAsaas,
+  normalizeAsaasApiKey,
+  resolveAsaasEnvironment,
   type AsaasPayment,
 } from "@/lib/asaas";
 import { buildDefaultTenantDomainBySlug } from "@/lib/tenant-host";
@@ -166,7 +168,7 @@ export async function processarCheckout(data: CheckoutData) {
     const tenantDomain = buildDefaultTenantDomainBySlug(tenantSlug);
 
     // Validar credenciais do Asaas
-    const apiKey = process.env.ASAAS_API_KEY;
+    const apiKey = normalizeAsaasApiKey(process.env.ASAAS_API_KEY);
 
     if (!apiKey) {
       return {
@@ -175,10 +177,9 @@ export async function processarCheckout(data: CheckoutData) {
       };
     }
 
-    const asaasEnvironment: "sandbox" | "production" =
-      process.env.ASAAS_ENVIRONMENT?.toLowerCase() === "production"
-        ? "production"
-        : "sandbox";
+    const asaasEnvironment = resolveAsaasEnvironment(
+      process.env.ASAAS_ENVIRONMENT,
+    );
 
     // Criar cliente no Asaas
     const asaasClient = new AsaasClient(apiKey, asaasEnvironment);

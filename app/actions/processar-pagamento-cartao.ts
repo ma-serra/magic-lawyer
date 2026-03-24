@@ -7,6 +7,8 @@ import {
   AsaasClient,
   formatCpfCnpjForAsaas,
   formatDateForAsaas,
+  normalizeAsaasApiKey,
+  resolveAsaasEnvironment,
   type AsaasPayment,
 } from "@/lib/asaas";
 import { processarPagamentoConfirmado } from "@/app/actions/processar-pagamento-confirmado";
@@ -83,13 +85,16 @@ export async function processarPagamentoCartao(
       return { success: false, error: "Plano não encontrado" };
     }
 
-    const apiKey = process.env.ASAAS_API_KEY;
+    const apiKey = normalizeAsaasApiKey(process.env.ASAAS_API_KEY);
 
     if (!apiKey) {
       throw new Error("ASAAS_API_KEY não configurada");
     }
 
-    const asaasClient = new AsaasClient(apiKey, "sandbox");
+    const asaasClient = new AsaasClient(
+      apiKey,
+      resolveAsaasEnvironment(process.env.ASAAS_ENVIRONMENT),
+    );
 
     const sanitizedCardNumber = data.paymentData.cardNumber.replace(/\D/g, "");
     const sanitizedCardCvv = data.paymentData.cvv.replace(/\D/g, "");

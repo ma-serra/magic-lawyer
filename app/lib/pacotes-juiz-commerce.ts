@@ -11,6 +11,8 @@ import {
   AsaasClient,
   formatCpfCnpjForAsaas,
   formatDateForAsaas,
+  normalizeAsaasApiKey,
+  resolveAsaasEnvironment,
   type AsaasCustomer,
   type AsaasPayment,
 } from "@/lib/asaas";
@@ -154,16 +156,13 @@ function isDevelopmentRuntime() {
 }
 
 function getPlatformAsaasClient() {
-  const apiKey = process.env.ASAAS_API_KEY?.trim();
+  const apiKey = normalizeAsaasApiKey(process.env.ASAAS_API_KEY);
 
   if (!apiKey) {
     return null;
   }
 
-  const environment =
-    process.env.ASAAS_ENVIRONMENT?.trim().toLowerCase() === "production"
-      ? "production"
-      : "sandbox";
+  const environment = resolveAsaasEnvironment(process.env.ASAAS_ENVIRONMENT);
 
   return new AsaasClient(apiKey, environment);
 }
