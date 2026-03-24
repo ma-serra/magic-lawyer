@@ -7,6 +7,11 @@ const nextConfig = {
   output: isVercel ? undefined : "standalone",
   productionBrowserSourceMaps: false,
   serverExternalPackages: ["ioredis"],
+  typescript: {
+    // O typecheck completo roda fora do build de deploy para evitar travamentos
+    // intermitentes na etapa "Running TypeScript" da Vercel.
+    ignoreBuildErrors: isVercel,
+  },
   images: {
     remotePatterns: [
       {
