@@ -24,6 +24,14 @@ Magic Lawyer is a multi-tenant SaaS for law firms built with Next.js 16 (App Rou
 - Seed: `npm run prisma:seed` (creates test tenants with credentials listed in README)
 - Prisma client generates to `./generated/prisma` (custom output path)
 
+### Data protection policy (MANDATORY)
+
+- This environment is now handling **real users/data**.
+- **Never** drop, reset, truncate, or recreate the main database.
+- **Never** run destructive commands such as `prisma migrate reset`, `prisma db push --force-reset`, `DROP DATABASE`, `TRUNCATE`, or bulk hard deletes.
+- Any cleanup must be done with **targeted, tenant-scoped, non-destructive** updates (prefer soft delete / inactivation).
+- If a destructive operation is ever requested, the agent must refuse and propose a safe alternative plan.
+
 ### Environment (.env)
 
 Copy `.env.example` to `.env`. Key values to set:
