@@ -37,7 +37,10 @@ import {
   buildAdminTenantChannelProviderSummary,
 } from "@/app/lib/admin-integration-summaries";
 import { getGlobalTelegramProviderSummary } from "@/app/lib/notifications/telegram-provider";
-import { getOnlineCountsByTenant } from "@/app/lib/realtime/session-presence";
+import {
+  getOnlineCountsByTenant,
+  getOnlineUsersByTenant,
+} from "@/app/lib/realtime/session-presence";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -74,6 +77,20 @@ export interface TenantResponse {
   success: boolean;
   data?: any;
   error?: string;
+}
+
+export interface TenantOnlinePresenceUser {
+  userId: string;
+  tenantId: string;
+  role: string | null;
+  name: string | null;
+  email: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  locationLabel: string | null;
+  isSupportSession: boolean;
+  supportActorEmail: string | null;
+  lastSeenAt: string;
 }
 
 const decimalToNullableNumber = (value: unknown) => {
@@ -429,6 +446,8 @@ export async function getAllTenants(): Promise<TenantResponse> {
     });
     const onlineCountsByTenant = await getOnlineCountsByTenant({
       includeSuperAdmins: false,
+      includeSupportSessions: false,
+      maxAgeSeconds: 90,
     });
 
     const data = tenants.map((tenant) => ({
@@ -490,6 +509,109 @@ export async function getAllTenants(): Promise<TenantResponse> {
     return {
       success: false,
       error: "Erro interno do servidor ao buscar tenants",
+    };
+  }
+}
+
+export async function getTenantOnlineUsers(
+  tenantId: string,
+): Promise<TenantResponse> {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (
+      !session?.user ||
+      session.user.role !== "SUPER_ADMIN" ||
+      !session.user.id
+    ) {
+      return {
+        success: false,
+        error: "Acesso não autorizado para consultar presença online",
+      };
+    }
+
+    const normalizedTenantId = tenantId.trim();
+
+    if (!normalizedTenantId) {
+      return {
+        success: false,
+        error: "Tenant inválido para consulta de presença online",
+      };
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: normalizedTenantId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+    if (!tenant) {
+      return {
+        success: false,
+        error: "Tenant não encontrado",
+      };
+    }
+
+    const snapshot = await getOnlineUsersByTenant(normalizedTenantId, {
+      includeSuperAdmins: false,
+      includeSupportSessions: true,
+      maxAgeSeconds: 90,
+    });
+
+    const users: TenantOnlinePresenceUser[] = snapshot
+      .filter((entry) => !entry.isSupportSession)
+      .map((entry) => ({
+        userId: entry.userId,
+        tenantId: normalizedTenantId,
+        role: entry.role,
+        name: entry.name,
+        email: entry.email,
+        ipAddress: entry.ipAddress,
+        userAgent: entry.userAgent,
+        locationLabel: entry.location.label,
+        isSupportSession: entry.isSupportSession,
+        supportActorEmail: entry.supportActorEmail,
+        lastSeenAt: entry.lastSeenAt,
+      }))
+      .sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt));
+
+    const supportUsers: TenantOnlinePresenceUser[] = snapshot
+      .filter((entry) => entry.isSupportSession)
+      .map((entry) => ({
+        userId: entry.userId,
+        tenantId: normalizedTenantId,
+        role: entry.role,
+        name: entry.name,
+        email: entry.email,
+        ipAddress: entry.ipAddress,
+        userAgent: entry.userAgent,
+        locationLabel: entry.location.label,
+        isSupportSession: entry.isSupportSession,
+        supportActorEmail: entry.supportActorEmail,
+        lastSeenAt: entry.lastSeenAt,
+      }))
+      .sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt));
+
+    return {
+      success: true,
+      data: {
+        tenant,
+        users,
+        supportUsers,
+        totalUsers: users.length,
+        totalSupportSessions: supportUsers.length,
+        capturedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar usuários online do tenant:", error);
+
+    return {
+      success: false,
+      error: "Erro interno ao consultar presença online",
     };
   }
 }

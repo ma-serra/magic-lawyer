@@ -229,15 +229,37 @@ export async function getOnlineCountsByTenant(
   options: PresenceSnapshotOptions = {},
 ): Promise<Record<string, number>> {
   const snapshot = await getOnlinePresenceSnapshot(options);
-  const counts = new Map<string, number>();
+  const usersByTenant = new Map<string, Set<string>>();
 
   for (const entry of snapshot) {
     if (!entry.tenantId) {
       continue;
     }
 
-    counts.set(entry.tenantId, (counts.get(entry.tenantId) ?? 0) + 1);
+    const currentSet = usersByTenant.get(entry.tenantId) ?? new Set<string>();
+    currentSet.add(entry.userId);
+    usersByTenant.set(entry.tenantId, currentSet);
   }
 
-  return Object.fromEntries(counts.entries());
+  return Object.fromEntries(
+    Array.from(usersByTenant.entries()).map(([tenantId, users]) => [
+      tenantId,
+      users.size,
+    ]),
+  );
+}
+
+export async function getOnlineUsersByTenant(
+  tenantId: string,
+  options: PresenceSnapshotOptions = {},
+): Promise<SessionPresenceEntry[]> {
+  const normalizedTenantId = normalizeString(tenantId);
+
+  if (!normalizedTenantId) {
+    return [];
+  }
+
+  const snapshot = await getOnlinePresenceSnapshot(options);
+
+  return snapshot.filter((entry) => entry.tenantId === normalizedTenantId);
 }

@@ -35,7 +35,12 @@ import {
   Users,
 } from "lucide-react";
 
-import { getAllTenants, type TenantResponse } from "@/app/actions/admin";
+import {
+  getAllTenants,
+  getTenantOnlineUsers,
+  type TenantOnlinePresenceUser,
+  type TenantResponse,
+} from "@/app/actions/admin";
 import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
 import {
   isPollingGloballyEnabled,
@@ -107,6 +112,19 @@ interface TenantSummary {
     clientes: number;
   };
   onlineUsersNow: number;
+}
+
+interface TenantOnlinePresenceSnapshot {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  users: TenantOnlinePresenceUser[];
+  supportUsers: TenantOnlinePresenceUser[];
+  totalUsers: number;
+  totalSupportSessions: number;
+  capturedAt: string;
 }
 
 interface TenantDerivedState {
@@ -476,9 +494,14 @@ function getIdentityLabel(tenant: TenantSummary) {
 interface TenantCardProps {
   tenant: TenantWithDerived;
   onOpenDetails: (tenant: TenantWithDerived) => void;
+  onOpenOnlineUsers: (tenant: TenantWithDerived) => void;
 }
 
-function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
+function TenantCard({
+  tenant,
+  onOpenDetails,
+  onOpenOnlineUsers,
+}: TenantCardProps) {
   const { status, statusChanged, isUpdating } = useRealtimeTenantStatus(
     tenant.id,
   );
@@ -563,13 +586,18 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
               >
                 {effectiveTenant.derived.healthLabel}
               </Chip>
-              <Chip
-                color={effectiveTenant.onlineUsersNow > 0 ? "success" : "default"}
+              <Button
+                color={
+                  effectiveTenant.onlineUsersNow > 0 ? "success" : "default"
+                }
+                data-stop-card-press="true"
+                radius="full"
                 size="sm"
                 variant="flat"
+                onPress={() => onOpenOnlineUsers(effectiveTenant)}
               >
                 {effectiveTenant.onlineUsersNow} online agora
-              </Chip>
+              </Button>
             </div>
             <p className="text-sm text-default-400">
               {getIdentityLabel(effectiveTenant)}
@@ -738,6 +766,12 @@ export function TenantsContent() {
   const [page, setPage] = useState(1);
   const [selectedTenant, setSelectedTenant] =
     useState<TenantWithDerived | null>(null);
+  const [selectedPresenceTenant, setSelectedPresenceTenant] =
+    useState<TenantWithDerived | null>(null);
+  const [presenceSnapshot, setPresenceSnapshot] =
+    useState<TenantOnlinePresenceSnapshot | null>(null);
+  const [isPresenceLoading, setIsPresenceLoading] = useState(false);
+  const [presenceError, setPresenceError] = useState<string | null>(null);
   const pageSize = 8;
 
   useEffect(() => subscribePollingControl(setIsPollingEnabled), []);
@@ -852,6 +886,40 @@ export function TenantsContent() {
     setLifecycleFilter("all");
     setHealthFilter("all");
     setPlanFilter("all");
+  };
+
+  const openOnlinePresence = async (tenant: TenantWithDerived) => {
+    setSelectedPresenceTenant(tenant);
+    setPresenceError(null);
+    setPresenceSnapshot(null);
+    setIsPresenceLoading(true);
+
+    try {
+      const response = await getTenantOnlineUsers(tenant.id);
+
+      if (!response.success || !response.data) {
+        throw new Error(
+          response.error ?? "Nao foi possivel carregar presenca online",
+        );
+      }
+
+      setPresenceSnapshot(response.data as TenantOnlinePresenceSnapshot);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Erro inesperado ao consultar presenca online";
+      setPresenceError(message);
+    } finally {
+      setIsPresenceLoading(false);
+    }
+  };
+
+  const closeOnlinePresence = () => {
+    setSelectedPresenceTenant(null);
+    setPresenceSnapshot(null);
+    setPresenceError(null);
+    setIsPresenceLoading(false);
   };
 
   const filteredLabel = `${filteredTenants.length} de ${tenants.length} escritorio(s)`;
@@ -1073,6 +1141,7 @@ export function TenantsContent() {
               {paginatedTenants.map((tenant) => (
                 <TenantCard
                   key={tenant.id}
+                  onOpenOnlineUsers={openOnlinePresence}
                   tenant={tenant}
                   onOpenDetails={setSelectedTenant}
                 />
@@ -1113,6 +1182,141 @@ export function TenantsContent() {
           ) : null}
         </>
       )}
+
+      <Modal
+        isOpen={Boolean(selectedPresenceTenant)}
+        scrollBehavior="inside"
+        size="3xl"
+        onClose={closeOnlinePresence}
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base font-semibold text-foreground">
+                {selectedPresenceTenant?.name ?? "Presenca online"}
+              </span>
+              <Chip color="success" size="sm" variant="flat">
+                {presenceSnapshot?.totalUsers ??
+                  selectedPresenceTenant?.onlineUsersNow ??
+                  0}{" "}
+                online agora
+              </Chip>
+              {presenceSnapshot?.totalSupportSessions ? (
+                <Chip color="warning" size="sm" variant="bordered">
+                  {presenceSnapshot.totalSupportSessions} sessao(oes) de suporte
+                </Chip>
+              ) : null}
+            </div>
+            <p className="text-xs text-default-500">
+              Usuarios ativos do tenant em tempo real. Sessoes internas de
+              suporte aparecem separadas.
+            </p>
+          </ModalHeader>
+          <ModalBody>
+            {isPresenceLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton
+                    key={`presence-skeleton-${index}`}
+                    className="h-20 rounded-2xl"
+                    isLoaded={false}
+                  />
+                ))}
+              </div>
+            ) : presenceError ? (
+              <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4">
+                <p className="text-sm font-semibold text-danger">
+                  Falha ao consultar presenca online
+                </p>
+                <p className="mt-1 text-sm text-default-400">{presenceError}</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                    <Users className="h-3.5 w-3.5" />
+                    Equipe do tenant
+                  </div>
+                  {presenceSnapshot?.users.length ? (
+                    <div className="space-y-3">
+                      {presenceSnapshot.users.map((entry) => (
+                        <div
+                          key={`tenant-presence-${entry.userId}`}
+                          className="rounded-2xl border border-default-200/80 bg-default-100/40 p-4 dark:border-white/10 dark:bg-background/35"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">
+                                {entry.name || entry.email || entry.userId}
+                              </p>
+                              <p className="text-xs text-default-500">
+                                {entry.email || "E-mail nao disponivel"}
+                              </p>
+                            </div>
+                            <Chip size="sm" variant="bordered">
+                              {entry.role || "Sem role"}
+                            </Chip>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-default-500">
+                            <span className="inline-flex items-center gap-1">
+                              <Clock3 className="h-3.5 w-3.5" />
+                              Ultimo heartbeat: {formatDateTime(entry.lastSeenAt)}
+                            </span>
+                            <span>{entry.locationLabel || "Local nao identificado"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-default-200/80 bg-default-100/35 px-4 py-5 text-sm text-default-500 dark:border-white/10 dark:bg-background/30">
+                      Nenhum usuario do tenant ativo no momento.
+                    </div>
+                  )}
+                </div>
+
+                {presenceSnapshot?.supportUsers.length ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      Sessoes internas de suporte
+                    </div>
+                    <div className="space-y-3">
+                      {presenceSnapshot.supportUsers.map((entry) => (
+                        <div
+                          key={`support-presence-${entry.userId}`}
+                          className="rounded-2xl border border-warning/35 bg-warning/10 p-4"
+                        >
+                          <p className="text-sm font-semibold text-warning-700 dark:text-warning-300">
+                            {entry.name || entry.email || entry.userId}
+                          </p>
+                          <p className="mt-1 text-xs text-default-500">
+                            Ator de suporte:{" "}
+                            {entry.supportActorEmail || "Nao informado"}
+                          </p>
+                          <p className="mt-2 text-xs text-default-500">
+                            Ultimo heartbeat: {formatDateTime(entry.lastSeenAt)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <div className="mr-auto text-xs text-default-500">
+              Capturado em{" "}
+              {presenceSnapshot?.capturedAt
+                ? formatDateTime(presenceSnapshot.capturedAt)
+                : "agora"}
+            </div>
+            <Button radius="full" variant="light" onPress={closeOnlinePresence}>
+              Fechar
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Modal
         isOpen={Boolean(selectedTenant)}
