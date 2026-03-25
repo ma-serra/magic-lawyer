@@ -31,11 +31,10 @@ function readBaseline() {
 }
 
 function collectHardDeleteEntries() {
-  let output = "";
-  try {
-    output = execFileSync(
-      "rg",
-      [
+  const scannerCommands = [
+    {
+      cmd: "rg",
+      args: [
         "-n",
         "(?:prisma|tx)\\.[A-Za-z0-9_]+\\.(delete|deleteMany)\\(",
         "app",
@@ -43,20 +42,60 @@ function collectHardDeleteEntries() {
         "--glob",
         "!generated/**",
       ],
-      {
-        encoding: "utf8",
-      },
-    );
-  } catch (error) {
-    const stdout = error?.stdout?.toString?.() ?? "";
-    const stderr = error?.stderr?.toString?.() ?? "";
-    // rg retorna 1 quando não encontra match (cenário válido)
-    if (error?.status === 1) {
-      return [];
-    }
+      notFoundCode: "ENOENT",
+    },
+    {
+      cmd: "grep",
+      args: [
+        "-REn",
+        "(prisma|tx)\\.[A-Za-z0-9_]+\\.(delete|deleteMany)\\(",
+        "app",
+        "lib",
+        "--exclude-dir=generated",
+      ],
+      notFoundCode: "ENOENT",
+    },
+  ];
 
+  let output = "";
+  let lastFailure = null;
+
+  for (const scanner of scannerCommands) {
+    try {
+      output = execFileSync(scanner.cmd, scanner.args, {
+        encoding: "utf8",
+      });
+      lastFailure = null;
+      break;
+    } catch (error) {
+      const status = Number(error?.status ?? 0);
+      const code = String(error?.code ?? "");
+      const stdout = error?.stdout?.toString?.() ?? "";
+      const stderr = error?.stderr?.toString?.() ?? "";
+
+      // scanner retornou sem matches
+      if (status === 1) {
+        return [];
+      }
+
+      if (code === scanner.notFoundCode) {
+        lastFailure = {
+          scanner: scanner.cmd,
+          stdout,
+          stderr,
+        };
+        continue;
+      }
+
+      throw new Error(
+        `Falha ao executar varredura de hard delete Prisma com ${scanner.cmd}.\n${stdout}\n${stderr}`.trim(),
+      );
+    }
+  }
+
+  if (lastFailure) {
     throw new Error(
-      `Falha ao executar varredura de hard delete Prisma.\n${stdout}\n${stderr}`.trim(),
+      `Nenhum scanner disponível para hard delete Prisma. Última falha: ${lastFailure.scanner}.\n${lastFailure.stdout}\n${lastFailure.stderr}`.trim(),
     );
   }
 
