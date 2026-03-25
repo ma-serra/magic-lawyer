@@ -288,12 +288,17 @@ export function ProfileContent() {
       const result = await confirmMyTelegramNotificationConnection();
 
       if (!result.success) {
-        toast.error(result.error || "Ainda não encontrei sua mensagem no bot.");
+        toast.error(
+          result.error ||
+            "Não funcionou ainda: não encontrei sua mensagem no bot.",
+        );
         return;
       }
 
       setTelegramConnectionDraft(null);
-      toast.success("Telegram conectado para alertas críticos.");
+      toast.success(
+        "Funcionou: você está integrado ao Telegram e já pode receber alertas.",
+      );
       await mutateTelegramStatus();
     } catch (error) {
       toast.error("Erro ao confirmar conexão com Telegram.");
@@ -1231,7 +1236,7 @@ export function ProfileContent() {
                                 Código de conexão pronto
                               </p>
                               <p className="text-xs text-default-500">
-                                Abra o bot, envie o comando e confirme abaixo.
+                                Abra o bot, envie o comando e o próprio Telegram responderá se a integração funcionou ou falhou.
                               </p>
                             </div>
                             <Chip color="warning" size="sm" variant="flat">

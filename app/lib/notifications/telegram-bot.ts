@@ -11,8 +11,16 @@ import { decrypt } from "@/lib/crypto";
 
 const TELEGRAM_CONNECT_TTL_SECONDS = 15 * 60;
 const TELEGRAM_MAX_UPDATES = 100;
+const TELEGRAM_UPDATE_DEDUP_TTL_SECONDS = 24 * 60 * 60;
 
 type TelegramConnectionPayload = {
+  code: string;
+  createdAt: string;
+};
+
+type TelegramConnectionCodePayload = {
+  tenantId: string;
+  userId: string;
   code: string;
   createdAt: string;
 };
@@ -49,6 +57,14 @@ type TelegramUpdate = {
 
 function getTelegramConnectKey(tenantId: string, userId: string) {
   return `notif:telegram:connect:${tenantId}:${userId}`;
+}
+
+function getTelegramConnectCodeKey(code: string) {
+  return `notif:telegram:connect-code:${code.toUpperCase()}`;
+}
+
+function getTelegramUpdateDedupKey(updateId: number) {
+  return `notif:telegram:update:${updateId}`;
 }
 
 function safeParseRecord(value: string | null | undefined) {
@@ -89,6 +105,59 @@ function readProviderSecrets(value: string | null) {
 
 function toStartPayload(code: string) {
   return `ml_notify_${code}`;
+}
+
+function parseStartCommandPayload(text?: string | null) {
+  const normalized = text?.trim() ?? "";
+  if (!normalized) return null;
+
+  const startMatch = normalized.match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
+  if (startMatch) {
+    return startMatch[1]?.trim() ?? "";
+  }
+
+  if (normalized.startsWith("ml_notify_")) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function extractConnectCode(startPayload?: string | null) {
+  const normalized = (startPayload ?? "").trim();
+  if (!normalized) return null;
+  if (!normalized.toLowerCase().startsWith("ml_notify_")) {
+    return null;
+  }
+
+  const rawCode = normalized.slice("ml_notify_".length).trim();
+  if (!rawCode) return null;
+
+  return rawCode.toUpperCase();
+}
+
+function resolveTelegramWebhookBaseUrl() {
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL?.trim(),
+    process.env.NEXTAUTH_URL?.trim(),
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim(),
+    process.env.VERCEL_URL?.trim(),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => {
+      if (value.startsWith("http://") || value.startsWith("https://")) {
+        return value;
+      }
+      return `https://${value}`;
+    });
+
+  for (const candidate of candidates) {
+    if (candidate.startsWith("https://")) {
+      return candidate.replace(/\/$/, "");
+    }
+  }
+
+  return null;
 }
 
 function escapeTelegramHtml(value: string) {
@@ -343,6 +412,37 @@ export async function getActiveTelegramProvider(
   return getGlobalTelegramProviderContext();
 }
 
+async function ensureGlobalTelegramWebhookConfigured() {
+  const provider = getGlobalTelegramProviderContext();
+
+  if (!provider?.botToken) {
+    return;
+  }
+
+  const baseUrl = resolveTelegramWebhookBaseUrl();
+  if (!baseUrl) {
+    return;
+  }
+
+  const webhookUrl = `${baseUrl}/api/webhooks/telegram`;
+  const body = new URLSearchParams({
+    url: webhookUrl,
+    allowed_updates: JSON.stringify(["message"]),
+    drop_pending_updates: "false",
+  });
+  const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+
+  if (secretToken) {
+    body.set("secret_token", secretToken);
+  }
+
+  try {
+    await callTelegramApi(provider.botToken, "setWebhook", body);
+  } catch {
+    // Falha de webhook não deve bloquear fluxo de conexão manual.
+  }
+}
+
 export async function getTelegramUserBinding(
   tenantId: string,
   userId: string,
@@ -364,6 +464,338 @@ export async function getTelegramUserBinding(
     username: user?.telegramUsername ?? null,
     alertsEnabled: user?.telegramAlertsEnabled ?? true,
   };
+}
+
+async function bindTelegramChatToUser(params: {
+  tenantId: string;
+  userId: string;
+  chatId: string;
+  username: string | null;
+}) {
+  const user = await prisma.usuario.findFirst({
+    where: {
+      id: params.userId,
+      tenantId: params.tenantId,
+      active: true,
+    },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      tenant: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          nomeFantasia: true,
+          razaoSocial: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    return {
+      success: false as const,
+      error: "Usuário alvo não encontrado ou inativo.",
+    };
+  }
+
+  await prisma.usuario.update({
+    where: { id: user.id },
+    data: {
+      telegramChatId: params.chatId,
+      telegramUsername: params.username,
+      telegramAlertsEnabled: true,
+      updatedAt: new Date(),
+    },
+  });
+
+  const tenantName =
+    user.tenant.nomeFantasia ||
+    user.tenant.razaoSocial ||
+    user.tenant.name ||
+    user.tenant.slug;
+  const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+
+  return {
+    success: true as const,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: fullName || user.email,
+      tenantId: user.tenant.id,
+      tenantSlug: user.tenant.slug,
+      tenantName,
+    },
+  };
+}
+
+async function findBoundUserByTelegramChatId(chatId: string) {
+  const user = await prisma.usuario.findFirst({
+    where: {
+      telegramChatId: chatId,
+      active: true,
+    },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      tenant: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          nomeFantasia: true,
+          razaoSocial: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const tenantName =
+    user.tenant.nomeFantasia ||
+    user.tenant.razaoSocial ||
+    user.tenant.name ||
+    user.tenant.slug;
+  const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: fullName || user.email,
+    tenantName,
+  };
+}
+
+async function sendTelegramTextMessage(params: {
+  provider: TelegramProviderContext;
+  chatId: string;
+  text: string;
+}) {
+  const body = new URLSearchParams({
+    chat_id: params.chatId,
+    text: params.text,
+    parse_mode: "HTML",
+    disable_web_page_preview: "true",
+  });
+
+  try {
+    await callTelegramApi(params.provider.botToken, "sendMessage", body);
+  } catch {
+    // Evita quebrar o fluxo de onboarding se o envio de resposta falhar.
+  }
+}
+
+async function sendTelegramGuideMessage(
+  provider: TelegramProviderContext,
+  chatId: string,
+) {
+  const botUsername = provider.botUsername
+    ? `@${provider.botUsername.replace(/^@/, "")}`
+    : "bot do escritório";
+
+  await sendTelegramTextMessage({
+    provider,
+    chatId,
+    text: [
+      "👋 <b>Olá! Eu sou o Magic Radar.</b>",
+      "",
+      "Para conectar seu usuário do Magic Lawyer:",
+      "1) Acesse seu escritório no sistema.",
+      "2) Vá em <b>Usuário → Perfil → Editar → Telegram</b>.",
+      "3) Clique em <b>Conectar Telegram</b> para gerar um código.",
+      `4) Volte aqui e envie: <code>/start ml_notify_SEU_CODIGO</code>`,
+      "",
+      `Se já gerou o código, envie agora para ${botUsername}.`,
+    ].join("\n"),
+  });
+}
+
+async function sendTelegramConnectedMessage(params: {
+  provider: TelegramProviderContext;
+  chatId: string;
+  userName: string;
+  tenantName: string;
+}) {
+  await sendTelegramTextMessage({
+    provider: params.provider,
+    chatId: params.chatId,
+    text: [
+      "✅ <b>Integração concluída com sucesso.</b>",
+      "",
+      `Usuário: <b>${escapeTelegramHtml(params.userName)}</b>`,
+      `Escritório: <b>${escapeTelegramHtml(params.tenantName)}</b>`,
+      "",
+      "A partir de agora você receberá alertas aqui no Telegram.",
+    ].join("\n"),
+  });
+}
+
+async function sendTelegramAlreadyConnectedMessage(params: {
+  provider: TelegramProviderContext;
+  chatId: string;
+  userName: string;
+  tenantName: string;
+}) {
+  await sendTelegramTextMessage({
+    provider: params.provider,
+    chatId: params.chatId,
+    text: [
+      "✅ <b>Você já está integrado ao Magic Lawyer.</b>",
+      "",
+      `Usuário: <b>${escapeTelegramHtml(params.userName)}</b>`,
+      `Escritório: <b>${escapeTelegramHtml(params.tenantName)}</b>`,
+      "",
+      "Se quiser trocar o vínculo, gere um novo código no sistema.",
+    ].join("\n"),
+  });
+}
+
+async function sendTelegramInvalidCodeMessage(
+  provider: TelegramProviderContext,
+  chatId: string,
+) {
+  await sendTelegramTextMessage({
+    provider,
+    chatId,
+    text: [
+      "⚠️ <b>Não consegui validar esse código.</b>",
+      "",
+      "Ele pode estar expirado ou já utilizado.",
+      "Volte ao Magic Lawyer em <b>Usuário → Perfil → Editar → Telegram</b>",
+      "e clique em <b>Conectar Telegram</b> para gerar um novo código.",
+    ].join("\n"),
+  });
+}
+
+async function claimTelegramUpdate(updateId: number) {
+  const redis = getRedisInstance();
+  const result = await redis.set(
+    getTelegramUpdateDedupKey(updateId),
+    "1",
+    "EX",
+    TELEGRAM_UPDATE_DEDUP_TTL_SECONDS,
+    "NX",
+  );
+
+  return result === "OK";
+}
+
+type TelegramStartProcessingResult = {
+  processed: boolean;
+  matchedCode?: boolean;
+  chatId?: string | null;
+  username?: string | null;
+};
+
+async function processTelegramStartUpdate(
+  provider: TelegramProviderContext,
+  update: TelegramUpdate,
+): Promise<TelegramStartProcessingResult> {
+  const text = update.message?.text?.trim() ?? "";
+  const chatIdRaw = update.message?.chat?.id;
+
+  if (!text || chatIdRaw === undefined || chatIdRaw === null) {
+    return { processed: false };
+  }
+
+  const startPayload = parseStartCommandPayload(text);
+  if (startPayload === null) {
+    return { processed: false };
+  }
+
+  const chatId = String(chatIdRaw);
+  const username = update.message?.from?.username
+    ? `@${update.message.from.username.replace(/^@+/, "")}`
+    : null;
+  const code = extractConnectCode(startPayload);
+
+  if (!code) {
+    const boundUser = await findBoundUserByTelegramChatId(chatId);
+    if (boundUser) {
+      await sendTelegramAlreadyConnectedMessage({
+        provider,
+        chatId,
+        userName: boundUser.name,
+        tenantName: boundUser.tenantName,
+      });
+
+      return { processed: true, matchedCode: false, chatId, username };
+    }
+
+    await sendTelegramGuideMessage(provider, chatId);
+    return { processed: true, matchedCode: false, chatId, username };
+  }
+
+  const redis = getRedisInstance();
+  const codeRaw = await redis.get(getTelegramConnectCodeKey(code));
+
+  if (!codeRaw) {
+    await sendTelegramInvalidCodeMessage(provider, chatId);
+    return { processed: true, matchedCode: false, chatId, username };
+  }
+
+  let codePayload: TelegramConnectionCodePayload | null = null;
+  try {
+    codePayload = JSON.parse(codeRaw) as TelegramConnectionCodePayload;
+  } catch {
+    await sendTelegramInvalidCodeMessage(provider, chatId);
+    return { processed: true, matchedCode: false, chatId, username };
+  }
+
+  if (!codePayload?.tenantId || !codePayload?.userId) {
+    await sendTelegramInvalidCodeMessage(provider, chatId);
+    return { processed: true, matchedCode: false, chatId, username };
+  }
+
+  const bindResult = await bindTelegramChatToUser({
+    tenantId: codePayload.tenantId,
+    userId: codePayload.userId,
+    chatId,
+    username,
+  });
+
+  if (!bindResult.success) {
+    await sendTelegramInvalidCodeMessage(provider, chatId);
+    return { processed: true, matchedCode: false, chatId, username };
+  }
+
+  await redis.del(getTelegramConnectCodeKey(code));
+  await redis.del(getTelegramConnectKey(codePayload.tenantId, codePayload.userId));
+
+  await sendTelegramConnectedMessage({
+    provider,
+    chatId,
+    userName: bindResult.user.name,
+    tenantName: bindResult.user.tenantName,
+  });
+
+  return { processed: true, matchedCode: true, chatId, username };
+}
+
+export async function processTelegramWebhookUpdate(update: TelegramUpdate) {
+  if (typeof update.update_id !== "number") {
+    return;
+  }
+
+  const shouldProcess = await claimTelegramUpdate(update.update_id);
+  if (!shouldProcess) {
+    return;
+  }
+
+  const provider = getGlobalTelegramProviderContext();
+  if (!provider) {
+    return;
+  }
+
+  await processTelegramStartUpdate(provider, update);
 }
 
 export async function getTelegramConnectionStatus(
@@ -393,6 +825,8 @@ export async function createTelegramConnectionCode(
   tenantId: string,
   userId: string,
 ) {
+  await ensureGlobalTelegramWebhookConfigured();
+
   const provider = await getActiveTelegramProvider(tenantId);
 
   if (!provider) {
@@ -405,17 +839,48 @@ export async function createTelegramConnectionCode(
 
   const code = crypto.randomBytes(4).toString("hex").toUpperCase();
   const redis = getRedisInstance();
+  const existingPayloadRaw = await redis.get(getTelegramConnectKey(tenantId, userId));
   const payload: TelegramConnectionPayload = {
     code,
     createdAt: new Date().toISOString(),
   };
+  const codePayload: TelegramConnectionCodePayload = {
+    tenantId,
+    userId,
+    code,
+    createdAt: payload.createdAt,
+  };
 
-  await redis.set(
-    getTelegramConnectKey(tenantId, userId),
-    JSON.stringify(payload),
-    "EX",
-    TELEGRAM_CONNECT_TTL_SECONDS,
-  );
+  let existingCode: string | null = null;
+  if (existingPayloadRaw) {
+    try {
+      const existingPayload = JSON.parse(existingPayloadRaw) as TelegramConnectionPayload;
+      existingCode = existingPayload.code?.trim()?.toUpperCase() || null;
+    } catch {
+      existingCode = null;
+    }
+  }
+
+  const transaction = redis.multi();
+
+  if (existingCode) {
+    transaction.del(getTelegramConnectCodeKey(existingCode));
+  }
+
+  await transaction
+    .set(
+      getTelegramConnectKey(tenantId, userId),
+      JSON.stringify(payload),
+      "EX",
+      TELEGRAM_CONNECT_TTL_SECONDS,
+    )
+    .set(
+      getTelegramConnectCodeKey(code),
+      JSON.stringify(codePayload),
+      "EX",
+      TELEGRAM_CONNECT_TTL_SECONDS,
+    )
+    .exec();
 
   return {
     success: true as const,
@@ -438,6 +903,15 @@ export async function confirmTelegramConnection(
   const storedPayload = await redis.get(getTelegramConnectKey(tenantId, userId));
 
   if (!storedPayload) {
+    const binding = await getTelegramUserBinding(tenantId, userId);
+    if (binding.chatId) {
+      return {
+        success: true as const,
+        username: binding.username,
+        chatId: binding.chatId,
+      };
+    }
+
     return {
       success: false as const,
       error:
@@ -455,55 +929,87 @@ export async function confirmTelegramConnection(
     };
   }
 
-  const pending = JSON.parse(storedPayload) as TelegramConnectionPayload;
-  const expectedPayload = toStartPayload(pending.code);
-  const updates = await callTelegramApi<TelegramUpdate[]>(
-    provider.botToken,
-    "getUpdates",
-  );
+  let pending: TelegramConnectionPayload | null = null;
+  try {
+    pending = JSON.parse(storedPayload) as TelegramConnectionPayload;
+  } catch {
+    pending = null;
+  }
 
-  const matchedUpdate = updates
-    .slice(-TELEGRAM_MAX_UPDATES)
-    .reverse()
-    .find((update) => {
-      const text = update.message?.text?.trim() ?? "";
-      return (
-        text === `/start ${expectedPayload}` ||
-        text === expectedPayload ||
-        text.endsWith(expectedPayload)
-      );
-    });
-
-  const chatId = matchedUpdate?.message?.chat?.id;
-
-  if (!matchedUpdate || chatId === undefined || chatId === null) {
+  if (!pending?.code) {
     return {
       success: false as const,
       error:
-        "Não encontrei sua mensagem recente no bot. Abra o link, envie /start e tente confirmar novamente.",
+        "Não foi possível validar o código pendente. Gere um novo vínculo e tente novamente.",
     };
   }
 
-  const username = matchedUpdate.message?.from?.username
-    ? `@${matchedUpdate.message.from.username.replace(/^@+/, "")}`
-    : null;
+  let updates: TelegramUpdate[] = [];
+  try {
+    updates = await callTelegramApi<TelegramUpdate[]>(
+      provider.botToken,
+      "getUpdates",
+    );
+  } catch {
+    const binding = await getTelegramUserBinding(tenantId, userId);
+    if (binding.chatId) {
+      return {
+        success: true as const,
+        username: binding.username,
+        chatId: binding.chatId,
+      };
+    }
 
-  await prisma.usuario.update({
-    where: { id: userId },
-    data: {
-      telegramChatId: String(chatId),
-      telegramUsername: username,
-      telegramAlertsEnabled: true,
-      updatedAt: new Date(),
-    },
-  });
+    return {
+      success: false as const,
+      error:
+        "Não consegui consultar mensagens do bot agora. Envie /start com o código e tente confirmar novamente em alguns segundos.",
+    };
+  }
 
-  await redis.del(getTelegramConnectKey(tenantId, userId));
+  let matched = false;
+  const recentUpdates = updates.slice(-TELEGRAM_MAX_UPDATES).reverse();
+  for (const update of recentUpdates) {
+    if (typeof update.update_id !== "number") {
+      continue;
+    }
+
+    const claimed = await claimTelegramUpdate(update.update_id);
+    if (!claimed) {
+      continue;
+    }
+
+    const result = await processTelegramStartUpdate(provider, update);
+    if (result.matchedCode) {
+      matched = true;
+      break;
+    }
+  }
+
+  const binding = await getTelegramUserBinding(tenantId, userId);
+  if (binding.chatId) {
+    await redis.del(getTelegramConnectKey(tenantId, userId));
+    await redis.del(getTelegramConnectCodeKey(pending.code));
+
+    return {
+      success: true as const,
+      username: binding.username,
+      chatId: binding.chatId,
+    };
+  }
+
+  if (matched) {
+    return {
+      success: false as const,
+      error:
+        "Recebi seu comando, mas o vínculo ainda não foi confirmado no usuário. Tente novamente em alguns segundos.",
+    };
+  }
 
   return {
-    success: true as const,
-    username,
-    chatId: String(chatId),
+    success: false as const,
+    error:
+      "Ainda não encontrei o comando válido. No Telegram, envie /start ml_notify_SEU_CODIGO e tente confirmar novamente.",
   };
 }
 
@@ -511,6 +1017,9 @@ export async function disconnectTelegramConnection(
   tenantId: string,
   userId: string,
 ) {
+  const redis = getRedisInstance();
+  const pendingRaw = await redis.get(getTelegramConnectKey(tenantId, userId));
+
   await prisma.usuario.updateMany({
     where: {
       id: userId,
@@ -524,7 +1033,17 @@ export async function disconnectTelegramConnection(
     },
   });
 
-  const redis = getRedisInstance();
+  if (pendingRaw) {
+    try {
+      const pendingPayload = JSON.parse(pendingRaw) as TelegramConnectionPayload;
+      if (pendingPayload.code) {
+        await redis.del(getTelegramConnectCodeKey(pendingPayload.code));
+      }
+    } catch {
+      // ignora payload inválido
+    }
+  }
+
   await redis.del(getTelegramConnectKey(tenantId, userId));
 
   return { success: true as const };
