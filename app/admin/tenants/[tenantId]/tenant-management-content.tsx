@@ -8,6 +8,8 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -39,6 +41,7 @@ import {
   KeyRound,
   ToggleLeft,
   Edit,
+  LogIn,
   Plus,
   Mail,
   Eye,
@@ -72,6 +75,7 @@ import {
   updateTenantSubscription,
   updateTenantBranding,
   updateTenantUser,
+  startTenantUserImpersonation,
   type TenantManagementData,
   type UpdateTenantDetailsInput,
   type UpdateTenantSubscriptionInput,
@@ -428,6 +432,8 @@ export function TenantManagementContent({
   tenantId,
   initialData,
 }: TenantManagementContentProps) {
+  const { update: updateSession } = useSession();
+  const router = useRouter();
   const { data, mutate, isValidating } = useSWR<TenantManagementData>(
     ["tenant-management", tenantId],
     () => fetchTenant("tenant-management", tenantId),
@@ -749,6 +755,55 @@ export function TenantManagementContent({
       }
 
       await revalidateWithErrorHandling("redefinir primeiro acesso");
+    } finally {
+      setPendingUserId(null);
+      setIsUpdatingUser(false);
+    }
+  };
+
+  const handleImpersonateTenantUser = async (userId: string) => {
+    if (isUpdatingUser) return;
+
+    setPendingUserId(userId);
+    setIsUpdatingUser(true);
+
+    try {
+      const response = await startTenantUserImpersonation(tenantId, userId);
+
+      if (!response.success || !response.data?.ticket) {
+        addToast({
+          title: "Falha ao iniciar sessão monitorada",
+          description:
+            response.error ??
+            "Não foi possível entrar como este usuário neste momento.",
+          color: "danger",
+        });
+        return;
+      }
+
+      await updateSession({
+        impersonationTicket: response.data.ticket,
+      });
+
+      addToast({
+        title: "Sessão monitorada iniciada",
+        description:
+          "Você agora está logado como o usuário selecionado. Todas as ações serão auditadas.",
+        color: "warning",
+        timeout: 9000,
+      });
+
+      router.push(response.data.redirectTo ?? "/dashboard");
+      router.refresh();
+    } catch (error) {
+      addToast({
+        title: "Erro ao iniciar sessão monitorada",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Erro inesperado ao assumir o usuário.",
+        color: "danger",
+      });
     } finally {
       setPendingUserId(null);
       setIsUpdatingUser(false);
@@ -1136,6 +1191,7 @@ export function TenantManagementContent({
               pendingUserId={pendingUserId}
               userRoleOptions={userRoleOptions}
               users={tenantData.users}
+              onImpersonateUser={handleImpersonateTenantUser}
               onOpenUserModal={handleOpenUserModal}
               onResetPassword={handleResetUserPassword}
               onToggleActive={handleToggleUserActive}
@@ -1603,6 +1659,7 @@ interface UsersTabProps {
   isUpdatingUser: boolean;
   onToggleActive: (userId: string, active: boolean) => Promise<void>;
   onResetPassword: (userId: string) => Promise<void>;
+  onImpersonateUser: (userId: string) => Promise<void>;
   onOpenUserModal: (user?: any) => void;
 }
 
@@ -1613,6 +1670,7 @@ function UsersTab({
   isUpdatingUser,
   onToggleActive,
   onResetPassword,
+  onImpersonateUser,
   onOpenUserModal,
 }: UsersTabProps) {
   return (
@@ -1719,6 +1777,20 @@ function UsersTab({
                             onPress={() => onResetPassword(user.id)}
                           >
                             <KeyRound className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip content="Entrar como este usuário (sessão monitorada)">
+                          <Button
+                            isIconOnly
+                            color="warning"
+                            isDisabled={!user.active}
+                            isLoading={isPending}
+                            radius="full"
+                            size="sm"
+                            variant="flat"
+                            onPress={() => onImpersonateUser(user.id)}
+                          >
+                            <LogIn className="h-4 w-4" />
                           </Button>
                         </Tooltip>
                       </div>

@@ -1,5 +1,20 @@
 import { DefaultSession } from "next-auth";
 
+type SessionImpersonationState = {
+  active: boolean;
+  startedAt: string;
+  superAdminId: string;
+  superAdminEmail: string;
+  superAdminName?: string | null;
+  targetUserId: string;
+  targetUserEmail: string;
+  targetUserName?: string | null;
+  targetUserRole: string;
+  targetTenantId: string;
+  targetTenantSlug?: string | null;
+  targetTenantName?: string | null;
+};
+
 declare module "next-auth" {
   interface Session {
     user: {
@@ -11,6 +26,7 @@ declare module "next-auth" {
       tenantLogoUrl?: string;
       tenantFaviconUrl?: string;
       advogadoId?: string;
+      impersonation?: SessionImpersonationState | null;
     } & DefaultSession["user"];
   }
 
@@ -23,6 +39,7 @@ declare module "next-auth" {
     tenantLogoUrl?: string;
     tenantFaviconUrl?: string;
     advogadoId?: string;
+    impersonation?: SessionImpersonationState | null;
   }
 }
 
@@ -36,5 +53,6 @@ declare module "next-auth/jwt" {
     tenantLogoUrl?: string;
     tenantFaviconUrl?: string;
     advogadoId?: string;
+    impersonation?: SessionImpersonationState | null;
   }
 }

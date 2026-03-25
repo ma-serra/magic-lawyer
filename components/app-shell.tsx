@@ -9,6 +9,7 @@ import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assistant-dock";
 import { CriticalDeadlinePopup } from "@/components/notifications/critical-deadline-popup";
+import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
 import { TenantFloatingChatDock } from "@/components/support/tenant-floating-chat-dock";
 import { useProfileNavigation } from "@/app/hooks/use-profile-navigation";
 
@@ -77,6 +78,7 @@ export function AppShell({ children }: AppShellProps) {
       />
 
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        <ImpersonationSessionBanner />
         <Navbar
           showAuthenticatedSecondaryNav={false}
           onOpenSidebar={openSidebarMobile}

@@ -12,6 +12,7 @@ import {
   extractRequestUserAgent,
   logOperationalEvent,
 } from "./app/lib/audit/operational-events";
+import { verifyImpersonationTicket } from "./app/lib/impersonation-ticket";
 import { getTenantAccessibleModules } from "./app/lib/tenant-modules";
 import {
   buildDefaultTenantDomainBySlug,
@@ -688,6 +689,61 @@ export const authOptions: NextAuthOptions = {
     }): Promise<JWT> {
       if (trigger === "update" && sessionUpdate) {
         const rawPayload = (sessionUpdate as any) ?? {};
+        const impersonationTicket =
+          (typeof rawPayload.impersonationTicket === "string"
+            ? rawPayload.impersonationTicket
+            : typeof rawPayload.user?.impersonationTicket === "string"
+              ? rawPayload.user?.impersonationTicket
+              : null) ?? null;
+
+        if (impersonationTicket) {
+          const currentSessionId = (token as any).id as string | undefined;
+          const currentRole = (token as any).role as string | undefined;
+          const verification = verifyImpersonationTicket(impersonationTicket, {
+            sessionId: currentSessionId,
+            role: currentRole,
+          });
+
+          if (verification.valid) {
+            const nextSession = verification.payload.nextSession;
+
+            (token as any).id = nextSession.id;
+            token.email = nextSession.email;
+            token.name = nextSession.name ?? undefined;
+            token.picture = nextSession.image ?? undefined;
+            (token as any).tenantId = nextSession.tenantId ?? undefined;
+            (token as any).role = nextSession.role;
+            (token as any).tenantSlug = nextSession.tenantSlug ?? undefined;
+            (token as any).tenantName = nextSession.tenantName ?? undefined;
+            (token as any).tenantLogoUrl =
+              nextSession.tenantLogoUrl ?? undefined;
+            (token as any).tenantFaviconUrl =
+              nextSession.tenantFaviconUrl ?? undefined;
+            (token as any).permissions = nextSession.permissions ?? [];
+            (token as any).avatarUrl =
+              nextSession.avatarUrl ??
+              nextSession.image ??
+              undefined;
+            (token as any).tenantModules = nextSession.tenantModules ?? [];
+            (token as any).sessionVersion = nextSession.sessionVersion ?? 1;
+            (token as any).tenantSessionVersion =
+              nextSession.tenantSessionVersion ?? 1;
+            (token as any).tenantPlanRevision =
+              nextSession.tenantPlanRevision ?? 1;
+            (token as any).tenantStatus = nextSession.tenantStatus ?? undefined;
+            (token as any).tenantStatusReason =
+              nextSession.tenantStatusReason ?? undefined;
+            (token as any).impersonation = nextSession.impersonation ?? null;
+
+            return token;
+          }
+
+          console.warn(
+            "[auth] Ticket de impersonação rejeitado",
+            verification.reason,
+          );
+        }
+
         const incomingModules = Array.isArray(rawPayload.tenantModules)
           ? rawPayload.tenantModules
           : Array.isArray(rawPayload.user?.tenantModules)
@@ -730,6 +786,9 @@ export const authOptions: NextAuthOptions = {
       // No login
       if (user) {
         (token as any).id = user.id;
+        token.email = user.email ?? token.email;
+        token.name = user.name ?? token.name;
+        token.picture = (user as any).image ?? token.picture;
         (token as any).tenantId = (user as any).tenantId;
         (token as any).role = (user as any).role;
         (token as any).tenantSlug = (user as any).tenantSlug;
@@ -747,6 +806,7 @@ export const authOptions: NextAuthOptions = {
           (user as any).tenantPlanRevision ?? 1;
         (token as any).tenantStatus = (user as any).tenantStatus;
         (token as any).tenantStatusReason = (user as any).tenantStatusReason;
+        (token as any).impersonation = (user as any).impersonation ?? null;
       }
 
       return token;
@@ -760,6 +820,9 @@ export const authOptions: NextAuthOptions = {
     }): Promise<Session> {
       if (session.user) {
         // Usar dados do token (mais rápido e confiável)
+        session.user.name = token.name ?? session.user.name;
+        session.user.email = token.email ?? session.user.email;
+        session.user.image = (token as any).picture ?? session.user.image;
         (session.user as any).id = (token as any).id as string | undefined;
         (session.user as any).tenantId = (token as any).tenantId as
           | string
@@ -798,6 +861,23 @@ export const authOptions: NextAuthOptions = {
           | undefined;
         (session.user as any).tenantStatusReason = (token as any)
           .tenantStatusReason as string | null | undefined;
+        (session.user as any).impersonation = (token as any).impersonation as
+          | {
+              active: boolean;
+              startedAt: string;
+              superAdminId: string;
+              superAdminEmail: string;
+              superAdminName?: string | null;
+              targetUserId: string;
+              targetUserEmail: string;
+              targetUserName?: string | null;
+              targetUserRole: string;
+              targetTenantId: string;
+              targetTenantSlug?: string | null;
+              targetTenantName?: string | null;
+            }
+          | null
+          | undefined;
       }
 
       return session;

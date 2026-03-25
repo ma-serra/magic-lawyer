@@ -2,8 +2,19 @@
 
 import bcrypt from "bcryptjs";
 import { getServerSession } from "next-auth";
+import { headers } from "next/headers";
 
 import prisma from "@/app/lib/prisma";
+import {
+  extractRequestIp,
+  extractRequestUserAgent,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
+import {
+  createImpersonationTicket,
+  type ImpersonationSessionSnapshot,
+} from "@/app/lib/impersonation-ticket";
+import { getTenantAccessibleModules } from "@/app/lib/tenant-modules";
 import {
   EspecialidadeJuridica,
   DigitalCertificatePolicy,
@@ -93,6 +104,18 @@ const decimalToNullableNumber = (value: unknown) => {
   }
 
   return null;
+};
+
+const buildUserDisplayName = (
+  firstName?: string | null,
+  lastName?: string | null,
+  fallback?: string | null,
+) => {
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  if (fullName) return fullName;
+  if (fallback?.trim()) return fallback.trim();
+  return "Usuário";
 };
 
 export interface TenantManagementData {
@@ -1873,6 +1896,373 @@ export async function updateTenantUser(
     return {
       success: false,
       error: "Erro interno ao atualizar usuário",
+    };
+  }
+}
+
+export async function startTenantUserImpersonation(
+  tenantId: string,
+  userId: string,
+): Promise<TenantResponse> {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (
+      !session?.user ||
+      session.user.role !== "SUPER_ADMIN" ||
+      !session.user.id
+    ) {
+      return {
+        success: false,
+        error: "Acesso não autorizado para iniciar impersonação.",
+      };
+    }
+
+    const [superAdmin, targetUser] = await Promise.all([
+      prisma.superAdmin.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          image: true,
+          status: true,
+        },
+      }),
+      prisma.usuario.findUnique({
+        where: { id: userId },
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              slug: true,
+              name: true,
+              nomeFantasia: true,
+              razaoSocial: true,
+              status: true,
+              statusReason: true,
+              sessionVersion: true,
+              planRevision: true,
+              branding: {
+                select: {
+                  logoUrl: true,
+                  faviconUrl: true,
+                },
+              },
+            },
+          },
+          permissoes: {
+            select: {
+              permissao: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!superAdmin || superAdmin.status !== "ACTIVE") {
+      return {
+        success: false,
+        error: "Super admin inválido ou inativo.",
+      };
+    }
+
+    if (!targetUser || targetUser.tenantId !== tenantId) {
+      return {
+        success: false,
+        error: "Usuário não encontrado para o tenant informado.",
+      };
+    }
+
+    if (!targetUser.active) {
+      return {
+        success: false,
+        error: "Não é possível impersonar usuário desativado.",
+      };
+    }
+
+    if (targetUser.tenant.status !== "ACTIVE") {
+      return {
+        success: false,
+        error: `Tenant do usuário está com status ${targetUser.tenant.status}.`,
+      };
+    }
+
+    const headersList = await headers();
+    const requestHeaders = new Headers(headersList);
+    const ipAddress = extractRequestIp(requestHeaders);
+    const userAgent = extractRequestUserAgent(requestHeaders);
+
+    const superAdminName = buildUserDisplayName(
+      superAdmin.firstName,
+      superAdmin.lastName,
+      superAdmin.email,
+    );
+    const targetUserName = buildUserDisplayName(
+      targetUser.firstName,
+      targetUser.lastName,
+      targetUser.email,
+    );
+    const targetTenantName =
+      targetUser.tenant.nomeFantasia ??
+      targetUser.tenant.razaoSocial ??
+      targetUser.tenant.name ??
+      targetUser.tenant.slug;
+    const targetPermissions = targetUser.permissoes.map(
+      (permission) => permission.permissao,
+    );
+    const targetModules = await getTenantAccessibleModules(targetUser.tenantId);
+
+    const nextSession: ImpersonationSessionSnapshot = {
+      id: targetUser.id,
+      email: targetUser.email,
+      name: targetUserName,
+      image: targetUser.avatarUrl ?? null,
+      avatarUrl: targetUser.avatarUrl ?? null,
+      tenantId: targetUser.tenantId,
+      role: targetUser.role,
+      tenantSlug: targetUser.tenant.slug,
+      tenantName: targetTenantName,
+      tenantLogoUrl: targetUser.tenant.branding?.logoUrl ?? null,
+      tenantFaviconUrl: targetUser.tenant.branding?.faviconUrl ?? null,
+      permissions: targetPermissions,
+      tenantModules: targetModules,
+      sessionVersion: targetUser.sessionVersion ?? 1,
+      tenantSessionVersion: targetUser.tenant.sessionVersion ?? 1,
+      tenantPlanRevision: targetUser.tenant.planRevision ?? 1,
+      tenantStatus: targetUser.tenant.status,
+      tenantStatusReason: targetUser.tenant.statusReason ?? null,
+      impersonation: {
+        active: true,
+        startedAt: new Date().toISOString(),
+        superAdminId: superAdmin.id,
+        superAdminEmail: superAdmin.email,
+        superAdminName,
+        targetUserId: targetUser.id,
+        targetUserEmail: targetUser.email,
+        targetUserName,
+        targetUserRole: targetUser.role,
+        targetTenantId: targetUser.tenantId,
+        targetTenantSlug: targetUser.tenant.slug,
+        targetTenantName,
+      },
+    };
+
+    const ticket = createImpersonationTicket({
+      type: "IMPERSONATION_START",
+      issuedForSessionId: session.user.id,
+      issuedForRole: session.user.role,
+      nextSession,
+    });
+
+    await prisma.superAdminAuditLog.create({
+      data: {
+        superAdminId: superAdmin.id,
+        acao: "START_USER_IMPERSONATION",
+        entidade: "USUARIO",
+        entidadeId: targetUser.id,
+        ipAddress,
+        userAgent,
+        dadosNovos: {
+          tenantId: targetUser.tenantId,
+          tenantSlug: targetUser.tenant.slug,
+          tenantName: targetTenantName,
+          targetUserEmail: targetUser.email,
+          targetUserRole: targetUser.role,
+          startedAt: nextSession.impersonation?.startedAt,
+        },
+      },
+    });
+
+    await logOperationalEvent({
+      tenantId: targetUser.tenantId,
+      category: "SUPPORT",
+      source: "SUPER_ADMIN_IMPERSONATION",
+      action: "SUPER_ADMIN_IMPERSONATION_STARTED",
+      status: "WARNING",
+      actorType: "SUPER_ADMIN",
+      actorId: superAdmin.id,
+      actorName: superAdminName,
+      actorEmail: superAdmin.email,
+      entityType: "USUARIO",
+      entityId: targetUser.id,
+      route: `/admin/tenants/${tenantId}`,
+      ipAddress,
+      userAgent,
+      message: `Super admin ${superAdmin.email} iniciou sessão monitorada como ${targetUser.email} (${targetTenantName}).`,
+      payload: {
+        superAdminId: superAdmin.id,
+        superAdminEmail: superAdmin.email,
+        targetUserId: targetUser.id,
+        targetUserEmail: targetUser.email,
+        targetUserRole: targetUser.role,
+        tenantId: targetUser.tenantId,
+        tenantSlug: targetUser.tenant.slug,
+        tenantName: targetTenantName,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        ticket,
+        redirectTo: "/dashboard",
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao iniciar impersonação de usuário do tenant", error);
+    return {
+      success: false,
+      error: "Erro interno ao iniciar sessão monitorada.",
+    };
+  }
+}
+
+export async function endTenantUserImpersonation(): Promise<TenantResponse> {
+  try {
+    const session = await getServerSession(authOptions);
+    const impersonation = (session?.user as any)?.impersonation as
+      | ImpersonationSessionSnapshot["impersonation"]
+      | undefined;
+
+    if (!session?.user || !impersonation?.active) {
+      return {
+        success: false,
+        error: "Nenhuma sessão monitorada ativa para encerrar.",
+      };
+    }
+
+    const currentSessionId = session.user.id;
+    const currentRole = session.user.role;
+
+    if (!currentSessionId || !currentRole) {
+      return {
+        success: false,
+        error: "Sessão inválida para encerramento da impersonação.",
+      };
+    }
+
+    const superAdmin = await prisma.superAdmin.findUnique({
+      where: { id: impersonation.superAdminId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        image: true,
+        status: true,
+      },
+    });
+
+    if (!superAdmin || superAdmin.status !== "ACTIVE") {
+      return {
+        success: false,
+        error:
+          "Não foi possível restaurar o Super Admin. Verifique o status da conta.",
+      };
+    }
+
+    const headersList = await headers();
+    const requestHeaders = new Headers(headersList);
+    const ipAddress = extractRequestIp(requestHeaders);
+    const userAgent = extractRequestUserAgent(requestHeaders);
+    const superAdminName = buildUserDisplayName(
+      superAdmin.firstName,
+      superAdmin.lastName,
+      superAdmin.email,
+    );
+
+    const nextSession: ImpersonationSessionSnapshot = {
+      id: superAdmin.id,
+      email: superAdmin.email,
+      name: superAdminName,
+      image: superAdmin.image ?? null,
+      avatarUrl: superAdmin.image ?? null,
+      tenantId: null,
+      role: "SUPER_ADMIN",
+      tenantSlug: null,
+      tenantName: "Magic Lawyer Admin",
+      tenantLogoUrl: null,
+      tenantFaviconUrl: null,
+      permissions: ["*"],
+      tenantModules: ["*"],
+      sessionVersion: 1,
+      tenantSessionVersion: 1,
+      tenantPlanRevision: 1,
+      tenantStatus: "ACTIVE",
+      tenantStatusReason: null,
+      impersonation: null,
+    };
+
+    const ticket = createImpersonationTicket({
+      type: "IMPERSONATION_END",
+      issuedForSessionId: currentSessionId,
+      issuedForRole: currentRole,
+      nextSession,
+    });
+
+    await prisma.superAdminAuditLog.create({
+      data: {
+        superAdminId: superAdmin.id,
+        acao: "END_USER_IMPERSONATION",
+        entidade: "USUARIO",
+        entidadeId: impersonation.targetUserId,
+        ipAddress,
+        userAgent,
+        dadosNovos: {
+          tenantId: impersonation.targetTenantId,
+          tenantSlug: impersonation.targetTenantSlug,
+          tenantName: impersonation.targetTenantName,
+          targetUserEmail: impersonation.targetUserEmail,
+          targetUserRole: impersonation.targetUserRole,
+          startedAt: impersonation.startedAt,
+          endedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await logOperationalEvent({
+      tenantId: impersonation.targetTenantId,
+      category: "SUPPORT",
+      source: "SUPER_ADMIN_IMPERSONATION",
+      action: "SUPER_ADMIN_IMPERSONATION_ENDED",
+      status: "INFO",
+      actorType: "SUPER_ADMIN",
+      actorId: superAdmin.id,
+      actorName: superAdminName,
+      actorEmail: superAdmin.email,
+      entityType: "USUARIO",
+      entityId: impersonation.targetUserId,
+      route: "/dashboard",
+      ipAddress,
+      userAgent,
+      message: `Sessão monitorada encerrada por ${superAdmin.email} (alvo: ${impersonation.targetUserEmail}).`,
+      payload: {
+        superAdminId: superAdmin.id,
+        superAdminEmail: superAdmin.email,
+        targetUserId: impersonation.targetUserId,
+        targetUserEmail: impersonation.targetUserEmail,
+        targetUserRole: impersonation.targetUserRole,
+        tenantId: impersonation.targetTenantId,
+        tenantSlug: impersonation.targetTenantSlug,
+        tenantName: impersonation.targetTenantName,
+        startedAt: impersonation.startedAt,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        ticket,
+        redirectTo: `/admin/tenants/${impersonation.targetTenantId}`,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao encerrar impersonação de usuário do tenant", error);
+    return {
+      success: false,
+      error: "Erro interno ao encerrar sessão monitorada.",
     };
   }
 }

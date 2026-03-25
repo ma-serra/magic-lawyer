@@ -8,6 +8,7 @@ import { AppSidebar, type SidebarNavItem } from "@/components/app-sidebar";
 import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assistant-dock";
+import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
 import { AdminFloatingChatDock } from "@/components/support/admin-floating-chat-dock";
 import { useAdminNavigation } from "@/app/hooks/use-admin-navigation";
 
@@ -78,6 +79,7 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
       />
 
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        <ImpersonationSessionBanner />
         <Navbar
           showAuthenticatedSecondaryNav={false}
           onOpenSidebar={openSidebarMobile}
