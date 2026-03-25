@@ -12,6 +12,7 @@ import { CriticalDeadlinePopup } from "@/components/notifications/critical-deadl
 import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
 import { TenantFloatingChatDock } from "@/components/support/tenant-floating-chat-dock";
 import { useProfileNavigation } from "@/app/hooks/use-profile-navigation";
+import { useSessionPresenceHeartbeat } from "@/app/hooks/use-session-presence-heartbeat";
 
 export type AppShellProps = {
   children: ReactNode;
@@ -21,6 +22,7 @@ export function AppShell({ children }: AppShellProps) {
   const { data: session } = useSession();
   const tenantName = session?.user?.tenantName || "Magic Lawyer";
   const tenantLogoUrl = session?.user?.tenantLogoUrl || undefined;
+  useSessionPresenceHeartbeat();
 
   const { navigationItems, secondaryNavigationItems } = useProfileNavigation();
 

@@ -59,6 +59,18 @@ async function createDefaultTemplates(tenantId) {
       },
     },
     {
+      eventType: "access.login_new",
+      title: "Novo acesso identificado",
+      message:
+        "Detectamos um novo acesso na sua conta em {locationLabel} ({ipAddress}) em {loggedAt}.",
+      variables: {
+        locationLabel: "string",
+        ipAddress: "string",
+        userAgent: "string",
+        loggedAt: "string",
+      },
+    },
+    {
       eventType: "processo.status_changed",
       title: "Status do processo alterado",
       message: "Processo {numero} mudou de {oldStatusLabel} para {newStatusLabel}",
@@ -305,6 +317,7 @@ function getDefaultPreferencesByRole(role) {
       "tarefa.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "documento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "relatorio.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
     ADMIN: {
       default: { enabled: true, channels: ["REALTIME", "EMAIL"], urgency: "HIGH" },
@@ -317,6 +330,7 @@ function getDefaultPreferencesByRole(role) {
       "tarefa.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "documento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "relatorio.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
     ADVOGADO: {
       default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -328,6 +342,7 @@ function getDefaultPreferencesByRole(role) {
       "pagamento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "tarefa.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "documento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
     SECRETARIA: {
       default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -338,6 +353,7 @@ function getDefaultPreferencesByRole(role) {
       "equipe.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "tarefa.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "documento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
     FINANCEIRO: {
       default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -346,6 +362,7 @@ function getDefaultPreferencesByRole(role) {
       "pagamento.*": { enabled: true, channels: ["REALTIME", "EMAIL"], urgency: "CRITICAL" },
       "honorario.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "relatorio.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
     CLIENTE: {
       default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -354,6 +371,7 @@ function getDefaultPreferencesByRole(role) {
       "pagamento.*": { enabled: true, channels: ["REALTIME"], urgency: "HIGH" },
       "evento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
       "documento.*": { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
+      "access.*": { enabled: true, channels: ["REALTIME", "EMAIL", "TELEGRAM"], urgency: "HIGH" },
     },
   };
 

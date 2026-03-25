@@ -11,6 +11,7 @@ import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assist
 import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
 import { AdminFloatingChatDock } from "@/components/support/admin-floating-chat-dock";
 import { useAdminNavigation } from "@/app/hooks/use-admin-navigation";
+import { useSessionPresenceHeartbeat } from "@/app/hooks/use-session-presence-heartbeat";
 
 export type AdminAppShellProps = {
   children: ReactNode;
@@ -20,6 +21,7 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
   const { data: session } = useSession();
   const tenantName = "Magic Lawyer Admin";
   const tenantLogoUrl = undefined; // Logo administrativo
+  useSessionPresenceHeartbeat();
 
   const { navigationItems, secondaryNavigationItems } = useAdminNavigation();
 

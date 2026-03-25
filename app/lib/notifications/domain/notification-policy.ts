@@ -280,6 +280,8 @@ export class NotificationPolicy {
       "relatorio.exported": ["relatorioId", "tipo", "formato"],
       "relatorio.scheduled": ["relatorioId", "tipo", "dataAgendamento"],
       "relatorio.failed": ["relatorioId", "tipo", "erro"],
+      // ACESSO
+      "access.login_new": ["ipAddress", "locationLabel", "loggedAt"],
     };
 
     return requiredFieldsMap[eventType] || [];
@@ -337,6 +339,7 @@ export class NotificationPolicy {
       "equipe.user_removed": "HIGH",
       "advogado.permissions_changed": "HIGH",
       "relatorio.failed": "HIGH",
+      "access.login_new": "HIGH",
       // MÉDIOS e INFORMATIVOS (todos os outros do getRequiredFields)
       "prazo.digest_30d": "MEDIUM",
       "processo.created": "MEDIUM",
@@ -604,6 +607,8 @@ export class NotificationPolicy {
       "relatorio.exported": ["relatorioId", "tipo", "formato"],
       "relatorio.scheduled": ["relatorioId", "tipo", "dataAgendamento"],
       "relatorio.failed": ["relatorioId", "tipo", "erro"],
+      // ACESSO
+      "access.login_new": ["ipAddress", "locationLabel", "loggedAt"],
     };
   }
 

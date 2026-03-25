@@ -24,6 +24,8 @@ import {
   Building2,
   DollarSign,
   FileText,
+  MapPinned,
+  Shield,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -78,6 +80,23 @@ function pctLabel(value: number | null) {
 function analyticsSafePercent(value: number | null) {
   if (value === null || Number.isNaN(value)) return 0;
   return Number(value.toFixed(1));
+}
+
+function formatLastSeen(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
+
+  if (diffSeconds < 60) {
+    return "agora";
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) {
+    return `${diffMinutes} min atrás`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  return `${diffHours} h atrás`;
 }
 
 function fetchAdminDashboard() {
@@ -210,6 +229,8 @@ export function AdminDashboardContent() {
     fetchAdminDashboard,
     {
       revalidateOnFocus: true,
+      refreshInterval: 15_000,
+      dedupingInterval: 5_000,
     },
   );
 
@@ -427,6 +448,157 @@ export function AdminDashboardContent() {
           icon={<Users className="h-4 w-4" />}
         />
       </div>
+
+      <PeoplePanel
+        title="Presença online em tempo real"
+        description="Usuários autenticados ativos por tenant e região nas últimas janelas de heartbeat."
+      >
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
+                  Usuários online
+                </p>
+                <p className="mt-2 text-xl font-semibold text-foreground">
+                  {formatNumber(data.onlinePresence.totalUsersOnline)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
+                  Tenants ativos agora
+                </p>
+                <p className="mt-2 text-xl font-semibold text-foreground">
+                  {formatNumber(data.onlinePresence.tenantsWithUsersOnline)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
+                  Sessões de suporte
+                </p>
+                <p className="mt-2 text-xl font-semibold text-foreground">
+                  {formatNumber(data.onlinePresence.supportSessionsOnline)}
+                </p>
+              </div>
+            </div>
+
+            <div className="relative min-h-[280px] overflow-hidden rounded-2xl border border-white/10 bg-background/20">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(34,197,94,0.16),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(14,165,233,0.16),transparent_45%)]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:22px_22px]" />
+              {data.onlinePresence.byLocation.length === 0 ? (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-default-400">
+                  Nenhum usuário online detectado neste momento.
+                </div>
+              ) : (
+                data.onlinePresence.byLocation.slice(0, 20).map((location) => {
+                  const bubbleSize = Math.min(30, 10 + location.usersOnline * 3);
+
+                  return (
+                    <div
+                      key={location.key}
+                      className="absolute -translate-x-1/2 -translate-y-1/2"
+                      style={{
+                        left: `${location.mapX}%`,
+                        top: `${location.mapY}%`,
+                      }}
+                      title={`${location.label} • ${location.usersOnline} usuário(s)`}
+                    >
+                      <div
+                        className="flex items-center justify-center rounded-full border border-success/30 bg-success/25 text-[10px] font-semibold text-success"
+                        style={{ width: bubbleSize, height: bubbleSize }}
+                      >
+                        {location.usersOnline}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <MapPinned className="h-4 w-4 text-primary" />
+                Top localizações online
+              </div>
+              <div className="space-y-2">
+                {data.onlinePresence.byLocation.length === 0 ? (
+                  <p className="text-sm text-default-400">
+                    Sem localizações ativas.
+                  </p>
+                ) : (
+                  data.onlinePresence.byLocation.slice(0, 6).map((location) => (
+                    <div
+                      key={`location-${location.key}`}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">
+                          {location.label}
+                        </p>
+                        <p className="text-[11px] text-default-500">
+                          {location.tenantsOnline} tenant(s)
+                        </p>
+                      </div>
+                      <Chip size="sm" variant="flat">
+                        {location.usersOnline} online
+                      </Chip>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Users className="h-4 w-4 text-success" />
+                Usuários conectados agora
+              </div>
+              <div className="space-y-2">
+                {data.onlinePresence.users.length === 0 ? (
+                  <p className="text-sm text-default-400">
+                    Sem sessões ativas no momento.
+                  </p>
+                ) : (
+                  data.onlinePresence.users.slice(0, 8).map((entry) => (
+                    <div
+                      key={`${entry.tenantId}-${entry.userId}-${entry.lastSeenAt}`}
+                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-foreground">
+                            {entry.name || entry.email || entry.userId}
+                          </p>
+                          <p className="truncate text-[11px] text-default-500">
+                            {entry.tenantName} • {entry.locationLabel}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {entry.isSupportSession ? (
+                            <Chip
+                              color="warning"
+                              size="sm"
+                              startContent={<Shield className="h-3 w-3" />}
+                              variant="flat"
+                            >
+                              Suporte
+                            </Chip>
+                          ) : null}
+                          <span className="text-[11px] text-default-500">
+                            {formatLastSeen(entry.lastSeenAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </PeoplePanel>
 
       <PeoplePanel
         title="Onde agir hoje"

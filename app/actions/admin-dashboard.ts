@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
+import { getOnlinePresenceSnapshot } from "@/app/lib/realtime/session-presence";
 import {
   InvoiceStatus,
   PaymentStatus,
@@ -130,6 +131,46 @@ export interface AdminAuditEntry {
   summary: string;
 }
 
+export interface AdminOnlineUser {
+  userId: string;
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  role: string | null;
+  name: string | null;
+  email: string | null;
+  locationLabel: string;
+  locationCountry: string | null;
+  locationRegion: string | null;
+  locationCity: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  isSupportSession: boolean;
+  lastSeenAt: string;
+}
+
+export interface AdminOnlineTenantPresence {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  usersOnline: number;
+  supportSessions: number;
+  lastSeenAt: string;
+}
+
+export interface AdminOnlineLocationPresence {
+  key: string;
+  label: string;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  usersOnline: number;
+  tenantsOnline: number;
+  supportSessions: number;
+  mapX: number;
+  mapY: number;
+}
+
 export interface AdminDashboardData {
   stats: AdminDashboardStat[];
   revenueSeries: AdminTrendPoint[];
@@ -152,6 +193,15 @@ export interface AdminDashboardData {
     revenueLast30Days: number;
     outstandingInvoices: number;
     averageRevenuePerTenant: number;
+  };
+  onlinePresence: {
+    totalUsersOnline: number;
+    tenantsWithUsersOnline: number;
+    supportSessionsOnline: number;
+    generatedAt: string;
+    users: AdminOnlineUser[];
+    byTenant: AdminOnlineTenantPresence[];
+    byLocation: AdminOnlineLocationPresence[];
   };
 }
 
@@ -329,6 +379,84 @@ function serializeTenantSummary(tenant: {
     clientes: tenant._count.clientes,
     activeSinceDays: daysBetween(tenant.createdAt, now),
   };
+}
+
+const BRAZIL_MAP_BOUNDS = {
+  minLat: -34,
+  maxLat: 6,
+  minLng: -74,
+  maxLng: -34,
+} as const;
+
+const BRAZIL_STATE_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  AC: { lat: -8.77, lng: -70.55 },
+  AL: { lat: -9.62, lng: -36.82 },
+  AP: { lat: 0.03, lng: -51.05 },
+  AM: { lat: -3.1, lng: -60.02 },
+  BA: { lat: -12.97, lng: -38.5 },
+  CE: { lat: -3.73, lng: -38.52 },
+  DF: { lat: -15.78, lng: -47.93 },
+  ES: { lat: -20.32, lng: -40.34 },
+  GO: { lat: -16.68, lng: -49.25 },
+  MA: { lat: -2.53, lng: -44.3 },
+  MT: { lat: -15.6, lng: -56.1 },
+  MS: { lat: -20.45, lng: -54.62 },
+  MG: { lat: -19.92, lng: -43.94 },
+  PA: { lat: -1.45, lng: -48.5 },
+  PB: { lat: -7.12, lng: -34.86 },
+  PR: { lat: -25.42, lng: -49.27 },
+  PE: { lat: -8.05, lng: -34.88 },
+  PI: { lat: -5.09, lng: -42.8 },
+  RJ: { lat: -22.91, lng: -43.17 },
+  RN: { lat: -5.79, lng: -35.21 },
+  RS: { lat: -30.03, lng: -51.23 },
+  RO: { lat: -8.76, lng: -63.9 },
+  RR: { lat: 2.82, lng: -60.67 },
+  SC: { lat: -27.59, lng: -48.55 },
+  SP: { lat: -23.55, lng: -46.63 },
+  SE: { lat: -10.91, lng: -37.07 },
+  TO: { lat: -10.25, lng: -48.32 },
+};
+
+function normalizeMapCoordinates(lat: number, lng: number) {
+  const x =
+    ((lng - BRAZIL_MAP_BOUNDS.minLng) /
+      (BRAZIL_MAP_BOUNDS.maxLng - BRAZIL_MAP_BOUNDS.minLng)) *
+    100;
+  const y =
+    100 -
+    ((lat - BRAZIL_MAP_BOUNDS.minLat) /
+      (BRAZIL_MAP_BOUNDS.maxLat - BRAZIL_MAP_BOUNDS.minLat)) *
+      100;
+
+  return {
+    x: Number(Math.min(96, Math.max(4, x)).toFixed(2)),
+    y: Number(Math.min(96, Math.max(4, y)).toFixed(2)),
+  };
+}
+
+function resolveLocationCoordinates(params: {
+  country: string | null;
+  region: string | null;
+}) {
+  const country = params.country?.toUpperCase() ?? null;
+  const region = params.region?.toUpperCase() ?? null;
+
+  if (country === "BR" && region && BRAZIL_STATE_COORDINATES[region]) {
+    const geo = BRAZIL_STATE_COORDINATES[region];
+
+    return normalizeMapCoordinates(geo.lat, geo.lng);
+  }
+
+  if (country === "US") {
+    return normalizeMapCoordinates(38.9, -77.04);
+  }
+
+  if (country === "PT") {
+    return normalizeMapCoordinates(38.72, -9.14);
+  }
+
+  return normalizeMapCoordinates(-14.23, -51.92);
 }
 
 export async function getSuperAdminDashboardData(): Promise<AdminDashboardResponse> {
@@ -659,6 +787,164 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       },
     });
 
+    const onlineSnapshotRaw = await getOnlinePresenceSnapshot({
+      includeSuperAdmins: false,
+    });
+    const onlineTenantIds = Array.from(
+      new Set(
+        onlineSnapshotRaw
+          .map((entry) => entry.tenantId)
+          .filter((tenantId): tenantId is string => Boolean(tenantId)),
+      ),
+    );
+    const onlineTenantsMeta = onlineTenantIds.length
+      ? await prisma.tenant.findMany({
+          where: {
+            id: { in: onlineTenantIds },
+            ...PRODUCTION_TENANT_WHERE,
+          },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        })
+      : [];
+    const onlineTenantMap = new Map(
+      onlineTenantsMeta.map((tenant) => [tenant.id, tenant]),
+    );
+
+    const onlineUsers: AdminOnlineUser[] = onlineSnapshotRaw
+      .filter((entry) => entry.tenantId && onlineTenantMap.has(entry.tenantId))
+      .map((entry) => {
+        const tenant = onlineTenantMap.get(entry.tenantId!);
+
+        return {
+          userId: entry.userId,
+          tenantId: entry.tenantId!,
+          tenantName: tenant?.name ?? "Tenant desconhecido",
+          tenantSlug: tenant?.slug ?? "sem-slug",
+          role: entry.role,
+          name: entry.name,
+          email: entry.email,
+          locationLabel: entry.location.label || "Localização não identificada",
+          locationCountry: entry.location.country,
+          locationRegion: entry.location.region,
+          locationCity: entry.location.city,
+          ipAddress: entry.ipAddress,
+          userAgent: entry.userAgent,
+          isSupportSession: entry.isSupportSession,
+          lastSeenAt: entry.lastSeenAt,
+        };
+      });
+
+    const onlineByTenantMap = new Map<
+      string,
+      {
+        tenantName: string;
+        tenantSlug: string;
+        usersOnline: number;
+        supportSessions: number;
+        lastSeenAt: string;
+      }
+    >();
+    const onlineByLocationMap = new Map<
+      string,
+      {
+        label: string;
+        country: string | null;
+        region: string | null;
+        city: string | null;
+        usersOnline: number;
+        supportSessions: number;
+        tenants: Set<string>;
+      }
+    >();
+
+    for (const entry of onlineUsers) {
+      const currentTenant =
+        onlineByTenantMap.get(entry.tenantId) ??
+        {
+          tenantName: entry.tenantName,
+          tenantSlug: entry.tenantSlug,
+          usersOnline: 0,
+          supportSessions: 0,
+          lastSeenAt: entry.lastSeenAt,
+        };
+      const nextLastSeen =
+        Date.parse(entry.lastSeenAt) > Date.parse(currentTenant.lastSeenAt)
+          ? entry.lastSeenAt
+          : currentTenant.lastSeenAt;
+
+      onlineByTenantMap.set(entry.tenantId, {
+        tenantName: entry.tenantName,
+        tenantSlug: entry.tenantSlug,
+        usersOnline: currentTenant.usersOnline + 1,
+        supportSessions:
+          currentTenant.supportSessions + (entry.isSupportSession ? 1 : 0),
+        lastSeenAt: nextLastSeen,
+      });
+
+      const locationKey = `${entry.locationCountry ?? "??"}::${entry.locationRegion ?? "??"}::${entry.locationCity ?? "??"}`;
+      const locationEntry =
+        onlineByLocationMap.get(locationKey) ??
+        {
+          label: entry.locationLabel,
+          country: entry.locationCountry,
+          region: entry.locationRegion,
+          city: entry.locationCity,
+          usersOnline: 0,
+          supportSessions: 0,
+          tenants: new Set<string>(),
+        };
+
+      locationEntry.usersOnline += 1;
+      locationEntry.supportSessions += entry.isSupportSession ? 1 : 0;
+      locationEntry.tenants.add(entry.tenantId);
+      onlineByLocationMap.set(locationKey, locationEntry);
+    }
+
+    const onlineByTenant: AdminOnlineTenantPresence[] = Array.from(
+      onlineByTenantMap.entries(),
+    )
+      .map(([tenantId, value]) => ({
+        tenantId,
+        tenantName: value.tenantName,
+        tenantSlug: value.tenantSlug,
+        usersOnline: value.usersOnline,
+        supportSessions: value.supportSessions,
+        lastSeenAt: value.lastSeenAt,
+      }))
+      .sort((a, b) => b.usersOnline - a.usersOnline);
+
+    const onlineByLocation: AdminOnlineLocationPresence[] = Array.from(
+      onlineByLocationMap.entries(),
+    )
+      .map(([key, value]) => {
+        const coordinates = resolveLocationCoordinates({
+          country: value.country,
+          region: value.region,
+        });
+
+        return {
+          key,
+          label: value.label,
+          country: value.country,
+          region: value.region,
+          city: value.city,
+          usersOnline: value.usersOnline,
+          tenantsOnline: value.tenants.size,
+          supportSessions: value.supportSessions,
+          mapX: coordinates.x,
+          mapY: coordinates.y,
+        };
+      })
+      .sort((a, b) => b.usersOnline - a.usersOnline);
+
+    const supportSessionsOnline = onlineUsers.filter(
+      (entry) => entry.isSupportSession,
+    ).length;
+
     const alerts = buildAlerts({
       suspendedTenants,
       cancelledTenants,
@@ -727,6 +1013,15 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
           revenueLast30Days,
           outstandingInvoices,
           averageRevenuePerTenant,
+        },
+        onlinePresence: {
+          totalUsersOnline: onlineUsers.length,
+          tenantsWithUsersOnline: onlineByTenant.length,
+          supportSessionsOnline,
+          generatedAt: new Date().toISOString(),
+          users: onlineUsers,
+          byTenant: onlineByTenant,
+          byLocation: onlineByLocation,
         },
       },
     };

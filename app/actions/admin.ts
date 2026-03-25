@@ -37,6 +37,7 @@ import {
   buildAdminTenantChannelProviderSummary,
 } from "@/app/lib/admin-integration-summaries";
 import { getGlobalTelegramProviderSummary } from "@/app/lib/notifications/telegram-provider";
+import { getOnlineCountsByTenant } from "@/app/lib/realtime/session-presence";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -426,6 +427,9 @@ export async function getAllTenants(): Promise<TenantResponse> {
       },
       orderBy: { createdAt: "desc" },
     });
+    const onlineCountsByTenant = await getOnlineCountsByTenant({
+      includeSuperAdmins: false,
+    });
 
     const data = tenants.map((tenant) => ({
       id: tenant.id,
@@ -473,6 +477,7 @@ export async function getAllTenants(): Promise<TenantResponse> {
         processos: tenant._count.processos,
         clientes: tenant._count.clientes,
       },
+      onlineUsersNow: onlineCountsByTenant[tenant.id] ?? 0,
     }));
 
     return {

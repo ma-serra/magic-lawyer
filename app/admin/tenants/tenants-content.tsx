@@ -106,6 +106,7 @@ interface TenantSummary {
     processos: number;
     clientes: number;
   };
+  onlineUsersNow: number;
 }
 
 interface TenantDerivedState {
@@ -445,13 +446,15 @@ function TenantsSkeleton() {
         ))}
       </div>
       <Skeleton className="h-48 rounded-3xl" isLoaded={false} />
-      {Array.from({ length: 3 }).map((_, index) => (
-        <Skeleton
-          key={`tenant-list-skeleton-${index}`}
-          className="h-60 rounded-3xl"
-          isLoaded={false}
-        />
-      ))}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton
+            key={`tenant-list-skeleton-${index}`}
+            className="h-60 rounded-3xl"
+            isLoaded={false}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -509,12 +512,13 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
 
   return (
     <PeopleEntityCard
+      className="h-full border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 transition-colors hover:border-primary/45 hover:bg-content1 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
       isPressable
       onPress={() => onOpenDetails(effectiveTenant)}
     >
-      <PeopleEntityCardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <PeopleEntityCardHeader className="flex flex-col gap-4 border-default-200/80 lg:flex-row lg:items-start lg:justify-between dark:border-white/10">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-sm">
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-default-200/80 bg-default-100/55 shadow-sm dark:border-white/10 dark:bg-white/5">
             {effectiveTenant.branding?.logoUrl ? (
               <Image
                 alt={`Logo ${effectiveTenant.name}`}
@@ -558,6 +562,13 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
                 variant="bordered"
               >
                 {effectiveTenant.derived.healthLabel}
+              </Chip>
+              <Chip
+                color={effectiveTenant.onlineUsersNow > 0 ? "success" : "default"}
+                size="sm"
+                variant="flat"
+              >
+                {effectiveTenant.onlineUsersNow} online agora
               </Chip>
             </div>
             <p className="text-sm text-default-400">
@@ -617,7 +628,7 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
 
       <PeopleEntityCardBody className="space-y-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Receita base
             </p>
@@ -630,7 +641,7 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
                 : "Sem plano publicado"}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Proximo marco
             </p>
@@ -641,7 +652,7 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
               {effectiveTenant.derived.nextMilestoneLabel}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Saude operacional
             </p>
@@ -652,7 +663,7 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
               {effectiveTenant.derived.healthHint}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Uso atual
             </p>
@@ -662,11 +673,14 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
             <p className="mt-1 text-xs text-default-400">
               {getUsageSummary(effectiveTenant)}
             </p>
+            <p className="mt-2 text-xs text-default-500">
+              Sessões online agora: {effectiveTenant.onlineUsersNow}
+            </p>
           </div>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-3 rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="space-y-3 rounded-2xl border border-default-200/80 bg-default-100/35 p-4 dark:border-white/10 dark:bg-background/30">
             <div className="flex flex-wrap gap-2">
               <Chip
                 color={effectiveTenant.derived.subscriptionTone}
@@ -690,7 +704,7 @@ function TenantCard({ tenant, onOpenDetails }: TenantCardProps) {
               {effectiveTenant.derived.healthHint}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl border border-default-200/80 bg-default-100/35 p-4 dark:border-white/10 dark:bg-background/30">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Identificacao tecnica
             </p>
@@ -1055,7 +1069,7 @@ export function TenantsContent() {
       ) : (
         <>
           {filteredTenants.length > 0 ? (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {paginatedTenants.map((tenant) => (
                 <TenantCard
                   key={tenant.id}
@@ -1069,8 +1083,8 @@ export function TenantsContent() {
               title="Nenhum tenant encontrado"
               description="A busca atual nao retornou escritorios. Revise filtros ou volte para a base completa."
             >
-              <div className="rounded-3xl border border-dashed border-white/10 bg-background/30 px-6 py-12 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-white/5">
+              <div className="rounded-3xl border border-dashed border-default-300/80 bg-default-100/35 px-6 py-12 text-center dark:border-white/10 dark:bg-background/30">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-default-200/80 bg-default-100/55 dark:border-white/10 dark:bg-white/5">
                   <Globe2 className="h-7 w-7 text-default-400" />
                 </div>
                 <p className="text-base font-semibold text-foreground">
@@ -1139,7 +1153,7 @@ export function TenantsContent() {
             {selectedTenant ? (
               <div className="space-y-5">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                  <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                       Status do tenant
                     </p>
@@ -1150,7 +1164,7 @@ export function TenantsContent() {
                       {selectedTenant.derived.subscriptionLabel}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                  <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                       Plano
                     </p>
@@ -1161,7 +1175,7 @@ export function TenantsContent() {
                       {selectedTenant.derived.revenueLabel}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                  <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                       Marco critico
                     </p>
@@ -1172,7 +1186,7 @@ export function TenantsContent() {
                       {selectedTenant.derived.nextMilestoneLabel}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+                  <div className="rounded-2xl border border-default-200/80 bg-default-100/45 p-4 dark:border-white/10 dark:bg-background/40">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                       Uso consolidado
                     </p>
@@ -1186,7 +1200,7 @@ export function TenantsContent() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-background/30 p-4">
+                  <div className="space-y-3 rounded-2xl border border-default-200/80 bg-default-100/35 p-4 dark:border-white/10 dark:bg-background/30">
                     <p className="text-sm font-semibold text-foreground">
                       Resumo operacional
                     </p>
@@ -1209,7 +1223,7 @@ export function TenantsContent() {
                       </Chip>
                     </div>
                   </div>
-                  <div className="space-y-2 rounded-2xl border border-white/10 bg-background/30 p-4 text-sm text-default-400">
+                  <div className="space-y-2 rounded-2xl border border-default-200/80 bg-default-100/35 p-4 text-sm text-default-400 dark:border-white/10 dark:bg-background/30">
                     <p>
                       <span className="font-medium text-foreground">
                         Owner:

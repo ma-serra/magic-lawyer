@@ -774,6 +774,11 @@ export class NotificationService {
           channels: ["REALTIME", "EMAIL"],
           urgency: "HIGH",
         },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
       },
       ADMIN: {
         default: {
@@ -811,6 +816,11 @@ export class NotificationService {
           channels: ["REALTIME", "EMAIL"],
           urgency: "HIGH",
         },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
       },
       ADVOGADO: {
         default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -844,6 +854,11 @@ export class NotificationService {
           channels: ["REALTIME", "EMAIL"],
           urgency: "CRITICAL",
         },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
       },
       SECRETARIA: {
         default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -863,6 +878,11 @@ export class NotificationService {
           channels: ["REALTIME"],
           urgency: "MEDIUM",
         },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
       },
       FINANCEIRO: {
         default: { enabled: true, channels: ["REALTIME"], urgency: "MEDIUM" },
@@ -880,6 +900,11 @@ export class NotificationService {
           enabled: true,
           channels: ["REALTIME", "EMAIL"],
           urgency: "CRITICAL",
+        },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
         },
       },
       CLIENTE: {
@@ -899,6 +924,11 @@ export class NotificationService {
           channels: ["REALTIME"],
           urgency: "HIGH",
         },
+        "access.*": {
+          enabled: true,
+          channels: ["REALTIME", "EMAIL", "TELEGRAM"],
+          urgency: "HIGH",
+        },
       },
     };
 
@@ -915,6 +945,11 @@ export class NotificationService {
       "processo.created": {
         title: "Novo processo criado",
         message: "Processo {numero} foi criado para {cliente}",
+      },
+      "access.login_new": {
+        title: "Novo acesso identificado",
+        message:
+          "Detectamos um novo acesso na sua conta em {locationLabel} ({ipAddress}) em {loggedAt}.",
       },
       "processo.updated": {
         title: "Processo atualizado",

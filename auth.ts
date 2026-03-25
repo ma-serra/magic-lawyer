@@ -18,6 +18,7 @@ import {
   buildDefaultTenantDomainBySlug,
   getTenantHostHints,
 } from "./lib/tenant-host";
+import { extractPresenceLocation } from "./app/lib/realtime/session-presence";
 
 // Campos extras que vamos guardar no token
 // - id, tenantId, role, name, email
@@ -98,8 +99,9 @@ export const authOptions: NextAuthOptions = {
 
         console.info("[auth] Tentativa de login recebida", attemptContext);
 
-        try {
-          const email = normalizedEmail ?? credentials.email;
+	        try {
+	          const email = normalizedEmail ?? credentials.email;
+          const requestLocation = extractPresenceLocation(requestHeaders);
 
           // Log para debug
           console.info("[auth] Buscando usuário", {
@@ -128,7 +130,7 @@ export const authOptions: NextAuthOptions = {
             if (!superAdmin.passwordHash) {
               console.warn("[auth] SuperAdmin sem senha cadastrada");
 
-              await logOperationalEvent({
+	            await logOperationalEvent({
                 category: "ACCESS",
                 source: "NEXTAUTH",
                 action: "LOGIN_REJECTED",
@@ -213,11 +215,26 @@ export const authOptions: NextAuthOptions = {
               ipAddress,
               userAgent,
               message: "Login de super admin autorizado.",
-              payload: attemptContext,
-            });
+	              payload: attemptContext,
+	            });
 
-            return resultUser as any;
-          }
+            try {
+              await prisma.superAdmin.update({
+                where: { id: superAdmin.id },
+                data: {
+                  lastLoginAt: new Date(),
+                  ...(ipAddress ? { lastLoginIp: ipAddress } : {}),
+                },
+              });
+            } catch (superAdminLoginUpdateError) {
+              console.warn(
+                "[auth] Falha ao atualizar metadados de login do super admin",
+                superAdminLoginUpdateError,
+              );
+            }
+
+	            return resultUser as any;
+	          }
 
           // SEGUNDO: Se não é SuperAdmin, buscar usuário normal
           let tenantWhere: any = undefined;
@@ -394,7 +411,7 @@ export const authOptions: NextAuthOptions = {
               attemptContext,
             );
 
-            await logOperationalEvent({
+	          await logOperationalEvent({
               tenantId: user?.tenantId ?? null,
               category: "ACCESS",
               source: "NEXTAUTH",
@@ -586,15 +603,114 @@ export const authOptions: NextAuthOptions = {
             ipAddress,
             userAgent,
             message: "Login autorizado para usuário do tenant.",
-            payload: {
-              ...attemptContext,
-              tenantId: user.tenantId,
-              role: user.role,
-            },
-          });
+	            payload: {
+	              ...attemptContext,
+	              tenantId: user.tenantId,
+	              role: user.role,
+	            },
+	          });
 
-          return resultUser as any;
-        } catch (error) {
+          const loginTimestamp = new Date();
+          const locationLabel =
+            requestLocation.label ||
+            requestLocation.country ||
+            "Localização não identificada";
+          const userAgentLabel = userAgent || "Navegador não identificado";
+
+          try {
+            await prisma.usuario.update({
+              where: { id: user.id },
+              data: {
+                lastLoginAt: loginTimestamp,
+              },
+            });
+          } catch (userLoginUpdateError) {
+            console.warn(
+              "[auth] Falha ao atualizar lastLoginAt do usuário",
+              userLoginUpdateError,
+            );
+          }
+
+          try {
+            const { NotificationService } = await import(
+              "./app/lib/notifications/notification-service"
+            );
+
+            await NotificationService.publishNotification({
+              type: "access.login_new",
+              tenantId: user.tenantId,
+              userId: user.id,
+              urgency: "HIGH",
+              payload: {
+                title: "Novo acesso identificado",
+                message:
+                  "Detectamos um novo acesso na sua conta. Se não reconhece esse login, altere sua senha imediatamente.",
+                ipAddress: ipAddress || "IP não identificado",
+                userAgent: userAgentLabel,
+                locationLabel,
+                loggedAt: loginTimestamp.toISOString(),
+                route: authRoute,
+              },
+            });
+
+            await logOperationalEvent({
+              tenantId: user.tenantId,
+              category: "ACCESS",
+              source: "NOTIFICATION",
+              action: "LOGIN_NEW_ACCESS_NOTIFIED",
+              status: "SUCCESS",
+              actorType: "TENANT_USER",
+              actorId: user.id,
+              actorName:
+                [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+              actorEmail: user.email,
+              entityType: "USUARIO",
+              entityId: user.id,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: "Notificação de novo acesso enviada ao usuário.",
+              payload: {
+                locationLabel,
+                loggedAt: loginTimestamp.toISOString(),
+              },
+            });
+          } catch (loginNotificationError) {
+            console.warn(
+              "[auth] Falha ao enviar notificação de novo acesso",
+              loginNotificationError,
+            );
+
+            await logOperationalEvent({
+              tenantId: user.tenantId,
+              category: "ACCESS",
+              source: "NOTIFICATION",
+              action: "LOGIN_NEW_ACCESS_NOTIFIED",
+              status: "WARNING",
+              actorType: "TENANT_USER",
+              actorId: user.id,
+              actorName:
+                [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+              actorEmail: user.email,
+              entityType: "USUARIO",
+              entityId: user.id,
+              route: authRoute,
+              ipAddress,
+              userAgent,
+              message: "Falha ao enviar notificação de novo acesso.",
+              payload: {
+                error:
+                  loginNotificationError instanceof Error
+                    ? loginNotificationError.message
+                    : String(loginNotificationError),
+                locationLabel,
+                loggedAt: loginTimestamp.toISOString(),
+              },
+            });
+          }
+
+	          return resultUser as any;
+	        } catch (error) {
           // Verificar se é erro de redirecionamento
           if (
             error instanceof Error &&
