@@ -3,6 +3,7 @@
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 export interface BoardCreatePayload {
@@ -51,6 +52,7 @@ export async function listBoards(params?: { tipo?: string; ativo?: boolean }) {
 
     const where: any = {
       tenantId: user.tenantId,
+      deletedAt: null,
     };
 
     if (params?.tipo) {
@@ -100,9 +102,13 @@ export async function getBoard(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
           include: {
             _count: {
@@ -210,6 +216,9 @@ export async function createBoard(data: BoardCreatePayload) {
       where: { id: board.id },
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
         },
       },
@@ -238,6 +247,7 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -272,6 +282,9 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
         where: { id },
         include: {
           colunas: {
+            where: {
+              deletedAt: null,
+            },
             orderBy: { ordem: "asc" },
           },
         },
@@ -285,6 +298,9 @@ export async function updateBoard(id: string, data: BoardUpdatePayload) {
       data: updateData,
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
         },
       },
@@ -353,6 +369,7 @@ export async function deleteBoard(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -380,12 +397,33 @@ export async function deleteBoard(id: string) {
     }
 
     // Deletar colunas e board
+    const deletedAt = new Date();
+    const actor = {
+      actorId: user.id ?? null,
+      actorType: user.role ?? "USER",
+    };
+
     await prisma.$transaction([
-      prisma.boardColumn.deleteMany({
-        where: { boardId: id },
+      prisma.boardColumn.updateMany({
+        where: {
+          boardId: id,
+          tenantId: user.tenantId,
+          deletedAt: null,
+        },
+        data: {
+          ...buildSoftDeletePayload(
+            actor,
+            "Exclusão manual de board (colunas arquivadas em cascata)",
+          ),
+          deletedAt,
+        },
       }),
-      prisma.board.delete({
+      prisma.board.update({
         where: { id },
+        data: {
+          ...buildSoftDeletePayload(actor, "Exclusão manual de board"),
+          deletedAt,
+        },
       }),
     ]);
 
@@ -433,9 +471,13 @@ export async function duplicateBoard(id: string, novoNome: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
         },
       },
@@ -499,6 +541,9 @@ export async function duplicateBoard(id: string, novoNome: string) {
       where: { id: novoBoard.id },
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
         },
       },
@@ -530,6 +575,7 @@ export async function getBoardsResumidos() {
       where: {
         tenantId: user.tenantId,
         ativo: true,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -566,7 +612,10 @@ export async function criarBoardPadrao() {
 
     // Verificar se já existe algum board
     const boardsExistentes = await prisma.board.count({
-      where: { tenantId: user.tenantId },
+      where: {
+        tenantId: user.tenantId,
+        deletedAt: null,
+      },
     });
 
     if (boardsExistentes > 0) {
@@ -621,6 +670,9 @@ export async function criarBoardPadrao() {
       where: { id: board.id },
       include: {
         colunas: {
+          where: {
+            deletedAt: null,
+          },
           orderBy: { ordem: "asc" },
         },
       },
@@ -652,6 +704,7 @@ export async function getBoardHistorico(boardId: string, limit = 8) {
       where: {
         id: boardId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,

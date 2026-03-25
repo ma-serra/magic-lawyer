@@ -89,6 +89,9 @@ export async function getNotifications(
       where: {
         tenantId,
         usuarioId: userId,
+        status: {
+          in: ["NAO_LIDA", "LIDA"],
+        },
       },
       orderBy: [{ createdAt: "desc" }],
       take,
@@ -101,6 +104,7 @@ export async function getNotifications(
       where: {
         tenantId,
         userId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       orderBy: [{ createdAt: "desc" }],
       take,
@@ -126,6 +130,7 @@ export async function getNotifications(
         tenantId,
         userId,
         readAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
     }),
   ]);
@@ -279,9 +284,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
       where: {
         tenantId,
         usuarioId: userId,
-        status: {
-          in: ["NAO_LIDA", "ARQUIVADA"],
-        },
+        status: "NAO_LIDA",
       },
       data: {
         status: "LIDA",
@@ -295,6 +298,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
         tenantId,
         userId,
         readAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       data: {
         readAt: new Date(),
@@ -314,17 +318,25 @@ export async function clearAllNotifications(): Promise<void> {
   // Limpar todas as notificações nos DOIS sistemas em paralelo
   await Promise.all([
     // Sistema legado
-    prisma.notificacaoUsuario.deleteMany({
+    prisma.notificacaoUsuario.updateMany({
       where: {
         tenantId,
         usuarioId: userId,
       },
+      data: {
+        status: "ARQUIVADA",
+        updatedAt: new Date(),
+      },
     }),
     // Sistema novo
-    prisma.notification.deleteMany({
+    prisma.notification.updateMany({
       where: {
         tenantId,
         userId,
+      },
+      data: {
+        readAt: new Date(),
+        expiresAt: new Date(),
       },
     }),
   ]);

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import prisma from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 // ============================================
@@ -172,6 +173,7 @@ export async function listModelosContrato(
 
     const where: Prisma.ModeloContratoWhereInput = {
       tenantId,
+      deletedAt: null,
     };
 
     if (normalizedSearch) {
@@ -263,6 +265,7 @@ export async function getModeloContratoById(
       where: {
         id: modeloId,
         tenantId,
+        deletedAt: null,
       },
       include: {
         tipo: {
@@ -335,7 +338,8 @@ export async function createModeloContrato(
       const tipo = await prisma.tipoContrato.findFirst({
         where: {
           id: data.tipoId,
-          OR: [{ tenantId }, { tenantId: "GLOBAL" }],
+          OR: [{ tenantId }, { tenantId: null }],
+          deletedAt: null,
         },
       });
 
@@ -417,6 +421,7 @@ export async function updateModeloContrato(
       where: {
         id: modeloId,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -431,7 +436,8 @@ export async function updateModeloContrato(
       const tipo = await prisma.tipoContrato.findFirst({
         where: {
           id: data.tipoId,
-          OR: [{ tenantId }, { tenantId: "GLOBAL" }],
+          OR: [{ tenantId }, { tenantId: null }],
+          deletedAt: null,
         },
       });
 
@@ -552,6 +558,7 @@ export async function deleteModeloContrato(
       where: {
         id: modeloId,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -577,10 +584,17 @@ export async function deleteModeloContrato(
       };
     }
 
-    await prisma.modeloContrato.delete({
+    await prisma.modeloContrato.update({
       where: {
         id: modeloId,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id,
+          actorType: user.role,
+        },
+        "Exclusão manual de modelo de contrato",
+      ),
     });
 
     revalidatePath("/contratos/modelos");

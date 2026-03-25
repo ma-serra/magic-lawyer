@@ -1,6 +1,6 @@
 {
   "name": "magic-lawyer",
-  "version": "1.0.14-beta.0",
+  "version": "1.0.14-beta.1",
   "private": true,
   "scripts": {
     "dev": "cross-env PORT=9192 next dev --turbopack",
@@ -45,7 +45,8 @@
     "polling:smoke": "POLLING_LOAD_MODE=smoke npx tsx scripts/load-test-10k-sessoes.ts --smoke",
     "polling:load": "POLLING_LOAD_MODE=load npx tsx scripts/load-test-10k-sessoes.ts --load",
     "modules:detect": "npx tsx scripts/auto-detect-modules.ts",
-    "repo:hygiene": "node scripts/repo-hygiene.mjs",
+    "guard:hard-delete": "node scripts/check-prisma-hard-delete.mjs",
+    "repo:hygiene": "npm run guard:hard-delete && node scripts/repo-hygiene.mjs",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

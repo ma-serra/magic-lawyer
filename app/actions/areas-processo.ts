@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { TENANT_PERMISSIONS } from "@/types";
 
@@ -69,6 +70,7 @@ export async function listAreasProcesso(params?: { ativo?: boolean }) {
 
     const where: any = {
       tenantId: user.tenantId,
+      deletedAt: null,
     };
 
     if (params?.ativo !== undefined) {
@@ -113,6 +115,7 @@ export async function getAreaProcesso(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -177,12 +180,14 @@ export async function createAreaProcesso(data: AreaProcessoCreatePayload) {
         where: {
           tenantId: user.tenantId,
           slug,
+          deletedAt: null,
         },
         select: { id: true },
       }),
       prisma.areaProcesso.findMany({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
         },
         select: { nome: true },
       }),
@@ -251,6 +256,7 @@ export async function updateAreaProcesso(
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -292,6 +298,7 @@ export async function updateAreaProcesso(
           tenantId: user.tenantId,
           slug: slugParaValidar,
           id: { not: id },
+          deletedAt: null,
         },
         select: { id: true },
       }),
@@ -299,6 +306,7 @@ export async function updateAreaProcesso(
         where: {
           tenantId: user.tenantId,
           id: { not: id },
+          deletedAt: null,
         },
         select: { nome: true },
       }),
@@ -373,6 +381,7 @@ export async function deleteAreaProcesso(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -398,8 +407,15 @@ export async function deleteAreaProcesso(id: string) {
       };
     }
 
-    await prisma.areaProcesso.delete({
+    await prisma.areaProcesso.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de área de processo",
+      ),
     });
 
     logger.info(`Área de processo deletada: ${id} por usuário ${user.email}`);

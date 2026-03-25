@@ -3,6 +3,7 @@ import { emailTemplates } from "./email";
 import { syncEventWithGoogle } from "./google-calendar";
 
 import { emailService } from "@/app/lib/email-service";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 // Interface para criar evento
@@ -221,7 +222,7 @@ export const deleteEvento = async (
       where: { id: eventoId },
     });
 
-    if (!evento) {
+    if (!evento || evento.deletedAt) {
       return { success: false, error: "Evento não encontrado" };
     }
 
@@ -241,8 +242,15 @@ export const deleteEvento = async (
       }
     }
 
-    await prisma.evento.delete({
+    await prisma.evento.update({
       where: { id: eventoId },
+      data: buildSoftDeletePayload(
+        {
+          actorType: "SYSTEM",
+          actorId: null,
+        },
+        "Exclusão via serviço de agenda",
+      ),
     });
 
     return { success: true };
@@ -273,6 +281,7 @@ export const listEventos = async (
     const eventos = await prisma.evento.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         dataInicio: {
           gte: dataInicio,
         },

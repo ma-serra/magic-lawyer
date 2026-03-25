@@ -21,6 +21,7 @@ import {
   notifyLawyersAboutProcessMovement,
   publishProcessNotificationToLawyers,
 } from "@/app/lib/juridical/process-movement-sync";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // ============================================
 // TIPOS
@@ -249,6 +250,7 @@ export async function listAndamentos(
 
     const baseScopeWhere: any = {
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(baseScopeWhere, processoScope);
 
@@ -535,6 +537,7 @@ export async function getAndamento(
     const where: any = {
       id: andamentoId,
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(where, processoScope);
 
@@ -970,6 +973,7 @@ export async function updateAndamento(
     const andamentoWhere: any = {
       id: andamentoId,
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(andamentoWhere, processoScope);
 
@@ -1301,6 +1305,7 @@ export async function deleteAndamento(
     const andamentoWhere: any = {
       id: andamentoId,
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(andamentoWhere, processoScope);
 
@@ -1315,8 +1320,12 @@ export async function deleteAndamento(
       };
     }
 
-    await prisma.movimentacaoProcesso.delete({
+    await prisma.movimentacaoProcesso.update({
       where: { id: andamentoId },
+      data: buildSoftDeletePayload(
+        { actorId: userId, actorType: "USER" },
+        "Remoção lógica de andamento",
+      ),
     });
 
     try {
@@ -1378,6 +1387,7 @@ export async function createTarefaFromAndamento(
     const andamentoWhere: any = {
       id: andamentoId,
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(andamentoWhere, processoScope);
 
@@ -1481,6 +1491,7 @@ export async function marcarAndamentoResolvido(
     const where: any = {
       id: andamentoId,
       tenantId,
+      deletedAt: null,
     };
     mergeProcessoScope(where, processoScope);
 
@@ -1700,6 +1711,7 @@ export async function getDashboardAndamentos(
     const processoScope = await getProcessoScopeForSession(session);
 
     const where: any = { tenantId };
+    where.deletedAt = null;
     mergeProcessoScope(where, processoScope);
 
     if (processoId) {

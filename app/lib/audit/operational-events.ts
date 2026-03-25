@@ -3,6 +3,7 @@ import logger from "@/lib/logger";
 
 export type OperationalAuditCategory =
   | "ACCESS"
+  | "DATA_ACCESS"
   | "SUPPORT"
   | "EMAIL"
   | "WEBHOOK"
@@ -75,6 +76,23 @@ export function getRequestAuditMetadata(request: RequestLike) {
 }
 
 export async function logOperationalEvent(input: OperationalAuditInput) {
+  if (
+    input.action?.toUpperCase?.().endsWith("_VIEWED") &&
+    (!stringifyTrimmed(input.entityType) || !stringifyTrimmed(input.entityId))
+  ) {
+    logger.warn(
+      {
+        action: input.action,
+        category: input.category,
+        source: input.source,
+        entityType: input.entityType,
+        entityId: input.entityId,
+      },
+      "Evento *_VIEWED sem entityType/entityId. Registro ignorado por compliance.",
+    );
+    return;
+  }
+
   try {
     await prisma.operationalAuditEvent.create({
       data: {

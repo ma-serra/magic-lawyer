@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
 import { checkPermission } from "@/app/actions/equipe";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 async function getTenantId(): Promise<string> {
   const session = await getSession();
@@ -71,6 +72,7 @@ export async function listHonorariosContratuais(filters?: {
     const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
     const where: any = {
       tenantId,
+      deletedAt: null,
     };
 
     if (filters?.contratoIds?.length) {
@@ -203,6 +205,7 @@ export async function getHonorarioContratual(id: string) {
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
       include: {
         contrato: {
@@ -460,6 +463,7 @@ export async function updateHonorarioContratual(
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
       include: {
         contrato: {
@@ -640,6 +644,7 @@ export async function deleteHonorarioContratual(id: string) {
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -650,8 +655,17 @@ export async function deleteHonorarioContratual(id: string) {
       };
     }
 
-    await prisma.contratoHonorario.delete({
+    const session = await getSession();
+
+    await prisma.contratoHonorario.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: session?.user?.id ?? null,
+          actorType: (session?.user as any)?.role ?? "USER",
+        },
+        "Exclusão manual de honorário contratual",
+      ),
     });
 
     revalidatePath("/contratos");
@@ -726,6 +740,7 @@ export async function calcularValorHonorario(
       where: {
         id: honorarioId,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -821,6 +836,7 @@ export async function getDadosPagamentoHonorario(honorarioId: string) {
       where: {
         id: honorarioId,
         tenantId,
+        deletedAt: null,
       },
       include: {
         contrato: {

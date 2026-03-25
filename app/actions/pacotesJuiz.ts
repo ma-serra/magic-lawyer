@@ -270,7 +270,11 @@ export async function getPacotesJuiz(): Promise<GetPacotesJuizResponse> {
       include: {
         _count: {
           select: {
-            juizes: true,
+            juizes: {
+              where: {
+                ativo: true,
+              },
+            },
             assinaturas: true,
           },
         },
@@ -306,6 +310,9 @@ export async function getPacoteJuizById(
       where: { id },
       include: {
         juizes: {
+          where: {
+            ativo: true,
+          },
           include: {
             juiz: {
               select: {
@@ -505,8 +512,11 @@ export async function deletePacoteJuiz(
       };
     }
 
-    await prisma.pacoteJuiz.delete({
+    await prisma.pacoteJuiz.update({
       where: { id },
+      data: {
+        status: "INATIVO",
+      },
     });
 
     return {
@@ -533,11 +543,22 @@ export async function adicionarJuizAoPacote(
   try {
     await ensureSuperAdmin();
 
-    const item = await prisma.pacoteJuizItem.create({
-      data: {
+    const item = await prisma.pacoteJuizItem.upsert({
+      where: {
+        pacoteId_juizId: {
+          pacoteId,
+          juizId,
+        },
+      },
+      update: {
+        ativo: true,
+        ordemExibicao: ordemExibicao || 0,
+      },
+      create: {
         pacoteId,
         juizId,
         ordemExibicao: ordemExibicao || 0,
+        ativo: true,
       },
     });
 
@@ -560,12 +581,14 @@ export async function removerJuizDoPacote(pacoteId: string, juizId: string) {
   try {
     await ensureSuperAdmin();
 
-    await prisma.pacoteJuizItem.delete({
+    await prisma.pacoteJuizItem.updateMany({
       where: {
-        pacoteId_juizId: {
-          pacoteId,
-          juizId,
-        },
+        pacoteId,
+        juizId,
+        ativo: true,
+      },
+      data: {
+        ativo: false,
       },
     });
 

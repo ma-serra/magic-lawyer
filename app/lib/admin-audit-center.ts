@@ -121,6 +121,7 @@ function normalizeStatus(value?: string | null): AdminAuditStatus {
 function mapCategoryToTab(category: string): Exclude<AdminAuditTabKey, "overview" | "changes"> {
   switch (category) {
     case "ACCESS":
+    case "DATA_ACCESS":
       return "access";
     case "SUPPORT":
       return "support";

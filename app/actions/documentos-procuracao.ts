@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/auth";
 import { UploadService, DocumentUploadOptions } from "@/lib/upload-service";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { DocumentNotifier } from "@/app/lib/notifications/document-notifier";
 import { checkPermission } from "@/app/actions/equipe";
@@ -339,6 +340,7 @@ export async function getDocumentosProcuracao(procuracaoId: string) {
       where: {
         procuracaoId: scopedProcuracaoId,
         tenantId,
+        deletedAt: null,
       },
       orderBy: {
         createdAt: "desc",
@@ -390,6 +392,7 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
       where: {
         id: documentoId,
         tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -435,11 +438,18 @@ export async function deleteDocumentoProcuracao(documentoId: string) {
       // Continuar mesmo se falhar no Cloudinary
     }
 
-    // Deletar registro do banco
-    await prisma.documentoProcuracao.delete({
+    // Arquivar registro no banco (soft delete)
+    await prisma.documentoProcuracao.update({
       where: {
         id: documentoId,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de documento da procuração",
+      ),
     });
 
     try {
@@ -507,6 +517,9 @@ export async function cleanupOrphanedDocuments() {
 
     // Buscar todos os documentos no banco
     const documentos = await prisma.documentoProcuracao.findMany({
+      where: {
+        deletedAt: null,
+      },
       select: {
         id: true,
         url: true,
@@ -531,9 +544,16 @@ export async function cleanupOrphanedDocuments() {
             `🗑️  Documento órfão encontrado: ${documento.fileName} (${documento.id})`,
           );
 
-          // Deletar do banco
-          await prisma.documentoProcuracao.delete({
+          // Arquivar no banco
+          await prisma.documentoProcuracao.update({
             where: { id: documento.id },
+            data: buildSoftDeletePayload(
+              {
+                actorType: "SYSTEM",
+                actorId: null,
+              },
+              "Arquivo órfão detectado no Cloudinary",
+            ),
           });
 
           totalDeleted++;
@@ -614,6 +634,7 @@ export async function updateDocumentoProcuracao(
       where: {
         id: documentoId,
         tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,

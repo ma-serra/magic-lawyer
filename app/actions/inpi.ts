@@ -736,27 +736,41 @@ async function runDossieAnalysis(dossieId: string, tenantId: string) {
   }));
 
   await prisma.$transaction([
-    prisma.inpiDossieColisao.deleteMany({
+    prisma.inpiDossieColisao.updateMany({
       where: {
         tenantId,
         dossieId: dossie.id,
+        ativo: true,
+      },
+      data: {
+        ativo: false,
       },
     }),
-    ...(collisionAnalyses.length
-      ? [
-          prisma.inpiDossieColisao.createMany({
-            data: collisionAnalyses.map(({ candidate, score, analysis }) => ({
-              tenantId,
-              dossieId: dossie.id,
-              marcaId: candidate.id,
-              score,
-              nivelRisco: riscoFromScore(score),
-              justificativa: summarizeTrademarkCollisionJustification(analysis),
-            })),
-            skipDuplicates: true,
-          }),
-        ]
-      : []),
+    ...collisionAnalyses.map(({ candidate, score, analysis }) =>
+      prisma.inpiDossieColisao.upsert({
+        where: {
+          dossieId_marcaId: {
+            dossieId: dossie.id,
+            marcaId: candidate.id,
+          },
+        },
+        update: {
+          score,
+          nivelRisco: riscoFromScore(score),
+          justificativa: summarizeTrademarkCollisionJustification(analysis),
+          ativo: true,
+        },
+        create: {
+          tenantId,
+          dossieId: dossie.id,
+          marcaId: candidate.id,
+          score,
+          nivelRisco: riscoFromScore(score),
+          justificativa: summarizeTrademarkCollisionJustification(analysis),
+          ativo: true,
+        },
+      }),
+    ),
   ]);
 
   const scoreMax = collisionAnalyses[0]?.score ?? 0;
@@ -779,6 +793,9 @@ async function runDossieAnalysis(dossieId: string, tenantId: string) {
     },
     include: {
       colisoes: {
+        where: {
+          ativo: true,
+        },
         include: {
           marca: true,
         },
@@ -787,7 +804,11 @@ async function runDossieAnalysis(dossieId: string, tenantId: string) {
       },
       _count: {
         select: {
-          colisoes: true,
+          colisoes: {
+            where: {
+              ativo: true,
+            },
+          },
         },
       },
     },
@@ -2142,6 +2163,9 @@ export async function listInpiDossies(params?: InpiDossieListParams): Promise<{
         where,
         include: {
           colisoes: {
+            where: {
+              ativo: true,
+            },
             include: {
               marca: true,
             },
@@ -2150,7 +2174,11 @@ export async function listInpiDossies(params?: InpiDossieListParams): Promise<{
           },
           _count: {
             select: {
-              colisoes: true,
+              colisoes: {
+                where: {
+                  ativo: true,
+                },
+              },
             },
           },
         },
@@ -2269,6 +2297,7 @@ export async function listInpiDossieColisoes(params: {
     const where = {
       tenantId: ctx.tenantId,
       dossieId,
+      ativo: true,
       ...(search
         ? {
             OR: [

@@ -81,7 +81,11 @@ export async function getNotifications(
   }
 
   const notifications = await prisma.notification.findMany({
-    where: { tenantId: tenantId ?? undefined, userId },
+    where: {
+      tenantId: tenantId ?? undefined,
+      userId,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
     orderBy: { createdAt: "desc" },
     take,
   });
@@ -91,6 +95,7 @@ export async function getNotifications(
       tenantId: tenantId ?? undefined,
       userId,
       readAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
   });
 
@@ -131,6 +136,7 @@ export async function setNotificationStatus(
       id,
       tenantId: tenantId ?? undefined,
       userId,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
     data: {
       readAt:
@@ -156,6 +162,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
       tenantId: tenantId ?? undefined,
       userId,
       readAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
     data: { readAt: new Date() },
   });
@@ -169,10 +176,14 @@ export async function clearAllNotifications(): Promise<void> {
     return;
   }
 
-  await prisma.notification.deleteMany({
+  await prisma.notification.updateMany({
     where: {
       tenantId: tenantId ?? undefined,
       userId,
+    },
+    data: {
+      readAt: new Date(),
+      expiresAt: new Date(),
     },
   });
 }

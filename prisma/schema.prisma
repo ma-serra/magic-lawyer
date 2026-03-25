@@ -17,6 +17,10 @@ model AreaProcesso {
   descricao String?
   ordem     Int?
   ativo     Boolean    @default(true)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   tenant    Tenant?    @relation(fields: [tenantId], references: [id])
@@ -24,6 +28,7 @@ model AreaProcesso {
 
   @@unique([tenantId, slug])
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@index([nome])
   @@schema("magiclawyer")
 }
@@ -36,6 +41,10 @@ model TipoContrato {
   descricao String?
   ordem     Int?
   ativo     Boolean          @default(true)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
   contratos Contrato[]
@@ -44,6 +53,7 @@ model TipoContrato {
 
   @@unique([tenantId, slug])
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@index([nome])
   @@schema("magiclawyer")
 }
@@ -57,6 +67,10 @@ model CategoriaTarefa {
   corHex    String?
   ordem     Int?
   ativo     Boolean  @default(true)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant    Tenant?  @relation(fields: [tenantId], references: [id])
@@ -64,6 +78,7 @@ model CategoriaTarefa {
 
   @@unique([tenantId, slug])
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@index([nome])
   @@schema("magiclawyer")
 }
@@ -227,6 +242,10 @@ model Endereco {
   pais        String       @default("Brasil")
   telefone    String?
   observacoes String?
+  deletedAt   DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
 
   // Relacionamentos opcionais - apenas um será preenchido
   usuarioId String?
@@ -241,6 +260,7 @@ model Endereco {
 
   @@unique([tenantId, apelido])
   @@index([tenantId, principal])
+  @@index([tenantId, deletedAt])
   @@index([usuarioId])
   @@index([clienteId])
   @@schema("magiclawyer")
@@ -458,11 +478,16 @@ model TenantEmailCredential {
   fromAddress String                    @map("email")
   apiKey      String                    @map("appPassword") @db.Text
   fromName    String?
+  deletedAt   DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt   DateTime                  @default(now())
   updatedAt   DateTime                  @updatedAt
   tenant      Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, type])
+  @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
 }
 
@@ -908,6 +933,10 @@ model Tribunal {
   esfera    String?
   uf        String?
   siteUrl   String?
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   juizes    Juiz[]
@@ -916,6 +945,7 @@ model Tribunal {
   tenant    Tenant?    @relation(fields: [tenantId], references: [id])
 
   @@unique([nome, uf])
+  @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
 }
 
@@ -1061,6 +1091,10 @@ model ProcessoParte {
   advogadoId  String?
   papel       String?
   observacoes String?
+  deletedAt   DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   processo    Processo     @relation(fields: [processoId], references: [id], onDelete: Cascade)
@@ -1070,6 +1104,7 @@ model ProcessoParte {
 
   @@index([tenantId, processoId])
   @@index([tenantId, tipoPolo])
+  @@index([tenantId, deletedAt])
   @@index([clienteId])
   @@index([advogadoId])
   @@schema("magiclawyer")
@@ -1091,6 +1126,10 @@ model ProcessoPrazo {
   regimePrazoId        String?
   causaId              String?
   diligenciaId         String?
+  deletedAt            DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   processo             Processo              @relation(fields: [processoId], references: [id], onDelete: Cascade)
@@ -1103,6 +1142,7 @@ model ProcessoPrazo {
 
   @@index([tenantId, processoId])
   @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, dataVencimento])
   @@index([regimePrazoId])
   @@index([causaId])
@@ -1131,6 +1171,10 @@ model Procuracao {
   assinadaPeloClienteEm      DateTime?
   emitidaPor                 ProcuracaoEmitidaPor   @default(ESCRITORIO)
   createdById                String?
+  deletedAt                  DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   cliente                    Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -1144,6 +1188,7 @@ model Procuracao {
   documentos                 DocumentoProcuracao[]
 
   @@index([tenantId, clienteId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, ativa])
   @@index([tenantId, modeloId])
   @@schema("magiclawyer")
@@ -1154,12 +1199,17 @@ model ProcuracaoProcesso {
   tenantId     String
   procuracaoId String
   processoId   String
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt    DateTime   @default(now())
   processo     Processo   @relation(fields: [processoId], references: [id], onDelete: Cascade)
   procuracao   Procuracao @relation(fields: [procuracaoId], references: [id], onDelete: Cascade)
   tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([procuracaoId, processoId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, processoId])
   @@index([tenantId, procuracaoId])
   @@schema("magiclawyer")
@@ -1170,12 +1220,17 @@ model ProcuracaoAdvogado {
   tenantId     String
   procuracaoId String
   advogadoId   String
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt    DateTime   @default(now())
   advogado     Advogado   @relation(fields: [advogadoId], references: [id], onDelete: Cascade)
   procuracao   Procuracao @relation(fields: [procuracaoId], references: [id], onDelete: Cascade)
   tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([procuracaoId, advogadoId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, advogadoId])
   @@index([tenantId, procuracaoId])
   @@schema("magiclawyer")
@@ -1248,6 +1303,10 @@ model MovimentacaoProcesso {
   notificarEmail        Boolean                       @default(false)
   notificarWhatsapp     Boolean                       @default(false)
   mensagemPersonalizada String?
+  deletedAt             DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt             DateTime                      @default(now())
   updatedAt             DateTime                      @updatedAt
   documentos            Documento[]                   @relation("MovimentacaoDocumentos")
@@ -1262,6 +1321,7 @@ model MovimentacaoProcesso {
   @@index([dataMovimentacao])
   @@index([tenantId, notificarCliente])
   @@index([tenantId, statusOperacional])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, prioridade])
   @@index([tenantId, responsavelId])
   @@index([tenantId, slaEm])
@@ -1344,6 +1404,10 @@ model RegimePrazo {
   descricao       String?
   contarDiasUteis Boolean         @default(true)
   observacoes     String?
+  deletedAt       DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   tenant          Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1351,6 +1415,7 @@ model RegimePrazo {
   diligencias     Diligencia[]
 
   @@unique([tenantId, nome])
+  @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
 }
 
@@ -1365,12 +1430,17 @@ model Feriado {
   municipio  String?
   descricao  String?
   recorrente Boolean     @default(true)
+  deletedAt  DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   tenant     Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tribunal   Tribunal?   @relation(fields: [tribunalId], references: [id])
 
   @@index([tenantId, data])
+  @@index([tenantId, deletedAt])
   @@index([tipo])
   @@index([uf])
   @@schema("magiclawyer")
@@ -1494,6 +1564,7 @@ model InpiDossieColisao {
   score         Int
   nivelRisco    InpiRisco        @default(BAIXO)
   justificativa String?
+  ativo         Boolean          @default(true)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1501,6 +1572,7 @@ model InpiDossieColisao {
   marca         InpiCatalogMarca @relation(fields: [marcaId], references: [id], onDelete: Cascade)
 
   @@unique([dossieId, marcaId])
+  @@index([tenantId, ativo])
   @@index([tenantId, nivelRisco])
   @@index([tenantId, dossieId])
   @@schema("magiclawyer")
@@ -1561,6 +1633,10 @@ model Peticao {
   protocoladoEm   DateTime?
   criadoPorId     String?
   observacoes     String?
+  deletedAt       DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   processo        Processo            @relation(fields: [processoId], references: [id], onDelete: Cascade)
@@ -1573,6 +1649,7 @@ model Peticao {
   assinaturas     AssinaturaPeticao[]
 
   @@index([tenantId, processoId])
+  @@index([tenantId, deletedAt])
   @@index([causaId])
   @@index([modeloId])
   @@schema("magiclawyer")
@@ -1677,6 +1754,10 @@ model Diligencia {
   responsavelId    String?
   criadoPorId      String?
   observacoes      String?
+  deletedAt        DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1691,6 +1772,7 @@ model Diligencia {
   prazosVinculados ProcessoPrazo[]  @relation("DiligenciaPrazos")
 
   @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
   @@index([processoId])
   @@index([causaId])
   @@index([contratoId])
@@ -1808,6 +1890,10 @@ model ContratoHonorario {
   baseCalculo        String?
   observacoes        String?
   visibilidade       HonorarioVisibilidade @default(PRIVADO) // PRIVADO = só o advogado vê, PUBLICO = todos veem
+  deletedAt          DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   contrato           Contrato              @relation(fields: [contratoId], references: [id], onDelete: Cascade)
@@ -1816,6 +1902,7 @@ model ContratoHonorario {
   dadosBancarios     DadosBancarios?       @relation(fields: [dadosBancariosId], references: [id])
 
   @@index([tenantId, tipo])
+  @@index([tenantId, deletedAt])
   @@index([contratoId])
   @@index([advogadoId])
   @@index([dadosBancariosId])
@@ -1839,6 +1926,10 @@ model ContratoParcela {
   responsavelUsuarioId   String?
   asaasPaymentId         String? // ID do pagamento no Asaas
   dadosPagamento         Json?
+  deletedAt              DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   contrato               Contrato              @relation(fields: [contratoId], references: [id], onDelete: Cascade)
@@ -1849,6 +1940,7 @@ model ContratoParcela {
 
   @@unique([contratoId, numeroParcela])
   @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, dataVencimento])
   @@index([dadosBancariosId])
   @@index([asaasPaymentId])
@@ -1867,12 +1959,17 @@ model ModeloContrato {
   variaveis Json?
   publico   Boolean       @default(false)
   ativo     Boolean       @default(true)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   contratos Contrato[]
   tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tipo      TipoContrato? @relation(fields: [tipoId], references: [id])
 
+  @@index([tenantId, deletedAt])
   @@index([tipoId])
   @@schema("magiclawyer")
 }
@@ -1949,6 +2046,10 @@ model Board {
   visibilidade BoardVisibilidade @default(EQUIPE)
   ordem        Int               @default(0)
   ativo        Boolean           @default(true)
+  deletedAt    DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1956,6 +2057,7 @@ model Board {
   tarefas      Tarefa[]
 
   @@index([tenantId, ativo])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, tipo])
   @@schema("magiclawyer")
 }
@@ -1969,6 +2071,10 @@ model BoardColumn {
   ordem     Int      @default(0)
   limite    Int? // Limite WIP (Work In Progress)
   ativo     Boolean  @default(true)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1976,6 +2082,7 @@ model BoardColumn {
   tarefas   Tarefa[]
 
   @@unique([boardId, ordem])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, boardId])
   @@schema("magiclawyer")
 }
@@ -1988,12 +2095,17 @@ model TarefaChecklist {
   concluida   Boolean   @default(false)
   concluidaEm DateTime?
   ordem       Int       @default(0)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tarefa      Tarefa    @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, tarefaId])
+  @@index([tenantId, deletedAt])
   @@index([tarefaId, ordem])
   @@schema("magiclawyer")
 }
@@ -2005,6 +2117,10 @@ model TarefaComentario {
   usuarioId String
   conteudo  String
   editado   Boolean  @default(false)
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -2012,6 +2128,7 @@ model TarefaComentario {
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, tarefaId])
+  @@index([tenantId, deletedAt])
   @@index([tarefaId, createdAt])
   @@schema("magiclawyer")
 }
@@ -2025,12 +2142,17 @@ model TarefaAnexo {
   tamanho     Int? // bytes
   contentType String?
   publicId    String? // Cloudinary
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tarefa      Tarefa   @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, tarefaId])
+  @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
 }
 
@@ -2055,12 +2177,17 @@ model TarefaTagRelacao {
   tenantId  String
   tarefaId  String
   tagId     String
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime  @default(now())
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tarefa    Tarefa    @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
   tag       TarefaTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([tarefaId, tagId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, tarefaId])
   @@index([tenantId, tagId])
   @@schema("magiclawyer")
@@ -2089,12 +2216,17 @@ model TarefaWatcher {
   tenantId  String
   tarefaId  String
   usuarioId String
+  deletedAt DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt DateTime @default(now())
   tarefa    Tarefa   @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tarefaId, usuarioId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, usuarioId])
   @@schema("magiclawyer")
 }
@@ -2482,6 +2614,10 @@ model Evento {
   googleCalendarId      String?
   lembreteMinutos       Int?
   observacoes           String?
+  deletedAt             DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   advogadoResponsavel   Advogado?            @relation(fields: [advogadoResponsavelId], references: [id])
@@ -2492,6 +2628,7 @@ model Evento {
   confirmacoes          EventoParticipante[]
 
   @@index([tenantId, dataInicio])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, dataFim])
   @@index([tenantId, status])
   @@index([processoId])
@@ -2510,12 +2647,17 @@ model EventoParticipante {
   status            EventoConfirmacaoStatus @default(PENDENTE)
   confirmadoEm      DateTime?
   observacoes       String?
+  deletedAt         DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
   evento            Evento                  @relation(fields: [eventoId], references: [id], onDelete: Cascade)
   tenant            Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([eventoId, participanteEmail])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, eventoId])
   @@index([tenantId, status])
   @@index([participanteEmail])
@@ -2617,12 +2759,14 @@ model FavoritoJuiz {
   usuarioId   String
   observacoes String?
   tags        String[]
+  ativo       Boolean  @default(true)
   createdAt   DateTime @default(now())
   juiz        Juiz     @relation(fields: [juizId], references: [id], onDelete: Cascade)
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, juizId, usuarioId])
+  @@index([tenantId, ativo])
   @@map("FavoritosJuiz")
   @@schema("magiclawyer")
 }
@@ -2677,11 +2821,13 @@ model PacoteJuizItem {
   pacoteId      String
   juizId        String
   ordemExibicao Int        @default(0)
+  ativo         Boolean    @default(true)
   createdAt     DateTime   @default(now())
   juiz          Juiz       @relation("JuizPacote", fields: [juizId], references: [id], onDelete: Cascade)
   pacote        PacoteJuiz @relation(fields: [pacoteId], references: [id], onDelete: Cascade)
 
   @@unique([pacoteId, juizId])
+  @@index([pacoteId, ativo])
   @@index([pacoteId])
   @@index([juizId])
   @@map("PacoteJuizItems")
@@ -3724,6 +3870,10 @@ model DocumentoProcuracao {
   size         Int // Tamanho do arquivo em bytes
   mimeType     String // Tipo MIME do arquivo
   uploadedBy   String // ID do usuário que fez o upload
+  deletedAt    DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -3733,6 +3883,7 @@ model DocumentoProcuracao {
   uploader   Usuario    @relation("DocumentoProcuracaoUploader", fields: [uploadedBy], references: [id])
 
   @@index([tenantId, procuracaoId])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, tipo])
   @@index([uploadedBy])
   @@schema("magiclawyer")

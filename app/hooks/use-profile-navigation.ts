@@ -524,6 +524,17 @@ export function useProfileNavigation() {
       requiredModules: ["help"],
     });
 
+    if (isAdmin) {
+      items.push({
+        label: "Auditoria",
+        href: "/auditoria",
+        icon: "Scale",
+        description:
+          "Trilha completa de acessos, alterações e operações do escritório",
+        section: "Administração",
+      });
+    }
+
     if (permissions.canManageOfficeSettings) {
       items.push({
         label: "Configurações do escritório",

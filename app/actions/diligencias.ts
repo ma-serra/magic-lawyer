@@ -12,6 +12,7 @@ import {
   toAuditJson,
 } from "@/app/lib/audit/log";
 import { validateDeadlineWithRegime } from "@/app/lib/feriados/prazo-validation";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 export interface DiligenciaCreatePayload {
   titulo: string;
@@ -984,6 +985,7 @@ export async function updateDiligencia(
       where: {
         id: diligenciaId,
         tenantId: context.tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -1291,10 +1293,17 @@ export async function deleteDiligencia(
       return { success: false, error: "Diligência não encontrada" };
     }
 
-    await prisma.diligencia.delete({
+    await prisma.diligencia.update({
       where: {
         id: diligencia.id,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: context.userId,
+          actorType: context.role,
+        },
+        "Exclusão manual de diligência",
+      ),
     });
 
     try {

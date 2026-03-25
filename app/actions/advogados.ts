@@ -1387,9 +1387,14 @@ export async function deleteAdvogado(
       detalhes: `Advogado deletado: ${advogado.usuario.firstName} ${advogado.usuario.lastName} (${advogado.usuario.email})`,
     });
 
-    // Deletar o advogado (isso também deletará o usuário devido ao onDelete: Cascade)
-    await prisma.advogado.delete({
-      where: { id: advogadoId },
+    // Soft-delete operacional: desativa o usuário e preserva o vínculo do advogado
+    await prisma.usuario.update({
+      where: { id: advogado.usuarioId },
+      data: {
+        active: false,
+        statusChangedAt: new Date(),
+        statusReason: "ADVOGADO_REMOVIDO_LOGICAMENTE",
+      },
     });
 
     revalidatePath("/advogados");

@@ -227,9 +227,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
     where: {
       tenantId,
       usuarioId: userId,
-      status: {
-        in: ["NAO_LIDA", "ARQUIVADA"],
-      },
+      status: "NAO_LIDA",
     },
     data: {
       status: "LIDA",
@@ -250,10 +248,14 @@ export async function clearAllNotifications(): Promise<void> {
     return;
   }
 
-  await prisma.notificacaoUsuario.deleteMany({
+  await prisma.notificacaoUsuario.updateMany({
     where: {
       tenantId,
       usuarioId: userId,
+    },
+    data: {
+      status: "ARQUIVADA",
+      updatedAt: new Date(),
     },
   });
 }

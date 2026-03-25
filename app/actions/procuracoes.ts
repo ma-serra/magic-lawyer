@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma, { toNumber } from "@/app/lib/prisma";
+import { buildRestorePayload, buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { headers } from "next/headers";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
@@ -176,6 +177,9 @@ const procuracaoListInclude = Prisma.validator<Prisma.ProcuracaoInclude>()({
     },
   },
   outorgados: {
+    where: {
+      deletedAt: null,
+    },
     include: {
       advogado: {
         select: {
@@ -193,6 +197,12 @@ const procuracaoListInclude = Prisma.validator<Prisma.ProcuracaoInclude>()({
     },
   },
   processos: {
+    where: {
+      deletedAt: null,
+      processo: {
+        deletedAt: null,
+      },
+    },
     include: {
       processo: {
         select: {
@@ -274,6 +284,7 @@ async function buildProcuracaoAccessWhere(
 ): Promise<Prisma.ProcuracaoWhereInput> {
   let whereClause: Prisma.ProcuracaoWhereInput = {
     tenantId: user.tenantId,
+    deletedAt: null,
     ...(opts?.procuracaoId ? { id: opts.procuracaoId } : {}),
   };
 
@@ -299,6 +310,7 @@ async function buildProcuracaoAccessWhere(
     {
       outorgados: {
         some: {
+          deletedAt: null,
           advogadoId: {
             in: accessibleAdvogados,
           },
@@ -319,7 +331,9 @@ async function buildProcuracaoAccessWhere(
     {
       processos: {
         some: {
+          deletedAt: null,
           processo: {
+            deletedAt: null,
             advogadoResponsavelId: {
               in: accessibleAdvogados,
             },
@@ -401,6 +415,7 @@ function buildProcuracaoListWhere(
     conditions.push({
       outorgados: {
         some: {
+          deletedAt: null,
           advogadoId: filtros.advogadoId,
         },
       },
@@ -572,7 +587,9 @@ export async function getProcuracoesPaginated(
         prisma.procuracao.count({
           where: mergeWhereConditions(where, {
             processos: {
-              some: {},
+              some: {
+                deletedAt: null,
+              },
             },
           }),
         }),
@@ -651,7 +668,10 @@ export async function getProcuracaoById(procuracaoId: string): Promise<{
     }
 
     const procuracao = await prisma.procuracao.findFirst({
-      where: { id: scopedId },
+      where: {
+        id: scopedId,
+        deletedAt: null,
+      },
       include: {
         cliente: {
           select: {
@@ -840,6 +860,7 @@ export async function getProcuracoesCliente(clienteId: string): Promise<{
       where: {
         clienteId: clienteId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         modelo: {
@@ -1561,9 +1582,11 @@ export async function deleteProcuracao(procuracaoId: string): Promise<{
       };
     }
 
-    const procuracao = await prisma.procuracao.findUnique({
+    const procuracao = await prisma.procuracao.findFirst({
       where: {
         id: scopedProcuracaoId,
+        tenantId: user.tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -1590,11 +1613,18 @@ export async function deleteProcuracao(procuracaoId: string): Promise<{
       };
     }
 
-    // Deletar procuração (cascade deleta os relacionamentos)
-    await prisma.procuracao.delete({
+    // Arquivar procuração via soft delete
+    await prisma.procuracao.update({
       where: {
         id: scopedProcuracaoId,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de procuração",
+      ),
     });
 
     try {
@@ -1705,12 +1735,25 @@ export async function adicionarAdvogadoNaProcuracao(
         procuracaoId: scopedProcuracaoId,
         advogadoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
     if (vinculoExistente) {
       return { success: false, error: "Advogado já está na procuração" };
     }
+
+    const vinculoArquivado = await prisma.procuracaoAdvogado.findFirst({
+      where: {
+        procuracaoId: scopedProcuracaoId,
+        advogadoId,
+        tenantId: user.tenantId,
+        deletedAt: {
+          not: null,
+        },
+      },
+      select: { id: true },
+    });
 
     if (!isAdminRole(user)) {
       const advogadoIdsPermitidos = await getAccessibleAdvogadoIds(session);
@@ -1740,13 +1783,20 @@ export async function adicionarAdvogadoNaProcuracao(
     }
 
     // Criar vínculo
-    await prisma.procuracaoAdvogado.create({
-      data: {
-        tenantId: user.tenantId,
-        procuracaoId: scopedProcuracaoId,
-        advogadoId,
-      },
-    });
+    if (vinculoArquivado) {
+      await prisma.procuracaoAdvogado.update({
+        where: { id: vinculoArquivado.id },
+        data: buildRestorePayload(),
+      });
+    } else {
+      await prisma.procuracaoAdvogado.create({
+        data: {
+          tenantId: user.tenantId,
+          procuracaoId: scopedProcuracaoId,
+          advogadoId,
+        },
+      });
+    }
 
     try {
       await logAudit({
@@ -1843,12 +1893,20 @@ export async function removerAdvogadoDaProcuracao(
     }
 
     // Remover vínculo
-    const result = await prisma.procuracaoAdvogado.deleteMany({
+    const result = await prisma.procuracaoAdvogado.updateMany({
       where: {
         procuracaoId: scopedProcuracaoId,
         advogadoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Desvinculação de advogado da procuração",
+      ),
     });
 
     if (result.count === 0) {
@@ -1997,6 +2055,7 @@ export async function vincularProcesso(
         procuracaoId: scopedProcuracaoId,
         processoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -2004,14 +2063,33 @@ export async function vincularProcesso(
       return { success: false, error: "Processo já está vinculado" };
     }
 
-    // Criar vínculo
-    await prisma.procuracaoProcesso.create({
-      data: {
-        tenantId: user.tenantId,
+    const vinculoArquivado = await prisma.procuracaoProcesso.findFirst({
+      where: {
         procuracaoId: scopedProcuracaoId,
         processoId,
+        tenantId: user.tenantId,
+        deletedAt: {
+          not: null,
+        },
       },
+      select: { id: true },
     });
+
+    // Criar vínculo
+    if (vinculoArquivado) {
+      await prisma.procuracaoProcesso.update({
+        where: { id: vinculoArquivado.id },
+        data: buildRestorePayload(),
+      });
+    } else {
+      await prisma.procuracaoProcesso.create({
+        data: {
+          tenantId: user.tenantId,
+          procuracaoId: scopedProcuracaoId,
+          processoId,
+        },
+      });
+    }
 
     try {
       await logAudit({
@@ -2112,6 +2190,7 @@ export async function desvincularProcesso(
         procuracaoId: scopedProcuracaoId,
         processoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -2121,12 +2200,20 @@ export async function desvincularProcesso(
     }
 
     // Remover vínculo
-    const result = await prisma.procuracaoProcesso.deleteMany({
+    const result = await prisma.procuracaoProcesso.updateMany({
       where: {
         procuracaoId: scopedProcuracaoId,
         processoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Desvinculação de processo da procuração",
+      ),
     });
 
     if (result.count === 0) {

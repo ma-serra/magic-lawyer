@@ -7,6 +7,7 @@ import prisma from "@/app/lib/prisma";
 import { Prisma, PeticaoStatus } from "@/generated/prisma";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // ============================================
 // TIPOS
@@ -133,6 +134,7 @@ export async function listPeticoes(filters?: PeticaoFilters) {
 
     let where: Prisma.PeticaoWhereInput = {
       tenantId,
+      deletedAt: null,
       ...(filters?.status && { status: filters.status }),
       ...(filters?.processoId && { processoId: filters.processoId }),
       ...(filters?.causaId && { causaId: filters.causaId }),
@@ -246,6 +248,7 @@ export async function getPeticao(id: string) {
     let where: Prisma.PeticaoWhereInput = {
       id,
       tenantId,
+      deletedAt: null,
     };
 
     where = await withStaffScope(where, session);
@@ -297,6 +300,9 @@ export async function getPeticao(id: string) {
           },
         },
         diligencias: {
+          where: {
+            deletedAt: null,
+          },
           select: {
             id: true,
             titulo: true,
@@ -498,6 +504,7 @@ export async function updatePeticao(id: string, input: PeticaoUpdateInput) {
     let peticaoWhere: Prisma.PeticaoWhereInput = {
       id,
       tenantId,
+      deletedAt: null,
     };
 
     peticaoWhere = await withStaffScope(peticaoWhere, session);
@@ -671,7 +678,11 @@ export async function deletePeticao(id: string) {
     const peticao = await prisma.peticao.findFirst({
       where: peticaoWhere,
       include: {
-        diligencias: true,
+        diligencias: {
+          where: {
+            deletedAt: null,
+          },
+        },
       },
     });
 
@@ -690,8 +701,15 @@ export async function deletePeticao(id: string) {
       };
     }
 
-    await prisma.peticao.delete({
+    await prisma.peticao.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: session?.user?.id ?? null,
+          actorType: (session?.user as any)?.role ?? "USER",
+        },
+        "Exclusão manual de petição",
+      ),
     });
 
     revalidatePath("/peticoes");
@@ -744,6 +762,7 @@ export async function protocolarPeticao(
     let peticaoWhere: Prisma.PeticaoWhereInput = {
       id,
       tenantId,
+      deletedAt: null,
     };
 
     peticaoWhere = await withStaffScope(peticaoWhere, session);
@@ -831,6 +850,7 @@ export async function getDashboardPeticoes() {
 
     let wherePeticoes: Prisma.PeticaoWhereInput = {
       tenantId,
+      deletedAt: null,
     };
 
     wherePeticoes = await withStaffScope(wherePeticoes, session);

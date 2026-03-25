@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 export interface ColumnCreatePayload {
@@ -33,6 +34,7 @@ export async function listColumns(boardId: string) {
       where: {
         boardId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -80,6 +82,7 @@ export async function createColumn(data: ColumnCreatePayload) {
       where: {
         id: data.boardId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -91,6 +94,7 @@ export async function createColumn(data: ColumnCreatePayload) {
     const ultimaColuna = await prisma.boardColumn.findFirst({
       where: {
         boardId: data.boardId,
+        deletedAt: null,
       },
       orderBy: { ordem: "desc" },
     });
@@ -135,6 +139,7 @@ export async function updateColumn(id: string, data: ColumnUpdatePayload) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -180,6 +185,7 @@ export async function deleteColumn(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -206,8 +212,15 @@ export async function deleteColumn(id: string) {
       };
     }
 
-    await prisma.boardColumn.delete({
+    await prisma.boardColumn.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de coluna do board",
+      ),
     });
 
     logger.info(`Coluna deletada: ${id} por usuário ${user.email}`);
@@ -238,6 +251,7 @@ export async function reorderColumns(
       where: {
         id: boardId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 

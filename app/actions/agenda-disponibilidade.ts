@@ -273,13 +273,21 @@ export async function salvarMinhaDisponibilidadeAgenda(
     });
 
     await prisma.$transaction(async (tx) => {
-      await tx.agendaDisponibilidade.deleteMany({
+      await tx.agendaDisponibilidade.updateMany({
         where: {
           tenantId: identity.tenantId,
           usuarioId: identity.userId,
           diaSemana: {
             notIn: normalized.map((item) => item.diaSemana),
           },
+        },
+        data: {
+          ativo: false,
+          horaInicio: "08:00",
+          horaFim: "18:00",
+          intervaloInicio: null,
+          intervaloFim: null,
+          observacoes: null,
         },
       });
 

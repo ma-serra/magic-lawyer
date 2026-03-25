@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { ProcessoPrazoStatus, TipoFeriado } from "@/generated/prisma";
 import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
@@ -116,6 +117,7 @@ export async function listRegimesPrazo() {
 
     const regimes = await prisma.regimePrazo.findMany({
       where: {
+        deletedAt: null,
         OR: [{ tenantId: user.tenantId }, { tenantId: null }],
       },
       orderBy: [{ tenantId: "asc" }, { nome: "asc" }],
@@ -147,6 +149,7 @@ export async function listRegimesPrazo() {
             where: {
               tenantId: user.tenantId,
               regimePrazoId: { in: regimeIds },
+              deletedAt: null,
             },
             _count: { _all: true },
           })
@@ -164,6 +167,7 @@ export async function listRegimesPrazo() {
       prisma.processoPrazo.count({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
           status: {
             in: [ProcessoPrazoStatus.ABERTO, ProcessoPrazoStatus.PRORROGADO],
           },
@@ -172,6 +176,7 @@ export async function listRegimesPrazo() {
       prisma.processoPrazo.count({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
           status: {
             in: [ProcessoPrazoStatus.ABERTO, ProcessoPrazoStatus.PRORROGADO],
           },
@@ -183,6 +188,7 @@ export async function listRegimesPrazo() {
       prisma.processoPrazo.count({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
           status: {
             in: [ProcessoPrazoStatus.ABERTO, ProcessoPrazoStatus.PRORROGADO],
           },
@@ -195,6 +201,7 @@ export async function listRegimesPrazo() {
       prisma.processoPrazo.count({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
           status: {
             in: [ProcessoPrazoStatus.ABERTO, ProcessoPrazoStatus.PRORROGADO],
           },
@@ -209,6 +216,9 @@ export async function listRegimesPrazo() {
           AND: [
             {
               OR: [{ tenantId: user.tenantId }, { tenantId: null }],
+            },
+            {
+              deletedAt: null,
             },
             {
               OR: [
@@ -289,6 +299,7 @@ export async function ensureDefaultRegimesCatalog() {
     const existentes = await prisma.regimePrazo.findMany({
       where: {
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -402,6 +413,7 @@ export async function simulateRegimePrazo(payload: SimulateRegimePrazoPayload) {
     const regime = await prisma.regimePrazo.findFirst({
       where: {
         id: payload.regimeId,
+        deletedAt: null,
         OR: [{ tenantId: user.tenantId }, { tenantId: null }],
       },
     });
@@ -456,6 +468,9 @@ export async function simulateRegimePrazo(payload: SimulateRegimePrazoPayload) {
             AND: [
               {
                 OR: [{ tenantId: user.tenantId }, { tenantId: null }],
+              },
+              {
+                deletedAt: null,
               },
               {
                 OR: [
@@ -605,6 +620,7 @@ export async function syncRegimesNationalHolidays(ano: number) {
       const cachedCount = await prisma.feriado.count({
         where: {
           tenantId: user.tenantId,
+          deletedAt: null,
           tipo: "NACIONAL",
           data: {
             gte: startOfYearFallback,
@@ -644,6 +660,7 @@ export async function syncRegimesNationalHolidays(ano: number) {
     const existentes = await prisma.feriado.findMany({
       where: {
         tenantId: user.tenantId,
+        deletedAt: null,
         tipo: "NACIONAL",
         data: {
           gte: startOfYear,
@@ -840,6 +857,7 @@ export async function updateRegimePrazo(
       where: {
         id: regimeId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -937,6 +955,7 @@ export async function deleteRegimePrazo(regimeId: string) {
       where: {
         id: regimeId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -956,7 +975,16 @@ export async function deleteRegimePrazo(regimeId: string) {
       };
     }
 
-    await prisma.regimePrazo.delete({ where: { id: regime.id } });
+    await prisma.regimePrazo.update({
+      where: { id: regime.id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de regime de prazo",
+      ),
+    });
 
     try {
       await logAudit({

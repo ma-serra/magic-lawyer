@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/google-calendar";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // Usar tipos do Prisma - sempre sincronizado com o banco!
 
@@ -150,6 +151,10 @@ export type EventoFormData = Omit<
   | "updatedAt"
   | "dataInicio"
   | "dataFim"
+  | "deletedAt"
+  | "deletedByActorType"
+  | "deletedByActorId"
+  | "deleteReason"
 > & {
   dataInicio: string; // String para o formulário, será convertido para Date
   dataFim: string; // String para o formulário, será convertido para Date
@@ -334,7 +339,7 @@ function buildEventoScopeWhere(
   const includeParticipantEvents = options?.includeParticipantEvents ?? true;
 
   if (context.isAdmin) {
-    return { tenantId: context.tenantId };
+    return { tenantId: context.tenantId, deletedAt: null };
   }
 
   if (context.isCliente) {
@@ -342,12 +347,14 @@ function buildEventoScopeWhere(
       return {
         tenantId: context.tenantId,
         id: NO_ACCESS_EVENT_ID,
+        deletedAt: null,
       };
     }
 
     return {
       tenantId: context.tenantId,
       clienteId: context.currentClienteId,
+      deletedAt: null,
     };
   }
 
@@ -373,6 +380,7 @@ function buildEventoScopeWhere(
 
   return {
     tenantId: context.tenantId,
+    deletedAt: null,
     OR: orConditions,
   };
 }
@@ -473,6 +481,7 @@ async function findEventoConflitante(params: {
     params;
   const where: Prisma.EventoWhereInput = {
     tenantId: context.tenantId,
+    deletedAt: null,
     status: {
       not: "CANCELADO",
     },
@@ -1574,18 +1583,45 @@ export async function updateEvento(
 
     if (normalizedPatch.participantes !== undefined) {
       if (participantesRemovidos.length > 0) {
-        await prisma.eventoParticipante.deleteMany({
+        await prisma.eventoParticipante.updateMany({
           where: {
             tenantId: context.tenantId,
             eventoId: id,
+            deletedAt: null,
             participanteEmail: {
               in: participantesRemovidos,
             },
           },
+          data: buildSoftDeletePayload(
+            { actorId: context.userId, actorType: "USER" },
+            "Remoção lógica de participante do evento",
+          ),
         });
       }
 
       if (participantesAdicionados.length > 0) {
+        await prisma.eventoParticipante.updateMany({
+          where: {
+            tenantId: context.tenantId,
+            eventoId: id,
+            participanteEmail: {
+              in: participantesAdicionados,
+            },
+            NOT: {
+              deletedAt: null,
+            },
+          },
+          data: {
+            deletedAt: null,
+            deletedByActorType: null,
+            deletedByActorId: null,
+            deleteReason: null,
+            status: "PENDENTE",
+            confirmadoEm: null,
+            observacoes: null,
+          },
+        });
+
         await prisma.eventoParticipante.createMany({
           data: participantesAdicionados.map((email) => ({
             tenantId: context.tenantId,
@@ -1653,6 +1689,7 @@ export async function updateEvento(
           where: {
             eventoId: id,
             tenantId: context.tenantId,
+            deletedAt: null,
             participanteEmail: {
               in: participantesDepois,
             },
@@ -1767,7 +1804,13 @@ export async function deleteEvento(id: string) {
       }
     }
 
-    await prisma.evento.delete({ where: { id: evento.id } });
+    await prisma.evento.update({
+      where: { id: evento.id },
+      data: buildSoftDeletePayload(
+        { actorId: context.userId, actorType: "USER" },
+        "Remoção lógica de evento da agenda",
+      ),
+    });
 
     revalidatePath("/agenda");
 
@@ -1978,6 +2021,7 @@ export async function getConfirmacoesEvento(eventoId: string) {
       where: {
         eventoId: evento.id,
         tenantId: context.tenantId,
+        deletedAt: null,
       },
       orderBy: {
         createdAt: "asc",

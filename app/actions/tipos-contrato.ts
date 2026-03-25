@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { TENANT_PERMISSIONS } from "@/types";
 
@@ -69,6 +70,7 @@ export async function listTiposContrato(params?: { ativo?: boolean }) {
 
     const where: any = {
       OR: [{ tenantId: user.tenantId }, { tenantId: null }],
+      deletedAt: null,
     };
 
     if (params?.ativo !== undefined) {
@@ -130,6 +132,7 @@ export async function getTipoContrato(id: string) {
       where: {
         id,
         OR: [{ tenantId: user.tenantId }, { tenantId: null }],
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -139,7 +142,11 @@ export async function getTipoContrato(id: string) {
                 deletedAt: null,
               },
             },
-            modelos: true,
+            modelos: {
+              where: {
+                deletedAt: null,
+              },
+            },
           },
         },
       },
@@ -201,6 +208,7 @@ export async function createTipoContrato(data: TipoContratoCreatePayload) {
         where: {
           tenantId: user.tenantId,
           slug,
+          deletedAt: null,
         },
         select: { id: true },
       }),
@@ -208,12 +216,14 @@ export async function createTipoContrato(data: TipoContratoCreatePayload) {
         where: {
           tenantId: user.tenantId,
           nome,
+          deletedAt: null,
         },
         select: { id: true },
       }),
       prisma.tipoContrato.findMany({
         where: {
           tenantId: null,
+          deletedAt: null,
         },
         select: { nome: true },
       }),
@@ -290,6 +300,7 @@ export async function updateTipoContrato(
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -331,6 +342,7 @@ export async function updateTipoContrato(
           tenantId: user.tenantId,
           slug: slugParaValidar,
           id: { not: id },
+          deletedAt: null,
         },
         select: { id: true },
       }),
@@ -339,11 +351,15 @@ export async function updateTipoContrato(
           tenantId: user.tenantId,
           nome: nomeParaValidar,
           id: { not: id },
+          deletedAt: null,
         },
         select: { id: true },
       }),
       prisma.tipoContrato.findMany({
-        where: { tenantId: null },
+        where: {
+          tenantId: null,
+          deletedAt: null,
+        },
         select: { nome: true },
       }),
     ]);
@@ -409,6 +425,7 @@ export async function deleteTipoContrato(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -418,7 +435,11 @@ export async function deleteTipoContrato(id: string) {
                 deletedAt: null,
               },
             },
-            modelos: true,
+            modelos: {
+              where: {
+                deletedAt: null,
+              },
+            },
           },
         },
       },
@@ -437,8 +458,15 @@ export async function deleteTipoContrato(id: string) {
       };
     }
 
-    await prisma.tipoContrato.delete({
+    await prisma.tipoContrato.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de tipo de contrato",
+      ),
     });
 
     logger.info(`Tipo de contrato deletado: ${id} por usuário ${user.email}`);

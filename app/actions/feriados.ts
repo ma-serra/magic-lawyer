@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import { Prisma, TipoFeriado } from "@/generated/prisma";
 import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
@@ -180,6 +181,7 @@ async function ensureSharedNationalHolidays(
   const globalCount = await prisma.feriado.count({
     where: {
       tenantId: null,
+      deletedAt: null,
       tipo: "NACIONAL",
       data: {
         gte: start,
@@ -242,6 +244,7 @@ async function ensureSharedNationalHolidays(
     const existente = await prisma.feriado.findFirst({
       where: {
         tenantId: null,
+        deletedAt: null,
         tipo: "NACIONAL",
         data: feriado.date,
       },
@@ -323,6 +326,9 @@ export async function listFeriados(
     const andConditions: Prisma.FeriadoWhereInput[] = [
       {
         OR: [{ tenantId }, { tenantId: null }],
+      },
+      {
+        deletedAt: null,
       },
     ];
 
@@ -413,6 +419,7 @@ export async function getFeriado(
     const feriado = await prisma.feriado.findFirst({
       where: {
         id: feriadoId,
+        deletedAt: null,
         OR: [{ tenantId }, { tenantId: null }],
       },
       include: {
@@ -511,6 +518,7 @@ export async function updateFeriado(
       where: {
         id: feriadoId,
         tenantId,
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -569,11 +577,16 @@ export async function deleteFeriado(
   feriadoId: string,
 ): Promise<ActionResponse<null>> {
   try {
+    const session = await getSession();
+    const actor = session?.user as
+      | { id?: string | null; role?: string | null }
+      | undefined;
     const tenantId = await getTenantId();
     const feriadoAtual = await prisma.feriado.findFirst({
       where: {
         id: feriadoId,
         tenantId,
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -585,8 +598,15 @@ export async function deleteFeriado(
       };
     }
 
-    await prisma.feriado.delete({
+    await prisma.feriado.update({
       where: { id: feriadoAtual.id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: actor?.id ?? null,
+          actorType: actor?.role ?? "USER",
+        },
+        "Exclusão manual de feriado",
+      ),
     });
 
     revalidatePath("/regimes-prazo");
@@ -640,6 +660,7 @@ export async function getDashboardFeriados(
     );
 
     const where: Prisma.FeriadoWhereInput = {
+      deletedAt: null,
       OR: [{ tenantId: tenantId }, { tenantId: null }],
       data: {
         gte: startOfYear,
@@ -665,6 +686,9 @@ export async function getDashboardFeriados(
           AND: [
             {
               OR: [{ tenantId: tenantId }, { tenantId: null }],
+            },
+            {
+              deletedAt: null,
             },
             {
               OR: [
@@ -772,6 +796,9 @@ export async function isDiaFeriado(
         OR: [{ tenantId }, { tenantId: null }],
       },
       {
+        deletedAt: null,
+      },
+      {
         data: {
           gte: new Date(data.getFullYear(), data.getMonth(), data.getDate()),
           lt: new Date(data.getFullYear(), data.getMonth(), data.getDate() + 1),
@@ -831,6 +858,7 @@ export async function importarFeriadosNacionais(
     const globalCount = await prisma.feriado.count({
       where: {
         tenantId: null,
+        deletedAt: null,
         tipo: "NACIONAL",
         data: {
           gte: start,

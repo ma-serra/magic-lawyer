@@ -7,6 +7,7 @@ import { authOptions } from "../../auth";
 import { TipoEndereco } from "@/generated/prisma";
 
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 // Tipos simples
@@ -83,6 +84,7 @@ export async function getEnderecosUsuario() {
 
     const whereClause = {
       tenantId: user.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -150,6 +152,7 @@ export async function criarEndereco(data: EnderecoData) {
       where: {
         tenantId: user.tenantId,
         apelido: data.apelido.trim(),
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -167,6 +170,7 @@ export async function criarEndereco(data: EnderecoData) {
         where: {
           tenantId: user.tenantId,
           principal: true,
+          deletedAt: null,
           ...(isCliente ? { clienteId: id } : { usuarioId: id }),
         },
         data: { principal: false },
@@ -246,6 +250,7 @@ export async function atualizarEndereco(
     const whereClause = {
       id: enderecoId,
       tenantId: user.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -274,6 +279,7 @@ export async function atualizarEndereco(
         tenantId: user.tenantId,
         apelido: data.apelido.trim(),
         id: { not: enderecoId },
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -291,6 +297,7 @@ export async function atualizarEndereco(
         where: {
           tenantId: user.tenantId,
           principal: true,
+          deletedAt: null,
           ...(isCliente ? { clienteId: id } : { usuarioId: id }),
         },
         data: { principal: false },
@@ -366,6 +373,7 @@ export async function deletarEndereco(enderecoId: string) {
     const whereClause = {
       id: enderecoId,
       tenantId: user.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -382,6 +390,7 @@ export async function deletarEndereco(enderecoId: string) {
     const totalEnderecos = await prisma.endereco.count({
       where: {
         tenantId: user.tenantId,
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -394,8 +403,15 @@ export async function deletarEndereco(enderecoId: string) {
     }
 
     // Deletar endereço
-    await prisma.endereco.delete({
+    await prisma.endereco.update({
       where: { id: enderecoId },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de endereço",
+      ),
     });
 
     revalidatePath("/usuario/perfil/editar");
@@ -427,6 +443,7 @@ export async function definirEnderecoPrincipal(enderecoId: string) {
     const whereClause = {
       id: enderecoId,
       tenantId: user.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -444,6 +461,7 @@ export async function definirEnderecoPrincipal(enderecoId: string) {
       where: {
         tenantId: user.tenantId,
         principal: true,
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
       data: { principal: false },
@@ -543,6 +561,7 @@ export async function getEnderecosUsuarioAdmin(targetUserId: string) {
 
     const whereClause = {
       tenantId: targetUser.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -638,6 +657,7 @@ export async function criarEnderecoAdmin(
       where: {
         tenantId: targetUser.tenantId,
         apelido: data.apelido.trim(),
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -655,6 +675,7 @@ export async function criarEnderecoAdmin(
         where: {
           tenantId: targetUser.tenantId,
           principal: true,
+          deletedAt: null,
           ...(isCliente ? { clienteId: id } : { usuarioId: id }),
         },
         data: { principal: false },
@@ -760,6 +781,7 @@ export async function atualizarEnderecoAdmin(
     const whereClause = {
       id: enderecoId,
       tenantId: targetUser.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -788,6 +810,7 @@ export async function atualizarEnderecoAdmin(
         tenantId: targetUser.tenantId,
         apelido: data.apelido.trim(),
         id: { not: enderecoId },
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -805,6 +828,7 @@ export async function atualizarEnderecoAdmin(
         where: {
           tenantId: targetUser.tenantId,
           principal: true,
+          deletedAt: null,
           ...(isCliente ? { clienteId: id } : { usuarioId: id }),
         },
         data: { principal: false },
@@ -908,6 +932,7 @@ export async function deletarEnderecoAdmin(
     const whereClause = {
       id: enderecoId,
       tenantId: targetUser.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -924,6 +949,7 @@ export async function deletarEnderecoAdmin(
     const totalEnderecos = await prisma.endereco.count({
       where: {
         tenantId: targetUser.tenantId,
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
     });
@@ -936,8 +962,15 @@ export async function deletarEnderecoAdmin(
     }
 
     // Deletar endereço
-    await prisma.endereco.delete({
+    await prisma.endereco.update({
       where: { id: enderecoId },
+      data: buildSoftDeletePayload(
+        {
+          actorId: currentUser.id ?? null,
+          actorType: currentUser.role ?? "USER",
+        },
+        "Exclusão manual de endereço (admin)",
+      ),
     });
 
     revalidatePath("/admin/tenants");
@@ -997,6 +1030,7 @@ export async function definirEnderecoPrincipalAdmin(
     const whereClause = {
       id: enderecoId,
       tenantId: targetUser.tenantId,
+      deletedAt: null,
       ...(isCliente ? { clienteId: id } : { usuarioId: id }),
     };
 
@@ -1014,6 +1048,7 @@ export async function definirEnderecoPrincipalAdmin(
       where: {
         tenantId: targetUser.tenantId,
         principal: true,
+        deletedAt: null,
         ...(isCliente ? { clienteId: id } : { usuarioId: id }),
       },
       data: { principal: false },

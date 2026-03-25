@@ -222,6 +222,7 @@ export default withAuth(
         req.nextUrl.pathname.startsWith("/documentos") ||
         req.nextUrl.pathname.startsWith("/financeiro") ||
         req.nextUrl.pathname.startsWith("/relatorios") ||
+        req.nextUrl.pathname.startsWith("/auditoria") ||
         req.nextUrl.pathname.startsWith("/equipe") ||
         req.nextUrl.pathname.startsWith("/help") ||
         req.nextUrl.pathname.startsWith("/configuracoes") ||

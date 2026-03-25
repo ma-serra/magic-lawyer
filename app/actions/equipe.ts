@@ -224,14 +224,6 @@ export async function updateCargo(
     },
   });
 
-  // Atualizar permissões
-  await prisma.cargoPermissao.deleteMany({
-    where: {
-      cargoId: cargoId,
-      tenantId: session.user.tenantId,
-    },
-  });
-
   const uniquePermissoes = new Map<
     string,
     { modulo: string; acao: string; permitido: boolean }
@@ -245,17 +237,51 @@ export async function updateCargo(
 
   const permissoesParaCriar = Array.from(uniquePermissoes.values());
 
-  if (permissoesParaCriar.length > 0) {
-    await prisma.cargoPermissao.createMany({
-      data: permissoesParaCriar.map((permissao) => ({
+  const permissaoWhereList = permissoesParaCriar.map((permissao) => ({
+    modulo: permissao.modulo,
+    acao: permissao.acao,
+  }));
+
+  await prisma.$transaction([
+    ...permissoesParaCriar.map((permissao) =>
+      prisma.cargoPermissao.upsert({
+        where: {
+          tenantId_cargoId_modulo_acao: {
+            tenantId: session.user.tenantId!,
+            cargoId,
+            modulo: permissao.modulo,
+            acao: permissao.acao,
+          },
+        },
+        update: {
+          permitido: permissao.permitido,
+        },
+        create: {
+          tenantId: session.user.tenantId!,
+          cargoId,
+          modulo: permissao.modulo,
+          acao: permissao.acao,
+          permitido: permissao.permitido,
+        },
+      }),
+    ),
+    prisma.cargoPermissao.updateMany({
+      where: {
         tenantId: session.user.tenantId!,
-        cargoId: cargoId,
-        modulo: permissao.modulo,
-        acao: permissao.acao,
-        permitido: permissao.permitido,
-      })),
-    });
-  }
+        cargoId,
+        ...(permissaoWhereList.length > 0
+          ? {
+              NOT: {
+                OR: permissaoWhereList,
+              },
+            }
+          : {}),
+      },
+      data: {
+        permitido: false,
+      },
+    }),
+  ]);
 
   revalidatePath("/equipe");
 
@@ -336,12 +362,19 @@ export async function deleteCargo(cargoId: string): Promise<void> {
     throw new Error("Não é possível excluir cargo com usuários vinculados");
   }
 
-  await prisma.cargo.delete({
+  const cargoDeactivated = await prisma.cargo.updateMany({
     where: {
       id: cargoId,
       tenantId: session.user.tenantId,
     },
+    data: {
+      ativo: false,
+    },
   });
+
+  if (cargoDeactivated.count === 0) {
+    throw new Error("Cargo não encontrado");
+  }
 
   revalidatePath("/equipe");
 

@@ -317,8 +317,11 @@ export async function deleteModuloCategoria(
       };
     }
 
-    await prisma.moduloCategoria.delete({
+    await prisma.moduloCategoria.update({
       where: { id },
+      data: {
+        ativo: false,
+      },
     });
 
     revalidatePath("/admin/modulos");

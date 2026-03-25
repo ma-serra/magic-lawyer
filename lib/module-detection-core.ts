@@ -288,6 +288,9 @@ async function syncModuleRoutes(slug: string, routes: string[]): Promise<void> {
       where: { moduloId: modulo.id },
     });
 
+    const existingRouteByPath = new Map(
+      existingRoutes.map((route) => [route.rota, route]),
+    );
     const existingRoutePaths = new Set(existingRoutes.map((r) => r.rota));
     const newRoutePaths = new Set(routes);
 
@@ -306,13 +309,37 @@ async function syncModuleRoutes(slug: string, routes: string[]): Promise<void> {
       });
     }
 
+    for (const route of routes) {
+      const existingRoute = existingRouteByPath.get(route);
+      if (!existingRoute) {
+        continue;
+      }
+
+      if (!existingRoute.ativo || existingRoute.descricao !== `Rota para ${slug}`) {
+        await prisma.moduloRota.update({
+          where: { id: existingRoute.id },
+          data: {
+            ativo: true,
+            descricao: `Rota para ${slug}`,
+          },
+        });
+      }
+    }
+
     const routesToRemove = existingRoutes.filter(
       (r) => !newRoutePaths.has(r.rota),
     );
 
     for (const route of routesToRemove) {
-      await prisma.moduloRota.delete({
+      if (!route.ativo) {
+        continue;
+      }
+
+      await prisma.moduloRota.update({
         where: { id: route.id },
+        data: {
+          ativo: false,
+        },
       });
     }
   } catch (error) {
@@ -329,7 +356,7 @@ export async function autoDetectModulesCore(): Promise<AutoDetectModulesCoreResu
   logger.info(`Módulos detectados no código: ${moduleSlugs.join(", ")}`);
 
   const existingModules = await prisma.modulo.findMany({
-    select: { id: true, slug: true, categoriaId: true },
+    select: { id: true, slug: true, categoriaId: true, ativo: true },
   });
 
   const detectedSlugs = new Set(detectedModules.map((m) => m.slug));
@@ -374,7 +401,7 @@ export async function autoDetectModulesCore(): Promise<AutoDetectModulesCoreResu
   }
 
   const modulesToRemove = existingModules.filter(
-    (m) => !detectedSlugs.has(m.slug),
+    (m) => m.ativo && !detectedSlugs.has(m.slug),
   );
 
   for (const module of modulesToRemove) {
@@ -383,17 +410,26 @@ export async function autoDetectModulesCore(): Promise<AutoDetectModulesCoreResu
     });
 
     if (planUsage === 0) {
-      await prisma.moduloRota.deleteMany({
-        where: { moduloId: module.id },
+      await prisma.moduloRota.updateMany({
+        where: {
+          moduloId: module.id,
+          ativo: true,
+        },
+        data: {
+          ativo: false,
+        },
       });
 
-      await prisma.modulo.delete({
+      await prisma.modulo.update({
         where: { id: module.id },
+        data: {
+          ativo: false,
+        },
       });
 
       removed++;
       logger.info(
-        `Módulo removido: ${module.slug} (não existe mais no código)`,
+        `Módulo inativado: ${module.slug} (não existe mais no código)`,
       );
     } else {
       logger.warn(

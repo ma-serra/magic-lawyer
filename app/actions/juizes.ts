@@ -252,6 +252,7 @@ export interface JuizCatalogoOpcao {
 
 const TENANT_JUDGE_ACCESS_TYPE = "TENANT_ACCESS";
 const TENANT_JUDGE_PROFILE_TYPE = "TENANT_PROFILE";
+const TENANT_JUDGE_ACCESS_REVOKED_TYPE = "TENANT_ACCESS_REVOKED";
 
 type JuizTenantOverlay = Partial<
   Pick<
@@ -488,6 +489,7 @@ function buildJuizAccessWhere(tenantId: string): Prisma.JuizWhereInput {
         favoritos: {
           some: {
             tenantId,
+            ativo: true,
           },
         },
       },
@@ -827,6 +829,7 @@ async function getTenantJuizCounts(
       by: ["juizId"],
       where: {
         tenantId,
+        ativo: true,
         juizId: {
           in: uniqueJuizIds,
         },
@@ -1257,7 +1260,11 @@ export async function getJuizes(filters: JuizFilters = {}): Promise<{
             processos: true,
             julgamentos: true,
             analises: true,
-            favoritos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
           },
         },
       },
@@ -1493,7 +1500,11 @@ export async function getJuizDetalhado(juizId: string): Promise<{
             processos: true,
             julgamentos: true,
             analises: true,
-            favoritos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
           },
         },
       },
@@ -2136,6 +2147,7 @@ export async function verificarFavoritoJuiz(juizId: string): Promise<{
         juizId,
         tenantId: user.tenantId,
         usuarioId: user.id,
+        ativo: true,
       },
     });
 
@@ -2168,7 +2180,6 @@ export async function adicionarFavoritoJuiz(juizId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar se já é favorito
     const favoritoExistente = await prisma.favoritoJuiz.findFirst({
       where: {
         juizId,
@@ -2177,15 +2188,26 @@ export async function adicionarFavoritoJuiz(juizId: string): Promise<{
       },
     });
 
-    if (favoritoExistente) {
+    if (favoritoExistente?.ativo) {
       return { success: false, error: "Juiz já está nos favoritos" };
     }
 
-    await prisma.favoritoJuiz.create({
-      data: {
+    await prisma.favoritoJuiz.upsert({
+      where: {
+        tenantId_juizId_usuarioId: {
+          tenantId: user.tenantId,
+          juizId,
+          usuarioId: user.id,
+        },
+      },
+      update: {
+        ativo: true,
+      },
+      create: {
         juizId,
         tenantId: user.tenantId,
         usuarioId: user.id,
+        ativo: true,
       },
     });
 
@@ -2218,11 +2240,15 @@ export async function removerFavoritoJuiz(juizId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    await prisma.favoritoJuiz.deleteMany({
+    await prisma.favoritoJuiz.updateMany({
       where: {
         juizId,
         tenantId: user.tenantId,
         usuarioId: user.id,
+        ativo: true,
+      },
+      data: {
+        ativo: false,
       },
     });
 
@@ -2285,7 +2311,11 @@ export async function getJuizesAdmin(filters?: {
             processos: true,
             julgamentos: true,
             analises: true,
-            favoritos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
           },
         },
       },
@@ -2464,7 +2494,11 @@ export async function createJuizTenant(data: {
               processos: true,
               julgamentos: true,
               analises: true,
-              favoritos: true,
+              favoritos: {
+                where: {
+                  ativo: true,
+                },
+              },
             },
           },
         },
@@ -2635,7 +2669,11 @@ export async function createJuizTenant(data: {
             processos: true,
             julgamentos: true,
             analises: true,
-            favoritos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
           },
         },
       },
@@ -2807,7 +2845,11 @@ export async function updateJuizTenant(
               processos: true,
               julgamentos: true,
               analises: true,
-              favoritos: true,
+              favoritos: {
+                where: {
+                  ativo: true,
+                },
+              },
             },
           },
         },
@@ -2857,7 +2899,11 @@ export async function updateJuizTenant(
             processos: true,
             julgamentos: true,
             analises: true,
-            favoritos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
           },
         },
       },
@@ -2976,8 +3022,11 @@ export async function deleteJuizTenant(juizId: string): Promise<{
         };
       }
 
-      await prisma.juiz.delete({
+      await prisma.juiz.update({
         where: { id: juizId },
+        data: {
+          status: "INATIVO",
+        },
       });
 
       return { success: true };
@@ -3013,17 +3062,26 @@ export async function deleteJuizTenant(juizId: string): Promise<{
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.favoritoJuiz.deleteMany({
+      await tx.favoritoJuiz.updateMany({
         where: {
           tenantId,
           juizId,
+          ativo: true,
+        },
+        data: {
+          ativo: false,
         },
       });
 
-      await tx.acessoJuiz.deleteMany({
+      await tx.acessoJuiz.updateMany({
         where: {
           tenantId,
           juizId,
+          tipoAcesso: TENANT_JUDGE_ACCESS_TYPE,
+        },
+        data: {
+          tipoAcesso: TENANT_JUDGE_ACCESS_REVOKED_TYPE,
+          observacoes: `Acesso revogado em ${new Date().toISOString()}`,
         },
       });
     });

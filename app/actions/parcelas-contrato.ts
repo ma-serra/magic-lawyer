@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
 import { checkPermission } from "@/app/actions/equipe";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 async function getTenantId(): Promise<string> {
   const session = await getSession();
@@ -46,6 +47,7 @@ export async function listParcelasContrato(filters?: {
 
     const where: any = {
       tenantId,
+      deletedAt: null,
     };
 
     if (filters?.contratoId) {
@@ -159,6 +161,7 @@ export async function getParcelaContrato(id: string) {
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
       include: {
         contrato: {
@@ -249,12 +252,11 @@ export async function createParcelaContrato(data: {
     }
 
     // Verificar se já existe uma parcela com o mesmo número para este contrato
-    const parcelaExistente = await prisma.contratoParcela.findUnique({
+    const parcelaExistente = await prisma.contratoParcela.findFirst({
       where: {
-        contratoId_numeroParcela: {
-          contratoId: data.contratoId,
-          numeroParcela: data.numeroParcela,
-        },
+        contratoId: data.contratoId,
+        numeroParcela: data.numeroParcela,
+        deletedAt: null,
       },
     });
 
@@ -350,6 +352,7 @@ export async function updateParcelaContrato(
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -440,6 +443,7 @@ export async function deleteParcelaContrato(id: string) {
       where: {
         id,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -450,8 +454,17 @@ export async function deleteParcelaContrato(id: string) {
       };
     }
 
-    await prisma.contratoParcela.delete({
+    const session = await getSession();
+
+    await prisma.contratoParcela.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: session?.user?.id ?? null,
+          actorType: (session?.user as any)?.role ?? "USER",
+        },
+        "Exclusão manual de parcela contratual",
+      ),
     });
 
     revalidatePath("/contratos");
@@ -512,6 +525,7 @@ export async function gerarParcelasAutomaticamente(
       where: {
         contratoId,
         tenantId,
+        deletedAt: null,
       },
     });
 
@@ -591,32 +605,52 @@ export async function getDashboardParcelas() {
     ] = await Promise.all([
       // Total de parcelas
       prisma.contratoParcela.count({
-        where: { tenantId },
+        where: {
+          tenantId,
+          deletedAt: null,
+        },
       }),
       // Parcelas pendentes
       prisma.contratoParcela.count({
-        where: { tenantId, status: "PENDENTE" },
+        where: {
+          tenantId,
+          status: "PENDENTE",
+          deletedAt: null,
+        },
       }),
       // Parcelas pagas
       prisma.contratoParcela.count({
-        where: { tenantId, status: "PAGA" },
+        where: {
+          tenantId,
+          status: "PAGA",
+          deletedAt: null,
+        },
       }),
       // Parcelas atrasadas
       prisma.contratoParcela.count({
         where: {
           tenantId,
           status: "PENDENTE",
+          deletedAt: null,
           dataVencimento: { lt: new Date() },
         },
       }),
       // Valor total pendente
       prisma.contratoParcela.aggregate({
-        where: { tenantId, status: "PENDENTE" },
+        where: {
+          tenantId,
+          status: "PENDENTE",
+          deletedAt: null,
+        },
         _sum: { valor: true },
       }),
       // Valor total pago
       prisma.contratoParcela.aggregate({
-        where: { tenantId, status: "PAGA" },
+        where: {
+          tenantId,
+          status: "PAGA",
+          deletedAt: null,
+        },
         _sum: { valor: true },
       }),
       // Parcelas vencendo nos próximos 7 dias
@@ -624,6 +658,7 @@ export async function getDashboardParcelas() {
         where: {
           tenantId,
           status: "PENDENTE",
+          deletedAt: null,
           dataVencimento: {
             gte: new Date(),
             lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 dias
@@ -669,8 +704,11 @@ export async function getProcessosComParcelas() {
         contratos: {
           some: {
             parcelas: {
-              some: {}, // Pelo menos uma parcela
+              some: {
+                deletedAt: null,
+              }, // Pelo menos uma parcela
             },
+            deletedAt: null,
           },
         },
       },
@@ -683,8 +721,11 @@ export async function getProcessosComParcelas() {
             contratos: {
               where: {
                 parcelas: {
-                  some: {},
+                  some: {
+                    deletedAt: null,
+                  },
                 },
+                deletedAt: null,
               },
             },
           },
@@ -763,6 +804,7 @@ export async function getDadosPagamentoParcela(parcelaId: string) {
       where: {
         id: parcelaId,
         tenantId,
+        deletedAt: null,
       },
       include: {
         contrato: {

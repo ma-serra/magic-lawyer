@@ -31,6 +31,9 @@ type PacoteAssinaturaComPacote = Prisma.AssinaturaPacoteJuizGetPayload<{
     pacote: {
       include: {
         juizes: {
+          where: {
+            ativo: true,
+          },
           select: {
             juizId: true;
           };
@@ -523,6 +526,9 @@ export async function reconcilePacoteUnlocks(tenantId: string) {
         pacote: {
           include: {
             juizes: {
+              where: {
+                ativo: true,
+              },
               select: {
                 juizId: true,
               },
@@ -670,6 +676,9 @@ export async function activatePacoteSubscription(params: {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -722,6 +731,9 @@ export async function activatePacoteSubscription(params: {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -778,6 +790,9 @@ export async function markPacoteSubscriptionOverdue(assinaturaId: string) {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -831,6 +846,9 @@ export async function cancelPacoteSubscription(assinaturaId: string) {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -930,6 +948,9 @@ export async function createPacoteCheckout(params: {
     },
     include: {
       juizes: {
+        where: {
+          ativo: true,
+        },
         select: {
           juizId: true,
         },
@@ -964,6 +985,9 @@ export async function createPacoteCheckout(params: {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -1002,6 +1026,9 @@ export async function createPacoteCheckout(params: {
         pacote: {
           include: {
             juizes: {
+              where: {
+                ativo: true,
+              },
               select: {
                 juizId: true,
               },
@@ -1033,6 +1060,9 @@ export async function createPacoteCheckout(params: {
         pacote: {
           include: {
             juizes: {
+              where: {
+                ativo: true,
+              },
               select: {
                 juizId: true,
               },
@@ -1226,6 +1256,9 @@ export async function processPacoteCreditCardPayment(params: {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -1402,6 +1435,9 @@ export async function confirmPacotePaymentInDevelopment(params: {
       pacote: {
         include: {
           juizes: {
+            where: {
+              ativo: true,
+            },
             select: {
               juizId: true,
             },
@@ -1467,11 +1503,18 @@ export async function listTenantPacotesCatalog(tenantId: string) {
       include: {
         _count: {
           select: {
-            juizes: true,
+            juizes: {
+              where: {
+                ativo: true,
+              },
+            },
             assinaturas: true,
           },
         },
         juizes: {
+          where: {
+            ativo: true,
+          },
           include: {
             juiz: {
               select: {
@@ -1551,7 +1594,11 @@ export async function listTenantPacoteSubscriptions(tenantId: string) {
         include: {
           _count: {
             select: {
-              juizes: true,
+              juizes: {
+                where: {
+                  ativo: true,
+                },
+              },
             },
           },
         },

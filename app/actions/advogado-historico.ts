@@ -215,7 +215,7 @@ export async function cleanupAdvogadoHistorico(
 
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
-    const deleted = await prisma.advogadoHistorico.deleteMany({
+    const pendingCleanup = await prisma.advogadoHistorico.count({
       where: {
         tenantId: session.user.tenantId,
         createdAt: {
@@ -228,7 +228,12 @@ export async function cleanupAdvogadoHistorico(
 
     return {
       success: true,
-      data: { deletedCount: deleted.count },
+      data: {
+        deletedCount: 0,
+        pendingCleanup,
+        message:
+          "Limpeza física desativada por política de retenção. Registros antigos seguem preservados.",
+      },
     };
   } catch (error) {
     console.error("Erro ao limpar histórico do advogado:", error);

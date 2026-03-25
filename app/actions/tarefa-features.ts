@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 // ============================================
@@ -33,7 +34,7 @@ export async function addChecklistItem(tarefaId: string, titulo: string) {
 
     // Pegar próxima ordem
     const ultimoItem = await prisma.tarefaChecklist.findFirst({
-      where: { tarefaId },
+      where: { tarefaId, deletedAt: null },
       orderBy: { ordem: "desc" },
     });
 
@@ -79,6 +80,7 @@ export async function toggleChecklistItem(itemId: string) {
       where: {
         id: itemId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -136,8 +138,12 @@ export async function deleteChecklistItem(itemId: string) {
       return { success: false, error: "Item não encontrado" };
     }
 
-    await prisma.tarefaChecklist.delete({
+    await prisma.tarefaChecklist.update({
       where: { id: itemId },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de item de checklist",
+      ),
     });
 
     return { success: true };
@@ -162,6 +168,7 @@ export async function getChecklists(tarefaId: string) {
       where: {
         tarefaId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       orderBy: { ordem: "asc" },
     });
@@ -313,6 +320,7 @@ export async function deleteComentario(comentarioId: string) {
         id: comentarioId,
         usuarioId: user.id, // Só pode deletar próprio comentário
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -323,8 +331,12 @@ export async function deleteComentario(comentarioId: string) {
       };
     }
 
-    await prisma.tarefaComentario.delete({
+    await prisma.tarefaComentario.update({
       where: { id: comentarioId },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de comentário da tarefa",
+      ),
     });
 
     return { success: true };
@@ -349,6 +361,7 @@ export async function getComentarios(tarefaId: string) {
       where: {
         tarefaId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         usuario: {
@@ -466,11 +479,44 @@ export async function addTagToTarefa(tarefaId: string, tagId: string) {
       where: {
         tarefaId,
         tagId,
+        tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
     if (existente) {
       return { success: false, error: "Tag já adicionada a esta tarefa" };
+    }
+
+    const relacaoArquivada = await prisma.tarefaTagRelacao.findFirst({
+      where: {
+        tarefaId,
+        tagId,
+        tenantId: user.tenantId,
+        NOT: {
+          deletedAt: null,
+        },
+      },
+      include: {
+        tag: true,
+      },
+    });
+
+    if (relacaoArquivada) {
+      const relacaoRestaurada = await prisma.tarefaTagRelacao.update({
+        where: { id: relacaoArquivada.id },
+        data: {
+          deletedAt: null,
+          deletedByActorType: null,
+          deletedByActorId: null,
+          deleteReason: null,
+        },
+        include: {
+          tag: true,
+        },
+      });
+
+      return { success: true, relacao: relacaoRestaurada, restored: true };
     }
 
     const relacao = await prisma.tarefaTagRelacao.create({
@@ -518,6 +564,7 @@ export async function removeTagFromTarefa(tarefaId: string, tagId: string) {
         tarefaId,
         tagId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         tag: true,
@@ -528,8 +575,12 @@ export async function removeTagFromTarefa(tarefaId: string, tagId: string) {
       return { success: false, error: "Relação não encontrada" };
     }
 
-    await prisma.tarefaTagRelacao.delete({
+    await prisma.tarefaTagRelacao.update({
       where: { id: relacao.id },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de vínculo de tag na tarefa",
+      ),
     });
 
     // Registrar atividade
@@ -565,6 +616,7 @@ export async function getTagsDaTarefa(tarefaId: string) {
       where: {
         tarefaId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         tag: true,
@@ -660,6 +712,7 @@ export async function deleteAnexo(anexoId: string) {
       where: {
         id: anexoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -667,8 +720,12 @@ export async function deleteAnexo(anexoId: string) {
       return { success: false, error: "Anexo não encontrado" };
     }
 
-    await prisma.tarefaAnexo.delete({
+    await prisma.tarefaAnexo.update({
       where: { id: anexoId },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de anexo da tarefa",
+      ),
     });
 
     // TODO: Deletar do Cloudinary também
@@ -709,6 +766,7 @@ export async function getAnexos(tarefaId: string) {
       where: {
         tarefaId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -781,11 +839,58 @@ export async function addWatcher(tarefaId: string, usuarioId: string) {
       where: {
         tarefaId,
         usuarioId,
+        tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
     if (existente) {
       return { success: false, error: "Usuário já é observador" };
+    }
+
+    const watcherArquivado = await prisma.tarefaWatcher.findFirst({
+      where: {
+        tarefaId,
+        usuarioId,
+        tenantId: user.tenantId,
+        NOT: {
+          deletedAt: null,
+        },
+      },
+      include: {
+        usuario: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    if (watcherArquivado) {
+      const watcherRestaurado = await prisma.tarefaWatcher.update({
+        where: { id: watcherArquivado.id },
+        data: {
+          deletedAt: null,
+          deletedByActorType: null,
+          deletedByActorId: null,
+          deleteReason: null,
+        },
+        include: {
+          usuario: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      });
+
+      return { success: true, watcher: watcherRestaurado, restored: true };
     }
 
     const watcher = await prisma.tarefaWatcher.create({
@@ -840,6 +945,7 @@ export async function removeWatcher(tarefaId: string, usuarioId: string) {
         tarefaId,
         usuarioId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -847,8 +953,12 @@ export async function removeWatcher(tarefaId: string, usuarioId: string) {
       return { success: false, error: "Observador não encontrado" };
     }
 
-    await prisma.tarefaWatcher.delete({
+    await prisma.tarefaWatcher.update({
       where: { id: watcher.id },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de observador da tarefa",
+      ),
     });
 
     return { success: true };
@@ -873,6 +983,7 @@ export async function getWatchers(tarefaId: string) {
       where: {
         tarefaId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         usuario: {

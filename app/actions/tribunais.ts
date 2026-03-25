@@ -3,6 +3,7 @@
 import { getSession } from "@/app/lib/auth";
 import { getRedisInstance } from "@/app/lib/notifications/redis-singleton";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { TENANT_PERMISSIONS } from "@/types";
 
@@ -857,6 +858,7 @@ export async function listTribunaisParaVinculo() {
 
     const tribunais = await prisma.tribunal.findMany({
       where: {
+        deletedAt: null,
         OR: [{ tenantId: null }, { tenantId: user.tenantId }],
       },
       select: {
@@ -900,6 +902,7 @@ export async function listTribunais(params?: { uf?: string; esfera?: string }) {
     await ensureAutoSyncTribunaisOficiais();
 
     const where: any = {};
+    where.deletedAt = null;
     where.OR = [{ tenantId: null }, { tenantId: user.tenantId }];
 
     if (params?.uf) {
@@ -1028,6 +1031,7 @@ export async function getTribunal(id: string) {
     const tribunal = await prisma.tribunal.findFirst({
       where: {
         id,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -1108,6 +1112,7 @@ export async function createTribunal(data: TribunalCreatePayload) {
       where: {
         nome,
         uf: uf ?? null,
+        deletedAt: null,
       },
     });
 
@@ -1172,6 +1177,7 @@ export async function updateTribunal(id: string, data: TribunalUpdatePayload) {
     const tribunalExistente = await prisma.tribunal.findFirst({
       where: {
         id,
+        deletedAt: null,
       },
     });
 
@@ -1206,6 +1212,7 @@ export async function updateTribunal(id: string, data: TribunalUpdatePayload) {
         where: {
           nome: nomeCheck,
           uf: ufCheck,
+          deletedAt: null,
           id: {
             not: id,
           },
@@ -1305,6 +1312,7 @@ export async function deleteTribunal(id: string) {
     const tribunal = await prisma.tribunal.findFirst({
       where: {
         id,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -1345,8 +1353,15 @@ export async function deleteTribunal(id: string) {
       };
     }
 
-    await prisma.tribunal.delete({
+    await prisma.tribunal.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de tribunal",
+      ),
     });
 
     logger.info(`Tribunal deletado: ${id} por usuário ${user.email}`);

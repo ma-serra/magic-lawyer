@@ -270,6 +270,30 @@ const VIDEO_UPLOAD_EXTENSIONS = new Set([
   "mpg",
   "m4v",
 ]);
+const DOCUMENT_VERSION_SOFT_DELETE_MARKER = "[SOFT_DELETED_VERSION]";
+
+function getActiveDocumentoVersaoWhere(): Prisma.DocumentoVersaoWhereInput {
+  return {
+    OR: [
+      {
+        observacoes: null,
+      },
+      {
+        observacoes: {
+          not: {
+            startsWith: DOCUMENT_VERSION_SOFT_DELETE_MARKER,
+          },
+        },
+      },
+    ],
+  };
+}
+
+function buildDocumentoVersaoSoftDeletePayload() {
+  return {
+    observacoes: `${DOCUMENT_VERSION_SOFT_DELETE_MARKER} ${new Date().toISOString()}`,
+  };
+}
 
 function resolveUploadFileCategory(
   extension: string,
@@ -547,7 +571,10 @@ function mapDocumentoToFiles(
   const includeUploaderEmail = options?.includeUploaderEmail ?? true;
   const versions =
     documento.versoes && documento.versoes.length > 0
-      ? documento.versoes
+      ? documento.versoes.filter(
+          (versao) =>
+            !versao.observacoes?.startsWith(DOCUMENT_VERSION_SOFT_DELETE_MARKER),
+        )
       : [null];
 
   return versions.map((versao) => {
@@ -788,6 +815,7 @@ export async function getDocumentExplorerData(
             },
             include: {
               versoes: {
+                where: getActiveDocumentoVersaoWhere(),
                 orderBy: {
                   numeroVersao: "desc",
                 },
@@ -899,6 +927,7 @@ export async function getDocumentExplorerData(
           },
           include: {
             versoes: {
+              where: getActiveDocumentoVersaoWhere(),
               orderBy: {
                 numeroVersao: "desc",
               },
@@ -1717,6 +1746,7 @@ export async function renameExplorerFolder(input: RenameFolderInput) {
     const versoesParaAtualizar = await prisma.documentoVersao.findMany({
       where: {
         tenantId: user.tenantId,
+        ...getActiveDocumentoVersaoWhere(),
         cloudinaryPublicId: {
           startsWith: publicIdPrefix,
         },
@@ -1729,7 +1759,7 @@ export async function renameExplorerFolder(input: RenameFolderInput) {
         processoId: processo.id,
         deletedAt: null,
         versoes: {
-          none: {},
+          none: getActiveDocumentoVersaoWhere(),
         },
         metadados: {
           path: ["cloudinaryPublicId"],
@@ -1870,6 +1900,7 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
     const versoesParaDeletar = await prisma.documentoVersao.findMany({
       where: {
         tenantId: user.tenantId,
+        ...getActiveDocumentoVersaoWhere(),
         cloudinaryPublicId: {
           startsWith: `${targetPath}/`,
         },
@@ -1887,7 +1918,7 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
         processoId: processo.id,
         deletedAt: null,
         versoes: {
-          none: {},
+          none: getActiveDocumentoVersaoWhere(),
         },
         metadados: {
           path: ["cloudinaryPublicId"],
@@ -1914,8 +1945,9 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
     if (versaoIds.length || documentoIds.length) {
       await prisma.$transaction(async (tx) => {
         if (versaoIds.length) {
-          await tx.documentoVersao.deleteMany({
+          await tx.documentoVersao.updateMany({
             where: { id: { in: versaoIds } },
+            data: buildDocumentoVersaoSoftDeletePayload(),
           });
         }
 
@@ -1985,7 +2017,9 @@ export async function deleteExplorerFile(input: DeleteFileInput) {
     const documento = await prisma.documento.findFirst({
       where: documentoWhere,
       include: {
-        versoes: true,
+        versoes: {
+          where: getActiveDocumentoVersaoWhere(),
+        },
       },
     });
 
@@ -2031,12 +2065,16 @@ export async function deleteExplorerFile(input: DeleteFileInput) {
 
     await prisma.$transaction(async (tx) => {
       if (versaoAlvo) {
-        await tx.documentoVersao.delete({ where: { id: versaoAlvo.id } });
+        await tx.documentoVersao.update({
+          where: { id: versaoAlvo.id },
+          data: buildDocumentoVersaoSoftDeletePayload(),
+        });
       }
 
       const versoesRestantes = await tx.documentoVersao.count({
         where: {
           documentoId: documento.id,
+          ...getActiveDocumentoVersaoWhere(),
         },
       });
 

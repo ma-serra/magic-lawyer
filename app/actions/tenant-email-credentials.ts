@@ -6,6 +6,10 @@ import { authOptions } from "@/auth";
 import prisma from "@/app/lib/prisma";
 import { emailService } from "@/app/lib/email-service";
 import { logAudit } from "@/app/lib/audit/log";
+import {
+  buildRestorePayload,
+  buildSoftDeletePayload,
+} from "@/app/lib/soft-delete";
 import { TENANT_PERMISSIONS } from "@/types";
 
 type CredentialType = "DEFAULT" | "ADMIN";
@@ -88,7 +92,10 @@ export async function listTenantEmailCredentials(
 
   const includeApiKey = Boolean(options?.includeApiKey) && auth.role === "SUPER_ADMIN";
   const creds = await prisma.tenantEmailCredential.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      deletedAt: null,
+    },
     select: {
       id: true,
       type: true,
@@ -140,6 +147,7 @@ export async function upsertTenantEmailCredential(params: {
       fromAddress: true,
       fromName: true,
       updatedAt: true,
+      deletedAt: true,
     },
   });
 
@@ -160,6 +168,7 @@ export async function upsertTenantEmailCredential(params: {
   const updated = await prisma.tenantEmailCredential.upsert({
     where: { tenantId_type: { tenantId, type } },
     update: {
+      ...buildRestorePayload(),
       fromAddress: normalizedFromAddress,
       fromName: normalizedFromName,
       ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
@@ -215,8 +224,12 @@ export async function deleteTenantEmailCredential(
     return { success: false, error: auth.error } as const;
   }
 
-  const existing = await prisma.tenantEmailCredential.findUnique({
-    where: { tenantId_type: { tenantId, type } },
+  const existing = await prisma.tenantEmailCredential.findFirst({
+    where: {
+      tenantId,
+      type,
+      deletedAt: null,
+    },
     select: {
       id: true,
       fromAddress: true,
@@ -224,9 +237,20 @@ export async function deleteTenantEmailCredential(
     },
   });
 
-  await prisma.tenantEmailCredential.delete({
-    where: { tenantId_type: { tenantId, type } },
-  }).catch(() => void 0);
+  await prisma.tenantEmailCredential.updateMany({
+    where: {
+      tenantId,
+      type,
+      deletedAt: null,
+    },
+    data: buildSoftDeletePayload(
+      {
+        actorId: auth.session.user.id,
+        actorType: ((auth.session.user as any)?.role as string | undefined) ?? "USER",
+      },
+      "Remoção manual de credencial de email do tenant",
+    ),
+  });
 
   if (existing) {
     await logAudit({

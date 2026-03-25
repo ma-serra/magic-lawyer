@@ -76,9 +76,32 @@ export async function POST(request: Request) {
 
       case "cleanup": {
         if (data.tenantId) {
-          await prisma.tenant.delete({
+          const existing = await prisma.tenant.findUnique({
             where: { id: data.tenantId },
+            select: {
+              id: true,
+              slug: true,
+              domain: true,
+              status: true,
+              sessionVersion: true,
+            },
           });
+
+          if (existing) {
+            const archivedSlug = `${existing.slug}-cleanup-${Date.now()}`.slice(0, 191);
+
+            await prisma.tenant.update({
+              where: { id: existing.id },
+              data: {
+                status: "CANCELLED",
+                statusReason: "TEST_CLEANUP",
+                statusChangedAt: new Date(),
+                slug: archivedSlug,
+                domain: null,
+                sessionVersion: (existing.sessionVersion ?? 1) + 1,
+              },
+            });
+          }
         }
 
         return NextResponse.json({ success: true });

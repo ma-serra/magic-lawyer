@@ -9,6 +9,24 @@ import logger from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const DOCUMENT_VERSION_SOFT_DELETE_MARKER = "[SOFT_DELETED_VERSION]";
+
+function getActiveDocumentoVersaoWhere(): Prisma.DocumentoVersaoWhereInput {
+  return {
+    OR: [
+      {
+        observacoes: null,
+      },
+      {
+        observacoes: {
+          not: {
+            startsWith: DOCUMENT_VERSION_SOFT_DELETE_MARKER,
+          },
+        },
+      },
+    ],
+  };
+}
 
 function isPrivilegedRole(role?: string | null): boolean {
   return role === "ADMIN" || role === "SUPER_ADMIN";
@@ -172,6 +190,7 @@ export async function GET(
             id: versaoId,
             documentoId: documento.id,
             tenantId: session.user.tenantId,
+            ...getActiveDocumentoVersaoWhere(),
           },
           select: {
             id: true,

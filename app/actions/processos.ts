@@ -16,6 +16,9 @@ import {
   logAudit,
   toAuditJson,
 } from "@/app/lib/audit/log";
+import { AUDIT_ACTIONS } from "@/app/lib/audit/action-catalog";
+import { logUnifiedSensitiveView } from "@/app/lib/audit/unified";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import { ProcessoNotificationIntegration } from "@/app/lib/notifications/examples/processo-integration";
 import { HybridNotificationService } from "@/app/lib/notifications/hybrid-notification-service";
 import { publishProcessNotificationToLawyers } from "@/app/lib/juridical/process-movement-sync";
@@ -567,6 +570,7 @@ async function ensureProcessMutationAccess(
       where: {
         processoId,
         tenantId: user.tenantId,
+        deletedAt: null,
         procuracao: {
           outorgados: {
             some: {
@@ -595,6 +599,7 @@ async function ensurePrazoMutationAccess(
   const prazo = await prisma.processoPrazo.findFirst({
     where: {
       id: prazoId,
+      deletedAt: null,
     },
     select: {
       id: true,
@@ -619,6 +624,7 @@ async function ensureParteMutationAccess(
   const parte = await prisma.processoParte.findFirst({
     where: {
       id: parteId,
+      deletedAt: null,
     },
     select: {
       id: true,
@@ -1544,6 +1550,25 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
       return { success: false, error: "Processo não encontrado ou sem acesso" };
     }
 
+    await logUnifiedSensitiveView({
+      tenantId: user.tenantId,
+      source: "PROCESSOS_ACTION",
+      action: AUDIT_ACTIONS.PROCESS_VIEWED,
+      entityType: "PROCESSO",
+      entityId: processo.id,
+      actor: {
+        id: user.id,
+        tenantId: user.tenantId,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      },
+      route: `/processos/${processo.id}`,
+      payload: {
+        isCliente,
+        role: user.role,
+      },
+    });
+
     const convertedProcesso = convertAllDecimalFields(
       processo,
     ) as any as ProcessoDetalhado;
@@ -1611,6 +1636,25 @@ export type ProcessoDocumento = Prisma.DocumentoGetPayload<{
     };
   };
 }>;
+
+const DOCUMENT_VERSION_SOFT_DELETE_MARKER = "[SOFT_DELETED_VERSION]";
+
+function getActiveDocumentoVersaoWhere(): Prisma.DocumentoVersaoWhereInput {
+  return {
+    OR: [
+      {
+        observacoes: null,
+      },
+      {
+        observacoes: {
+          not: {
+            startsWith: DOCUMENT_VERSION_SOFT_DELETE_MARKER,
+          },
+        },
+      },
+    ],
+  };
+}
 
 export async function getDocumentosProcesso(processoId: string): Promise<{
   success: boolean;
@@ -1715,6 +1759,7 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
           },
         },
         versoes: {
+          where: getActiveDocumentoVersaoWhere(),
           include: {
             uploadedBy: {
               select: {
@@ -1738,6 +1783,26 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
       },
       orderBy: {
         createdAt: "desc",
+      },
+    });
+
+    await logUnifiedSensitiveView({
+      tenantId: user.tenantId,
+      source: "PROCESSOS_ACTION",
+      action: AUDIT_ACTIONS.PROCESS_DOCUMENTS_VIEWED,
+      entityType: "PROCESSO",
+      entityId: processoId,
+      actor: {
+        id: user.id,
+        tenantId: user.tenantId,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      },
+      route: `/processos/${processoId}`,
+      payload: {
+        documentos: documentos.length,
+        isCliente,
+        role: user.role,
       },
     });
 
@@ -1836,6 +1901,26 @@ export async function getEventosProcesso(processoId: string): Promise<{
       },
     });
 
+    await logUnifiedSensitiveView({
+      tenantId: user.tenantId,
+      source: "PROCESSOS_ACTION",
+      action: AUDIT_ACTIONS.PROCESS_EVENTOS_VIEWED,
+      entityType: "PROCESSO",
+      entityId: processoId,
+      actor: {
+        id: user.id,
+        tenantId: user.tenantId,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      },
+      route: `/processos/${processoId}`,
+      payload: {
+        eventos: eventos.length,
+        isCliente,
+        role: user.role,
+      },
+    });
+
     return {
       success: true,
       eventos: eventos,
@@ -1904,6 +1989,26 @@ export async function getMovimentacoesProcesso(processoId: string): Promise<{
       include: { criadoPor: true },
       orderBy: {
         dataMovimentacao: "desc",
+      },
+    });
+
+    await logUnifiedSensitiveView({
+      tenantId: user.tenantId,
+      source: "PROCESSOS_ACTION",
+      action: AUDIT_ACTIONS.PROCESS_MOVIMENTACOES_VIEWED,
+      entityType: "PROCESSO",
+      entityId: processoId,
+      actor: {
+        id: user.id,
+        tenantId: user.tenantId,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      },
+      route: `/processos/${processoId}`,
+      payload: {
+        movimentacoes: movimentacoes.length,
+        isCliente,
+        role: user.role,
       },
     });
 
@@ -2513,10 +2618,17 @@ export async function updateProcesso(
       });
 
       if (novoCliente) {
-        await tx.processoParte.deleteMany({
+        await tx.processoParte.updateMany({
           where: {
             processoId,
             clienteId: processo.clienteId,
+            deletedAt: null,
+          },
+          data: {
+            ...buildSoftDeletePayload(
+              { actorId: user.id, actorType: "USER" },
+              "Substituição de parte principal por mudança de cliente no processo",
+            ),
           },
         });
 
@@ -2735,6 +2847,7 @@ export async function createProcessoParte(
         where: {
           processoId,
           clienteId: input.clienteId,
+          deletedAt: null,
         },
         select: { id: true },
       });
@@ -2777,6 +2890,7 @@ export async function createProcessoParte(
         where: {
           processoId,
           advogadoId: input.advogadoId,
+          deletedAt: null,
         },
         select: { id: true },
       });
@@ -2884,6 +2998,7 @@ export async function updateProcessoParte(
           where: {
             processoId: processo.id,
             clienteId: input.clienteId,
+            deletedAt: null,
             NOT: { id: parteId },
           },
           select: { id: true },
@@ -2931,6 +3046,7 @@ export async function updateProcessoParte(
           where: {
             processoId: processo.id,
             advogadoId: input.advogadoId,
+            deletedAt: null,
             NOT: { id: parteId },
           },
           select: { id: true },
@@ -2985,10 +3101,14 @@ export async function deleteProcessoParte(parteId: string) {
   try {
     const session = await getSession();
 
-    await ensureParteMutationAccess(session, parteId);
+    const { user } = await ensureParteMutationAccess(session, parteId);
 
-    await prisma.processoParte.delete({
+    await prisma.processoParte.update({
       where: { id: parteId },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de parte do processo",
+      ),
     });
 
     return {
@@ -3253,6 +3373,7 @@ export async function updateProcessoPrazo(
       where: {
         id: prazoId,
         tenantId,
+        deletedAt: null,
       },
       include: processoPrazoInclude,
     });
@@ -3517,6 +3638,7 @@ export async function deleteProcessoPrazo(prazoId: string) {
       where: {
         id: prazoId,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: processoPrazoInclude,
     });
@@ -3525,8 +3647,12 @@ export async function deleteProcessoPrazo(prazoId: string) {
       return { success: false, error: "Prazo não encontrado" };
     }
 
-    await prisma.processoPrazo.delete({
+    await prisma.processoPrazo.update({
       where: { id: prazoId },
+      data: buildSoftDeletePayload(
+        { actorId: user.id, actorType: "USER" },
+        "Remoção lógica de prazo do processo",
+      ),
     });
 
     try {
@@ -3601,14 +3727,45 @@ export async function linkProcuracaoAoProcesso(
 
     const existente = await prisma.procuracaoProcesso.findFirst({
       where: {
-        processoId,
+            processoId,
         procuracaoId,
+        deletedAt: null,
       },
       include: procuracaoProcessoInclude,
     });
 
     if (existente) {
       return { success: true, vinculo: existente, alreadyLinked: true };
+    }
+
+    const vinculoArquivado = await prisma.procuracaoProcesso.findFirst({
+      where: {
+        processoId,
+        procuracaoId,
+        NOT: {
+          deletedAt: null,
+        },
+      },
+      include: procuracaoProcessoInclude,
+    });
+
+    if (vinculoArquivado) {
+      const vinculoRestaurado = await prisma.procuracaoProcesso.update({
+        where: { id: vinculoArquivado.id },
+        data: {
+          deletedAt: null,
+          deletedByActorType: null,
+          deletedByActorId: null,
+          deleteReason: null,
+        },
+        include: procuracaoProcessoInclude,
+      });
+
+      return {
+        success: true,
+        vinculo: vinculoRestaurado,
+        restored: true,
+      };
     }
 
     const vinculo = await prisma.procuracaoProcesso.create({
@@ -3644,13 +3801,20 @@ export async function unlinkProcuracaoDoProcesso(
 
     await ensureProcessMutationAccess(session, processoId);
 
-    await prisma.procuracaoProcesso.delete({
+    await prisma.procuracaoProcesso.update({
       where: {
         procuracaoId_processoId: {
           procuracaoId,
           processoId,
         },
       },
+      data: buildSoftDeletePayload(
+        {
+          actorId: (session?.user as any)?.id ?? null,
+          actorType: "USER",
+        },
+        "Desvinculação lógica de procuração do processo",
+      ),
     });
 
     return {

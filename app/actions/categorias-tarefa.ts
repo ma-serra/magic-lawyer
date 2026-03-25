@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
+import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 
 export interface CategoriaTarefaCreatePayload {
@@ -37,6 +38,7 @@ export async function listCategoriasTarefa(params?: { ativo?: boolean }) {
 
     const where: any = {
       tenantId: user.tenantId,
+      deletedAt: null,
     };
 
     if (params?.ativo !== undefined) {
@@ -81,6 +83,7 @@ export async function getCategoriaTarefa(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -137,6 +140,7 @@ export async function createCategoriaTarefa(
       where: {
         tenantId: user.tenantId,
         slug: data.slug.trim(),
+        deletedAt: null,
       },
     });
 
@@ -186,6 +190,7 @@ export async function updateCategoriaTarefa(
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
     });
 
@@ -202,6 +207,7 @@ export async function updateCategoriaTarefa(
           id: {
             not: id,
           },
+          deletedAt: null,
         },
       });
 
@@ -252,6 +258,7 @@ export async function deleteCategoriaTarefa(id: string) {
       where: {
         id,
         tenantId: user.tenantId,
+        deletedAt: null,
       },
       include: {
         _count: {
@@ -278,8 +285,15 @@ export async function deleteCategoriaTarefa(id: string) {
       };
     }
 
-    await prisma.categoriaTarefa.delete({
+    await prisma.categoriaTarefa.update({
       where: { id },
+      data: buildSoftDeletePayload(
+        {
+          actorId: user.id ?? null,
+          actorType: user.role ?? "USER",
+        },
+        "Exclusão manual de categoria de tarefa",
+      ),
     });
 
     logger.info(
