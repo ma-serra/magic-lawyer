@@ -42,7 +42,7 @@ Variáveis adicionadas/ajustadas em relação ao `.env.example` original:
 
 - Schema Prisma pushed com `npx prisma db push`
 - 3 schemas: `magiclawyer`, `support`, `audit`
-- Seed executado com `npm run prisma:seed` — criou 4 tenants de teste (Sandra, Luana, Salba, Fred)
+- Seed executado com `npm run prisma:seed` — criou 4 tenants de teste (Souza Costa, Salba, RVB e Tenant Interno de Testes)
 - 260 processos iniciais do seed
 
 ---

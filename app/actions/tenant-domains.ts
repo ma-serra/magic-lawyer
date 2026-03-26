@@ -185,18 +185,13 @@ const DEFAULT_PASSWORDS: Record<string, Record<string, string>> = {
     CLIENTE: "Cliente1@123", // Senha padrão para clientes
     DEFAULT: "Cliente1@123",
   },
-  luana: {
-    ADMIN: "Luana@123",
-    ADVOGADO: "Advogado@123",
-    CLIENTE: "Cliente@123",
-    DEFAULT: "Cliente@123",
+  rvb: {
+    ADMIN: "Rvb@123",
+    DEFAULT: "Rvb@123",
   },
-  fred: {
-    ADMIN: "Fred@123",
-    ADVOGADO: "Advogado@123",
-    SECRETARIA: "Advogado@123", // Mesma senha do advogado (erro no seed)
-    CLIENTE: "Cliente@123",
-    DEFAULT: "Cliente@123",
+  "ml-test": {
+    ADMIN: "Teste@123",
+    DEFAULT: "Teste@123",
   },
 };
 

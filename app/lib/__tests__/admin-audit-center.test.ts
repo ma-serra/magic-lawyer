@@ -11,8 +11,8 @@ describe("admin audit center", () => {
       id: "evt-access",
       tenant: {
         id: "tenant-1",
-        name: "Frederico Leitão Advocacia",
-        slug: "fred",
+        name: "RVB Advocacia",
+        slug: "rvb",
         status: "ACTIVE",
       },
       category: "ACCESS",
@@ -21,8 +21,8 @@ describe("admin audit center", () => {
       status: "SUCCESS",
       actorType: "TENANT_USER",
       actorId: "user-1",
-      actorName: "Luciano Santos",
-      actorEmail: "luciano@fred.com",
+      actorName: "Admin RVB",
+      actorEmail: "admin@rvb.adv.br",
       entityType: "USUARIO",
       entityId: "user-1",
       route: "/api/auth/[...nextauth]",
@@ -35,8 +35,8 @@ describe("admin audit center", () => {
       id: "evt-email",
       tenant: {
         id: "tenant-1",
-        name: "Frederico Leitão Advocacia",
-        slug: "fred",
+        name: "RVB Advocacia",
+        slug: "rvb",
         status: "ACTIVE",
       },
       category: "EMAIL",
@@ -79,7 +79,7 @@ describe("admin audit center", () => {
       id: "evt-support",
       tenant: {
         id: "tenant-2",
-        name: "Sandra Costa Advocacia",
+        name: "Souza Costa Advogados Associados",
         slug: "sandra",
         status: "ACTIVE",
       },
@@ -111,14 +111,14 @@ describe("admin audit center", () => {
       createdAt: "2026-03-16T16:00:00.000Z",
       tenant: {
         id: "tenant-1",
-        name: "Frederico Leitão Advocacia",
-        slug: "fred",
+        name: "RVB Advocacia",
+        slug: "rvb",
         status: "ACTIVE",
       },
       usuario: {
         id: "user-1",
-        nome: "Luciano Santos",
-        email: "luciano@fred.com",
+        nome: "Admin RVB",
+        email: "admin@rvb.adv.br",
       },
       changedFields: ["status"],
     },
@@ -141,12 +141,12 @@ describe("admin audit center", () => {
       waitingFor: "SUPPORT" as const,
       tenant: {
         id: "tenant-2",
-        name: "Sandra Costa Advocacia",
+        name: "Souza Costa Advogados Associados",
         slug: "sandra",
       },
       requester: {
         id: "user-2",
-        name: "Sandra Costa",
+        name: "Sandra Quesia de Souza Costa",
         email: "sandra@adv.br",
         role: "ADMIN",
       },
@@ -176,9 +176,9 @@ describe("admin audit center", () => {
       dashboard.categories.find((item) => item.key === "crons")?.errors,
     ).toBe(1);
     expect(dashboard.topActors.map((actor) => actor.name)).toContain(
-      "Luciano Santos",
+      "Admin RVB",
     );
-    expect(dashboard.topTenants[0]?.slug).toBe("fred");
+    expect(dashboard.topTenants[0]?.slug).toBe("rvb");
     expect(dashboard.criticalEvents[0]?.action).toBe("CRON_FAILED");
   });
 

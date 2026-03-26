@@ -133,7 +133,7 @@
 - [ ] **Criar tour/tooltip explicativo para nova UX**.
   - **Critério**: [Tour interativo implementado, tooltips explicativos em todas as funcionalidades]
 - [ ] **Smoke test em todos os perfis e tenants configurados**.
-  - **Critério**: [Teste manual em tenants Sandra, Luana, Salba com todos os perfis de usuário]
+  - **Critério**: [Teste manual em tenants Souza Costa, Salba, RVB e Tenant Interno de Testes com todos os perfis de usuário]
 
 ## Etapa 7 — Configurações, Preferências e Opt-in/out
 - [x] **Implementar página de preferências por usuário com granularidade por módulo/evento**.

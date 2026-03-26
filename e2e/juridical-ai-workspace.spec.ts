@@ -115,13 +115,13 @@ async function loginSuperAdmin(page: Page) {
   });
 }
 
-async function loginFredTenant(page: Page) {
+async function loginRvbTenant(page: Page) {
   await authenticateWithCredentials({
     page,
     baseUrl: TENANT_BASE_URL,
-    email: "fredericopleitaoadv@gmail.com",
-    password: "Fred@123",
-    tenant: "fred",
+    email: "admin@rvb.adv.br",
+    password: "Rvb@123",
+    tenant: "rvb",
   });
 }
 
@@ -325,9 +325,9 @@ test.describe("juridical ai workspace", () => {
     page,
     browser,
   }) => {
-    const fredTenant = await getTenantBySlug("fred");
-    const hadSubscription = Boolean(fredTenant.subscription?.id);
-    const previousMetadata = fredTenant.subscription?.metadata ?? null;
+    const rvbTenant = await getTenantBySlug("rvb");
+    const hadSubscription = Boolean(rvbTenant.subscription?.id);
+    const previousMetadata = rvbTenant.subscription?.metadata ?? null;
     const adminContext = await browser.newContext();
     const tenantContext = await browser.newContext();
     const adminPage = await adminContext.newPage();
@@ -372,9 +372,9 @@ test.describe("juridical ai workspace", () => {
         },
       };
 
-      if (fredTenant.subscription?.id) {
+      if (rvbTenant.subscription?.id) {
         await prisma.tenantSubscription.update({
-          where: { id: fredTenant.subscription.id },
+          where: { id: rvbTenant.subscription.id },
           data: {
             metadata: nextMetadata as never,
           },
@@ -382,13 +382,13 @@ test.describe("juridical ai workspace", () => {
       } else {
         await prisma.tenantSubscription.create({
           data: {
-            tenantId: fredTenant.id,
+            tenantId: rvbTenant.id,
             metadata: nextMetadata as never,
           },
         });
       }
 
-      await loginFredTenant(tenantPage);
+      await loginRvbTenant(tenantPage);
       await tenantPage.goto(`${TENANT_BASE_URL}/magic-ai`, {
         timeout: 60000,
         waitUntil: "domcontentloaded",
@@ -412,9 +412,9 @@ test.describe("juridical ai workspace", () => {
         tenantPage.getByText("Próxima revisão", { exact: true }),
       ).toBeVisible();
     } finally {
-      if (fredTenant.subscription?.id) {
+      if (rvbTenant.subscription?.id) {
         await prisma.tenantSubscription.update({
-          where: { id: fredTenant.subscription.id },
+          where: { id: rvbTenant.subscription.id },
           data: {
             metadata: previousMetadata as never,
           },
@@ -422,7 +422,7 @@ test.describe("juridical ai workspace", () => {
       } else if (!hadSubscription) {
         await prisma.tenantSubscription.deleteMany({
           where: {
-            tenantId: fredTenant.id,
+            tenantId: rvbTenant.id,
           },
         });
       }

@@ -6,13 +6,13 @@ describe("financeiro admin dashboard", () => {
   const tenantOptions = [
     {
       key: "tenant-1",
-      label: "Frederico Leitão Advocacia",
+      label: "RVB Advocacia",
       status: "ACTIVE",
-      description: "fred · ACTIVE",
+      description: "rvb · ACTIVE",
     },
     {
       key: "tenant-2",
-      label: "Sandra Costa Advocacia",
+      label: "Souza Costa Advogados Associados",
       status: "ACTIVE",
       description: "sandra · ACTIVE",
     },
@@ -22,8 +22,8 @@ describe("financeiro admin dashboard", () => {
     {
       id: "inv-1",
       tenantId: "tenant-1",
-      tenantName: "Frederico Leitão Advocacia",
-      tenantSlug: "fred",
+      tenantName: "RVB Advocacia",
+      tenantSlug: "rvb",
       tenantStatus: "ACTIVE",
       numero: "FAT-001",
       valor: 100,
@@ -38,8 +38,8 @@ describe("financeiro admin dashboard", () => {
     {
       id: "inv-2",
       tenantId: "tenant-1",
-      tenantName: "Frederico Leitão Advocacia",
-      tenantSlug: "fred",
+      tenantName: "RVB Advocacia",
+      tenantSlug: "rvb",
       tenantStatus: "ACTIVE",
       numero: "FAT-002",
       valor: 80,
@@ -54,7 +54,7 @@ describe("financeiro admin dashboard", () => {
     {
       id: "inv-3",
       tenantId: "tenant-2",
-      tenantName: "Sandra Costa Advocacia",
+      tenantName: "Souza Costa Advogados Associados",
       tenantSlug: "sandra",
       tenantStatus: "ACTIVE",
       numero: "FAT-003",
@@ -73,8 +73,8 @@ describe("financeiro admin dashboard", () => {
     {
       id: "pay-1",
       tenantId: "tenant-1",
-      tenantName: "Frederico Leitão Advocacia",
-      tenantSlug: "fred",
+      tenantName: "RVB Advocacia",
+      tenantSlug: "rvb",
       tenantStatus: "ACTIVE",
       invoiceId: "inv-1",
       invoiceNumero: "FAT-001",
@@ -91,8 +91,8 @@ describe("financeiro admin dashboard", () => {
   const subscriptions = [
     {
       tenantId: "tenant-1",
-      tenantName: "Frederico Leitão Advocacia",
-      tenantSlug: "fred",
+      tenantName: "RVB Advocacia",
+      tenantSlug: "rvb",
       status: "ATIVA",
       valorMensalContratado: 120,
       valorAnualContratado: null,
@@ -103,8 +103,8 @@ describe("financeiro admin dashboard", () => {
     {
       id: "commission-1",
       tenantId: "tenant-1",
-      tenantName: "Frederico Leitão Advocacia",
-      tenantSlug: "fred",
+      tenantName: "RVB Advocacia",
+      tenantSlug: "rvb",
       advogadoNome: "Luciano Santos",
       advogadoOab: "12345/BA",
       valorComissao: 20,
@@ -203,7 +203,7 @@ describe("financeiro admin dashboard", () => {
         {
           id: "pay-legacy",
           tenantId: "tenant-2",
-          tenantName: "Sandra Costa Advocacia",
+          tenantName: "Souza Costa Advogados Associados",
           tenantSlug: "sandra",
           tenantStatus: "ACTIVE",
           invoiceId: "inv-3",

@@ -6,10 +6,10 @@ const SUPER_ADMIN_PASSWORD =
   process.env.TEST_SUPER_ADMIN_PASSWORD || "Robson123!";
 
 const TENANTS = {
-  fred: {
-    slug: "fred",
-    email: "fredericopleitaoadv@gmail.com",
-    password: "Fred@123",
+  rvb: {
+    slug: "rvb",
+    email: "admin@rvb.adv.br",
+    password: "Rvb@123",
   },
   salba: {
     slug: "salba",
@@ -149,10 +149,10 @@ test.describe.serial("monetização premium de pacotes", () => {
     await expect(packageCard).toContainText("30 dias");
   });
 
-  test("tenant fred compra o pacote na loja interna e vê o add-on no billing", async ({
+  test("tenant rvb compra o pacote na loja interna e vê o add-on no billing", async ({
     page,
   }) => {
-    await login(page, TENANTS.fred);
+    await login(page, TENANTS.rvb);
 
     await page.goto("/juizes/pacotes");
     await expect(
@@ -209,7 +209,7 @@ test.describe.serial("monetização premium de pacotes", () => {
     ).toBeVisible({ timeout: 15000 });
   });
 
-  test("tenant salba vê a vitrine, mas não herda a compra feita pelo fred", async ({
+  test("tenant salba vê a vitrine, mas não herda a compra feita pelo rvb", async ({
     page,
   }) => {
     await login(page, TENANTS.salba);
@@ -248,7 +248,7 @@ test.describe.serial("monetização premium de pacotes", () => {
       .first();
 
     await expect(salesRow).toBeVisible({ timeout: 15000 });
-    await expect(salesRow).toContainText(/fred|Frederico Leitão Advocacia/i);
+    await expect(salesRow).toContainText(/rvb|RVB Advocacia/i);
     await expect(salesRow).toContainText(/ATIVA|PAGA/i);
   });
 

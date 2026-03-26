@@ -21,7 +21,7 @@ async function seedDadosFinanceiros(prisma) {
     const planoUltra =
       planos.find((plano) => plano.slug === "ultra" || plano.nome === "Ultra") ??
       planos[planos.length - 1];
-    const tenantsUltra = new Set(["fred", "sandra", "salba"]);
+    const tenantsUltra = new Set(["rvb", "sandra", "salba"]);
 
     // Criar assinaturas para os tenants
     for (const tenant of tenants) {

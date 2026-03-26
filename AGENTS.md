@@ -65,11 +65,11 @@ For full testing, use a Brazilian IP (local dev or Vercel production with BR edg
 
 | Tenant | Role | Email | Password |
 |--------|------|-------|----------|
-| Sandra | ADMIN | sandra@adv.br | Sandra@123 |
-| Sandra | ADVOGADO | luciano.santos@adv.br | Luciano@123 |
+| Souza Costa | ADMIN | sandra@adv.br | Sandra@123 |
+| Souza Costa | ADVOGADO | luciano.santos@adv.br | Luciano@123 |
 | Salba | ADMIN | luciano@salbaadvocacia.com.br | Luciano@123 |
-| Luana | ADMIN | luana@adv.br | Luana@123 |
-| Fred | ADMIN | fredericopleitaoadv@gmail.com | Fred@123 |
+| RVB | ADMIN | admin@rvb.adv.br | Rvb@123 |
+| Interno | ADMIN | admin.testes@magiclawyer.com.br | Teste@123 |
 
 ### HeroUI Select fix pattern
 
