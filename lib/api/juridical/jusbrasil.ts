@@ -98,9 +98,47 @@ export type JusbrasilOabProcessLink = {
   archived_at?: string | null;
 };
 
+export type JusbrasilProcessMonitor = {
+  $uri?: string;
+  numero?: string | null;
+  numero_normalizado?: string | null;
+  is_monitored_diario?: boolean | null;
+  is_monitored_tribunal?: boolean | null;
+  is_monitored_children?: boolean | null;
+  user_custom?: string | null;
+  instancia?: number | null;
+  tribunal?: number | null;
+  created_at?: unknown;
+  updated_at?: unknown;
+  archived_at?: unknown;
+};
+
+export type JusbrasilProcessMonitorCreateInput = {
+  numero: string;
+  is_monitored_diario?: boolean;
+  is_monitored_tribunal?: boolean;
+  is_monitored_children?: boolean;
+  user_custom?: string | null;
+  instancia?: number;
+  tribunal?: number | null;
+};
+
+export type JusbrasilProcessMonitorUpdateInput = {
+  numero?: string;
+  is_monitored_diario?: boolean;
+  is_monitored_tribunal?: boolean;
+  is_monitored_children?: boolean;
+  user_custom?: string | null;
+  instancia?: number;
+  tribunal?: number | null;
+};
+
+export type JusbrasilWhereFilter = Record<string, unknown>;
+export type JusbrasilSortInput = Record<string, boolean>;
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  searchParams?: Record<string, string | number | boolean | null | undefined>;
+  searchParams?: Record<string, unknown>;
   body?: unknown;
 };
 
@@ -117,6 +155,18 @@ export class JusbrasilClient {
     }
   }
 
+  private encodeSearchParamValue(value: unknown) {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+
   private buildUrl(
     path: string,
     searchParams?: RequestOptions["searchParams"],
@@ -126,8 +176,9 @@ export class JusbrasilClient {
 
     if (searchParams) {
       for (const [key, value] of Object.entries(searchParams)) {
-        if (value === undefined || value === null || value === "") continue;
-        url.searchParams.set(key, String(value));
+        const encoded = this.encodeSearchParamValue(value);
+        if (!encoded) continue;
+        url.searchParams.set(key, encoded);
       }
     }
 
@@ -335,5 +386,56 @@ export class JusbrasilClient {
         },
       },
     );
+  }
+
+  async listProcessMonitors(params?: {
+    page?: number;
+    perPage?: number;
+    where?: JusbrasilWhereFilter;
+    sort?: JusbrasilSortInput;
+  }): Promise<JusbrasilPaginatedResult<JusbrasilProcessMonitor>> {
+    const { data, headers } = await this.request<JusbrasilProcessMonitor[]>(
+      "/monitoramento/proc",
+      {
+        searchParams: {
+          page: params?.page ?? 1,
+          per_page: params?.perPage ?? 30,
+          where: params?.where,
+          sort: params?.sort,
+        },
+      },
+    );
+
+    return {
+      items: Array.isArray(data) ? data : [],
+      totalCount: parseHeaderInt(headers.get("x-total-count")),
+    };
+  }
+
+  async createProcessMonitor(input: JusbrasilProcessMonitorCreateInput) {
+    const { data } = await this.request<JusbrasilProcessMonitor>(
+      "/monitoramento/proc",
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+
+    return data;
+  }
+
+  async updateProcessMonitor(
+    monitorId: number | string,
+    input: JusbrasilProcessMonitorUpdateInput,
+  ) {
+    const { data } = await this.request<JusbrasilProcessMonitor>(
+      `/monitoramento/proc/${encodeURIComponent(String(monitorId))}`,
+      {
+        method: "PATCH",
+        body: input,
+      },
+    );
+
+    return data;
   }
 }

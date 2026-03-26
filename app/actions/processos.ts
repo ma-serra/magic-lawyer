@@ -29,6 +29,7 @@ import {
   getAdvogadoIdFromSession,
 } from "@/app/lib/advogado-access";
 import { validateDeadlineWithRegime } from "@/app/lib/feriados/prazo-validation";
+import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 
 // ============================================
 // TYPES - Prisma Type Safety (Best Practice)
@@ -2319,6 +2320,13 @@ export async function createProcesso(data: ProcessoCreateInput) {
     );
 
     // Notificação: processo criado (responsável ou usuário atual)
+    await ensureJusbrasilProcessMonitorBestEffort({
+      tenantId: user.tenantId,
+      processoId: processo.id,
+      numeroProcesso: processo.numeroCnj || processo.numero,
+      usuarioId: user.id,
+    });
+
     try {
       const responsavelUserId =
         (processo.advogadoResponsavel?.usuario as any)?.id ||
@@ -2672,6 +2680,13 @@ export async function updateProcesso(
     );
 
     // Notificações, diff estruturado e auditoria da alteração
+    await ensureJusbrasilProcessMonitorBestEffort({
+      tenantId,
+      processoId,
+      numeroProcesso: atualizado.numeroCnj || atualizado.numero,
+      usuarioId: user.id,
+    });
+
     try {
       if (diff.items.length > 0) {
         const actorName =

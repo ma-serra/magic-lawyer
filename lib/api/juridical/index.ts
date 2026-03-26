@@ -9,6 +9,7 @@ export * from "./pje";
 export * from "./config";
 export * from "./jusbrasil";
 export * from "./jusbrasil-webhook-normalizer";
+export * from "./jusbrasil-webhook-events";
 
 
 

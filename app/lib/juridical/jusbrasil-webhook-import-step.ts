@@ -9,6 +9,7 @@ import {
   buildJusbrasilExpectedWebhookUrl,
   createOabSyncAuditEntry,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 import { normalizarProcesso } from "@/lib/api/juridical/normalization";
 import {
   mapJusbrasilWebhookBatchToProcessos,
@@ -57,6 +58,14 @@ export async function processJusbrasilWebhookImport(
         clienteNome: input.clienteNome,
         advogadoId: input.advogadoId,
         updateIfExists: true,
+      });
+
+      await ensureJusbrasilProcessMonitorBestEffort({
+        tenantId: input.tenantId,
+        processoId: persisted.processoId,
+        numeroProcesso: processo.numeroProcesso,
+        usuarioId: input.usuarioId ?? null,
+        instancia: 0,
       });
 
       await persistCapturedMovimentacoes({

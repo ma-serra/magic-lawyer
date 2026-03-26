@@ -9,6 +9,9 @@ import {
   type JusbrasilWebhookImportJobInput,
 } from "@/app/lib/juridical/jusbrasil-webhook-import-step";
 import { resolveJusbrasilSyncBinding } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { processJusbrasilSupportedProcessEvent } from "@/app/lib/juridical/jusbrasil-process-events-import";
+import { resolveJusbrasilProcessBinding } from "@/app/lib/juridical/jusbrasil-process-monitoring";
+import { extractJusbrasilSupportedProcessEvents } from "@/lib/api/juridical/jusbrasil-webhook-events";
 import { extractJusbrasilWebhookBatches } from "@/lib/api/juridical/jusbrasil-webhook-normalizer";
 
 export const dynamic = "force-dynamic";
@@ -21,15 +24,26 @@ type BatchImportSummary = {
   processNumbers: string[];
 };
 
+type ProcessEventImportSummary = {
+  evtType: 1 | 2 | 7;
+  processoId: string;
+  createdMovimentacoes: number;
+  skippedMovimentacoes: number;
+  updatedProcess: boolean;
+};
+
 function summarizePayload(payload: unknown) {
   const batches = extractJusbrasilWebhookBatches(payload);
+  const processEvents = extractJusbrasilSupportedProcessEvents(payload);
 
-  if (batches.length === 0) {
+  if (batches.length === 0 && processEvents.length === 0) {
     return {
       payloadType: Array.isArray(payload) ? "array" : typeof payload,
       batchCount: 0,
       processCount: 0,
       correlationIds: [],
+      processEventCount: 0,
+      evtTypes: [],
     };
   }
 
@@ -41,6 +55,8 @@ function summarizePayload(payload: unknown) {
       0,
     ),
     correlationIds: batches.map((batch) => batch.correlationId).slice(0, 10),
+    processEventCount: processEvents.length,
+    evtTypes: Array.from(new Set(processEvents.map((event) => event.evtType))),
   };
 }
 
@@ -91,8 +107,9 @@ export async function POST(request: NextRequest) {
 
   const summary = summarizePayload(payload);
   const batches = extractJusbrasilWebhookBatches(payload);
+  const processEvents = extractJusbrasilSupportedProcessEvents(payload);
 
-  if (batches.length === 0) {
+  if (batches.length === 0 && processEvents.length === 0) {
     await logOperationalEvent({
       category: "WEBHOOK",
       source: "JUSBRASIL",
@@ -110,13 +127,17 @@ export async function POST(request: NextRequest) {
       ok: true,
       received: true,
       processedBatches: 0,
+      processedEvents: 0,
       importedProcesses: 0,
+      createdMovimentacoes: 0,
     });
   }
 
   const imported: BatchImportSummary[] = [];
+  const importedEvents: ProcessEventImportSummary[] = [];
   const failures: Array<{ correlationId: string; error: string }> = [];
   let unboundBatches = 0;
+  let unboundEvents = 0;
 
   for (const batch of batches) {
     const binding = await resolveJusbrasilSyncBinding(batch.correlationId);
@@ -174,6 +195,70 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  for (const event of processEvents) {
+    const binding = await resolveJusbrasilProcessBinding({
+      sourceUserCustom: event.sourceUserCustom,
+      targetNumber: event.targetNumber,
+    });
+
+    if (!binding) {
+      unboundEvents += 1;
+
+      await logOperationalEvent({
+        category: "WEBHOOK",
+        source: "JUSBRASIL",
+        action: "WEBHOOK_UNBOUND_EVENT",
+        status: "WARNING",
+        actorType: "WEBHOOK",
+        entityType: "JUSBRASIL_EVENT",
+        entityId:
+          typeof event.id === "number" || typeof event.id === "string"
+            ? String(event.id)
+            : null,
+        route: metadata.route,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        message:
+          "Evento Jusbrasil recebido sem vinculo local para source_user_custom.",
+        payload: {
+          evtType: event.evtType,
+          sourceUserCustom: event.sourceUserCustom ?? null,
+          targetNumber: event.targetNumber ?? null,
+        },
+      });
+
+      continue;
+    }
+
+    try {
+      const importedEvent = await processJusbrasilSupportedProcessEvent({
+        binding,
+        event,
+      });
+
+      importedEvents.push({
+        evtType: importedEvent.evtType,
+        processoId: importedEvent.processoId,
+        createdMovimentacoes: importedEvent.createdMovimentacoes,
+        skippedMovimentacoes: importedEvent.skippedMovimentacoes,
+        updatedProcess: importedEvent.updatedProcess,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Erro desconhecido ao importar evento Jusbrasil.";
+
+      failures.push({
+        correlationId:
+          typeof event.id === "number" || typeof event.id === "string"
+            ? String(event.id)
+            : `evt:${event.evtType}:${binding.processoId}`,
+        error: message,
+      });
+    }
+  }
+
   await logOperationalEvent({
     category: "WEBHOOK",
     source: "JUSBRASIL",
@@ -203,7 +288,13 @@ export async function POST(request: NextRequest) {
         (total, item) => total + item.syncedCount,
         0,
       ),
+      processedEvents: importedEvents.length,
+      createdMovimentacoes: importedEvents.reduce(
+        (total, item) => total + item.createdMovimentacoes,
+        0,
+      ),
       unboundBatches,
+      unboundEvents,
       failures,
     },
   });
@@ -213,11 +304,17 @@ export async function POST(request: NextRequest) {
       ok: failures.length === 0,
       received: true,
       processedBatches: imported.length,
+      processedEvents: importedEvents.length,
       importedProcesses: imported.reduce(
         (total, item) => total + item.syncedCount,
         0,
       ),
+      createdMovimentacoes: importedEvents.reduce(
+        (total, item) => total + item.createdMovimentacoes,
+        0,
+      ),
       unboundBatches,
+      unboundEvents,
       failures,
     },
     { status: failures.length > 0 ? 500 : 200 },

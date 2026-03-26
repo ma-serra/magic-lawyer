@@ -1,4 +1,5 @@
 import prisma from "@/app/lib/prisma";
+import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 import { Prisma, ProcessoStatus, ProcessoPolo, TipoPessoa } from "@/generated/prisma";
 import { getTribunalConfig } from "@/lib/api/juridical/config";
 import { ParteProcesso, ProcessoJuridico } from "@/lib/api/juridical/types";
@@ -364,6 +365,12 @@ export async function upsertProcessoFromCapture(params: {
       });
     });
 
+    await ensureJusbrasilProcessMonitorBestEffort({
+      tenantId,
+      processoId: existente.id,
+      numeroProcesso: numero,
+    });
+
     return { processoId: existente.id, created: false, updated: true };
   }
 
@@ -407,6 +414,12 @@ export async function upsertProcessoFromCapture(params: {
     });
 
     return processoCriado;
+  });
+
+  await ensureJusbrasilProcessMonitorBestEffort({
+    tenantId,
+    processoId: criado.id,
+    numeroProcesso: numero,
   });
 
   return { processoId: criado.id, created: true, updated: false };
