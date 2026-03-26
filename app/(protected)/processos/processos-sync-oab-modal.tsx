@@ -29,12 +29,13 @@ interface ProcessosSyncOabModalProps {
 }
 
 const statusMeta: Record<
-  "SUCESSO" | "ERRO" | "PENDENTE_CAPTCHA",
-  { color: "success" | "danger" | "warning"; label: string }
+  "SUCESSO" | "ERRO" | "PENDENTE_CAPTCHA" | "AGUARDANDO_WEBHOOK",
+  { color: "success" | "danger" | "warning" | "primary"; label: string }
 > = {
   SUCESSO: { color: "success", label: "Sucesso" },
   ERRO: { color: "danger", label: "Erro" },
   PENDENTE_CAPTCHA: { color: "warning", label: "Captcha pendente" },
+  AGUARDANDO_WEBHOOK: { color: "primary", label: "Aguardando webhook" },
 };
 
 function formatDateTime(value: string) {
@@ -169,6 +170,19 @@ export function ProcessosSyncOabModal({
       setResultado(response);
 
       if (response.success) {
+        if (response.monitoramentoRegistrado) {
+          addToast({
+            title: "Monitoramento registrado",
+            description:
+              response.message ||
+              "O Jusbrasil vai enviar os processos por webhook assim que concluir a coleta.",
+            color: "primary",
+          });
+          await loadHistorico();
+          onSynced?.();
+          return;
+        }
+
         addToast({
           title: "Sincronização concluída",
           description: `${response.syncedCount ?? 0} processo(s) sincronizado(s) com sucesso.`,
@@ -422,8 +436,10 @@ export function ProcessosSyncOabModal({
           {resultado && (
             <Card
               className={`border ${
-                resultado.success
-                  ? "border-success/30 bg-success/5"
+                resultado.monitoramentoRegistrado
+                  ? "border-primary/30 bg-primary/5"
+                  : resultado.success
+                    ? "border-success/30 bg-success/5"
                   : "border-danger/30 bg-danger/5"
               }`}
             >
@@ -433,10 +449,20 @@ export function ProcessosSyncOabModal({
                     Resultado da última execução
                   </p>
                   <Chip
-                    color={resultado.success ? "success" : "danger"}
+                    color={
+                      resultado.monitoramentoRegistrado
+                        ? "primary"
+                        : resultado.success
+                          ? "success"
+                          : "danger"
+                    }
                     variant="flat"
                   >
-                    {resultado.success ? "Concluído" : "Falha"}
+                    {resultado.monitoramentoRegistrado
+                      ? "Aguardando webhook"
+                      : resultado.success
+                        ? "Concluido"
+                        : "Falha"}
                   </Chip>
                 </div>
 
@@ -470,6 +496,18 @@ export function ProcessosSyncOabModal({
                 {resultado.error && (
                   <div className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-xs text-danger-700">
                     {resultado.error}
+                  </div>
+                )}
+
+                {resultado.message && !resultado.error && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-primary-700">
+                    {resultado.message}
+                  </div>
+                )}
+
+                {resultado.monitoramentoRegistrado && resultado.webhookUrl && (
+                  <div className="rounded-xl border border-default-200/70 bg-content1 p-3 text-xs text-default-600">
+                    Webhook esperado: {resultado.webhookUrl}
                   </div>
                 )}
 

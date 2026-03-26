@@ -1,6 +1,7 @@
 export type PortalProcessSyncStatus =
   | "QUEUED"
   | "RUNNING"
+  | "AWAITING_WEBHOOK"
   | "WAITING_CAPTCHA"
   | "COMPLETED"
   | "FAILED";
@@ -29,6 +30,10 @@ export interface PortalProcessSyncState {
   oab: string;
   status: PortalProcessSyncStatus;
   mode: PortalProcessSyncMode;
+  provider?: "SCRAPING" | "JUSBRASIL";
+  correlationId?: string;
+  webhookUrl?: string;
+  message?: string;
   queueJobId?: string;
   syncedCount: number;
   createdCount: number;
@@ -46,5 +51,9 @@ export interface PortalProcessSyncState {
 export function isPortalProcessSyncTerminalStatus(
   status: PortalProcessSyncStatus,
 ) {
-  return status === "COMPLETED" || status === "FAILED";
+  return (
+    status === "COMPLETED" ||
+    status === "FAILED" ||
+    status === "AWAITING_WEBHOOK"
+  );
 }

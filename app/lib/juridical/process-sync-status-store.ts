@@ -131,7 +131,11 @@ export function withPortalProcessSyncStatus(
   const startedAt =
     status === "RUNNING" && !state.startedAt ? now : state.startedAt;
   const finishedAt =
-    status === "COMPLETED" || status === "FAILED" ? now : state.finishedAt;
+    status === "COMPLETED" ||
+    status === "FAILED" ||
+    status === "AWAITING_WEBHOOK"
+      ? now
+      : state.finishedAt;
 
   return {
     ...state,

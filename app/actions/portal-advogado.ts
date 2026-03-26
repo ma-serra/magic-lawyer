@@ -11,6 +11,12 @@ import {
   savePortalProcessSyncState,
   withPortalProcessSyncStatus,
 } from "@/app/lib/juridical/process-sync-status-store";
+import {
+  buildJusbrasilExpectedWebhookUrl,
+  createOabSyncAuditEntry,
+  isJusbrasilOabSyncEnabled,
+  registerOrRefreshJusbrasilMonitor,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
 import prisma from "@/app/lib/prisma";
 import {
   PortalProcessSyncState,
@@ -254,6 +260,10 @@ function toPublicSyncState(state: PortalProcessSyncState) {
     tribunalSigla: state.tribunalSigla,
     oab: state.oab,
     status: state.status,
+    provider: state.provider,
+    correlationId: state.correlationId,
+    webhookUrl: state.webhookUrl,
+    message: state.message,
     syncedCount: state.syncedCount,
     createdCount: state.createdCount,
     updatedCount: state.updatedCount,
@@ -274,6 +284,17 @@ async function resolveAdvogadoContext(params: {
   oab?: string;
 }) {
   const providedOab = sanitizeOab(params.oab);
+  const usuario = await prisma.usuario.findFirst({
+    where: {
+      id: params.usuarioId,
+      tenantId: params.tenantId,
+    },
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
+  });
 
   const advogado = await prisma.advogado.findFirst({
     where: {
@@ -284,6 +305,13 @@ async function resolveAdvogadoContext(params: {
       id: true,
       oabNumero: true,
       oabUf: true,
+      usuario: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
     },
   });
 
@@ -295,6 +323,13 @@ async function resolveAdvogadoContext(params: {
   return {
     advogadoId: advogado?.id ?? null,
     oab: providedOab || advogadoOab,
+    displayName: advogado?.usuario
+      ? `${advogado.usuario.firstName ?? ""} ${advogado.usuario.lastName ?? ""}`.trim() ||
+        advogado.usuario.email ||
+        "Advogado"
+      : `${usuario?.firstName ?? ""} ${usuario?.lastName ?? ""}`.trim() ||
+        usuario?.email ||
+        "Advogado",
   };
 }
 
@@ -441,6 +476,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
     }
 
     const syncId = randomUUID();
+    const clienteNome = params?.clienteNome?.trim() || undefined;
     const initialState = buildInitialPortalProcessSyncState({
       syncId,
       tenantId,
@@ -453,6 +489,72 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
 
     await savePortalProcessSyncState(initialState);
 
+    if (isJusbrasilOabSyncEnabled()) {
+      try {
+        const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
+          oab: ctx.oab,
+          name: ctx.displayName,
+        });
+
+        if (!monitor.correlation_id) {
+          throw new Error(
+            "Jusbrasil nao retornou correlation_id para o monitoramento da OAB.",
+          );
+        }
+
+        const webhookUrl = buildJusbrasilExpectedWebhookUrl();
+        const awaitingState = withPortalProcessSyncStatus(
+          initialState,
+          "AWAITING_WEBHOOK",
+          {
+            provider: "JUSBRASIL",
+            correlationId: monitor.correlation_id,
+            webhookUrl,
+            message: existed
+              ? "Monitoramento Jusbrasil atualizado. A chegada dos processos depende do webhook."
+              : "Monitoramento Jusbrasil criado. A chegada dos processos depende do webhook.",
+          },
+        );
+
+        await savePortalProcessSyncState(awaitingState);
+
+        await createOabSyncAuditEntry({
+          tenantId,
+          usuarioId,
+          tribunalSigla,
+          oab: ctx.oab,
+          status: "AGUARDANDO_WEBHOOK",
+          origem: "JUSBRASIL_REGISTRO",
+          provider: "JUSBRASIL",
+          mode: "ASYNC_WEBHOOK",
+          entidadeId: monitor.correlation_id,
+          correlationId: monitor.correlation_id,
+          monitorId: monitor.id,
+          syncId,
+          advogadoId: ctx.advogadoId,
+          clienteNome,
+          webhookUrl,
+          existingMonitor: existed,
+        });
+
+        return {
+          success: true,
+          syncId,
+          status: toPublicSyncState(awaitingState),
+        };
+      } catch (error) {
+        const failedState = withPortalProcessSyncStatus(initialState, "FAILED", {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Falha ao registrar monitoramento Jusbrasil.",
+        });
+        await savePortalProcessSyncState(failedState);
+
+        throw error;
+      }
+    }
+
     const workflowInput: PortalProcessSyncWorkflowInput = {
       syncId,
       tenantId,
@@ -460,7 +562,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
       advogadoId: ctx.advogadoId,
       tribunalSigla,
       oab: ctx.oab,
-      clienteNome: params?.clienteNome?.trim() || undefined,
+      clienteNome,
     };
 
     let runId: string;

@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { getServerSession } from "next-auth";
 import Ably from "ably";
 import Redis from "ioredis";
@@ -12,6 +13,16 @@ import {
   normalizeAsaasApiKey,
   resolveAsaasEnvironment,
 } from "@/lib/asaas";
+import {
+  JusbrasilApiError,
+  JusbrasilClient,
+  normalizeJusbrasilApiKey,
+  resolveJusbrasilApiBaseUrl,
+} from "@/lib/api/juridical/jusbrasil";
+import {
+  buildJusbrasilExpectedWebhookUrl,
+  normalizeComparableUrl,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
 import { getModuleRouteMap } from "@/app/lib/module-map";
 
 export type ExternalServiceStatus = {
@@ -41,6 +52,39 @@ function buildServiceStatus(
   return {
     ...input,
     checkedAt: new Date().toISOString(),
+  };
+}
+
+function truncateDetail(value: string, max = 180) {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}...`;
+}
+
+async function getAsaasRuntimeDetails(
+  environment: string,
+): Promise<Record<string, string>> {
+  const headersList = await headers();
+  const host = headersList.get("host")?.trim();
+  const forwardedHost = headersList.get("x-forwarded-host")?.trim();
+  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID?.trim();
+  const gitCommitSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim();
+  const rawEnvironment = process.env.ASAAS_ENVIRONMENT?.trim();
+
+  return {
+    environment,
+    rawEnvironment: rawEnvironment || "(vazio)",
+    scope: "chave global do deployment",
+    source: "process.env.ASAAS_API_KEY",
+    host: host || "desconhecido",
+    forwardedHost: forwardedHost || "desconhecido",
+    vercelEnv: process.env.VERCEL_ENV?.trim() || "desconhecido",
+    vercelTargetEnv:
+      process.env.VERCEL_TARGET_ENV?.trim() || "desconhecido",
+    vercelUrl: process.env.VERCEL_URL?.trim() || "desconhecido",
+    vercelRegion: process.env.VERCEL_REGION?.trim() || "desconhecido",
+    deploymentId: deploymentId || "desconhecido",
+    gitBranch: process.env.VERCEL_GIT_COMMIT_REF?.trim() || "desconhecido",
+    gitCommit: gitCommitSha ? gitCommitSha.slice(0, 12) : "desconhecido",
   };
 }
 
@@ -159,6 +203,7 @@ async function checkCloudinary(): Promise<ExternalServiceStatus> {
 async function checkAsaas(): Promise<ExternalServiceStatus> {
   const environment = resolveAsaasEnvironment(process.env.ASAAS_ENVIRONMENT);
   const asaasApiKey = normalizeAsaasApiKey(process.env.ASAAS_API_KEY);
+  const runtimeDetails = await getAsaasRuntimeDetails(environment);
 
   if (!asaasApiKey) {
     return buildServiceStatus({
@@ -168,8 +213,7 @@ async function checkAsaas(): Promise<ExternalServiceStatus> {
       message:
         "ASAAS_API_KEY não configurada no ambiente de execução (deploy).",
       details: {
-        environment,
-        source: "process.env.ASAAS_API_KEY",
+        ...runtimeDetails,
         env: "ASAAS_API_KEY ausente/vazia no servidor",
       },
     });
@@ -185,7 +229,7 @@ async function checkAsaas(): Promise<ExternalServiceStatus> {
       ok: true,
       message: "Conta Asaas autenticada com sucesso.",
       details: {
-        environment,
+        ...runtimeDetails,
         probe: "/myAccount",
         account:
           String(
@@ -203,7 +247,7 @@ async function checkAsaas(): Promise<ExternalServiceStatus> {
       ok: false,
       message: resolveErrorMessage(error),
       details: {
-        environment,
+        ...runtimeDetails,
         probe: "/myAccount",
       },
     });
@@ -231,6 +275,95 @@ async function checkModuleMap(): Promise<ExternalServiceStatus> {
       message: resolveErrorMessage(error),
       details: {
         probe: "getModuleRouteMap()",
+      },
+    });
+  }
+}
+
+async function checkJusbrasil(): Promise<ExternalServiceStatus> {
+  const apiKey = normalizeJusbrasilApiKey(process.env.JUSBRASIL_API_KEY);
+  const baseUrl = resolveJusbrasilApiBaseUrl(process.env.JUSBRASIL_API_BASE_URL);
+  const expectedWebhookUrl = buildJusbrasilExpectedWebhookUrl();
+
+  if (!apiKey) {
+    return buildServiceStatus({
+      id: "jusbrasil",
+      name: "Jusbrasil API",
+      ok: false,
+      message: "JUSBRASIL_API_KEY não configurada",
+      details: {
+        env: "JUSBRASIL_API_KEY ausente",
+        baseUrl,
+        expectedWebhookUrl,
+      },
+    });
+  }
+
+  try {
+    const client = new JusbrasilClient(apiKey, baseUrl);
+    const [user, webhookConfig, oabMonitors] = await Promise.all([
+      client.getCurrentUser(),
+      client.getCurrentWebhookConfig(),
+      client.listOabMonitors(1, 1),
+    ]);
+
+    const roles = Array.isArray(user.roles) ? user.roles : [];
+    const configuredWebhookUrl = webhookConfig?.url?.trim() || "";
+    const webhookMatchesExpected =
+      normalizeComparableUrl(configuredWebhookUrl) ===
+      normalizeComparableUrl(expectedWebhookUrl);
+
+    return buildServiceStatus({
+      id: "jusbrasil",
+      name: "Jusbrasil API",
+      ok: true,
+      message: "Token autenticado e endpoints de webhook/OAB responderam.",
+      details: {
+        baseUrl,
+        probeAuth: "GET /admin/user?page=1&per_page=1",
+        probeWebhook: "GET /admin/user_company/current_webhook_config",
+        probeOab: "GET /monitoramento/oab/acompanhamento/?page=1&per_page=1",
+        userEmail: user.email?.trim() || "desconhecido",
+        userName: user.name?.trim() || "desconhecido",
+        userCompanyId:
+          user.user_company_id !== undefined && user.user_company_id !== null
+            ? String(user.user_company_id)
+            : "desconhecido",
+        rolesCount: String(roles.length),
+        oabRolesPresent: String(roles.some((role) => role.startsWith("api.oab."))),
+        tribprocRolesPresent: String(roles.some((role) => role.startsWith("tribproc."))),
+        webhookActive: String(Boolean(webhookConfig?.is_global_active)),
+        webhookUrl: configuredWebhookUrl || "(vazio)",
+        expectedWebhookUrl,
+        webhookMatchesExpected: String(webhookMatchesExpected),
+        oabMonitorsTotal:
+          oabMonitors.totalCount !== null
+            ? String(oabMonitors.totalCount)
+            : String(oabMonitors.items.length),
+      },
+    });
+  } catch (error) {
+    if (error instanceof JusbrasilApiError) {
+      return buildServiceStatus({
+        id: "jusbrasil",
+        name: "Jusbrasil API",
+        ok: false,
+        message: error.message,
+        details: {
+          baseUrl,
+          status: String(error.status),
+          response: error.body ? truncateDetail(error.body) : "(sem corpo)",
+        },
+      });
+    }
+
+    return buildServiceStatus({
+      id: "jusbrasil",
+      name: "Jusbrasil API",
+      ok: false,
+      message: resolveErrorMessage(error),
+      details: {
+        baseUrl,
       },
     });
   }
@@ -299,6 +432,7 @@ export async function fetchSystemStatus() {
     checkAbly(),
     checkCloudinary(),
     checkAsaas(),
+    checkJusbrasil(),
     checkModuleMap(),
     checkRedis(),
   ]);

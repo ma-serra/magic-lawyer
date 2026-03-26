@@ -250,9 +250,13 @@ export function OperacoesJuridicasContent() {
     {
       refreshInterval: (latestData) => {
         const status = latestData?.status?.status;
-        return status === "QUEUED" || status === "RUNNING" || status === "WAITING_CAPTCHA"
+        return status === "QUEUED" ||
+          status === "RUNNING" ||
+          status === "WAITING_CAPTCHA"
           ? 5000
-          : 0;
+          : status === "AWAITING_WEBHOOK"
+            ? 15000
+            : 0;
       },
     },
   );
@@ -501,7 +505,12 @@ export function OperacoesJuridicasContent() {
         throw new Error(result.error || "Falha ao iniciar discovery por OAB.");
       }
 
-      toast.success("Discovery por OAB iniciado.");
+      toast.success(
+        result.status?.status === "AWAITING_WEBHOOK"
+          ? result.status.message ||
+              "Monitoramento Jusbrasil registrado. Aguarde o webhook com os processos."
+          : "Discovery por OAB iniciado.",
+      );
       setCaptchaText("");
       await Promise.all([mutateSyncStatus(), mutate()]);
     } catch (syncError) {
@@ -984,10 +993,31 @@ export function OperacoesJuridicasContent() {
                       </Button>
 
                       {selectedSyncStatus ? (
-                        <Card className="border border-primary/20 bg-primary/5">
+                        <Card
+                          className={`border ${
+                            selectedSyncStatus.status === "FAILED"
+                              ? "border-danger/20 bg-danger/5"
+                              : selectedSyncStatus.status === "AWAITING_WEBHOOK"
+                                ? "border-primary/20 bg-primary/5"
+                                : selectedSyncStatus.status === "WAITING_CAPTCHA"
+                                  ? "border-warning/20 bg-warning/5"
+                                  : "border-primary/20 bg-primary/5"
+                          }`}
+                        >
                           <CardBody className="space-y-2 p-4">
                             <div className="flex flex-wrap items-center gap-2">
-                              <Chip color="primary" variant="flat">
+                              <Chip
+                                color={
+                                  selectedSyncStatus.status === "COMPLETED"
+                                    ? "success"
+                                    : selectedSyncStatus.status === "FAILED"
+                                      ? "danger"
+                                      : selectedSyncStatus.status === "WAITING_CAPTCHA"
+                                        ? "warning"
+                                        : "primary"
+                                }
+                                variant="flat"
+                              >
                                 {selectedSyncStatus.status}
                               </Chip>
                               <Chip variant="flat">
@@ -1003,6 +1033,16 @@ export function OperacoesJuridicasContent() {
                             {selectedSyncStatus.error ? (
                               <p className="text-xs text-danger">
                                 {selectedSyncStatus.error}
+                              </p>
+                            ) : null}
+                            {selectedSyncStatus.message ? (
+                              <p className="text-xs text-default-500">
+                                {selectedSyncStatus.message}
+                              </p>
+                            ) : null}
+                            {selectedSyncStatus.webhookUrl ? (
+                              <p className="text-xs text-default-400">
+                                Webhook esperado: {selectedSyncStatus.webhookUrl}
                               </p>
                             ) : null}
                           </CardBody>
@@ -1252,6 +1292,8 @@ export function OperacoesJuridicasContent() {
                                         ? "danger"
                                         : item.status === "WAITING_CAPTCHA"
                                           ? "warning"
+                                          : item.status === "AWAITING_WEBHOOK"
+                                            ? "primary"
                                           : "primary"
                                   }
                                   variant="flat"

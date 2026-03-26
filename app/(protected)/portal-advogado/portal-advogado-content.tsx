@@ -160,7 +160,9 @@ export function PortalAdvogadoContent() {
   const syncStatus = syncStatusResponse?.status;
 
   const isSyncRunning =
-    syncStatus?.status === "QUEUED" || syncStatus?.status === "RUNNING";
+    syncStatus?.status === "QUEUED" ||
+    syncStatus?.status === "RUNNING" ||
+    syncStatus?.status === "AWAITING_WEBHOOK";
   const isWaitingCaptcha = syncStatus?.status === "WAITING_CAPTCHA";
   const activeRadarTribunalSigla = syncStatus?.tribunalSigla || syncTribunalSigla;
 
@@ -253,6 +255,12 @@ export function PortalAdvogadoContent() {
           color: "warning" as const,
           label: "Captcha pendente",
           icon: <ShieldAlert className="h-4 w-4" />,
+        };
+      case "AWAITING_WEBHOOK":
+        return {
+          color: "primary" as const,
+          label: "Aguardando webhook",
+          icon: <CircleDashed className="h-4 w-4" />,
         };
       case "COMPLETED":
         return {
