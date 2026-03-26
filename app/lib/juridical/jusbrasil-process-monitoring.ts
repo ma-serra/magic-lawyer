@@ -207,18 +207,7 @@ export async function ensureJusbrasilProcessMonitor(
   );
   const client = getJusbrasilClientFromEnv();
 
-  if (!integrationState.globalConfigured || !client) {
-    return {
-      enabled: false,
-      synced: false,
-      existed: false,
-      userCustom: null,
-      monitorId: null,
-      monitorUri: null,
-    };
-  }
-
-  if (!integrationState.integracaoAtiva) {
+  if (!client || !integrationState.enabled) {
     return {
       enabled: false,
       synced: false,

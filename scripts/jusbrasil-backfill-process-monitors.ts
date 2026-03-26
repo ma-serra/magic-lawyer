@@ -3,6 +3,7 @@ import "dotenv/config";
 import prisma from "../app/lib/prisma";
 import { ProcessoStatus } from "../generated/prisma";
 import { ensureJusbrasilProcessMonitorBestEffort } from "../app/lib/juridical/jusbrasil-process-monitoring";
+import { isJusbrasilPlanSlugEligible } from "../app/lib/juridical/jusbrasil-entitlements";
 
 type CliOptions = {
   tenantSlugs: string[];
@@ -87,6 +88,15 @@ async function main() {
           integracaoAtiva: true,
         },
       },
+      subscription: {
+        select: {
+          plano: {
+            select: {
+              slug: true,
+            },
+          },
+        },
+      },
     },
     orderBy: {
       name: "asc",
@@ -108,7 +118,8 @@ async function main() {
         slug: tenant.slug,
         name: tenant.name,
         isTestEnvironment: tenant.isTestEnvironment,
-        integracaoAtiva: tenant.jusbrasilConfig?.integracaoAtiva ?? true,
+        integracaoAtiva: tenant.jusbrasilConfig?.integracaoAtiva ?? false,
+        plano: tenant.subscription?.plano?.slug ?? null,
       })),
     }),
   );
@@ -119,7 +130,20 @@ async function main() {
   let totalErrors = 0;
 
   for (const tenant of tenants) {
-    if (tenant.jusbrasilConfig?.integracaoAtiva === false) {
+    if (!isJusbrasilPlanSlugEligible(tenant.subscription?.plano?.slug)) {
+      console.log(
+        JSON.stringify({
+          stage: "tenant_skipped",
+          tenant: tenant.name,
+          slug: tenant.slug,
+          reason: "plano_nao_elegivel",
+          plano: tenant.subscription?.plano?.slug ?? null,
+        }),
+      );
+      continue;
+    }
+
+    if (tenant.jusbrasilConfig?.integracaoAtiva !== true) {
       console.log(
         JSON.stringify({
           stage: "tenant_skipped",

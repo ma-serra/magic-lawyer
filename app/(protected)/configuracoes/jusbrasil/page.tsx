@@ -33,6 +33,10 @@ type JusbrasilConfigData = {
   lastWebhookAt: Date | string | null;
   lastWebhookEvent: string | null;
   globalConfigured: boolean;
+  planSlug: string | null;
+  planName: string | null;
+  planEligible: boolean;
+  planEligibilityReason: string;
   baseUrl: string;
   expectedWebhookUrl: string;
   effectiveEnabled: boolean;
@@ -59,7 +63,7 @@ function formatDateTimeBrasilia(value?: Date | string | null) {
 export default function ConfiguracaoJusbrasilPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [integracaoAtiva, setIntegracaoAtiva] = useState(true);
+  const [integracaoAtiva, setIntegracaoAtiva] = useState(false);
 
   const { data, isLoading, mutate } = useSWR(
     "configuracoes-jusbrasil",
@@ -84,6 +88,14 @@ export default function ConfiguracaoJusbrasilPage() {
       return "Ativa";
     }
 
+    if (config && !config.planEligible && config.integracaoAtiva) {
+      return "Bloqueada pelo plano atual";
+    }
+
+    if (config && !config.planEligible) {
+      return "Disponivel a partir do Pro";
+    }
+
     if (config && !config.integracaoAtiva) {
       return "Desativada pelo escritorio";
     }
@@ -97,10 +109,18 @@ export default function ConfiguracaoJusbrasilPage() {
 
   const statusTone = useMemo(() => {
     if (config?.effectiveEnabled) return "success" as const;
+    if (config && !config.planEligible && config.integracaoAtiva) {
+      return "warning" as const;
+    }
+    if (config && !config.planEligible) return "warning" as const;
     if (config && !config.integracaoAtiva) return "danger" as const;
     if (config && !config.globalConfigured) return "warning" as const;
     return "default" as const;
   }, [config]);
+
+  const saveBlockedByPlan = Boolean(
+    config && !config.planEligible && integracaoAtiva,
+  );
 
   const handleSave = async () => {
     setIsSubmitting(true);
@@ -149,10 +169,11 @@ export default function ConfiguracaoJusbrasilPage() {
       <PeoplePageHeader
         tag="Juridico externo"
         title="Integracao Jusbrasil"
-        description="Controle se este escritorio quer ou nao usar o Jusbrasil. Quando desativado, o tenant deixa de registrar novos monitores e ignora webhooks recebidos."
+        description="Controle manual de uso do Jusbrasil por escritorio. A integracao nasce desligada e so pode ser ativada em planos Pro, Enterprise e Ultra."
         actions={
           <Button
             color="primary"
+            isDisabled={!config?.planEligible}
             isLoading={isTesting}
             radius="full"
             startContent={
@@ -180,11 +201,11 @@ export default function ConfiguracaoJusbrasilPage() {
           value={statusIntegracao}
         />
         <PeopleMetricCard
-          helper="A conta da API e global da plataforma"
+          helper="Plano atual do escritorio"
           icon={<ScaleIcon className="h-4 w-4" />}
-          label="Escopo"
+          label="Plano"
           tone="secondary"
-          value="Conta global"
+          value={config?.planName || "Sem plano"}
         />
         <PeopleMetricCard
           helper="Disponibilidade da credencial global em producao"
@@ -225,6 +246,7 @@ export default function ConfiguracaoJusbrasilPage() {
               <p>1. Sincronizacoes por OAB usam Jusbrasil quando disponivel.</p>
               <p>2. Processos novos ou atualizados podem registrar monitoramento dedicado.</p>
               <p>3. Webhooks de movimentacoes, publicacoes e mudancas entram no banco.</p>
+              <p>4. A ativacao e sempre manual pelo admin do escritorio.</p>
             </div>
           </div>
           <div className="rounded-xl border border-warning/20 bg-warning/5 p-4">
@@ -235,6 +257,7 @@ export default function ConfiguracaoJusbrasilPage() {
               <p>- O tenant deixa de registrar novos monitores no Jusbrasil.</p>
               <p>- A sincronizacao por OAB volta ao fluxo alternativo disponivel.</p>
               <p>- Webhooks recebidos para este tenant sao ignorados e nao poluem a base.</p>
+              <p>- Planos abaixo de Pro nao podem religar essa integracao.</p>
             </div>
           </div>
         </div>
@@ -255,6 +278,13 @@ export default function ConfiguracaoJusbrasilPage() {
           >
             API global: {config?.globalConfigured ? "Disponivel" : "Indisponivel"}
           </Chip>
+          <Chip
+            color={config?.planEligible ? "success" : "warning"}
+            size="sm"
+            variant="flat"
+          >
+            Elegibilidade do plano: {config?.planEligible ? "Pro+" : "Abaixo de Pro"}
+          </Chip>
           <Chip size="sm" variant="flat">
             Ultima validacao: {formatDateTimeBrasilia(config?.ultimaValidacao)}
           </Chip>
@@ -274,11 +304,20 @@ export default function ConfiguracaoJusbrasilPage() {
             </p>
           </div>
         ) : null}
+
+        {config && !config.planEligible ? (
+          <div className="mt-4 rounded-xl border border-warning/20 bg-warning/5 p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">
+              Esta integracao so pode ser ativada em planos Pro, Enterprise e Ultra.
+            </p>
+            <p className="mt-1">{config.planEligibilityReason}</p>
+          </div>
+        ) : null}
       </PeoplePanel>
 
       <PeoplePanel
         title="Preferencia do escritorio"
-        description="Use esta chave para decidir se o Jusbrasil deve alimentar este escritorio."
+        description="O padrao agora e desligado. O admin precisa ligar manualmente quando o plano do escritorio for Pro ou superior."
       >
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
@@ -319,10 +358,15 @@ export default function ConfiguracaoJusbrasilPage() {
                 A decisao vale apenas para este tenant e nao altera outros
                 escritorios da plataforma.
               </p>
+              <p className="mt-2 text-xs text-default-500">Regra comercial</p>
+              <p className="mt-1 text-sm text-default-300">
+                Liberado somente para planos Pro, Enterprise e Ultra.
+              </p>
             </div>
 
             <div className="rounded-xl border border-white/10 px-4 py-3 lg:col-span-2">
               <Switch
+                isDisabled={!config?.planEligible && !integracaoAtiva}
                 isSelected={integracaoAtiva}
                 onValueChange={setIntegracaoAtiva}
               >
@@ -340,6 +384,7 @@ export default function ConfiguracaoJusbrasilPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             color="primary"
+            isDisabled={saveBlockedByPlan}
             isLoading={isSubmitting}
             radius="full"
             onPress={handleSave}

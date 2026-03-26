@@ -6,6 +6,7 @@ import {
   normalizeJusbrasilApiKey,
   resolveJusbrasilApiBaseUrl,
 } from "@/lib/api/juridical/jusbrasil";
+import { buildJusbrasilPlanEligibility } from "@/app/lib/juridical/jusbrasil-entitlements";
 
 export const AUDIT_ACTION_SYNC_OAB = "SINCRONIZACAO_INICIAL_OAB_PROCESSOS";
 
@@ -62,9 +63,14 @@ export type JusbrasilSyncBinding = {
 
 export type TenantJusbrasilIntegrationState = {
   globalConfigured: boolean;
+  planSlug: string | null;
+  planName: string | null;
+  planEligible: boolean;
+  planEligibilityReason: string;
   integracaoAtiva: boolean;
   enabled: boolean;
   configId: string | null;
+  dataConfiguracao: Date | null;
   ultimaValidacao: Date | null;
   lastWebhookAt: Date | null;
   lastWebhookEvent: string | null;
@@ -148,25 +154,50 @@ export function getJusbrasilClientFromEnv() {
 export async function getTenantJusbrasilIntegrationState(
   tenantId: string,
 ): Promise<TenantJusbrasilIntegrationState> {
-  const config = await prisma.tenantJusbrasilConfig.findUnique({
-    where: { tenantId },
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
     select: {
-      id: true,
-      integracaoAtiva: true,
-      ultimaValidacao: true,
-      lastWebhookAt: true,
-      lastWebhookEvent: true,
+      jusbrasilConfig: {
+        select: {
+          id: true,
+          integracaoAtiva: true,
+          dataConfiguracao: true,
+          ultimaValidacao: true,
+          lastWebhookAt: true,
+          lastWebhookEvent: true,
+        },
+      },
+      subscription: {
+        select: {
+          plano: {
+            select: {
+              slug: true,
+              nome: true,
+            },
+          },
+        },
+      },
     },
   });
 
+  const config = tenant?.jusbrasilConfig ?? null;
+  const planEligibility = buildJusbrasilPlanEligibility({
+    planSlug: tenant?.subscription?.plano?.slug ?? null,
+    planName: tenant?.subscription?.plano?.nome ?? null,
+  });
   const globalConfigured = isJusbrasilGloballyConfigured();
-  const integracaoAtiva = config?.integracaoAtiva ?? true;
+  const integracaoAtiva = config?.integracaoAtiva ?? false;
 
   return {
     globalConfigured,
+    planSlug: planEligibility.planSlug,
+    planName: planEligibility.planName,
+    planEligible: planEligibility.eligibleByPlan,
+    planEligibilityReason: planEligibility.eligibilityReason,
     integracaoAtiva,
-    enabled: globalConfigured && integracaoAtiva,
+    enabled: globalConfigured && planEligibility.eligibleByPlan && integracaoAtiva,
     configId: config?.id ?? null,
+    dataConfiguracao: config?.dataConfiguracao ?? null,
     ultimaValidacao: config?.ultimaValidacao ?? null,
     lastWebhookAt: config?.lastWebhookAt ?? null,
     lastWebhookEvent: config?.lastWebhookEvent ?? null,

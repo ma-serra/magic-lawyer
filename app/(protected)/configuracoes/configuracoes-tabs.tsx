@@ -132,7 +132,7 @@ const INTEGRATION_OPTIONS: Array<{
     key: "jusbrasil",
     label: "Jusbrasil",
     description:
-      "Monitoramento juridico externo com poder de desligar a entrada desses dados para este escritorio.",
+      "Monitoramento juridico externo, desligado por padrao e liberado somente para planos Pro ou superiores.",
     icon: <Scale className="h-4 w-4" />,
   },
   {

@@ -316,7 +316,7 @@ model ClicksignTenantConfig {
 model TenantJusbrasilConfig {
   id                String   @id @default(cuid())
   tenantId          String   @unique
-  integracaoAtiva   Boolean  @default(true)
+  integracaoAtiva   Boolean  @default(false)
   dataConfiguracao  DateTime @default(now())
   ultimaValidacao   DateTime?
   lastWebhookAt     DateTime?
