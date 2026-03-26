@@ -21,15 +21,22 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
+  BellRing,
   Building2,
   DollarSign,
   FileText,
+  KeyRound,
   MapPinned,
   Shield,
+  ShieldAlert,
   TrendingUp,
   Users,
 } from "lucide-react";
 
+import {
+  getAdminSecurityDashboard,
+  type AdminSecurityDashboardResponse,
+} from "@/app/actions/admin-security";
 import {
   getSuperAdminDashboardData,
   type AdminDashboardData,
@@ -99,6 +106,10 @@ function formatLastSeen(value: string) {
   return `${diffHours} h atrás`;
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("pt-BR");
+}
+
 function fetchAdminDashboard() {
   return getSuperAdminDashboardData().then((response) => {
     if (!response.success || !response.data) {
@@ -106,6 +117,18 @@ function fetchAdminDashboard() {
     }
 
     return response.data;
+  });
+}
+
+type AdminSecuritySnapshot = NonNullable<AdminSecurityDashboardResponse["data"]>;
+
+function fetchAdminSecuritySnapshot() {
+  return getAdminSecurityDashboard().then((response) => {
+    if (!response.success || !response.data) {
+      throw new Error(response.error ?? "Falha ao carregar radar de seguranca");
+    }
+
+    return response.data as AdminSecuritySnapshot;
   });
 }
 
@@ -231,6 +254,19 @@ export function AdminDashboardContent() {
       revalidateOnFocus: true,
       refreshInterval: 15_000,
       dedupingInterval: 5_000,
+    },
+  );
+  const {
+    data: securitySnapshot,
+    error: securityError,
+    isLoading: isSecurityLoading,
+  } = useSWR<AdminSecuritySnapshot>(
+    "admin-dashboard-security-snapshot",
+    fetchAdminSecuritySnapshot,
+    {
+      revalidateOnFocus: true,
+      refreshInterval: 30_000,
+      dedupingInterval: 10_000,
     },
   );
 
@@ -598,6 +634,197 @@ export function AdminDashboardContent() {
             </div>
           </div>
         </div>
+      </PeoplePanel>
+
+      <PeoplePanel
+        title="Radar de seguranca"
+        description="Quem entrou, quem trocou senha e como os alertas de acesso estao performando no recorte padrao."
+        actions={
+          <Button
+            as={NextLink}
+            href="/admin/seguranca"
+            size="sm"
+            variant="flat"
+          >
+            Abrir cockpit de seguranca
+          </Button>
+        }
+      >
+        {securityError ? (
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="h-4 w-4" />
+            {securityError instanceof Error
+              ? securityError.message
+              : "Falha ao carregar radar de seguranca."}
+          </div>
+        ) : isSecurityLoading && !securitySnapshot ? (
+          <div className="flex min-h-[180px] items-center justify-center">
+            <Spinner color="primary" label="Carregando radar de seguranca" />
+          </div>
+        ) : securitySnapshot ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <PeopleMetricCard
+                label="Logins autorizados"
+                value={formatNumber(securitySnapshot.summary.loginSuccesses)}
+                helper="Entradas liberadas"
+                tone="success"
+                icon={<Shield className="h-4 w-4" />}
+              />
+              <PeopleMetricCard
+                label="Logins rejeitados"
+                value={formatNumber(securitySnapshot.summary.loginRejected)}
+                helper="Tentativas bloqueadas"
+                tone={
+                  securitySnapshot.summary.loginRejected > 0
+                    ? "warning"
+                    : "default"
+                }
+                icon={<ShieldAlert className="h-4 w-4" />}
+              />
+              <PeopleMetricCard
+                label="Trocas de senha"
+                value={formatNumber(securitySnapshot.summary.passwordChanges)}
+                helper="Perfil e primeiro acesso"
+                tone="secondary"
+                icon={<KeyRound className="h-4 w-4" />}
+              />
+              <PeopleMetricCard
+                label="Alertas lidos"
+                value={`${(securitySnapshot.summary.readRate * 100).toFixed(1)}%`}
+                helper={`${formatNumber(securitySnapshot.summary.notificationsRead)} leituras`}
+                tone="primary"
+                icon={<BellRing className="h-4 w-4" />}
+              />
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Users className="h-4 w-4 text-primary" />
+                    Quem mais acessou
+                  </div>
+                  <div className="space-y-2">
+                    {securitySnapshot.topAccessUsers.length === 0 ? (
+                      <p className="text-sm text-default-400">
+                        Sem acessos registrados no recorte.
+                      </p>
+                    ) : (
+                      securitySnapshot.topAccessUsers.slice(0, 5).map((entry) => (
+                        <div
+                          key={`${entry.tenantId || "global"}-${entry.actorId || entry.email || entry.name}`}
+                          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {entry.name}
+                            </p>
+                            <p className="truncate text-[11px] text-default-500">
+                              {entry.tenantName}
+                              {entry.email ? ` • ${entry.email}` : ""}
+                            </p>
+                          </div>
+                          <Chip size="sm" variant="flat">
+                            {formatNumber(entry.total)}
+                          </Chip>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <MapPinned className="h-4 w-4 text-success" />
+                    Locais com mais atividade
+                  </div>
+                  <div className="space-y-2">
+                    {securitySnapshot.topLocations.length === 0 ? (
+                      <p className="text-sm text-default-400">
+                        Sem localizacoes relevantes ainda.
+                      </p>
+                    ) : (
+                      securitySnapshot.topLocations.slice(0, 5).map((entry) => (
+                        <div
+                          key={entry.label}
+                          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {entry.label}
+                            </p>
+                            <p className="text-[11px] text-default-500">
+                              {formatNumber(entry.uniqueUsers)} usuario(s)
+                            </p>
+                          </div>
+                          <Chip size="sm" variant="flat">
+                            {formatNumber(entry.total)}
+                          </Chip>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Shield className="h-4 w-4 text-warning" />
+                  Ultimos eventos de acesso
+                </div>
+                <div className="space-y-2">
+                  {securitySnapshot.recentAccesses.length === 0 ? (
+                    <p className="text-sm text-default-400">
+                      Sem eventos de acesso no recorte.
+                    </p>
+                  ) : (
+                    securitySnapshot.recentAccesses.slice(0, 8).map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {entry.actorName}
+                            </p>
+                            <p className="truncate text-[11px] text-default-500">
+                              {entry.tenantName} • {entry.locationLabel}
+                            </p>
+                            <p className="truncate text-[11px] text-default-500">
+                              {entry.deviceLabel}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <Chip
+                              color={
+                                entry.status === "SUCCESS"
+                                  ? "success"
+                                  : entry.status === "WARNING"
+                                    ? "warning"
+                                    : entry.status === "ERROR"
+                                      ? "danger"
+                                      : "default"
+                              }
+                              size="sm"
+                              variant="flat"
+                            >
+                              {entry.status}
+                            </Chip>
+                            <p className="mt-1 text-[11px] text-default-500">
+                              {formatDateTime(entry.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </PeoplePanel>
 
       <PeoplePanel

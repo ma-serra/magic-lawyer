@@ -89,6 +89,14 @@ function asPayloadRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function getSecurityActionUrl(notification?: NotificationItem | null) {
+  if (!notification) {
+    return null;
+  }
+
+  return asNonEmptyString(asPayloadRecord(notification.dados).securityActionUrl);
+}
+
 export const NotificationCenter = () => {
   const disclosure = useDisclosure();
   const detailDisclosure = useDisclosure();
@@ -556,6 +564,7 @@ export const NotificationCenter = () => {
                     <ul className="space-y-4">
                       {notifications.map((item) => {
                         const isUnread = item.status === "NAO_LIDA";
+                        const securityActionUrl = getSecurityActionUrl(item);
 
                         return (
                           <li
@@ -637,6 +646,18 @@ export const NotificationCenter = () => {
                               >
                                 Ver detalhes
                               </Button>
+                              {securityActionUrl ? (
+                                <Button
+                                  color="danger"
+                                  size="sm"
+                                  variant="flat"
+                                  onPress={() => {
+                                    window.location.href = securityActionUrl;
+                                  }}
+                                >
+                                  Nao fui eu
+                                </Button>
+                              ) : null}
                             </div>
                           </li>
                         );
@@ -692,6 +713,7 @@ export const NotificationCenter = () => {
             const referenceHref = notification
               ? resolveReferenceLink(notification)
               : null;
+            const securityActionUrl = getSecurityActionUrl(notification);
             const summary = detailPayload?.changesSummary as string | undefined;
             const statusSummary =
               (detailPayload?.statusSummary as string | undefined) ??
@@ -789,6 +811,17 @@ export const NotificationCenter = () => {
                   )}
                 </ModalBody>
                 <ModalFooter className="flex flex-wrap justify-end gap-2">
+                  {securityActionUrl ? (
+                    <Button
+                      color="danger"
+                      variant="flat"
+                      onPress={() => {
+                        window.location.href = securityActionUrl;
+                      }}
+                    >
+                      Nao fui eu
+                    </Button>
+                  ) : null}
                   <Button variant="light" onPress={handleCloseDetails}>
                     Fechar
                   </Button>

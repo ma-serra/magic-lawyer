@@ -30,6 +30,7 @@ import {
   RotateCcw,
   SearchIcon,
   Send,
+  ShieldAlert,
   Smartphone,
   TrendingUp,
   XCircle,
@@ -149,6 +150,14 @@ const EVENT_CATEGORIES: Record<string, EventCategory> = {
       "documento.rejected",
       "documento.expired",
     ],
+  },
+  seguranca: {
+    label: "Seguranca",
+    icon: ShieldAlert,
+    description:
+      "Alertas de acesso para que cada usuario escolha os canais de seguranca.",
+    tone: "warning",
+    events: ["access.login_new"],
   },
 };
 
@@ -616,6 +625,7 @@ export function NotificationPreferencesContent() {
                                             const channel = channelKey as NotificationChannel;
                                             const isSelected = channels.includes(channel);
                                             const isTelegramChannel = channel === "TELEGRAM";
+                                            const isPushChannel = channel === "PUSH";
 
                                             return (
                                               <Tooltip
@@ -648,6 +658,13 @@ export function NotificationPreferencesContent() {
                                                         );
                                                         return;
                                                       }
+                                                    }
+
+                                                    if (isPushChannel && !isSelected) {
+                                                      toast.error(
+                                                        "Canal PUSH ainda nao esta disponivel neste ambiente.",
+                                                      );
+                                                      return;
                                                     }
 
                                                     const newChannels = isSelected

@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 
 import { getSession } from "@/app/lib/auth";
+import {
+  extractRequestIp,
+  extractRequestUserAgent,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
 import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
 import { UserRole } from "@/generated/prisma";
@@ -217,6 +223,32 @@ export async function changePassword(data: ChangePasswordData): Promise<{
         passwordHash: newPasswordHash,
         updatedAt: new Date(),
       },
+    });
+
+    const requestHeaders = await headers();
+    const sessionUser = session.user as SessionUser & { name?: string | null };
+    const actorName =
+      [sessionUser.firstName, sessionUser.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || sessionUser.name || null;
+
+    await logOperationalEvent({
+      tenantId: session.user.tenantId ?? null,
+      category: "ACCESS",
+      source: "PROFILE",
+      action: "PASSWORD_CHANGED",
+      status: "SUCCESS",
+      actorType: "TENANT_USER",
+      actorId: sessionUser.id,
+      actorName,
+      actorEmail: sessionUser.email ?? null,
+      entityType: "USUARIO",
+      entityId: sessionUser.id,
+      route: "/usuario/perfil/editar",
+      ipAddress: extractRequestIp(requestHeaders),
+      userAgent: extractRequestUserAgent(requestHeaders),
+      message: "Usuario alterou a propria senha.",
     });
 
     revalidatePath("/usuario/perfil/editar");

@@ -217,6 +217,7 @@ model Tenant {
   notificationPreferences     NotificationPreference[]
   notificationTemplates       NotificationTemplate[]
   processoDeadlinePreferences ProcessoDeadlineNotificationPreference[]
+  accountSecurityActionTokens AccountSecurityActionToken[]
   digitalCertificates         DigitalCertificate[]
   digitalCertificateLogs      DigitalCertificateLog[]  @relation("DigitalCertificateLogs")
 
@@ -602,6 +603,7 @@ model Usuario {
   notifications                  Notification[]
   notificationPreferences        NotificationPreference[]
   processoDeadlinePreferences    ProcessoDeadlineNotificationPreference[]
+  accountSecurityActionTokens    AccountSecurityActionToken[]
   digitalCertificatesResponsavel DigitalCertificate[]     @relation("DigitalCertificateResponsavel")
   digitalCertificateLogs         DigitalCertificateLog[]  @relation("DigitalCertificateLogActor")
 
@@ -688,6 +690,30 @@ model OperationalAuditEvent {
   @@index([action, createdAt])
   @@index([status, createdAt])
   @@index([entityType, entityId])
+  @@schema("magiclawyer")
+}
+
+model AccountSecurityActionToken {
+  id            String   @id @default(cuid())
+  tenantId      String
+  userId        String
+  auditEventId  String?
+  action        String
+  tokenHash     String   @unique
+  ipAddress     String?
+  userAgent     String?
+  locationLabel String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  usedIpAddress String?
+  usedUserAgent String?
+  createdAt     DateTime @default(now())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, createdAt])
+  @@index([expiresAt])
+  @@index([auditEventId])
   @@schema("magiclawyer")
 }
 

@@ -94,7 +94,7 @@ export async function logOperationalEvent(input: OperationalAuditInput) {
   }
 
   try {
-    await prisma.operationalAuditEvent.create({
+    return await prisma.operationalAuditEvent.create({
       data: {
         tenantId: input.tenantId ?? null,
         category: input.category,
@@ -124,5 +124,6 @@ export async function logOperationalEvent(input: OperationalAuditInput) {
       },
       "Falha ao registrar evento de auditoria operacional.",
     );
+    return null;
   }
 }

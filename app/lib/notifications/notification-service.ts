@@ -722,13 +722,15 @@ export class NotificationService {
    */
   private static async deliverPush(
     notification: any,
-  ): Promise<{ success: boolean }> {
-    // TODO: Implementar push mobile real
-    console.log(
-      `[NotificationService] Push mobile enviado para notificação ${notification.id}`,
+  ): Promise<{ success: boolean; error?: string }> {
+    console.warn(
+      `[NotificationService] PUSH indisponivel para notificacao ${notification.id}: gateway nao configurado`,
     );
 
-    return { success: true };
+    return {
+      success: false,
+      error: "Canal PUSH ainda nao esta configurado neste ambiente.",
+    };
   }
 
   /**

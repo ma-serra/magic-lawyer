@@ -19,6 +19,7 @@ import {
   getTenantHostHints,
 } from "./lib/tenant-host";
 import { extractPresenceLocation } from "./app/lib/realtime/session-presence";
+import { finalizeTenantUserLoginSecurity } from "./app/lib/security/account-access";
 
 // Campos extras que vamos guardar no token
 // - id, tenantId, role, name, email
@@ -215,7 +216,16 @@ export const authOptions: NextAuthOptions = {
               ipAddress,
               userAgent,
               message: "Login de super admin autorizado.",
-	              payload: attemptContext,
+	              payload: {
+                  ...attemptContext,
+                  locationLabel:
+                    requestLocation.label ||
+                    requestLocation.country ||
+                    "Localizacao nao identificada",
+                  locationCountry: requestLocation.country ?? null,
+                  locationRegion: requestLocation.region ?? null,
+                  locationCity: requestLocation.city ?? null,
+                },
 	            });
 
             try {
@@ -586,6 +596,25 @@ export const authOptions: NextAuthOptions = {
             role: user.role,
           });
 
+          await finalizeTenantUserLoginSecurity({
+            tenantId: user.tenantId,
+            userId: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            route: authRoute,
+            ipAddress,
+            userAgent,
+            requestHeaders,
+            location: requestLocation,
+            attemptContext,
+          });
+
+          return resultUser as any;
+
+          /*
+
           await logOperationalEvent({
             tenantId: user.tenantId,
             category: "ACCESS",
@@ -710,6 +739,7 @@ export const authOptions: NextAuthOptions = {
           }
 
 	          return resultUser as any;
+          */
 	        } catch (error) {
           // Verificar se é erro de redirecionamento
           if (

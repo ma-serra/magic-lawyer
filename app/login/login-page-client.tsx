@@ -412,6 +412,24 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
             "Sua sessão foi encerrada por segurança. Por favor, faça login novamente.";
           color = "warning";
           break;
+        case "SECURITY_ACTION_INVALID":
+          title = "âš ï¸ Link de seguranÃ§a invÃ¡lido";
+          description =
+            "O link de confirmaÃ§Ã£o do incidente nÃ£o Ã© vÃ¡lido. Entre novamente para receber um novo alerta.";
+          color = "warning";
+          break;
+        case "SECURITY_ACTION_EXPIRED":
+          title = "â° Link de seguranÃ§a expirado";
+          description =
+            "O link de confirmaÃ§Ã£o expirou. Entre novamente para receber um novo alerta de acesso.";
+          color = "warning";
+          break;
+        case "SECURITY_ACTION_USED":
+          title = "ðŸ” Incidente jÃ¡ tratado";
+          description =
+            "Esse alerta de seguranÃ§a jÃ¡ foi utilizado. Se ainda precisar, entre novamente e gere um novo alerta.";
+          color = "warning";
+          break;
         case "USER_DISABLED":
           title = "🚫 Usuário Desativado";
           description =

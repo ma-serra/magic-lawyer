@@ -4,6 +4,11 @@ import bcrypt from "bcryptjs";
 import { headers } from "next/headers";
 
 import prisma from "@/app/lib/prisma";
+import {
+  extractRequestIp,
+  extractRequestUserAgent,
+  logOperationalEvent,
+} from "@/app/lib/audit/operational-events";
 import { enviarEmailPrimeiroAcesso, maskEmail } from "@/app/lib/first-access-email";
 import { validarTokenPrimeiroAcesso } from "@/app/lib/first-access-token";
 import { getTenantHostHints } from "@/lib/tenant-host";
@@ -296,6 +301,25 @@ export async function concluirPrimeiroAcesso(params: {
       passwordHash,
       updatedAt: new Date(),
     },
+  });
+
+  const requestHeaders = await headers();
+
+  await logOperationalEvent({
+    tenantId: validation.payload.tenantId,
+    category: "ACCESS",
+    source: "FIRST_ACCESS",
+    action: "PASSWORD_DEFINED",
+    status: "SUCCESS",
+    actorType: "TENANT_USER",
+    actorId: usuario.id,
+    actorEmail: usuario.email,
+    entityType: "USUARIO",
+    entityId: usuario.id,
+    route: "/primeiro-acesso/[token]",
+    ipAddress: extractRequestIp(requestHeaders),
+    userAgent: extractRequestUserAgent(requestHeaders),
+    message: "Usuario definiu senha pelo fluxo de primeiro acesso.",
   });
 
   return {

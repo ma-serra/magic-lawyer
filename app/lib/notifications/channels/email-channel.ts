@@ -136,6 +136,10 @@ export class EmailChannel {
         return event.payload.processoId
           ? `${normalizedBase}/processos/${event.payload.processoId}`
           : `${normalizedBase}/andamentos`;
+      case "access.login_new":
+        return typeof event.payload.securityActionUrl === "string"
+          ? event.payload.securityActionUrl
+          : `${normalizedBase}/dashboard`;
 
       default:
         return `${normalizedBase}/dashboard`;
@@ -184,6 +188,8 @@ export class EmailChannel {
       case "andamento.created":
       case "andamento.updated":
         return "Ver andamento";
+      case "access.login_new":
+        return "Nao fui eu";
 
       default:
         return "Acessar Plataforma";
@@ -298,6 +304,28 @@ export class EmailChannel {
 
       if (payload.descricao) {
         details.push(`Descrição: ${payload.descricao}`);
+      }
+    }
+
+    if (event.type === "access.login_new") {
+      const payload = event.payload || {};
+
+      if (payload.locationLabel) {
+        details.push(`Local aproximado: ${payload.locationLabel}`);
+      }
+
+      if (payload.ipAddress) {
+        details.push(`IP: ${payload.ipAddress}`);
+      }
+
+      if (payload.userAgent) {
+        details.push(`Dispositivo: ${payload.userAgent}`);
+      }
+
+      const formattedDate = this.formatDate(payload.loggedAt);
+
+      if (formattedDate) {
+        details.push(`Data/Hora: ${formattedDate}`);
       }
     }
 

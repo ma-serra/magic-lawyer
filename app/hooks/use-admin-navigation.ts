@@ -89,6 +89,12 @@ export function useAdminNavigation() {
   const secondaryNavigationItems = useMemo<NavigationItem[]>(() => {
     return [
       {
+        label: "Seguranca",
+        href: "/admin/seguranca",
+        icon: "ShieldAlert",
+        description: "Acessos, alertas de conta e resposta a incidentes",
+      },
+      {
         label: "Auditoria",
         href: "/admin/auditoria",
         icon: "Shield",
