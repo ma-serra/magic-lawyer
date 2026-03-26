@@ -5,7 +5,7 @@ import type {
   NotificationUrgency,
 } from "@/app/lib/notifications/notification-service";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   Button,
@@ -39,10 +39,22 @@ import {
 import { Input } from "@heroui/input";
 
 import {
+  getMyWebPushStatus,
   getNotificationPreferences,
+  registerMyWebPushSubscription,
+  sendMyWebPushTestNotification,
+  unregisterMyWebPushSubscription,
   updateNotificationPreference,
 } from "@/app/actions/notifications";
 import { getMyTelegramNotificationStatus } from "@/app/actions/telegram-notifications";
+import {
+  ensureWebPushSubscription,
+  getBrowserPushPermission,
+  getCurrentWebPushSubscription,
+  isWebPushSupported,
+  unsubscribeCurrentWebPushSubscription,
+  type BrowserPushPermission,
+} from "@/app/lib/notifications/web-push-client";
 import {
   PeopleEmptyState,
   PeopleMetricCard,
@@ -234,6 +246,14 @@ export function NotificationPreferencesContent() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [loadingEvents, setLoadingEvents] = useState<Set<string>>(new Set());
+  const [pushPermission, setPushPermission] = useState<BrowserPushPermission>(() =>
+    getBrowserPushPermission(),
+  );
+  const [currentPushEndpoint, setCurrentPushEndpoint] = useState<string | null>(
+    null,
+  );
+  const [isPushActionLoading, setIsPushActionLoading] = useState(false);
+  const [isPushTestLoading, setIsPushTestLoading] = useState(false);
 
   const { data, error, isLoading, mutate } = useSWR(
     "notification-preferences",
@@ -249,6 +269,13 @@ export function NotificationPreferencesContent() {
       revalidateOnFocus: false,
     },
   );
+  const { data: webPushStatusResult, mutate: mutateWebPushStatus } = useSWR(
+    "my-web-push-status",
+    getMyWebPushStatus,
+    {
+      revalidateOnFocus: false,
+    },
+  );
 
   const preferences = data?.preferences ?? [];
   const preferencesMap = useMemo(
@@ -259,6 +286,12 @@ export function NotificationPreferencesContent() {
     telegramStatusResult?.success && telegramStatusResult.status
       ? telegramStatusResult.status
       : null;
+  const webPushStatus = webPushStatusResult?.success ? webPushStatusResult : null;
+  const isWebPushAvailable =
+    Boolean(webPushStatus?.configured && webPushStatus.publicKey) &&
+    isWebPushSupported();
+  const activePushDevices = webPushStatus?.activeSubscriptionsCount ?? 0;
+  const currentDevicePushEnabled = Boolean(currentPushEndpoint);
 
   const totalEvents = useMemo(
     () =>
@@ -293,6 +326,154 @@ export function NotificationPreferencesContent() {
       }),
     [searchTerm, selectedCategory],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncCurrentSubscription = async () => {
+      if (!isWebPushSupported()) {
+        setPushPermission("unsupported");
+        setCurrentPushEndpoint(null);
+        return;
+      }
+
+      setPushPermission(getBrowserPushPermission());
+
+      try {
+        const subscription = await getCurrentWebPushSubscription();
+
+        if (!cancelled) {
+          setCurrentPushEndpoint(subscription?.endpoint ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCurrentPushEndpoint(null);
+        }
+      }
+    };
+
+    void syncCurrentSubscription();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshPushState = async () => {
+    setPushPermission(getBrowserPushPermission());
+
+    if (!isWebPushSupported()) {
+      setCurrentPushEndpoint(null);
+      await mutateWebPushStatus();
+      return null;
+    }
+
+    const subscription = await getCurrentWebPushSubscription();
+
+    setCurrentPushEndpoint(subscription?.endpoint ?? null);
+    await mutateWebPushStatus();
+
+    return subscription;
+  };
+
+  const ensureCurrentDevicePushReady = async () => {
+    if (!webPushStatus?.configured || !webPushStatus.publicKey) {
+      toast.error("Web Push ainda nao esta configurado no ambiente.");
+      return false;
+    }
+
+    if (!isWebPushSupported()) {
+      toast.error("Este navegador nao oferece suporte a Web Push.");
+      return false;
+    }
+
+    setIsPushActionLoading(true);
+
+    try {
+      const subscription = await ensureWebPushSubscription({
+        publicKey: webPushStatus.publicKey,
+        requestPermission: true,
+      });
+
+      if (!subscription) {
+        toast.error("Permissao de notificacao nao concedida.");
+        return false;
+      }
+
+      const result = await registerMyWebPushSubscription(subscription);
+
+      if (!result.success) {
+        toast.error(result.error || "Nao foi possivel ativar o Web Push.");
+        return false;
+      }
+
+      await refreshPushState();
+      toast.success("Web Push ativado neste dispositivo.");
+
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Falha ao ativar o Web Push neste dispositivo.",
+      );
+      return false;
+    } finally {
+      setIsPushActionLoading(false);
+    }
+  };
+
+  const handleDisablePushOnCurrentDevice = async () => {
+    setIsPushActionLoading(true);
+
+    try {
+      const endpoint = await unsubscribeCurrentWebPushSubscription();
+
+      if (endpoint) {
+        const result = await unregisterMyWebPushSubscription(endpoint);
+
+        if (!result.success) {
+          toast.error(result.error || "Nao foi possivel desativar o Web Push.");
+          return;
+        }
+      }
+
+      await refreshPushState();
+      toast.success("Web Push desativado neste dispositivo.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Falha ao desativar o Web Push neste dispositivo.",
+      );
+    } finally {
+      setIsPushActionLoading(false);
+    }
+  };
+
+  const handleSendPushTest = async () => {
+    setIsPushTestLoading(true);
+
+    try {
+      const result = await sendMyWebPushTestNotification();
+
+      if (!result.success) {
+        toast.error(result.error || "Nao foi possivel enviar o push de teste.");
+        return;
+      }
+
+      toast.success("Push de teste enviado.");
+      await mutateWebPushStatus();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Falha ao disparar o push de teste.",
+      );
+    } finally {
+      setIsPushTestLoading(false);
+    }
+  };
 
   const handleUpdatePreference = async (
     eventType: string,
@@ -470,6 +651,146 @@ export function NotificationPreferencesContent() {
       ) : null}
 
       <PeoplePanel
+        title="Web Push por dispositivo"
+        description="Ative o push neste navegador para receber alertas instantaneos fora da tela atual."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip
+              color={
+                pushPermission === "granted"
+                  ? "success"
+                  : pushPermission === "denied"
+                    ? "danger"
+                    : pushPermission === "unsupported"
+                      ? "default"
+                      : "warning"
+              }
+              size="sm"
+              variant="flat"
+            >
+              {pushPermission === "granted"
+                ? "Permissao liberada"
+                : pushPermission === "denied"
+                  ? "Permissao bloqueada"
+                  : pushPermission === "unsupported"
+                    ? "Sem suporte"
+                    : "Permissao pendente"}
+            </Chip>
+            <Chip
+              color={activePushDevices > 0 ? "primary" : "default"}
+              size="sm"
+              variant="flat"
+            >
+              {activePushDevices} dispositivo(s) ativo(s)
+            </Chip>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm text-default-400">
+                {webPushStatus?.configured
+                  ? currentDevicePushEnabled
+                    ? "Este dispositivo ja pode receber push e sera usado nos eventos com canal PUSH ativo."
+                    : "Ative o push neste dispositivo para transforma-lo em um destino seguro de alerta."
+                  : "O ambiente ainda nao recebeu as chaves VAPID do Web Push."}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Chip
+                  color={currentDevicePushEnabled ? "success" : "default"}
+                  size="sm"
+                  variant="flat"
+                >
+                  {currentDevicePushEnabled
+                    ? "Este dispositivo esta ativo"
+                    : "Este dispositivo ainda nao foi conectado"}
+                </Chip>
+                <Chip
+                  color={isWebPushAvailable ? "primary" : "default"}
+                  size="sm"
+                  variant="flat"
+                >
+                  {isWebPushAvailable
+                    ? "Navegador compativel"
+                    : "Navegador sem suporte ou ambiente indisponivel"}
+                </Chip>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                color="primary"
+                isDisabled={!webPushStatus?.configured || isPushActionLoading}
+                isLoading={isPushActionLoading}
+                size="sm"
+                startContent={<Smartphone className="h-4 w-4" />}
+                onPress={ensureCurrentDevicePushReady}
+              >
+                Ativar neste dispositivo
+              </Button>
+              <Button
+                isDisabled={!currentDevicePushEnabled || isPushActionLoading}
+                size="sm"
+                variant="flat"
+                onPress={handleDisablePushOnCurrentDevice}
+              >
+                Desativar neste dispositivo
+              </Button>
+              <Button
+                isDisabled={activePushDevices === 0 || isPushTestLoading}
+                isLoading={isPushTestLoading}
+                size="sm"
+                variant="bordered"
+                onPress={handleSendPushTest}
+              >
+                Enviar teste
+              </Button>
+            </div>
+          </div>
+
+          {webPushStatus?.devices && webPushStatus.devices.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {webPushStatus.devices.map((device) => (
+                <Card key={device.id} className="border border-white/10 bg-background/40">
+                  <CardBody className="space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          {device.deviceLabel}
+                        </p>
+                        <p className="text-xs text-default-400">
+                          {device.browserName || "Browser"}
+                          {device.osName ? ` · ${device.osName}` : ""}
+                        </p>
+                      </div>
+                      <Chip color="success" size="sm" variant="flat">
+                        Ativo
+                      </Chip>
+                    </div>
+                    <p className="text-xs text-default-500">
+                      Ultima sincronizacao:{" "}
+                      {new Date(device.lastSeenAt).toLocaleString("pt-BR")}
+                    </p>
+                    <p className="text-xs text-default-500">
+                      Ultimo envio com sucesso:{" "}
+                      {device.lastSuccessAt
+                        ? new Date(device.lastSuccessAt).toLocaleString("pt-BR")
+                        : "Ainda sem entrega confirmada"}
+                    </p>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-default-400">
+              Nenhum dispositivo foi conectado ao Web Push ainda.
+            </p>
+          )}
+        </div>
+      </PeoplePanel>
+
+      <PeoplePanel
         title="Como configurar"
         description="Cada evento pode ser ligado/desligado, receber múltiplos canais e ter sua urgência definida."
       >
@@ -644,7 +965,7 @@ export function NotificationPreferencesContent() {
                                                     <channelMeta.icon className="h-3.5 w-3.5" />
                                                   }
                                                   variant={isSelected ? "solid" : "flat"}
-                                                  onClick={() => {
+                                                  onClick={async () => {
                                                     if (isTelegramChannel) {
                                                       if (!telegramStatus?.providerReady) {
                                                         toast.error(
@@ -661,10 +982,21 @@ export function NotificationPreferencesContent() {
                                                     }
 
                                                     if (isPushChannel && !isSelected) {
-                                                      toast.error(
-                                                        "Canal PUSH ainda nao esta disponivel neste ambiente.",
-                                                      );
-                                                      return;
+                                                      if (!webPushStatus?.configured) {
+                                                        toast.error(
+                                                          "Web Push ainda nao esta configurado no ambiente.",
+                                                        );
+                                                        return;
+                                                      }
+
+                                                      if (activePushDevices === 0) {
+                                                        const ready =
+                                                          await ensureCurrentDevicePushReady();
+
+                                                        if (!ready) {
+                                                          return;
+                                                        }
+                                                      }
                                                     }
 
                                                     const newChannels = isSelected
@@ -684,7 +1016,7 @@ export function NotificationPreferencesContent() {
                                                       return;
                                                     }
 
-                                                    handleUpdatePreference(eventType, {
+                                                    await handleUpdatePreference(eventType, {
                                                       channels:
                                                         newChannels as NotificationChannel[],
                                                     });

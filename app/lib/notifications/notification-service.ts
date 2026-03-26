@@ -11,6 +11,10 @@ import {
   canDeliverTelegramToUser,
   sendTelegramNotification,
 } from "./telegram-bot";
+import {
+  canDeliverWebPushToUser,
+  sendWebPushNotification,
+} from "./web-push";
 
 import prisma from "@/app/lib/prisma";
 import { publishRealtimeEvent } from "@/app/lib/realtime/publisher";
@@ -504,7 +508,7 @@ export class NotificationService {
       case "TELEGRAM":
         return "TELEGRAM_BOT";
       case "PUSH":
-        return "PUSH_GATEWAY";
+        return "WEB_PUSH_VAPID";
       case "REALTIME":
       default:
         return "ABLY";
@@ -722,15 +726,23 @@ export class NotificationService {
    */
   private static async deliverPush(
     notification: any,
-  ): Promise<{ success: boolean; error?: string }> {
-    console.warn(
-      `[NotificationService] PUSH indisponivel para notificacao ${notification.id}: gateway nao configurado`,
-    );
-
-    return {
-      success: false,
-      error: "Canal PUSH ainda nao esta configurado neste ambiente.",
-    };
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    messageId?: string;
+    metadata?: Record<string, any>;
+  }> {
+    return sendWebPushNotification({
+      id: notification.id,
+      tenantId: notification.tenantId,
+      userId: notification.userId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      urgency: notification.urgency,
+      payload: notification.payload,
+      createdAt: notification.createdAt,
+    });
   }
 
   /**
@@ -1082,6 +1094,14 @@ export class NotificationService {
 
       if (!canUseTelegram) {
         resolved.delete("TELEGRAM");
+      }
+    }
+
+    if (resolved.has("PUSH")) {
+      const canUsePush = await canDeliverWebPushToUser(tenantId, userId);
+
+      if (!canUsePush) {
+        resolved.delete("PUSH");
       }
     }
 

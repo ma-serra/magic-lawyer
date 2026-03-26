@@ -5,11 +5,22 @@ import type {
   NotificationUrgency,
 } from "@/app/lib/notifications/notification-service";
 
+import { randomUUID } from "crypto";
 import { getServerSession } from "next-auth/next";
+import { revalidatePath } from "next/cache";
 
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
 import { NotificationPolicy } from "@/app/lib/notifications/domain/notification-policy";
+import {
+  canDeliverWebPushToUser,
+  deactivateWebPushSubscription,
+  getActiveWebPushSubscriptions,
+  getWebPushPublicKey,
+  isWebPushConfigured,
+  registerWebPushSubscription,
+  sendWebPushNotification,
+} from "@/app/lib/notifications/web-push";
 
 export type NotificationStatus = "NAO_LIDA" | "LIDA" | "ARQUIVADA";
 
@@ -623,6 +634,195 @@ export async function updateNotificationPreference(data: {
     };
   } catch (error) {
     console.error("[updateNotificationPreference] Erro:", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro interno",
+    };
+  }
+}
+
+export async function getMyWebPushStatus(): Promise<{
+  success: boolean;
+  configured?: boolean;
+  publicKey?: string | null;
+  activeSubscriptionsCount?: number;
+  devices?: Array<{
+    id: string;
+    deviceLabel: string;
+    browserName: string | null;
+    osName: string | null;
+    createdAt: string;
+    lastSeenAt: string;
+    lastSuccessAt: string | null;
+  }>;
+  error?: string;
+}> {
+  try {
+    const { tenantId, userId } = await ensureSession();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant nao encontrado" };
+    }
+
+    const devices = await getActiveWebPushSubscriptions({ tenantId, userId });
+
+    return {
+      success: true,
+      configured: isWebPushConfigured(),
+      publicKey: getWebPushPublicKey(),
+      activeSubscriptionsCount: devices.length,
+      devices: devices.map((device) => ({
+        id: device.id,
+        deviceLabel: device.deviceLabel || "Dispositivo nao identificado",
+        browserName: device.browserName ?? null,
+        osName: device.osName ?? null,
+        createdAt: device.createdAt.toISOString(),
+        lastSeenAt: device.lastSeenAt.toISOString(),
+        lastSuccessAt: device.lastSuccessAt?.toISOString() ?? null,
+      })),
+    };
+  } catch (error) {
+    console.error("[getMyWebPushStatus] Erro:", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro interno",
+    };
+  }
+}
+
+export async function registerMyWebPushSubscription(data: {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  userAgent?: string | null;
+  deviceLabel?: string | null;
+  browserName?: string | null;
+  osName?: string | null;
+}): Promise<{
+  success: boolean;
+  activeSubscriptionsCount?: number;
+  error?: string;
+}> {
+  try {
+    const { tenantId, userId } = await ensureSession();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant nao encontrado" };
+    }
+
+    if (!isWebPushConfigured()) {
+      return {
+        success: false,
+        error: "Web Push nao configurado no ambiente.",
+      };
+    }
+
+    await registerWebPushSubscription({
+      tenantId,
+      userId,
+      subscription: data,
+    });
+
+    const devices = await getActiveWebPushSubscriptions({ tenantId, userId });
+
+    revalidatePath("/usuario/preferencias-notificacoes");
+
+    return {
+      success: true,
+      activeSubscriptionsCount: devices.length,
+    };
+  } catch (error) {
+    console.error("[registerMyWebPushSubscription] Erro:", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro interno",
+    };
+  }
+}
+
+export async function unregisterMyWebPushSubscription(endpoint: string): Promise<{
+  success: boolean;
+  activeSubscriptionsCount?: number;
+  error?: string;
+}> {
+  try {
+    const { tenantId, userId } = await ensureSession();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant nao encontrado" };
+    }
+
+    await deactivateWebPushSubscription({
+      tenantId,
+      userId,
+      endpoint,
+    });
+
+    const devices = await getActiveWebPushSubscriptions({ tenantId, userId });
+
+    revalidatePath("/usuario/preferencias-notificacoes");
+
+    return {
+      success: true,
+      activeSubscriptionsCount: devices.length,
+    };
+  } catch (error) {
+    console.error("[unregisterMyWebPushSubscription] Erro:", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro interno",
+    };
+  }
+}
+
+export async function sendMyWebPushTestNotification(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const { tenantId, userId } = await ensureSession();
+
+    if (!tenantId) {
+      return { success: false, error: "Tenant nao encontrado" };
+    }
+
+    const canDeliver = await canDeliverWebPushToUser(tenantId, userId);
+
+    if (!canDeliver) {
+      return {
+        success: false,
+        error: "Nenhum dispositivo com Web Push ativo para este usuario.",
+      };
+    }
+
+    const result = await sendWebPushNotification({
+      id: `webpush-test-${randomUUID()}`,
+      tenantId,
+      userId,
+      type: "access.push_test",
+      title: "Teste de Web Push",
+      message:
+        "Seu dispositivo recebeu um push do Magic Lawyer. Agora podemos usar esse canal com seguranca.",
+      urgency: "INFO",
+      payload: {
+        url: "/usuario/preferencias-notificacoes",
+      },
+      createdAt: new Date(),
+    });
+
+    return {
+      success: result.success,
+      error: result.error,
+    };
+  } catch (error) {
+    console.error("[sendMyWebPushTestNotification] Erro:", error);
 
     return {
       success: false,

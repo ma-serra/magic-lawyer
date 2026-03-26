@@ -217,6 +217,7 @@ model Tenant {
   notificationPreferences     NotificationPreference[]
   notificationTemplates       NotificationTemplate[]
   processoDeadlinePreferences ProcessoDeadlineNotificationPreference[]
+  webPushSubscriptions        WebPushSubscription[]
   accountSecurityActionTokens AccountSecurityActionToken[]
   digitalCertificates         DigitalCertificate[]
   digitalCertificateLogs      DigitalCertificateLog[]  @relation("DigitalCertificateLogs")
@@ -603,6 +604,7 @@ model Usuario {
   notifications                  Notification[]
   notificationPreferences        NotificationPreference[]
   processoDeadlinePreferences    ProcessoDeadlineNotificationPreference[]
+  webPushSubscriptions           WebPushSubscription[]
   accountSecurityActionTokens    AccountSecurityActionToken[]
   digitalCertificatesResponsavel DigitalCertificate[]     @relation("DigitalCertificateResponsavel")
   digitalCertificateLogs         DigitalCertificateLog[]  @relation("DigitalCertificateLogActor")
@@ -4471,6 +4473,34 @@ model NotificationTemplate {
   @@unique([tenantId, eventType])
   @@index([tenantId, eventType])
   @@index([isDefault])
+  @@schema("magiclawyer")
+}
+
+model WebPushSubscription {
+  id            String   @id @default(cuid())
+  tenantId      String
+  userId        String
+  endpoint      String
+  endpointHash  String   @unique
+  p256dh        String
+  auth          String
+  expiresAt     DateTime?
+  userAgent     String?
+  deviceLabel   String?
+  browserName   String?
+  osName        String?
+  active        Boolean  @default(true)
+  failureCount  Int      @default(0)
+  lastSeenAt    DateTime @default(now())
+  lastSuccessAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   Usuario @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, active])
+  @@index([tenantId, active, updatedAt])
   @@schema("magiclawyer")
 }
 
