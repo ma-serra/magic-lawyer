@@ -190,6 +190,7 @@ model Tenant {
   planos                    Plano[]
   asaasConfig               TenantAsaasConfig?
   clicksignConfig           ClicksignTenantConfig?
+  jusbrasilConfig           TenantJusbrasilConfig?
   channelProviders          TenantChannelProvider[]
   channelTemplates          TenantChannelTemplate[]
   messageThreads            MessageThread[]
@@ -309,6 +310,23 @@ model ClicksignTenantConfig {
 
   @@index([tenantId])
   @@index([ambiente, integracaoAtiva])
+  @@schema("magiclawyer")
+}
+
+model TenantJusbrasilConfig {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  integracaoAtiva   Boolean  @default(true)
+  dataConfiguracao  DateTime @default(now())
+  ultimaValidacao   DateTime?
+  lastWebhookAt     DateTime?
+  lastWebhookEvent  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([integracaoAtiva])
   @@schema("magiclawyer")
 }
 

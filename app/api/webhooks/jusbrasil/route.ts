@@ -8,7 +8,11 @@ import {
   processJusbrasilWebhookImport,
   type JusbrasilWebhookImportJobInput,
 } from "@/app/lib/juridical/jusbrasil-webhook-import-step";
-import { resolveJusbrasilSyncBinding } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import {
+  getTenantJusbrasilIntegrationState,
+  resolveJusbrasilSyncBinding,
+  touchTenantJusbrasilWebhookActivity,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
 import { processJusbrasilSupportedProcessEvent } from "@/app/lib/juridical/jusbrasil-process-events-import";
 import { resolveJusbrasilProcessBinding } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 import { extractJusbrasilSupportedProcessEvents } from "@/lib/api/juridical/jusbrasil-webhook-events";
@@ -138,6 +142,8 @@ export async function POST(request: NextRequest) {
   const failures: Array<{ correlationId: string; error: string }> = [];
   let unboundBatches = 0;
   let unboundEvents = 0;
+  let disabledBatches = 0;
+  let disabledEvents = 0;
 
   for (const batch of batches) {
     const binding = await resolveJusbrasilSyncBinding(batch.correlationId);
@@ -160,6 +166,41 @@ export async function POST(request: NextRequest) {
           "Webhook Jusbrasil recebido sem vinculo local para correlation_id.",
         payload: {
           correlationId: batch.correlationId,
+          processCount: batch.processos.length,
+        },
+      });
+
+      continue;
+    }
+
+    const integrationState = await getTenantJusbrasilIntegrationState(
+      binding.tenantId,
+    );
+
+    await touchTenantJusbrasilWebhookActivity({
+      tenantId: binding.tenantId,
+      event: "OAB_BATCH",
+    });
+
+    if (!integrationState.enabled) {
+      disabledBatches += 1;
+
+      await logOperationalEvent({
+        category: "WEBHOOK",
+        source: "JUSBRASIL",
+        action: "WEBHOOK_DISABLED_TENANT_BATCH",
+        status: "WARNING",
+        actorType: "WEBHOOK",
+        entityType: "JUSBRASIL_CORRELATION",
+        entityId: batch.correlationId,
+        route: metadata.route,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        message:
+          "Lote Jusbrasil ignorado porque a integracao esta desativada para este tenant.",
+        payload: {
+          correlationId: batch.correlationId,
+          tenantId: binding.tenantId,
           processCount: batch.processos.length,
         },
       });
@@ -224,6 +265,44 @@ export async function POST(request: NextRequest) {
           evtType: event.evtType,
           sourceUserCustom: event.sourceUserCustom ?? null,
           targetNumber: event.targetNumber ?? null,
+        },
+      });
+
+      continue;
+    }
+
+    const integrationState = await getTenantJusbrasilIntegrationState(
+      binding.tenantId,
+    );
+
+    await touchTenantJusbrasilWebhookActivity({
+      tenantId: binding.tenantId,
+      event: `EVT_${event.evtType}`,
+    });
+
+    if (!integrationState.enabled) {
+      disabledEvents += 1;
+
+      await logOperationalEvent({
+        category: "WEBHOOK",
+        source: "JUSBRASIL",
+        action: "WEBHOOK_DISABLED_TENANT_EVENT",
+        status: "WARNING",
+        actorType: "WEBHOOK",
+        entityType: "JUSBRASIL_EVENT",
+        entityId:
+          typeof event.id === "number" || typeof event.id === "string"
+            ? String(event.id)
+            : null,
+        route: metadata.route,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        message:
+          "Evento Jusbrasil ignorado porque a integracao esta desativada para este tenant.",
+        payload: {
+          evtType: event.evtType,
+          tenantId: binding.tenantId,
+          processoId: binding.processoId,
         },
       });
 
@@ -295,6 +374,8 @@ export async function POST(request: NextRequest) {
       ),
       unboundBatches,
       unboundEvents,
+      disabledBatches,
+      disabledEvents,
       failures,
     },
   });
@@ -315,6 +396,8 @@ export async function POST(request: NextRequest) {
       ),
       unboundBatches,
       unboundEvents,
+      disabledBatches,
+      disabledEvents,
       failures,
     },
     { status: failures.length > 0 ? 500 : 200 },

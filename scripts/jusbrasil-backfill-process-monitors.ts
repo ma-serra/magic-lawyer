@@ -82,6 +82,11 @@ async function main() {
       name: true,
       slug: true,
       isTestEnvironment: true,
+      jusbrasilConfig: {
+        select: {
+          integracaoAtiva: true,
+        },
+      },
     },
     orderBy: {
       name: "asc",
@@ -103,6 +108,7 @@ async function main() {
         slug: tenant.slug,
         name: tenant.name,
         isTestEnvironment: tenant.isTestEnvironment,
+        integracaoAtiva: tenant.jusbrasilConfig?.integracaoAtiva ?? true,
       })),
     }),
   );
@@ -113,6 +119,18 @@ async function main() {
   let totalErrors = 0;
 
   for (const tenant of tenants) {
+    if (tenant.jusbrasilConfig?.integracaoAtiva === false) {
+      console.log(
+        JSON.stringify({
+          stage: "tenant_skipped",
+          tenant: tenant.name,
+          slug: tenant.slug,
+          reason: "integracao_desativada",
+        }),
+      );
+      continue;
+    }
+
     const processos = await prisma.processo.findMany({
       where: {
         tenantId: tenant.id,

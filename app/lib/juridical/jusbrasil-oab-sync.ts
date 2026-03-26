@@ -60,6 +60,16 @@ export type JusbrasilSyncBinding = {
   clienteNome?: string;
 };
 
+export type TenantJusbrasilIntegrationState = {
+  globalConfigured: boolean;
+  integracaoAtiva: boolean;
+  enabled: boolean;
+  configId: string | null;
+  ultimaValidacao: Date | null;
+  lastWebhookAt: Date | null;
+  lastWebhookEvent: string | null;
+};
+
 function stripWrappingQuotes(value: string) {
   return value.replace(/^['"]+|['"]+$/g, "");
 }
@@ -115,8 +125,12 @@ export function normalizeComparableUrl(value?: string | null) {
   return normalizeOriginValue(value || "").replace(/\/+$/, "");
 }
 
-export function isJusbrasilOabSyncEnabled() {
+export function isJusbrasilGloballyConfigured() {
   return Boolean(normalizeJusbrasilApiKey(process.env.JUSBRASIL_API_KEY));
+}
+
+export function isJusbrasilOabSyncEnabled() {
+  return isJusbrasilGloballyConfigured();
 }
 
 export function getJusbrasilClientFromEnv() {
@@ -129,6 +143,52 @@ export function getJusbrasilClientFromEnv() {
     apiKey,
     resolveJusbrasilApiBaseUrl(process.env.JUSBRASIL_API_BASE_URL),
   );
+}
+
+export async function getTenantJusbrasilIntegrationState(
+  tenantId: string,
+): Promise<TenantJusbrasilIntegrationState> {
+  const config = await prisma.tenantJusbrasilConfig.findUnique({
+    where: { tenantId },
+    select: {
+      id: true,
+      integracaoAtiva: true,
+      ultimaValidacao: true,
+      lastWebhookAt: true,
+      lastWebhookEvent: true,
+    },
+  });
+
+  const globalConfigured = isJusbrasilGloballyConfigured();
+  const integracaoAtiva = config?.integracaoAtiva ?? true;
+
+  return {
+    globalConfigured,
+    integracaoAtiva,
+    enabled: globalConfigured && integracaoAtiva,
+    configId: config?.id ?? null,
+    ultimaValidacao: config?.ultimaValidacao ?? null,
+    lastWebhookAt: config?.lastWebhookAt ?? null,
+    lastWebhookEvent: config?.lastWebhookEvent ?? null,
+  };
+}
+
+export async function isJusbrasilIntegrationEnabledForTenant(tenantId: string) {
+  const state = await getTenantJusbrasilIntegrationState(tenantId);
+  return state.enabled;
+}
+
+export async function touchTenantJusbrasilWebhookActivity(params: {
+  tenantId: string;
+  event: string;
+}) {
+  await prisma.tenantJusbrasilConfig.updateMany({
+    where: { tenantId: params.tenantId },
+    data: {
+      lastWebhookAt: new Date(),
+      lastWebhookEvent: params.event,
+    },
+  });
 }
 
 export function parseOabMonitorTarget(value: string) {

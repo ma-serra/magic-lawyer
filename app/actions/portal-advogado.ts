@@ -14,7 +14,7 @@ import {
 import {
   buildJusbrasilExpectedWebhookUrl,
   createOabSyncAuditEntry,
-  isJusbrasilOabSyncEnabled,
+  isJusbrasilIntegrationEnabledForTenant,
   registerOrRefreshJusbrasilMonitor,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
 import prisma from "@/app/lib/prisma";
@@ -489,7 +489,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
 
     await savePortalProcessSyncState(initialState);
 
-    if (isJusbrasilOabSyncEnabled()) {
+    if (await isJusbrasilIntegrationEnabledForTenant(tenantId)) {
       try {
         const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
           oab: ctx.oab,

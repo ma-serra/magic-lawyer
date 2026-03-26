@@ -72,6 +72,10 @@ const ClicksignSettingsTab = dynamic(() => import("./clicksign/page"), {
   ssr: false,
   loading: () => <SettingsTabLoader />,
 });
+const JusbrasilSettingsTab = dynamic(() => import("./jusbrasil/page"), {
+  ssr: false,
+  loading: () => <SettingsTabLoader />,
+});
 
 const SETTINGS_TAB_KEYS = [
   "overview",
@@ -91,6 +95,7 @@ const INTEGRATION_SECTION_KEYS = [
   "email",
   "clicksign",
   "certificates",
+  "jusbrasil",
   "asaas",
   "whatsapp",
   "telegram",
@@ -122,6 +127,13 @@ const INTEGRATION_OPTIONS: Array<{
     label: "Certificados e PJe",
     description: "Certificados A1 e política do escritório para integrações PJe.",
     icon: <Shield className="h-4 w-4" />,
+  },
+  {
+    key: "jusbrasil",
+    label: "Jusbrasil",
+    description:
+      "Monitoramento juridico externo com poder de desligar a entrada desses dados para este escritorio.",
+    icon: <Scale className="h-4 w-4" />,
   },
   {
     key: "asaas",
@@ -475,6 +487,12 @@ function IntegracoesTabContent({
                   policy={certificatePolicy}
                 />
               </div>
+            ) : null}
+
+            {selectedIntegration === "jusbrasil" ? (
+              <EmbeddedSettingsPanel>
+                <JusbrasilSettingsTab />
+              </EmbeddedSettingsPanel>
             ) : null}
 
             {selectedIntegration === "asaas" ? (

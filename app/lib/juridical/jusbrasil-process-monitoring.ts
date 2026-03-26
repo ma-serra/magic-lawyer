@@ -4,7 +4,10 @@ import {
   JusbrasilApiError,
   type JusbrasilProcessMonitor,
 } from "@/lib/api/juridical/jusbrasil";
-import { getJusbrasilClientFromEnv } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import {
+  getJusbrasilClientFromEnv,
+  getTenantJusbrasilIntegrationState,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
 
 export const AUDIT_ACTION_JUSBRASIL_PROCESS_MONITOR =
   "JUSBRASIL_PROCESSO_MONITOR";
@@ -199,9 +202,23 @@ function shouldUpdateProcessMonitor(
 export async function ensureJusbrasilProcessMonitor(
   params: EnsureJusbrasilProcessMonitorParams,
 ): Promise<EnsureJusbrasilProcessMonitorResult> {
+  const integrationState = await getTenantJusbrasilIntegrationState(
+    params.tenantId,
+  );
   const client = getJusbrasilClientFromEnv();
 
-  if (!client) {
+  if (!integrationState.globalConfigured || !client) {
+    return {
+      enabled: false,
+      synced: false,
+      existed: false,
+      userCustom: null,
+      monitorId: null,
+      monitorUri: null,
+    };
+  }
+
+  if (!integrationState.integracaoAtiva) {
     return {
       enabled: false,
       synced: false,

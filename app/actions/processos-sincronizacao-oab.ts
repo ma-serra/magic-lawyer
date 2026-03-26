@@ -11,7 +11,7 @@ import {
   AUDIT_ACTION_SYNC_OAB,
   buildJusbrasilExpectedWebhookUrl,
   createOabSyncAuditEntry,
-  isJusbrasilOabSyncEnabled,
+  isJusbrasilIntegrationEnabledForTenant,
   readOabSyncAuditPayload,
   registerOrRefreshJusbrasilMonitor,
   type OabSyncAuditStatus,
@@ -379,7 +379,7 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
 
     const clienteNome = params.clienteNome?.trim() || undefined;
 
-    if (isJusbrasilOabSyncEnabled()) {
+    if (await isJusbrasilIntegrationEnabledForTenant(tenantId)) {
       const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
         oab: context.oab,
         name: context.advogadoDisplayName,
