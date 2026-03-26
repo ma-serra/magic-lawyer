@@ -2,24 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Button, Card, CardBody, Chip, Input, Spinner, Select, SelectItem } from "@heroui/react";
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Button,
+  Card,
+  CardBody,
+  Chip,
+  Input,
+  Spinner,
+} from "@heroui/react";
 import { addToast } from "@heroui/toast";
-import {
-  Bot,
-  History,
-  RefreshCw,
-  ShieldAlert,
-  ShieldCheck,
-} from "lucide-react";
+import { Bot, History, RefreshCw, ShieldCheck } from "lucide-react";
 
 import {
   listarHistoricoSincronizacaoOab,
-  listarTribunaisSincronizacaoOab,
-  resolverCaptchaSincronizacaoOab,
   sincronizarProcessosIniciaisPorOab,
   type SincronizacaoInicialHistoricoItem,
   type SincronizacaoInicialOabResponse,
-  type TribunalSincronizacaoOption,
 } from "@/app/actions/processos-sincronizacao-oab";
 
 interface ProcessosSyncOabModalProps {
@@ -34,7 +36,7 @@ const statusMeta: Record<
 > = {
   SUCESSO: { color: "success", label: "Sucesso" },
   ERRO: { color: "danger", label: "Erro" },
-  PENDENTE_CAPTCHA: { color: "warning", label: "Captcha pendente" },
+  PENDENTE_CAPTCHA: { color: "warning", label: "Legado com captcha" },
   AGUARDANDO_WEBHOOK: { color: "primary", label: "Aguardando webhook" },
 };
 
@@ -53,35 +55,21 @@ export function ProcessosSyncOabModal({
   onClose,
   onSynced,
 }: ProcessosSyncOabModalProps) {
-  const [tribunais, setTribunais] = useState<TribunalSincronizacaoOption[]>(
-    [],
-  );
   const [historico, setHistorico] = useState<SincronizacaoInicialHistoricoItem[]>(
     [],
   );
-  const [tribunalSigla, setTribunalSigla] = useState("TJSP");
   const [oab, setOab] = useState("");
   const [clienteNome, setClienteNome] = useState("");
-  const [captchaText, setCaptchaText] = useState("");
   const [resultado, setResultado] =
     useState<SincronizacaoInicialOabResponse | null>(null);
-  const [captchaId, setCaptchaId] = useState<string | null>(null);
-  const [captchaImage, setCaptchaImage] = useState<string | undefined>(
-    undefined,
-  );
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isResolvingCaptcha, setIsResolvingCaptcha] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const resetState = useCallback(() => {
-    setTribunalSigla("TJSP");
     setOab("");
     setClienteNome("");
-    setCaptchaText("");
     setResultado(null);
-    setCaptchaId(null);
-    setCaptchaImage(undefined);
   }, []);
 
   const handleClose = () => {
@@ -94,13 +82,7 @@ export function ProcessosSyncOabModal({
 
     try {
       const response = await listarHistoricoSincronizacaoOab();
-      if (response.success) {
-        setHistorico(response.itens);
-      } else {
-        setHistorico([]);
-      }
-    } catch (error) {
-      setHistorico([]);
+      setHistorico(response.success ? response.itens : []);
     } finally {
       setIsLoadingHistory(false);
     }
@@ -110,38 +92,12 @@ export function ProcessosSyncOabModal({
     setIsBootstrapping(true);
 
     try {
-      const [tribunaisResponse, historicoResponse] = await Promise.all([
-        listarTribunaisSincronizacaoOab(),
-        listarHistoricoSincronizacaoOab(),
-      ]);
-
-      if (tribunaisResponse.success) {
-        setTribunais(tribunaisResponse.tribunais);
-
-        if (tribunaisResponse.tribunais.length > 0) {
-          const hasCurrent = tribunaisResponse.tribunais.some(
-            (item) => item.sigla === tribunalSigla,
-          );
-          if (!hasCurrent) {
-            setTribunalSigla(tribunaisResponse.tribunais[0].sigla);
-          }
-        }
-      } else {
-        setTribunais([]);
-      }
-
-      if (historicoResponse.success) {
-        setHistorico(historicoResponse.itens);
-      } else {
-        setHistorico([]);
-      }
-    } catch (error) {
-      setTribunais([]);
-      setHistorico([]);
+      const historicoResponse = await listarHistoricoSincronizacaoOab();
+      setHistorico(historicoResponse.success ? historicoResponse.itens : []);
     } finally {
       setIsBootstrapping(false);
     }
-  }, [tribunalSigla]);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -156,13 +112,10 @@ export function ProcessosSyncOabModal({
   const executarSincronizacao = async () => {
     setIsSyncing(true);
     setResultado(null);
-    setCaptchaId(null);
-    setCaptchaImage(undefined);
-    setCaptchaText("");
 
     try {
       const response = await sincronizarProcessosIniciaisPorOab({
-        tribunalSigla,
+        tribunalSigla: "JUSBRASIL",
         oab,
         clienteNome: clienteNome.trim() || undefined,
       });
@@ -170,49 +123,26 @@ export function ProcessosSyncOabModal({
       setResultado(response);
 
       if (response.success) {
-        if (response.monitoramentoRegistrado) {
-          addToast({
-            title: "Monitoramento registrado",
-            description:
-              response.message ||
-              "O Jusbrasil vai enviar os processos por webhook assim que concluir a coleta.",
-            color: "primary",
-          });
-          await loadHistorico();
-          onSynced?.();
-          return;
-        }
-
         addToast({
-          title: "Sincronização concluída",
-          description: `${response.syncedCount ?? 0} processo(s) sincronizado(s) com sucesso.`,
-          color: "success",
+          title: "Monitoramento registrado",
+          description:
+            response.message ||
+            "O Jusbrasil vai enviar os processos por webhook assim que concluir a coleta.",
+          color: "primary",
         });
         await loadHistorico();
         onSynced?.();
         return;
       }
 
-      if (response.captchaRequired && response.captchaId) {
-        setCaptchaId(response.captchaId);
-        setCaptchaImage(response.captchaImage);
-        addToast({
-          title: "Captcha obrigatório",
-          description:
-            response.error ||
-            "Informe o captcha para continuar a sincronização no e-SAJ.",
-          color: "warning",
-        });
-        return;
-      }
-
       addToast({
         title: "Falha na sincronização",
-        description: response.error || "Não foi possível sincronizar os processos.",
+        description:
+          response.error || "Não foi possível registrar o monitoramento agora.",
         color: "danger",
       });
       await loadHistorico();
-    } catch (error) {
+    } catch {
       addToast({
         title: "Erro interno",
         description: "Não foi possível iniciar a sincronização agora.",
@@ -220,70 +150,6 @@ export function ProcessosSyncOabModal({
       });
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const resolverCaptcha = async () => {
-    if (!captchaId) {
-      addToast({
-        title: "Captcha ausente",
-        description: "Inicie uma sincronização que exija captcha antes de validar.",
-        color: "warning",
-      });
-      return;
-    }
-
-    if (!captchaText.trim()) {
-      addToast({
-        title: "Digite o captcha",
-        description: "Informe os caracteres da imagem para validar.",
-        color: "warning",
-      });
-      return;
-    }
-
-    setIsResolvingCaptcha(true);
-
-    try {
-      const response = await resolverCaptchaSincronizacaoOab({
-        tribunalSigla,
-        oab,
-        clienteNome: clienteNome.trim() || undefined,
-        captchaId,
-        captchaText: captchaText.trim(),
-      });
-
-      setResultado(response);
-
-      if (response.success) {
-        setCaptchaId(null);
-        setCaptchaImage(undefined);
-        setCaptchaText("");
-
-        addToast({
-          title: "Captcha validado",
-          description: `${response.syncedCount ?? 0} processo(s) sincronizado(s) após validação.`,
-          color: "success",
-        });
-        await loadHistorico();
-        onSynced?.();
-        return;
-      }
-
-      addToast({
-        title: "Captcha inválido",
-        description: response.error || "Não foi possível concluir a validação.",
-        color: "danger",
-      });
-      await loadHistorico();
-    } catch (error) {
-      addToast({
-        title: "Erro interno",
-        description: "Falha ao validar captcha.",
-        color: "danger",
-      });
-    } finally {
-      setIsResolvingCaptcha(false);
     }
   };
 
@@ -298,8 +164,8 @@ export function ProcessosSyncOabModal({
         <ModalHeader className="flex flex-col gap-1">
           Sincronização inicial de processos (OAB)
           <p className="text-sm font-normal text-default-500">
-            Execute a captura em lote por tribunal e OAB para trazer os processos
-            públicos para o sistema com histórico auditável.
+            A descoberta por OAB agora usa somente o Jusbrasil e recebe os
+            processos via webhook com trilha auditável.
           </p>
         </ModalHeader>
 
@@ -308,10 +174,10 @@ export function ProcessosSyncOabModal({
             <CardBody className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  1. Selecione o tribunal
+                  1. Integração ativa
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  Use o tribunal com consulta pública por e-SAJ.
+                  O escritório precisa estar com a integração Jusbrasil habilitada.
                 </p>
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
@@ -324,59 +190,48 @@ export function ProcessosSyncOabModal({
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  3. Sincronize e audite
+                  3. Aguarde o webhook
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O histórico registra sucesso, erros e pendências de captcha.
+                  O retorno dos processos chega assíncrono, sem captcha e sem seleção de tribunal.
                 </p>
               </div>
             </CardBody>
           </Card>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Select
-              isDisabled={isBootstrapping || isSyncing || isResolvingCaptcha}
-              label="Tribunal"
-              placeholder="Selecione o tribunal"
-              selectedKeys={tribunalSigla ? [tribunalSigla] : []}
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as string;
-                setTribunalSigla(selected || "");
-              }}
-            >
-              {tribunais.map((tribunal) => (
-                <SelectItem key={tribunal.sigla} textValue={tribunal.sigla}>
-                  {tribunal.sigla} · {tribunal.nome} ({tribunal.uf})
-                </SelectItem>
-              ))}
-            </Select>
-
             <Input
-              isDisabled={isSyncing || isResolvingCaptcha}
+              isDisabled={isSyncing}
               label="OAB (opcional)"
               placeholder="Ex: 123456SP"
               value={oab}
               onChange={(event) => setOab(event.target.value)}
             />
+
+            <Input
+              isDisabled={isSyncing}
+              label="Cliente padrão (opcional)"
+              placeholder="Se informado, vincula como cliente padrão da importação"
+              value={clienteNome}
+              onChange={(event) => setClienteNome(event.target.value)}
+            />
           </div>
 
-          <Input
-            isDisabled={isSyncing || isResolvingCaptcha}
-            label="Cliente padrão (opcional)"
-            placeholder="Se informado, vincula como cliente padrão da importação"
-            value={clienteNome}
-            onChange={(event) => setClienteNome(event.target.value)}
-          />
+          <Card className="border border-primary/20 bg-primary/5">
+            <CardBody className="gap-2 text-sm text-primary-800">
+              <p className="font-semibold">Origem da sincronização</p>
+              <p>Jusbrasil via webhook assíncrono.</p>
+            </CardBody>
+          </Card>
 
           <div className="flex flex-wrap gap-2">
             <Button
               color="primary"
-              isDisabled={!tribunalSigla || tribunais.length === 0}
               isLoading={isSyncing}
               startContent={<RefreshCw className="h-4 w-4" />}
               onPress={executarSincronizacao}
             >
-              Sincronizar agora
+              Sincronizar via Jusbrasil
             </Button>
             <Button
               isLoading={isBootstrapping}
@@ -388,51 +243,6 @@ export function ProcessosSyncOabModal({
             </Button>
           </div>
 
-          {captchaId && (
-            <Card className="border border-warning/40 bg-warning/5">
-              <CardBody className="space-y-3">
-                <div className="flex items-center gap-2 text-warning-700">
-                  <ShieldAlert className="h-4 w-4" />
-                  <p className="text-sm font-semibold">
-                    Captcha necessário para continuar
-                  </p>
-                </div>
-
-                {captchaImage ? (
-                  <img
-                    alt="Captcha e-SAJ"
-                    className="h-16 w-48 rounded-md border border-warning/30 bg-white object-contain p-1"
-                    src={captchaImage}
-                  />
-                ) : (
-                  <p className="text-xs text-warning-700">
-                    O tribunal exigiu captcha, mas não retornou imagem. Gere uma
-                    nova tentativa para obter um código válido.
-                  </p>
-                )}
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    className="sm:flex-1"
-                    isDisabled={isResolvingCaptcha}
-                    label="Código do captcha"
-                    placeholder="Digite os caracteres exibidos"
-                    value={captchaText}
-                    onChange={(event) => setCaptchaText(event.target.value)}
-                  />
-                  <Button
-                    className="sm:self-end"
-                    color="warning"
-                    isLoading={isResolvingCaptcha}
-                    onPress={resolverCaptcha}
-                  >
-                    Validar captcha
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
-          )}
-
           {resultado && (
             <Card
               className={`border ${
@@ -440,7 +250,7 @@ export function ProcessosSyncOabModal({
                   ? "border-primary/30 bg-primary/5"
                   : resultado.success
                     ? "border-success/30 bg-success/5"
-                  : "border-danger/30 bg-danger/5"
+                    : "border-danger/30 bg-danger/5"
               }`}
             >
               <CardBody className="space-y-3">
@@ -461,7 +271,7 @@ export function ProcessosSyncOabModal({
                     {resultado.monitoramentoRegistrado
                       ? "Aguardando webhook"
                       : resultado.success
-                        ? "Concluido"
+                        ? "Concluído"
                         : "Falha"}
                   </Chip>
                 </div>
@@ -570,7 +380,7 @@ export function ProcessosSyncOabModal({
 
                       <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
                         <p className="text-default-600">
-                          <strong>Tribunal:</strong> {item.tribunalSigla}
+                          <strong>Origem:</strong> {item.tribunalSigla}
                         </p>
                         <p className="text-default-600">
                           <strong>OAB:</strong> {item.oab}

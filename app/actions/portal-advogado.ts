@@ -1,7 +1,6 @@
-"use server";
+﻿"use server";
 
 import { randomUUID } from "crypto";
-import { resumeHook, start } from "workflow/api";
 
 import { getSession } from "@/app/lib/auth";
 import {
@@ -22,18 +21,15 @@ import {
   PortalProcessSyncState,
   isPortalProcessSyncTerminalStatus,
 } from "@/app/lib/juridical/process-sync-types";
-import {
-  buildPortalProcessSyncHookToken,
-  type PortalProcessSyncWorkflowInput,
-} from "@/app/lib/juridical/process-sync-workflow-shared";
 import type { Prisma } from "@/generated/prisma";
-import { portalProcessSyncWorkflow } from "@/workflows/portal-process-sync";
 import {
   TRIBUNAIS_CONFIG,
   getTribunalConfig,
   getTribunaisScrapingDisponiveis,
 } from "@/lib/api/juridical/config";
 import logger from "@/lib/logger";
+
+const JUSBRASIL_DISCOVERY_SIGLA = "JUSBRASIL";
 
 /**
  * Busca a UF principal do tenant (baseada no endereço principal)
@@ -428,18 +424,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
 
     const tenantId = session.user.tenantId;
     const usuarioId = session.user.id;
-    const tribunalSigla = (params?.tribunalSigla || "TJSP").trim().toUpperCase();
-
-    const tribunaisSuportados = getTribunaisScrapingDisponiveis().map(
-      (item) => item.sigla,
-    );
-
-    if (!tribunaisSuportados.includes(tribunalSigla)) {
-      return {
-        success: false,
-        error: `Tribunal ${tribunalSigla} não está habilitado para sincronização por OAB.`,
-      };
-    }
+    const tribunalSigla = JUSBRASIL_DISCOVERY_SIGLA;
 
     const latestState = await getLatestPortalProcessSyncState({
       tenantId,
@@ -475,6 +460,14 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
       };
     }
 
+    if (!(await isJusbrasilIntegrationEnabledForTenant(tenantId))) {
+      return {
+        success: false,
+        error:
+          "A integracao Jusbrasil esta desativada para este escritorio. Ative em Configuracoes > Jusbrasil para buscar processos por OAB.",
+      };
+    }
+
     const syncId = randomUUID();
     const clienteNome = params?.clienteNome?.trim() || undefined;
     const initialState = buildInitialPortalProcessSyncState({
@@ -489,8 +482,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
 
     await savePortalProcessSyncState(initialState);
 
-    if (await isJusbrasilIntegrationEnabledForTenant(tenantId)) {
-      try {
+    try {
         const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
           oab: ctx.oab,
           name: ctx.displayName,
@@ -542,60 +534,17 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
           syncId,
           status: toPublicSyncState(awaitingState),
         };
-      } catch (error) {
-        const failedState = withPortalProcessSyncStatus(initialState, "FAILED", {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Falha ao registrar monitoramento Jusbrasil.",
-        });
-        await savePortalProcessSyncState(failedState);
-
-        throw error;
-      }
-    }
-
-    const workflowInput: PortalProcessSyncWorkflowInput = {
-      syncId,
-      tenantId,
-      usuarioId,
-      advogadoId: ctx.advogadoId,
-      tribunalSigla,
-      oab: ctx.oab,
-      clienteNome,
-    };
-
-    let runId: string;
-    try {
-      const run = await start(portalProcessSyncWorkflow, [workflowInput]);
-      runId = run.runId;
     } catch (error) {
       const failedState = withPortalProcessSyncStatus(initialState, "FAILED", {
         error:
           error instanceof Error
             ? error.message
-            : "Falha ao iniciar a sincronização no Workflow.",
+            : "Falha ao registrar monitoramento Jusbrasil.",
       });
       await savePortalProcessSyncState(failedState);
 
       throw error;
     }
-
-    const persistedState =
-      (await getPortalProcessSyncState(syncId)) ?? initialState;
-    const queuedState: PortalProcessSyncState = {
-      ...persistedState,
-      queueJobId: runId,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await savePortalProcessSyncState(queuedState);
-
-    return {
-      success: true,
-      syncId,
-      status: toPublicSyncState(queuedState),
-    };
   } catch (error) {
     logger.error("[Portal Advogado] Erro ao iniciar sincronização:", error);
     return {
@@ -653,160 +602,31 @@ export async function getStatusSincronizacaoMeusProcessos(params?: {
   }
 }
 
-export async function resolverCaptchaSincronizacaoMeusProcessos(params: {
-  syncId: string;
-  captchaText: string;
+export async function resolverCaptchaSincronizacaoMeusProcessos(_params?: {
+  syncId?: string;
+  captchaText?: string;
 }): Promise<{
   success: boolean;
-  status?: ReturnType<typeof toPublicSyncState>;
   error?: string;
 }> {
-  try {
-    const session = await getSession();
-
-    if (!session?.user?.tenantId || !session.user.id) {
-      return { success: false, error: "Não autorizado." };
-    }
-
-    const tenantId = session.user.tenantId;
-    const usuarioId = session.user.id;
-    const captchaText = (params.captchaText || "").trim();
-
-    if (!captchaText) {
-      return {
-        success: false,
-        error: "Informe o captcha para continuar.",
-      };
-    }
-
-    const state = await getPortalProcessSyncState(params.syncId);
-
-    if (!state) {
-      return {
-        success: false,
-        error: "Sincronização não encontrada ou expirada.",
-      };
-    }
-
-    if (state.tenantId !== tenantId || state.usuarioId !== usuarioId) {
-      return {
-        success: false,
-        error: "Sincronização não pertence ao usuário atual.",
-      };
-    }
-
-    if (state.status !== "WAITING_CAPTCHA" || !state.captchaId) {
-      return {
-        success: false,
-        status: toPublicSyncState(state),
-        error: "Esta sincronização não está aguardando captcha.",
-      };
-    }
-
-    const queuedState: PortalProcessSyncState = {
-      ...state,
-      mode: "CAPTCHA",
-      status: "QUEUED",
-      error: undefined,
-      updatedAt: new Date().toISOString(),
-    };
-    await savePortalProcessSyncState(queuedState);
-
-    try {
-      await resumeHook(buildPortalProcessSyncHookToken(state.syncId), {
-        action: "SOLVE",
-        captchaText,
-      });
-    } catch (error) {
-      await savePortalProcessSyncState(state);
-      throw error;
-    }
-
-    return {
-      success: true,
-      status: toPublicSyncState(queuedState),
-    };
-  } catch (error) {
-    logger.error("[Portal Advogado] Erro ao resolver captcha:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido.",
-    };
-  }
+  return {
+    success: false,
+    error:
+      "O fluxo com captcha foi desativado. A busca por OAB agora funciona apenas via Jusbrasil.",
+  };
 }
 
-export async function gerarNovoCaptchaSincronizacaoMeusProcessos(params: {
-  syncId: string;
+export async function gerarNovoCaptchaSincronizacaoMeusProcessos(_params?: {
+  syncId?: string;
 }): Promise<{
   success: boolean;
-  status?: ReturnType<typeof toPublicSyncState>;
   error?: string;
 }> {
-  try {
-    const session = await getSession();
-
-    if (!session?.user?.tenantId || !session.user.id) {
-      return { success: false, error: "Não autorizado." };
-    }
-
-    const tenantId = session.user.tenantId;
-    const usuarioId = session.user.id;
-
-    const state = await getPortalProcessSyncState(params.syncId);
-
-    if (!state) {
-      return {
-        success: false,
-        error: "Sincronização não encontrada ou expirada.",
-      };
-    }
-
-    if (state.tenantId !== tenantId || state.usuarioId !== usuarioId) {
-      return {
-        success: false,
-        error: "Sincronização não pertence ao usuário atual.",
-      };
-    }
-
-    if (state.status !== "WAITING_CAPTCHA") {
-      return {
-        success: false,
-        status: toPublicSyncState(state),
-        error: "Esta sincronização não está aguardando captcha.",
-      };
-    }
-
-    const queuedState: PortalProcessSyncState = {
-      ...state,
-      mode: "INITIAL",
-      status: "QUEUED",
-      error: undefined,
-      captchaId: undefined,
-      captchaImage: undefined,
-      updatedAt: new Date().toISOString(),
-    };
-    await savePortalProcessSyncState(queuedState);
-
-    try {
-      await resumeHook(buildPortalProcessSyncHookToken(state.syncId), {
-        action: "REFRESH",
-      });
-    } catch (error) {
-      await savePortalProcessSyncState(state);
-      throw error;
-    }
-
-    return {
-      success: true,
-      status: toPublicSyncState(queuedState),
-    };
-  } catch (error) {
-    logger.error("[Portal Advogado] Erro ao gerar novo captcha:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido.",
-    };
-  }
+  return {
+    success: false,
+    error:
+      "O fluxo com captcha foi desativado. A busca por OAB agora funciona apenas via Jusbrasil.",
+  };
 }
 
 type PortalProcessoSincronizado = {
@@ -1714,3 +1534,4 @@ export async function getPainelOperacionalPortalAdvogado(params?: {
     };
   }
 }
+

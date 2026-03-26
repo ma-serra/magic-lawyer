@@ -964,13 +964,6 @@ export function OperacoesJuridicasContent() {
                       </div>
                     </CardHeader>
                     <CardBody className="space-y-3">
-                      <SearchableSelect
-                        items={tribunalOptions}
-                        label="Tribunal"
-                        placeholder="Escolha o tribunal"
-                        selectedKey={syncTribunal}
-                        onSelectionChange={setSyncTribunal}
-                      />
                       <Input
                         label="OAB"
                         placeholder="000000SP"
@@ -983,6 +976,9 @@ export function OperacoesJuridicasContent() {
                         value={syncCliente}
                         onValueChange={setSyncCliente}
                       />
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary-800">
+                        Origem da sincronização: Jusbrasil via webhook assíncrono.
+                      </div>
                       <Button
                         color="primary"
                         isLoading={isSyncing}
@@ -999,9 +995,7 @@ export function OperacoesJuridicasContent() {
                               ? "border-danger/20 bg-danger/5"
                               : selectedSyncStatus.status === "AWAITING_WEBHOOK"
                                 ? "border-primary/20 bg-primary/5"
-                                : selectedSyncStatus.status === "WAITING_CAPTCHA"
-                                  ? "border-warning/20 bg-warning/5"
-                                  : "border-primary/20 bg-primary/5"
+                                : "border-primary/20 bg-primary/5"
                           }`}
                         >
                           <CardBody className="space-y-2 p-4">
@@ -1012,8 +1006,6 @@ export function OperacoesJuridicasContent() {
                                     ? "success"
                                     : selectedSyncStatus.status === "FAILED"
                                       ? "danger"
-                                      : selectedSyncStatus.status === "WAITING_CAPTCHA"
-                                        ? "warning"
                                         : "primary"
                                 }
                                 variant="flat"
@@ -1049,42 +1041,6 @@ export function OperacoesJuridicasContent() {
                         </Card>
                       ) : null}
 
-                      {selectedSyncStatus?.status === "WAITING_CAPTCHA" &&
-                      selectedSyncStatus.captchaImage ? (
-                        <Card className="border border-warning/20 bg-warning/5">
-                          <CardBody className="space-y-3 p-4">
-                            <p className="text-sm font-semibold text-warning">
-                              Captcha pendente
-                            </p>
-                            <img
-                              alt="Captcha do tribunal"
-                              className="max-h-24 rounded-xl border border-white/10 bg-white"
-                              src={selectedSyncStatus.captchaImage}
-                            />
-                            <Input
-                              label="Texto do captcha"
-                              value={captchaText}
-                              onValueChange={setCaptchaText}
-                            />
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                color="warning"
-                                isLoading={isResolvingCaptcha}
-                                onPress={handleResolveCaptcha}
-                              >
-                                Enviar captcha
-                              </Button>
-                              <Button
-                                isLoading={isRefreshingCaptcha}
-                                variant="bordered"
-                                onPress={handleRefreshCaptcha}
-                              >
-                                Renovar captcha
-                              </Button>
-                            </div>
-                          </CardBody>
-                        </Card>
-                      ) : null}
                     </CardBody>
                   </Card>
 

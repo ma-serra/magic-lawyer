@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -64,7 +64,7 @@ import {
 export function PortalAdvogadoContent() {
   const router = useRouter();
   const [ufSelecionada, setUfSelecionada] = useState<string | undefined>();
-  const [syncTribunalSigla, setSyncTribunalSigla] = useState("TJSP");
+  const [syncTribunalSigla] = useState("JUSBRASIL");
   const [syncOab, setSyncOab] = useState("");
   const [syncClienteNome, setSyncClienteNome] = useState("");
   const [captchaText, setCaptchaText] = useState("");
@@ -863,50 +863,14 @@ export function PortalAdvogadoContent() {
         )}
       </PeoplePanel>
 
-      <PeoplePanel
-        actions={
-          syncStatusMeta ? (
-            <Chip
-              color={syncStatusMeta.color}
-              startContent={syncStatusMeta.icon}
-              variant="flat"
-            >
-              {syncStatusMeta.label}
-            </Chip>
-          ) : undefined
-        }
-        description="Execute sincronização em background. Se houver captcha, valide aqui para continuar sem perder o processamento."
+            <PeoplePanel
+        description="Execute a sincronização por OAB via Jusbrasil e aguarde o retorno dos processos por webhook."
         title="Trazer Meus Processos"
       >
         <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <Select
-              isDisabled={isStartingSync || isResolvingCaptcha || isSyncRunning}
-              label="Tribunal"
-              placeholder="Selecione"
-              selectedKeys={
-                syncTribunalSigla &&
-                syncTribunais.some((t) => t.sigla === syncTribunalSigla)
-                  ? [syncTribunalSigla]
-                  : []
-              }
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as string;
-                setSyncTribunalSigla(selected || "");
-              }}
-            >
-              {syncTribunais.map((tribunal) => (
-                <SelectItem
-                  key={tribunal.sigla}
-                  textValue={`${tribunal.sigla} · ${tribunal.nome}`}
-                >
-                  {tribunal.sigla} · {tribunal.nome}
-                </SelectItem>
-              ))}
-            </Select>
-
+          <div className="grid gap-3 md:grid-cols-2">
             <Input
-              isDisabled={isStartingSync || isResolvingCaptcha || isSyncRunning}
+              isDisabled={isStartingSync || isSyncRunning}
               label="OAB (opcional)"
               placeholder="Ex: 123456SP"
               value={syncOab}
@@ -914,7 +878,7 @@ export function PortalAdvogadoContent() {
             />
 
             <Input
-              isDisabled={isStartingSync || isResolvingCaptcha || isSyncRunning}
+              isDisabled={isStartingSync || isSyncRunning}
               label="Cliente padrão (opcional)"
               placeholder="Nome do cliente padrão"
               value={syncClienteNome}
@@ -922,10 +886,13 @@ export function PortalAdvogadoContent() {
             />
           </div>
 
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-primary-800">
+            Origem da sincronização: Jusbrasil via webhook assíncrono.
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
               color="primary"
-              isDisabled={syncTribunais.length === 0 || !syncTribunalSigla}
               isLoading={isStartingSync}
               size="sm"
               startContent={<RefreshCw className="h-4 w-4" />}
@@ -933,7 +900,7 @@ export function PortalAdvogadoContent() {
             >
               Iniciar sincronização
             </Button>
-            {(isLoadingSyncStatus || isLoadingSyncTribunais) && (
+            {isLoadingSyncStatus && (
               <div className="flex items-center gap-2 text-sm text-default-500">
                 <Spinner size="sm" />
                 Carregando estado da sincronização...
@@ -950,12 +917,12 @@ export function PortalAdvogadoContent() {
                 </p>
               </div>
               <p className="mt-1 text-xs text-default-400">
-                A busca de processos continua em segundo plano. Você pode usar o
-                sistema normalmente e acompanhar o progresso por aqui.
+                O monitoramento já foi registrado e a chegada dos processos depende
+                do webhook do Jusbrasil. Você pode usar o sistema normalmente e
+                acompanhar o progresso por aqui.
               </p>
             </div>
           ) : null}
-
           {syncStatus && (
             <div className="rounded-xl border border-white/10 bg-background/50 p-3 sm:p-4 space-y-3">
               <p className="text-xs text-default-500">
@@ -1005,66 +972,6 @@ export function PortalAdvogadoContent() {
                     ))}
                   </div>
                 )}
-            </div>
-          )}
-
-          {isWaitingCaptcha && syncStatus?.captchaId && (
-            <div className="rounded-xl border border-warning/40 bg-warning/5 p-3 space-y-3">
-              <div className="flex items-center gap-2 text-warning-700">
-                <ShieldAlert className="h-4 w-4" />
-                <p className="text-sm font-semibold">
-                  Captcha necessário para continuar
-                </p>
-              </div>
-
-              {syncStatus.captchaImage ? (
-                <img
-                  alt="Captcha do tribunal"
-                  className="h-16 w-48 rounded-md border border-warning/30 bg-white object-contain p-1"
-                  src={syncStatus.captchaImage}
-                />
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-warning-700">
-                    O tribunal exigiu captcha, mas não retornou imagem. Gere um
-                    novo desafio.
-                  </p>
-                  <Button
-                    color="warning"
-                    isLoading={isRefreshingCaptcha}
-                    size="sm"
-                    variant="flat"
-                    onPress={gerarNovoCaptcha}
-                  >
-                    Gerar novo captcha
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  className="sm:flex-1"
-                  isDisabled={
-                    isResolvingCaptcha ||
-                    isRefreshingCaptcha ||
-                    !syncStatus.captchaImage
-                  }
-                  label="Código do captcha"
-                  placeholder="Digite os caracteres"
-                  value={captchaText}
-                  onChange={(event) => setCaptchaText(event.target.value)}
-                />
-                <Button
-                  className="sm:self-end"
-                  color="warning"
-                  isDisabled={!syncStatus.captchaImage || isRefreshingCaptcha}
-                  isLoading={isResolvingCaptcha}
-                  size="sm"
-                  onPress={resolverCaptcha}
-                >
-                  Validar captcha
-                </Button>
-              </div>
             </div>
           )}
         </div>
@@ -1385,3 +1292,6 @@ export function PortalAdvogadoContent() {
     </section>
   );
 }
+
+
+

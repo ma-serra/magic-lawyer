@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/app/lib/auth";
 import { getAdvogadoIdFromSession } from "@/app/lib/advogado-access";
 import prisma from "@/app/lib/prisma";
-import { capturarProcessoAction, resolverCaptchaEsajAction } from "@/app/actions/juridical-capture";
 import { checkPermission } from "@/app/actions/equipe";
 import {
   AUDIT_ACTION_SYNC_OAB,
@@ -16,10 +15,10 @@ import {
   registerOrRefreshJusbrasilMonitor,
   type OabSyncAuditStatus,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
-import { getTribunaisScrapingDisponiveis } from "@/lib/api/juridical/config";
 import logger from "@/lib/logger";
 
 type SyncStatus = OabSyncAuditStatus;
+const JUSBRASIL_DISCOVERY_SIGLA = "JUSBRASIL";
 
 type SyncActionLikeResult = {
   success: boolean;
@@ -173,36 +172,6 @@ async function resolveSyncContext(params: {
   };
 }
 
-async function createScrapingSyncAudit(params: {
-  tenantId: string;
-  usuarioId: string;
-  tribunalSigla: string;
-  oab: string;
-  status: SyncStatus;
-  result: SyncActionLikeResult;
-  origem: "INICIO" | "CAPTCHA";
-}) {
-  const processosNumeros = extractProcessNumbers(params.result);
-  const syncedCount = toSafeNumber(params.result.syncedCount) || processosNumeros.length;
-
-  await createOabSyncAuditEntry({
-    tenantId: params.tenantId,
-    usuarioId: params.usuarioId,
-    tribunalSigla: params.tribunalSigla,
-    oab: params.oab,
-    status: params.status,
-    origem: params.origem,
-    syncedCount,
-    createdCount: toSafeNumber(params.result.createdCount),
-    updatedCount: toSafeNumber(params.result.updatedCount),
-    processosNumeros,
-    error: params.result.error,
-    captchaRequired: Boolean(params.result.captchaRequired),
-    provider: "SCRAPING",
-    mode: "SYNC",
-  });
-}
-
 function toPublicResponse(params: {
   tribunalSigla: string;
   oab: string;
@@ -303,17 +272,15 @@ export async function listarTribunaisSincronizacaoOab(): Promise<{
     };
   }
 
-  const tribunais = getTribunaisScrapingDisponiveis()
-    .map((tribunal) => ({
-      sigla: tribunal.sigla,
-      nome: tribunal.nome,
-      uf: tribunal.uf,
-    }))
-    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-
   return {
     success: true,
-    tribunais,
+    tribunais: [
+      {
+        sigla: JUSBRASIL_DISCOVERY_SIGLA,
+        nome: "Jusbrasil",
+        uf: "BR",
+      },
+    ],
   };
 }
 
@@ -343,25 +310,7 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
 
     const tenantId = session.user.tenantId;
     const usuarioId = session.user.id;
-    const tribunalSigla = (params.tribunalSigla || "").trim().toUpperCase();
-
-    if (!tribunalSigla) {
-      return {
-        success: false,
-        error: "Selecione o tribunal para iniciar a sincronizacao.",
-      };
-    }
-
-    const tribunaisSuportados = getTribunaisScrapingDisponiveis().map(
-      (item) => item.sigla,
-    );
-
-    if (!tribunaisSuportados.includes(tribunalSigla)) {
-      return {
-        success: false,
-        error: `Tribunal ${tribunalSigla} nao esta habilitado para sincronizacao por OAB.`,
-      };
-    }
+    const tribunalSigla = JUSBRASIL_DISCOVERY_SIGLA;
 
     const context = await resolveSyncContext({
       tenantId,
@@ -379,181 +328,66 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
 
     const clienteNome = params.clienteNome?.trim() || undefined;
 
-    if (await isJusbrasilIntegrationEnabledForTenant(tenantId)) {
-      const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
-        oab: context.oab,
-        name: context.advogadoDisplayName,
-      });
-
-      if (!monitor.correlation_id) {
-        throw new Error(
-          "Jusbrasil nao retornou correlation_id para o monitoramento da OAB.",
-        );
-      }
-
-      const webhookUrl = buildJusbrasilExpectedWebhookUrl();
-
-      await createOabSyncAuditEntry({
-        tenantId,
-        usuarioId,
-        tribunalSigla,
-        oab: context.oab,
-        status: "AGUARDANDO_WEBHOOK",
-        origem: "JUSBRASIL_REGISTRO",
-        provider: "JUSBRASIL",
-        mode: "ASYNC_WEBHOOK",
-        entidadeId: monitor.correlation_id,
-        correlationId: monitor.correlation_id,
-        monitorId: monitor.id,
-        advogadoId: context.advogadoId,
-        clienteNome,
-        webhookUrl,
-        existingMonitor: existed,
-      });
-
+    if (!(await isJusbrasilIntegrationEnabledForTenant(tenantId))) {
       return {
-        success: true,
+        success: false,
         tribunalSigla,
         oab: context.oab,
-        syncedCount: 0,
-        createdCount: 0,
-        updatedCount: 0,
-        processosNumeros: [],
-        provider: "JUSBRASIL",
-        mode: "ASYNC_WEBHOOK",
-        monitoramentoRegistrado: true,
-        correlationId: monitor.correlation_id,
-        webhookUrl,
-        message: existed
-          ? "Monitoramento Jusbrasil atualizado. O retorno agora chegara via webhook."
-          : "Monitoramento Jusbrasil criado. O retorno chegara via webhook.",
+        error:
+          "A integracao Jusbrasil esta desativada para este escritorio. Ative em Configuracoes > Jusbrasil para sincronizar processos por OAB.",
       };
     }
 
-    const resultado = (await capturarProcessoAction({
-      tribunalSigla,
+    const { monitor, existed } = await registerOrRefreshJusbrasilMonitor({
       oab: context.oab,
-      clienteNome,
-    })) as SyncActionLikeResult;
+      name: context.advogadoDisplayName,
+    });
 
-    const status: SyncStatus = resultado.success
-      ? "SUCESSO"
-      : resultado.captchaRequired
-        ? "PENDENTE_CAPTCHA"
-        : "ERRO";
+    if (!monitor.correlation_id) {
+      throw new Error(
+        "Jusbrasil nao retornou correlation_id para o monitoramento da OAB.",
+      );
+    }
 
-    await createScrapingSyncAudit({
+    const webhookUrl = buildJusbrasilExpectedWebhookUrl();
+
+    await createOabSyncAuditEntry({
       tenantId,
       usuarioId,
       tribunalSigla,
       oab: context.oab,
-      status,
-      result: resultado,
-      origem: "INICIO",
+      status: "AGUARDANDO_WEBHOOK",
+      origem: "JUSBRASIL_REGISTRO",
+      provider: "JUSBRASIL",
+      mode: "ASYNC_WEBHOOK",
+      entidadeId: monitor.correlation_id,
+      correlationId: monitor.correlation_id,
+      monitorId: monitor.id,
+      advogadoId: context.advogadoId,
+      clienteNome,
+      webhookUrl,
+      existingMonitor: existed,
     });
 
-    if (resultado.success) {
-      revalidatePath("/processos");
-    }
-
-    return toPublicResponse({
+    return {
+      success: true,
       tribunalSigla,
       oab: context.oab,
-      result: resultado,
-      provider: "SCRAPING",
-      mode: "SYNC",
-    });
+      syncedCount: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      processosNumeros: [],
+      provider: "JUSBRASIL",
+      mode: "ASYNC_WEBHOOK",
+      monitoramentoRegistrado: true,
+      correlationId: monitor.correlation_id,
+      webhookUrl,
+      message: existed
+        ? "Monitoramento Jusbrasil atualizado. O retorno agora chegara via webhook."
+        : "Monitoramento Jusbrasil criado. O retorno chegara via webhook.",
+    };
   } catch (error) {
     logger.error("[Processos Sync OAB] Erro ao sincronizar:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido.",
-    };
-  }
-}
-
-export async function resolverCaptchaSincronizacaoOab(params: {
-  tribunalSigla: string;
-  captchaId: string;
-  captchaText: string;
-  oab?: string;
-  clienteNome?: string;
-}): Promise<SincronizacaoInicialOabResponse> {
-  try {
-    const session = await getSession();
-
-    if (!session?.user?.tenantId || !session.user.id) {
-      return {
-        success: false,
-        error: "Nao autorizado.",
-      };
-    }
-
-    const podeSincronizar = await checkPermission("processos", "editar");
-
-    if (!podeSincronizar) {
-      return {
-        success: false,
-        error: "Voce nao tem permissao para sincronizar processos por OAB.",
-      };
-    }
-
-    const tenantId = session.user.tenantId;
-    const usuarioId = session.user.id;
-    const tribunalSigla = (params.tribunalSigla || "").trim().toUpperCase();
-
-    if (!tribunalSigla) {
-      return {
-        success: false,
-        error: "Tribunal nao informado para validacao do captcha.",
-      };
-    }
-
-    const context = await resolveSyncContext({
-      tenantId,
-      session,
-      oab: params.oab,
-    });
-
-    if (!context.oab) {
-      return {
-        success: false,
-        tribunalSigla,
-        error: "Informe a OAB para concluir a sincronizacao com captcha.",
-      };
-    }
-
-    const resultado = (await resolverCaptchaEsajAction({
-      captchaId: params.captchaId,
-      captchaText: params.captchaText,
-      clienteNome: params.clienteNome?.trim() || undefined,
-    })) as SyncActionLikeResult;
-
-    const status: SyncStatus = resultado.success ? "SUCESSO" : "ERRO";
-
-    await createScrapingSyncAudit({
-      tenantId,
-      usuarioId,
-      tribunalSigla,
-      oab: context.oab,
-      status,
-      result: resultado,
-      origem: "CAPTCHA",
-    });
-
-    if (resultado.success) {
-      revalidatePath("/processos");
-    }
-
-    return toPublicResponse({
-      tribunalSigla,
-      oab: context.oab,
-      result: resultado,
-      provider: "SCRAPING",
-      mode: "SYNC",
-    });
-  } catch (error) {
-    logger.error("[Processos Sync OAB] Erro ao resolver captcha:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido.",

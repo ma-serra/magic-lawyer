@@ -40,7 +40,6 @@ Copy `.env.example` to `.env`. Key values to set:
 - `REDIS_URL=redis://localhost:6379`
 - `CERT_ENCRYPTION_KEY` — 32 bytes hex, required for digital certificate upload. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 - Set `ABLY_API_KEY=` and `NEXT_PUBLIC_ABLY_CLIENT_KEY=` to **empty** (not the placeholder values) — the app gracefully skips realtime features when these are empty, but crashes with "invalid key parameter" if they contain placeholder text.
-- `ESAJ_TLS_INSECURE=true`, `ESAJ_TLS_LEGACY=true` — recommended for e-SAJ scraping
 
 ### Testing
 

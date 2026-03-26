@@ -3,11 +3,13 @@
 import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
-import { capturarProcesso, capturarAndamentos } from "@/app/lib/juridical/capture-service";
+import {
+  capturarProcesso,
+  capturarAndamentos,
+} from "@/app/lib/juridical/capture-service";
 import { persistCapturedMovimentacoes } from "@/app/lib/juridical/process-movement-sync";
 import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import { getAdvogadoIdFromSession } from "@/app/lib/advogado-access";
-import { resolverCaptchaEsaj } from "@/lib/api/juridical/scraping";
 import { ProcessoJuridico } from "@/lib/api/juridical/types";
 import { checkPermission } from "@/app/actions/equipe";
 
@@ -88,9 +90,6 @@ async function persistCapturedProcessos(params: {
   };
 }
 
-/**
- * Captura processo via Server Action
- */
 export async function capturarProcessoAction(params: {
   numeroProcesso?: string;
   tribunalId?: string;
@@ -139,6 +138,14 @@ export async function capturarProcessoAction(params: {
       if (advogado?.oabNumero && advogado.oabUf) {
         oab = `${advogado.oabNumero}${advogado.oabUf}`;
       }
+    }
+
+    if (oab && !params.numeroProcesso) {
+      return {
+        success: false,
+        error:
+          "A busca de processos por OAB agora funciona apenas via Jusbrasil. Use a sincronização por OAB no sistema.",
+      };
     }
 
     const resultado = await capturarProcesso({
@@ -208,97 +215,6 @@ export async function capturarProcessoAction(params: {
   }
 }
 
-/**
- * Resolve captcha do e-SAJ e repete a consulta.
- * Fluxo pensado para o /teste-captura (manual).
- */
-export async function resolverCaptchaEsajAction(params: {
-  captchaId: string;
-  captchaText: string;
-  clienteNome?: string;
-}) {
-  try {
-    const session = await getSession();
-    if (!session?.user) {
-      return { success: false, error: "Não autorizado" };
-    }
-
-    const user = session.user as any;
-    if (!user.tenantId) {
-      return { success: false, error: "Tenant não encontrado" };
-    }
-
-    const podeCapturar = await checkPermission("processos", "editar");
-    if (!podeCapturar) {
-      return {
-        success: false,
-        error: "Sem permissão para capturar/sincronizar processos.",
-      };
-    }
-
-    const advogadoId = await getAdvogadoIdFromSession(session);
-
-    const resultado = await resolverCaptchaEsaj({
-      captchaId: params.captchaId,
-      captchaText: params.captchaText,
-    });
-
-    if (!resultado.success) {
-      return resultado;
-    }
-
-    const processosCapturados = dedupeProcessos(
-      resultado.processos?.length
-        ? resultado.processos
-        : resultado.processo
-          ? [resultado.processo]
-          : [],
-    );
-
-    if (processosCapturados.length === 0) {
-      return {
-        success: false,
-        error: "Captcha resolvido sem processos retornados.",
-      };
-    }
-
-    const persistedSummary = await persistCapturedProcessos({
-      tenantId: user.tenantId,
-      processos: processosCapturados,
-      clienteNome: params.clienteNome,
-      advogadoId: advogadoId || undefined,
-      criadoPorId: session.user.id!,
-    });
-    const firstPersisted = persistedSummary.persisted[0];
-
-    return {
-      success: true,
-      processo: processosCapturados[0],
-      processos: processosCapturados,
-      processoId: firstPersisted?.processoId,
-      created: Boolean(firstPersisted?.created),
-      createdCount: persistedSummary.createdCount,
-      updatedCount: persistedSummary.updatedCount,
-      createdMovimentacoes: persistedSummary.createdMovimentacoes,
-      skippedMovimentacoes: persistedSummary.skippedMovimentacoes,
-      notifiedRecipients: persistedSummary.notifiedRecipients,
-      syncedCount: processosCapturados.length,
-      persisted: persistedSummary.persisted,
-      movimentacoes: resultado.movimentacoes,
-      debug: resultado.debug,
-    };
-  } catch (error) {
-    logger.error("[Juridical Capture] Erro ao resolver captcha:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido",
-    };
-  }
-}
-
-/**
- * Captura apenas andamentos de um processo
- */
 export async function capturarAndamentosAction(params: {
   processoId: string;
   certificadoId?: string;

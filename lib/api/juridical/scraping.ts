@@ -36,18 +36,12 @@ const DEFAULT_OPTIONS: ScrapingOptions = {
   userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 };
 
-const ESAJ_TLS_INSECURE = process.env.ESAJ_TLS_INSECURE === "true" || process.env.ESAJ_TLS_INSECURE === "1";
-const ESAJ_TLS_MIN_VERSION = process.env.ESAJ_TLS_MIN_VERSION;
-const ESAJ_TLS_LEGACY = process.env.ESAJ_TLS_LEGACY === "true" || process.env.ESAJ_TLS_LEGACY === "1";
-const ESAJ_FORCE_CURL = process.env.NODE_ENV === "development";
-const ESAJ_MAX_OAB_PAGES = Math.max(
-  1,
-  Number.parseInt(process.env.ESAJ_MAX_OAB_PAGES ?? "5", 10) || 5,
-);
-const ESAJ_MAX_OAB_PROCESSOS = Math.max(
-  1,
-  Number.parseInt(process.env.ESAJ_MAX_OAB_PROCESSOS ?? "100", 10) || 100,
-);
+const DEFAULT_SCRAPER_TLS_INSECURE = true;
+const DEFAULT_SCRAPER_TLS_MIN_VERSION: SecureVersion = "TLSv1";
+const DEFAULT_SCRAPER_TLS_LEGACY = true;
+const FORCE_CURL_IN_DEV = process.env.NODE_ENV === "development";
+const DEFAULT_OAB_PAGES_LIMIT = 5;
+const DEFAULT_OAB_PROCESSOS_LIMIT = 100;
 
 const CNJ_PATTERN = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
 
@@ -86,14 +80,14 @@ async function wait(ms?: number) {
 
 function buildEsajAgentOptions() {
   const options: https.AgentOptions = {
-    rejectUnauthorized: !ESAJ_TLS_INSECURE,
+    rejectUnauthorized: !DEFAULT_SCRAPER_TLS_INSECURE,
   };
 
-  if (ESAJ_TLS_MIN_VERSION) {
-    options.minVersion = ESAJ_TLS_MIN_VERSION as SecureVersion;
+  if (DEFAULT_SCRAPER_TLS_MIN_VERSION) {
+    options.minVersion = DEFAULT_SCRAPER_TLS_MIN_VERSION as SecureVersion;
   }
 
-  if (ESAJ_TLS_LEGACY) {
+  if (DEFAULT_SCRAPER_TLS_LEGACY) {
     options.secureOptions = constants.SSL_OP_LEGACY_SERVER_CONNECT;
   }
 
@@ -126,7 +120,7 @@ async function fetchEsajPageViaCurl(url: string, headers: Record<string, string>
     args.push("-A", headers["User-Agent"]);
   }
 
-  if (ESAJ_TLS_INSECURE) {
+  if (DEFAULT_SCRAPER_TLS_INSECURE) {
     args.push("-k");
   }
 
@@ -189,7 +183,7 @@ async function fetchEsajBinaryViaCurl(url: string, headers: Record<string, strin
     args.push("-A", headers["User-Agent"]);
   }
 
-  if (ESAJ_TLS_INSECURE) {
+  if (DEFAULT_SCRAPER_TLS_INSECURE) {
     args.push("-k");
   }
 
@@ -352,7 +346,7 @@ async function fetchEsajPage(url: string, init: RequestInit & { cookieHeader?: s
     headers.Cookie = init.cookieHeader;
   }
 
-  if (ESAJ_FORCE_CURL) {
+  if (FORCE_CURL_IN_DEV) {
     try {
       logger.info({ url }, "[Scraping ESAJ] Usando curl para contornar TLS no desenvolvimento");
       return await fetchEsajPageViaCurl(url, headers, init);
@@ -450,7 +444,7 @@ async function fetchEsajBinary(url: string, init: RequestInit & { cookieHeader?:
     return fetchEsajBinaryViaCurl(url, headers, init);
   };
 
-  if (ESAJ_FORCE_CURL) {
+  if (FORCE_CURL_IN_DEV) {
     try {
       return await tryCurl();
     } catch (error) {
@@ -606,7 +600,7 @@ async function collectEsajLinksByOab(params: {
   let truncated = false;
   let lastBody = initialBody;
 
-  for (let page = 0; page < ESAJ_MAX_OAB_PAGES; page += 1) {
+  for (let page = 0; page < DEFAULT_OAB_PAGES_LIMIT; page += 1) {
     let pageBody = initialBody;
 
     if (page > 0) {
@@ -644,7 +638,7 @@ async function collectEsajLinksByOab(params: {
     }
     const added = linksMap.size - before;
 
-    if (linksMap.size >= ESAJ_MAX_OAB_PROCESSOS) {
+    if (linksMap.size >= DEFAULT_OAB_PROCESSOS_LIMIT) {
       truncated = true;
       break;
     }
@@ -993,7 +987,7 @@ async function consultarEsaj(tribunalSigla: string, tribunalNome: string, uf: st
           }),
         );
 
-        if (processos.length >= ESAJ_MAX_OAB_PROCESSOS) {
+        if (processos.length >= DEFAULT_OAB_PROCESSOS_LIMIT) {
           break;
         }
 
@@ -1088,7 +1082,7 @@ export async function resolverCaptchaEsaj(params: { captchaId: string; captchaTe
   if (!challenge) {
     return {
       success: false,
-      error: "Desafio de captcha expirado. Gere um novo pelo /teste-captura.",
+      error: "Desafio de captcha expirado. Gere uma nova tentativa de captura.",
     };
   }
 

@@ -35,8 +35,6 @@ Variáveis adicionadas/ajustadas em relação ao `.env.example` original:
 | `ABLY_API_KEY` | (vazio) | Valores placeholder causam crash no Ably client |
 | `NEXT_PUBLIC_ABLY_CLIENT_KEY` | (vazio) | Idem |
 | `CERT_ENCRYPTION_KEY` | 64 chars hex (32 bytes) | Necessário para upload de certificados digitais |
-| `ESAJ_TLS_INSECURE` | `true` | Permite scraping do e-SAJ com TLS flexível |
-| `ESAJ_TLS_LEGACY` | `true` | Suporte a protocolos TLS antigos dos tribunais |
 
 ### 2.3 Banco de dados
 

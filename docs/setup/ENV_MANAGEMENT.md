@@ -28,7 +28,7 @@ Evitar que o `.env` vire um repositório de chaves soltas e difíceis de manter 
 - **Storage / Upload**
   - `CLOUDINARY_*`, `CERT_ENCRYPTION_KEY`
 - **Integrações Jurídicas**
-  - `COMUNICA_*`, `ESAJ_*`, `GOOGLE_*`, `CLICKSIGN_*`
+  - `COMUNICA_*`, `GOOGLE_*`, `CLICKSIGN_*`
 - **Infra / Operação**
   - `POLLING_CONTROL_*`, `POLLING_LOAD_*`, `LOG_SILENT`, `TEST_MODE`
 

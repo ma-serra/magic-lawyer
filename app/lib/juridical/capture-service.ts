@@ -75,6 +75,14 @@ export async function capturarProcesso(
     );
 
     // Buscar tribunal se não foi fornecido
+    if (oab && !numeroProcesso) {
+      return {
+        success: false,
+        error:
+          "A descoberta de processos por OAB agora funciona apenas via Jusbrasil.",
+      };
+    }
+
     let tribunal;
     if (tribunalId) {
       tribunal = await prisma.tribunal.findFirst({
