@@ -125,7 +125,7 @@ function extractProcessNumbers(result: SyncActionLikeResult) {
 
 async function resolveSyncContext(params: {
   tenantId: string;
-  session: Awaited<ReturnType<typeof getSession>>;
+  session: NonNullable<Awaited<ReturnType<typeof getSession>>>;
   oab?: string;
 }): Promise<ResolvedSyncContext> {
   const provided = sanitizeOab(params.oab);

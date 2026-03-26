@@ -27,11 +27,9 @@ export interface JusbrasilWebhookImportJobInput {
   processosPayload: Array<Record<string, unknown>>;
 }
 
-export async function processJusbrasilWebhookImportStep(
+export async function processJusbrasilWebhookImport(
   input: JusbrasilWebhookImportJobInput,
 ) {
-  "use step";
-
   const webhookUrl = buildJusbrasilExpectedWebhookUrl();
 
   try {
@@ -173,5 +171,3 @@ export async function processJusbrasilWebhookImportStep(
     throw error instanceof Error ? error : new Error(message);
   }
 }
-
-processJusbrasilWebhookImportStep.maxRetries = 0;
