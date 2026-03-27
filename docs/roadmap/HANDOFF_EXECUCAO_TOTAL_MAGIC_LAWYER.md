@@ -10,14 +10,19 @@ Ele consolida:
 - o plano técnico completo para executar as próximas integrações (JusBrasil, ClickSign multi-tenant, WhatsApp/Telegram/SMS),
 - e a sequência prática de execução (arquitetura, banco, backend, frontend, testes, rollout).
 
+Regra de documentação a partir de 27 de março de 2026:
+- este arquivo passa a ser o **único documento mestre de visão e direção executiva do produto**;
+- documentos como `docs/features/juridical-ai/ATA_ASSISTENTE_JURIDICO_PROATIVO.md` e `docs/features/PROTOCOLO_JURIDICO_AUTOMATIZADO.md` permanecem ativos, mas como **documentos derivados de execução**;
+- qualquer nova frente estratégica, paridade competitiva, priorização de produto e narrativa comercial deve ser refletida aqui primeiro.
+
 ---
 
 ## 2. Snapshot atual (data de referência)
-Data de referência do handoff: **2026-03-08**.
+Data de referência do handoff: **2026-03-27**.
 
 Estado geral estimado:
-- **Sistema geral (produto como SaaS jurídico): ~80%**
-- **Escopo avançado omnichannel + integrações externas estratégicas: ~60-65%**
+- **Sistema geral (produto como SaaS jurídico): ~88%**
+- **Escopo avançado omnichannel + integrações externas estratégicas: ~75%**
 
 Principais blocos já existentes e reaproveitáveis:
 - Multi-tenant robusto com tenant isolado por `tenantId`.
@@ -28,6 +33,54 @@ Principais blocos já existentes e reaproveitáveis:
 - Base de suporte/chat já funcional.
 - Módulo INPI com busca em background e histórico.
 - Módulos jurídicos principais com estrutura madura (processos, andamentos, contratos, procurações etc.).
+
+### Atualização operacional executada em 27 de março de 2026
+
+Desde o snapshot original, o projeto avançou especialmente em 4 frentes:
+
+- **Jusbrasil oficial**:
+  - discovery por OAB passou a operar com foco em API/webhook oficial;
+  - o legado principal de scraping por OAB foi removido do fluxo padrão;
+  - a integração ganhou webhook dedicado, normalização, persistência e suporte a eventos de movimentação, publicação processual e mudança cadastral;
+  - a ativação agora é manual por tenant e restrita a planos elegíveis.
+- **Segurança operacional**:
+  - auditoria de acessos ampliada;
+  - cockpit administrativo de segurança;
+  - reação a acesso suspeito com revogação de sessões e troca forçada de senha.
+- **Web Push nativo**:
+  - o canal `PUSH` deixou de ser placeholder e passou a ter implementação real via Web Push/VAPID.
+- **Governança admin/multi-tenant**:
+  - refinamento da presença online por tenant;
+  - limpeza de fixtures/tenants legados;
+  - ajustes no painel admin para mostrar apenas escritórios reais nas visões operacionais.
+
+### Frente transversal de paridade competitiva
+
+Existe uma frente formal de absorção de funcionalidades inspiradas em produtos concorrentes, mas com adaptação ao contexto nativo do Magic Lawyer.
+
+Essa frente hoje está organizada assim:
+
+- **Visão mestre**: este documento.
+- **Execução detalhada da frente de IA jurídica e mapa competitivo**:
+  - `docs/features/juridical-ai/ATA_ASSISTENTE_JURIDICO_PROATIVO.md`
+- **Execução detalhada da frente de protocolo e paridade operacional com ERP jurídico pesado**:
+  - `docs/features/PROTOCOLO_JURIDICO_AUTOMATIZADO.md`
+
+Os dois eixos competitivos que mais importam neste momento são:
+
+1. **Jus IA / Jusbrasil**
+- validação de citações;
+- memória por caso;
+- pesquisa jurídica assistida;
+- análise documental;
+- geração de peças com lastro e contexto.
+
+2. **CPJ-3C / Preâmbulo**
+- workflow jurídico parametrizável;
+- controladoria e operação em escala;
+- protocolo jurídico automatizado;
+- automação operacional profunda;
+- integração forte entre jurídico, cliente e financeiro.
 
 ---
 
@@ -114,8 +167,12 @@ Arquivos principais da entrega recente:
 ## 4.1. Sistema de notificação pronto para expansão de canais
 Já existe:
 - `Notification`, `NotificationDelivery`, `NotificationPreference`, `NotificationTemplate`.
-- canais atuais: `REALTIME`, `EMAIL`, `PUSH`.
+- canais atuais: `REALTIME`, `EMAIL`, `TELEGRAM`, `PUSH`.
 - fluxo de dispatch via `NotificationService` com delivery por canal.
+
+Atualização de status:
+- `PUSH` agora é Web Push real via VAPID, com persistência de subscriptions por usuário/dispositivo.
+- a trilha de alertas de segurança passou a usar email, in-app, Telegram e Web Push conforme preferências do usuário.
 
 Arquivos base:
 - `app/lib/notifications/notification-service.ts`
@@ -162,15 +219,29 @@ Gap:
 ## 5. Grandes pendências para visão "100%" de produto
 
 ## 5.1. JusBrasil
-- Não integrado ainda.
-- Precisa estratégia de ingestion segura (API oficial contratada, compliance de uso, limites e cache).
+- Integração oficial já iniciada e bem avançada.
+- Hoje já existe:
+  - cliente oficial;
+  - health-check;
+  - webhook dedicado;
+  - normalização/persistência;
+  - suporte a lote OAB e eventos dedicados de movimentação, publicação processual e mudança em processo;
+  - gating por plano e toggle manual por tenant.
+- Pendência real atual:
+  - fechar a operação em produção com entrega efetiva do lote inicial via webhook da conta contratada;
+  - validar fallback/backfill por endpoints de base judicial da Digesto/Jusbrasil;
+  - consolidar observação operacional, retentativas e playbook de suporte.
 
 ## 5.2. ClickSign multi-tenant
 - Hoje token/config está global.
 - Precisa configuração por tenant com validação, criptografia, teste e fallback.
 
 ## 5.3. Canais WhatsApp / Telegram / SMS
-- Não implementados como canais do `NotificationService`.
+- `Telegram` já existe no motor atual.
+- `WhatsApp` e `SMS` continuam pendentes.
+- decisão atual de produto:
+  - **WhatsApp será integrado via Infobip**;
+  - a frente de implementação foi atribuída à **Talisia**.
 - Necessário:
   - abstração de provedores por tenant,
   - rastreabilidade por mensagem/entrega,
@@ -196,7 +267,7 @@ Adicionar entidades (nomes sugeridos):
 1. `TenantChannelProvider`
 - `tenantId`
 - `channel` (`EMAIL`, `WHATSAPP`, `TELEGRAM`, `SMS`)
-- `provider` (ex.: `RESEND`, `META`, `EVOLUTION`, `TWILIO`, `TELEGRAM_BOT`)
+- `provider` (ex.: `RESEND`, `INFOBIP`, `TELEGRAM_BOT`, `TWILIO`)
 - `credentialsEncrypted` (Json criptografado)
 - `active`
 - `lastValidatedAt`
@@ -301,7 +372,7 @@ Objetivo:
 - implementação concreta por canal com contrato único.
 
 Entregas:
-- [ ] `WhatsappChannel` (primeiro provider oficial escolhido).
+- [ ] `WhatsappChannel` via `Infobip` (frente atribuída à Talisia).
 - [ ] `TelegramChannel`.
 - [ ] `SmsChannel`.
 - [ ] retry policy + circuit breaker por provider.
@@ -506,11 +577,11 @@ npm test -- --runInBand
 ## 14. Próximo ciclo recomendado (curto prazo)
 Sprint sugerida (primeiros 7-10 dias):
 
-1. ClickSign multi-tenant.
-2. Canais `WHATSAPP` e `TELEGRAM` na arquitetura de notificação.
-3. Tela de configuração por tenant para canais.
-4. Automação de cobrança e lembrete por canal.
-5. E2E com dois tenants e isolamento completo.
+1. Fechar a operação Jusbrasil em produção (webhook real, lote inicial e backfill oficial).
+2. ClickSign multi-tenant.
+3. Canais `WHATSAPP` e `SMS` na arquitetura de notificação.
+4. Observabilidade/SRE das integrações externas e entregas multi-canal.
+5. E2E com dois tenants, isolamento completo e validação de segurança/web push.
 
 ---
 

@@ -1,6 +1,6 @@
 # 📊 Status das Integrações — Magic Lawyer
 
-**Data:** 2025-12-11  
+**Data:** 2026-03-27  
 **Propósito:** dar uma visão única do que o sistema é, quais integrações já estão ativas, o que está em andamento e o que falta priorizar.
 
 ## O que é o Magic Lawyer
@@ -12,7 +12,7 @@
 - **Cobertura core de integrações SaaS:** ~80% pronta para uso (Asaas, Cloudinary, Google Calendar, realtime+email, BrasilAPI).
 - **Integrações jurídicas (PJe/Comunica + scraping):** ~35% — infraestrutura pronta (certificados, cron, capture-service), mas faltam autenticação PJe real, scraping TJBA/TJSP e persistência/normalização dos dados.
 - **Assinatura digital (Clicksign):** ~60% — SDK e fluxo backend prontos; falta UI, webhooks/callbacks e configuração por tenant.
-- **Integrações avançadas (Slack/Teams/Telegram/GA4/Outlook/Apple Calendar):** 0% — não iniciadas.
+- **Integrações avançadas (Slack/Teams/GA4/Outlook/Apple Calendar):** 0% — não iniciadas.
 
 ## Mapa de integrações (detalhado)
 
@@ -24,8 +24,11 @@
   - Upload/versionamento/movimentação multi-tenant (`lib/upload-service.ts`, `app/actions/documentos-explorer.ts`), limpeza e health-check (`app/actions/system-status.ts`), estrutura documentada em `docs/infrastructure/CLOUDINARY_FOLDER_STRUCTURE.md`.
 - **Agenda — Google Calendar (100%)**
   - Conexão OAuth + sync 2 vias (exportar/importar), toggle de sync, UI completa (`components/google-calendar-integration.tsx`), ações `app/actions/google-calendar.ts`, guia `docs/setup/GOOGLE_CALENDAR_SETUP.md`.
-- **Realtime + Notificações (Ably + E-mail transacional) (~85%)**
-  - Ably com fallback HTTP (`app/providers/realtime-provider.tsx`, `app/lib/realtime/publisher.ts`), notificações multi-canal (`app/lib/notifications/notification-service.ts`), e-mail via Resend por tenant (`app/lib/email-service.ts`), catálogo de eventos em `docs/features/notifications/NOTIFICATIONS_EVENT_CATALOG.md`.
+- **Realtime + Notificações (Ably + E-mail + Telegram + Web Push) (~90%)**
+  - Ably com fallback HTTP (`app/providers/realtime-provider.tsx`, `app/lib/realtime/publisher.ts`), notificações multi-canal (`app/lib/notifications/notification-service.ts`), e-mail via Resend por tenant (`app/lib/email-service.ts`), Telegram no motor atual e Web Push nativo via VAPID, catálogo de eventos em `docs/features/notifications/NOTIFICATIONS_EVENT_CATALOG.md`.
+- **Jusbrasil / Digesto (~75%)**
+  - Cliente oficial, health-check, webhook dedicado, gating por plano/tenant e persistência inicial de lote OAB + eventos dedicados de processo.
+  - Ponto pendente: fechar operação real do webhook inicial da conta contratada e backfill oficial de processos.
 - **Dados Brasil (CEP/CPF/CNPJ/IBGE) (100%)**
   - Helpers em `lib/api/` (cep/cpf/cnpj/brazil-states/municipios) usados em onboarding e cadastros.
 
@@ -40,16 +43,19 @@
   - Item aberto no checklist (`docs/checklists/CHECKLIST_TOTAL_MAGICLAWYER.md`): alinhar plano do tenant com billing recorrente para evitar divergência.
 
 ### ❌ Não iniciadas / backlog
-- **Integrações avançadas:** Slack, Microsoft Teams, Telegram, Zapier, Outlook/Apple Calendar, GA4/analytics.
-- **Canal WhatsApp/SMS dedicado:** não há provedor configurado (TotalVoice/Zenvia/Twilio).
+- **Integrações avançadas:** Slack, Microsoft Teams, Zapier, Outlook/Apple Calendar, GA4/analytics.
+- **Canal WhatsApp/SMS dedicado:** WhatsApp já tem decisão de provider e ownership definidos.
+  - **Provider escolhido para WhatsApp:** `Infobip`
+  - **Responsável prevista pela implementação:** `Talisia`
+  - `SMS` permanece sem provider operacional definido
 - **Integrações externas premium:** API de personalização e conectores genéricos (Zapier/Make) não planejados.
 
 ## Próximas ações recomendadas
 1) Persistir o payload do Comunica PJe em tabelas próprias (Processo/MovimentacaoProcesso) e ligar normalização.  
 2) Implementar autenticação PJe real no `lib/api/juridical/pje.ts` e scraping TJBA/TJSP.  
 3) Fechar o ciclo Clicksign: configurar token por tenant, criar UI de envio/consulta e webhooks de status.  
-4) Automatizar reconciliação Asaas x planos e cobrir com testes e2e de checkout + webhook.  
-5) Planejar backlog das integrações avançadas (Slack/Teams/GA4) para evitar choque de prioridades com o PJe.
+4) Fechar operação Jusbrasil em produção com webhook inicial real e backfill oficial.  
+5) Iniciar a frente de WhatsApp via Infobip com a Talisia e, em paralelo, automatizar reconciliação Asaas x planos com cobertura e2e.
 
 ## Links rápidos
 - Checklist geral: `docs/checklists/CHECKLIST_TOTAL_MAGICLAWYER.md`

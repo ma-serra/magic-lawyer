@@ -1,5 +1,7 @@
 # Protocolo Juridico Automatizado
 
+> Documento derivado de execucao. A visao mestre do produto agora esta em [../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md](../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md).
+
 ## Objetivo
 
 Levar o Magic Lawyer ao nivel de paridade operacional com ofertas como **Protocolo Juridico Preambulo / CPJ-3C**, permitindo que o escritorio envie peticoes intermediarias diretamente aos sistemas dos tribunais, com trilha auditavel, recibo real e cobranca integrada.

@@ -1,4 +1,6 @@
-# Documento Mestre – Assistente Jurídico Proativo e Geração de Peças
+# Assistente Jurídico Proativo e Geração de Peças — Documento Derivado de Execução
+
+> Documento derivado de execução. A visão mestre do produto agora está em [../../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md](../../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md).
 
 ## Alerta estratégico imediato
 
@@ -18,9 +20,10 @@ Paridade mínima exigida para a reunião:
 
 Decisão de documentação:
 
-- este arquivo passa a ser o **documento único e mestre** da frente de IA jurídica;
-- PRD e checklist antigos ficam absorvidos por este documento;
-- qualquer planejamento, execução, paridade competitiva e status de entrega deve ser mantido aqui.
+- este arquivo deixa de ser o documento mestre global da visão do produto;
+- ele permanece como **documento derivado de execução da frente de IA jurídica**;
+- PRD e checklist antigos continuam absorvidos por este documento;
+- a visão estratégica consolidada, priorização geral e narrativa de produto devem ser mantidas em `docs/roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md`.
 
 Data: 16 de março de 2026  
 Status: Documento mestre consolidado para planejamento e execução em escala  

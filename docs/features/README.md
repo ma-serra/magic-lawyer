@@ -27,6 +27,7 @@ Documentação estratégica da camada premium de IA do produto:
 - Cálculo de sentenças cíveis
 - Speed dial contextual nas telas internas
 
+Documento mestre de visão: [../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md](../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md)  
 Índice da pasta: [juridical-ai/README.md](./juridical-ai/README.md)
 
 ### 📨 Protocolo Jurídico Automatizado
@@ -36,7 +37,8 @@ Frente de paridade operacional com ERP jurídico pesado:
 - workflow por tribunal
 - recibo real, auditoria e cobrança por uso/faixa
 
-Documento principal: [PROTOCOLO_JURIDICO_AUTOMATIZADO.md](./PROTOCOLO_JURIDICO_AUTOMATIZADO.md)
+Documento mestre de visão: [../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md](../roadmap/HANDOFF_EXECUCAO_TOTAL_MAGIC_LAWYER.md)  
+Documento derivado principal: [PROTOCOLO_JURIDICO_AUTOMATIZADO.md](./PROTOCOLO_JURIDICO_AUTOMATIZADO.md)
 
 ## 📚 Como Usar
 
