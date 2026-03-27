@@ -420,6 +420,11 @@ export async function getAllTenants(): Promise<TenantResponse> {
     }
 
     const tenants = await prisma.tenant.findMany({
+      where: {
+        slug: {
+          not: "global",
+        },
+      },
       include: {
         superAdmin: {
           select: {
