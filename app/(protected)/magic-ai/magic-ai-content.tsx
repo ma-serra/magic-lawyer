@@ -1265,6 +1265,7 @@ export function MagicAiContent() {
   const [creatingModelDraftId, setCreatingModelDraftId] = useState<string | null>(null);
   const [creatingDocumentDraftId, setCreatingDocumentDraftId] = useState<string | null>(null);
   const [creatingPeticaoDraftId, setCreatingPeticaoDraftId] = useState<string | null>(null);
+  const [showOperationalDetails, setShowOperationalDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
   const trackedWorkspaceViewRef = useRef<string | null>(null);
   const chatViewportRef = useRef<HTMLDivElement | null>(null);
@@ -1940,17 +1941,52 @@ export function MagicAiContent() {
                 <Chip color="secondary" variant="flat">
                   Neon Lex
                 </Chip>
-                <Chip color="warning" variant="flat">
-                  IA juridica do escritorio
-                </Chip>
               </div>
               <div className="space-y-2">
                 <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                  O centro de comando juridico do escritorio
+                  Diga o que voce precisa e a Neon Lex comeca por ai
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-default-500 md:text-base">
-                  A Neon Lex redige, analisa, resume e orienta com contexto real do tenant, memoria por caso e trilha auditavel.
+                  Use o chat como entrada principal para redigir pecas, analisar
+                  documentos, resumir processos e montar estrategia sem cair num
+                  painel tecnico antes de trabalhar.
                 </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  color="primary"
+                  startContent={<BrainCircuit className="h-4 w-4" />}
+                  onPress={() => {
+                    setSelectedTab("pergunta");
+                    setSelectedGenericTask("QUESTION_ANSWERING");
+                  }}
+                >
+                  Abrir chat
+                </Button>
+                <Button
+                  startContent={<Sparkles className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() => setSelectedTab("peca")}
+                >
+                  Montar peca
+                </Button>
+                <Button
+                  startContent={<FileSearch className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() => setSelectedTab("documento")}
+                >
+                  Analisar documento
+                </Button>
+                <Button
+                  startContent={<FileText className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() => {
+                    setSelectedTab("pergunta");
+                    setSelectedGenericTask("PROCESS_SUMMARY");
+                  }}
+                >
+                  Resumir processo
+                </Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Chip color="success" variant="flat">
@@ -1981,22 +2017,22 @@ export function MagicAiContent() {
               <Card className="border border-default-200/60 bg-content1/80">
                 <CardBody className="gap-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
-                    Contexto detectado
+                    Como voce entrou aqui
                   </p>
                   <p className="text-sm font-semibold text-foreground">
                     {actionFromQuery
                       ? JURIDICAL_AI_TASK_LABELS[getJuridicalAiTaskForAction(actionFromQuery as never)]
-                      : "Central geral da Neon Lex"}
+                      : "Entrada geral da Neon Lex"}
                   </p>
                   <p className="text-xs text-default-500">
-                    Entrada pelo dock contextual ou acesso direto ao workspace.
+                    Abertura guiada pelo seu contexto atual ou por acesso direto.
                   </p>
                 </CardBody>
               </Card>
               <Card className="border border-default-200/60 bg-content1/80">
                 <CardBody className="gap-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
-                    Voltar ao fluxo
+                    Atalho de volta
                   </p>
                   {returnTo ? (
                     <Button
@@ -2005,11 +2041,11 @@ export function MagicAiContent() {
                       variant="flat"
                       onPress={() => router.push(returnTo)}
                     >
-                      Retornar ao contexto
+                      Voltar ao fluxo anterior
                     </Button>
                   ) : (
                     <p className="text-xs text-default-500">
-                      Esta sessao foi aberta sem origem de retorno.
+                      Voce abriu o Magic AI diretamente desta tela.
                     </p>
                   )}
                 </CardBody>
@@ -2017,6 +2053,31 @@ export function MagicAiContent() {
             </div>
           </div>
 
+          <div className="rounded-[28px] border border-default-200/70 bg-content1/80 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">
+                  Detalhes do escritorio e da governanca
+                </p>
+                <p className="text-sm text-default-500">
+                  {rollout?.workspaceEnabled
+                    ? "A Neon Lex esta pronta para uso. Os detalhes tecnicos ficam recolhidos por padrao."
+                    : "A ferramenta ainda depende de liberacao operacional. Veja os detalhes tecnicos aqui."}
+                </p>
+              </div>
+              <Button
+                variant="flat"
+                onPress={() => setShowOperationalDetails((current) => !current)}
+              >
+                {showOperationalDetails
+                  ? "Ocultar detalhes tecnicos"
+                  : "Ver detalhes do escritorio"}
+              </Button>
+            </div>
+          </div>
+
+          {showOperationalDetails ? (
+            <>
           <div className="grid gap-3 xl:grid-cols-5">
             {usage && entitlement
               ? JURIDICAL_AI_USAGE_METRICS.map((metric) => (
@@ -2180,15 +2241,18 @@ export function MagicAiContent() {
               </CardBody>
             </Card>
           </div>
+            </>
+          ) : null}
         </CardBody>
       </Card>
 
       <Card className="border border-default-200/70 bg-content1/85">
         <CardHeader className="border-b border-default-200/70">
           <div className="space-y-1">
-            <p className="text-lg font-semibold text-foreground">Workspace operacional</p>
+            <p className="text-lg font-semibold text-foreground">Escolha como quer trabalhar</p>
             <p className="text-sm text-default-500">
-              Cada aba executa uma tarefa auditável e grava sessão, uso e saída associada ao escritório.
+              O chat é a entrada principal. Use as abas quando quiser ir direto
+              para uma tarefa específica do escritório.
             </p>
           </div>
         </CardHeader>
