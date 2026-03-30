@@ -91,15 +91,20 @@ async function updateSyncState(
 }
 
 function buildBackfillRouteUrl() {
+  const publicOrigin = buildJusbrasilExpectedWebhookUrl().replace(
+    /\/api\/webhooks\/jusbrasil$/,
+    "",
+  );
   const candidates = [
+    publicOrigin,
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.NEXTAUTH_URL,
     process.env.BASE_URL,
+    "https://magiclawyer.vercel.app",
     process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, "")}`
       : null,
     "http://localhost:9192",
-    "https://magiclawyer.vercel.app",
   ];
 
   for (const candidate of candidates) {
