@@ -28,6 +28,7 @@ import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 // ============================================
 
 export interface AndamentoFilters {
+  clienteId?: string;
   processoId?: string;
   tipo?: MovimentacaoTipo;
   statusOperacional?: MovimentacaoStatusOperacional;
@@ -104,6 +105,8 @@ interface ProcessoDisponivel {
   id: string;
   numero: string;
   titulo: string | null;
+  clienteId: string | null;
+  clienteNome: string | null;
 }
 
 interface ResponsavelDisponivel {
@@ -112,6 +115,19 @@ interface ResponsavelDisponivel {
   lastName: string | null;
   email: string;
   role: UserRole;
+}
+
+interface ClienteDisponivel {
+  id: string;
+  nome: string;
+  documento: string | null;
+}
+
+interface AndamentosSummary {
+  total: number;
+  comPrazo: number;
+  atrasados: number;
+  semResponsavel: number;
 }
 
 // ============================================
@@ -235,7 +251,9 @@ export async function listAndamentos(
 ): Promise<
   ActionResponse<any[]> & {
     pagination?: AndamentoPagination;
+    summary?: AndamentosSummary;
     processosDisponiveis?: ProcessoDisponivel[];
+    clientesDisponiveis?: ClienteDisponivel[];
     responsaveisDisponiveis?: ResponsavelDisponivel[];
   }
 > {
@@ -265,6 +283,13 @@ export async function listAndamentos(
       ...(filters.responsavelId && { responsavelId: filters.responsavelId }),
     };
     mergeProcessoScope(where, processoScope);
+
+    if (filters.clienteId) {
+      where.processo = {
+        ...(where.processo || {}),
+        clienteId: filters.clienteId,
+      };
+    }
 
     if (filters.somenteMinhas && session?.user?.id) {
       where.responsavelId = session.user.id;
@@ -312,7 +337,45 @@ export async function listAndamentos(
       where.OR = searchWhere;
     }
 
-    const total = await prisma.movimentacaoProcesso.count({ where });
+    const [total, comPrazo, atrasados, semResponsavel] = await Promise.all([
+      prisma.movimentacaoProcesso.count({ where }),
+      prisma.movimentacaoProcesso.count({
+        where: {
+          ...where,
+          OR: [
+            {
+              prazo: {
+                not: null,
+              },
+            },
+            {
+              prazosRelacionados: {
+                some: {
+                  deletedAt: null,
+                },
+              },
+            },
+          ],
+        },
+      }),
+      prisma.movimentacaoProcesso.count({
+        where: {
+          ...where,
+          slaEm: {
+            lt: new Date(),
+          },
+          statusOperacional: {
+            not: "RESOLVIDO",
+          },
+        },
+      }),
+      prisma.movimentacaoProcesso.count({
+        where: {
+          ...where,
+          responsavelId: null,
+        },
+      }),
+    ]);
     const totalPages = Math.max(1, Math.ceil(total / perPage));
     const safePage = Math.min(page, totalPages);
 
@@ -471,12 +534,35 @@ export async function listAndamentos(
               id: true,
               numero: true,
               titulo: true,
+              clienteId: true,
+              cliente: {
+                select: {
+                  id: true,
+                  nome: true,
+                  documento: true,
+                },
+              },
             },
             orderBy: {
               numero: "asc",
             },
           })
         : [];
+
+    const clientesDisponiveis = Array.from(
+      new Map(
+        processosDisponiveis
+          .filter((processo) => processo.cliente?.id && processo.cliente?.nome)
+          .map((processo) => [
+            processo.cliente!.id,
+            {
+              id: processo.cliente!.id,
+              nome: processo.cliente!.nome,
+              documento: processo.cliente!.documento ?? null,
+            },
+          ]),
+      ).values(),
+    ).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
     const responsaveisDisponiveis = await prisma.usuario.findMany({
       where: {
@@ -507,7 +593,20 @@ export async function listAndamentos(
         hasPreviousPage: safePage > 1,
         hasNextPage: safePage < totalPages,
       },
-      processosDisponiveis,
+      summary: {
+        total,
+        comPrazo,
+        atrasados,
+        semResponsavel,
+      } satisfies AndamentosSummary,
+      processosDisponiveis: processosDisponiveis.map((processo) => ({
+        id: processo.id,
+        numero: processo.numero,
+        titulo: processo.titulo,
+        clienteId: processo.clienteId ?? null,
+        clienteNome: processo.cliente?.nome ?? null,
+      })),
+      clientesDisponiveis,
       responsaveisDisponiveis,
     };
   } catch (error: any) {

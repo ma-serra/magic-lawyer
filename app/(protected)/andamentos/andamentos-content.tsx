@@ -129,6 +129,7 @@ interface Andamento {
 
 interface DashboardData {
   total: number;
+  comPrazo?: number;
   atrasados: number;
   semResponsavel: number;
   porTipo: Array<{
@@ -155,6 +156,8 @@ interface ProcessoFiltroDisponivel {
   id: string;
   numero: string;
   titulo: string | null;
+  clienteId: string | null;
+  clienteNome: string | null;
 }
 
 interface ResponsavelDisponivel {
@@ -165,15 +168,29 @@ interface ResponsavelDisponivel {
   role: UserRole;
 }
 
+interface ClienteDisponivel {
+  id: string;
+  nome: string;
+  documento: string | null;
+}
+
 interface AndamentosListResponse {
   success?: boolean;
   data?: Andamento[];
   pagination?: AndamentosPaginationMeta;
+  summary?: {
+    total: number;
+    comPrazo: number;
+    atrasados: number;
+    semResponsavel: number;
+  };
   processosDisponiveis?: ProcessoFiltroDisponivel[];
+  clientesDisponiveis?: ClienteDisponivel[];
   responsaveisDisponiveis?: ResponsavelDisponivel[];
 }
 
 const ANDAMENTOS_PER_PAGE = 12;
+const ALL_CLIENTE_KEY = "__ALL_CLIENTES__";
 const ALL_PROCESSOS_KEY = "__ALL_PROCESSOS__";
 const ALL_STATUS_KEY = "__ALL_STATUS__";
 const ALL_PRIORIDADE_KEY = "__ALL_PRIORIDADE__";
@@ -288,8 +305,11 @@ export default function AndamentosPage() {
   const serverPagination = andamentosResponse?.pagination;
   const processosDisponiveisFiltro =
     andamentosResponse?.processosDisponiveis || [];
+  const clientesDisponiveis =
+    andamentosResponse?.clientesDisponiveis || [];
   const responsaveisDisponiveis =
     andamentosResponse?.responsaveisDisponiveis || [];
+  const summaryFromList = andamentosResponse?.summary;
   const dashboard = dashboardData?.data as DashboardData | undefined;
   const processos = useMemo(() => {
     const list = processosData?.processos || [];
@@ -332,6 +352,7 @@ export default function AndamentosPage() {
     if (!andamentos.length) {
       return {
         total: 0,
+        comPrazo: 0,
         atrasados: 0,
         semResponsavel: 0,
         porTipo: [],
@@ -364,6 +385,9 @@ export default function AndamentosPage() {
 
     return {
       total,
+      comPrazo: andamentos.filter(
+        (item) => Boolean(item.prazo) || item.prazosRelacionados.length > 0,
+      ).length,
       atrasados: andamentos.filter(
         (item) =>
           item.slaEm &&
@@ -379,7 +403,12 @@ export default function AndamentosPage() {
 
   // Quando a action de dashboard falha, usamos os dados da listagem atual.
   const finalDashboard =
-    dashboard && typeof dashboard.total === "number"
+    summaryFromList && typeof summaryFromList.total === "number"
+      ? {
+          ...calculatedDashboard,
+          ...summaryFromList,
+        }
+      : dashboard && typeof dashboard.total === "number"
       ? dashboard
       : calculatedDashboard;
 
@@ -428,6 +457,7 @@ export default function AndamentosPage() {
 
   // Verificar se há filtros ativos
   const hasActiveFilters =
+    filters.clienteId ||
     filters.processoId ||
     filters.tipo ||
     filters.statusOperacional ||
@@ -779,15 +809,35 @@ export default function AndamentosPage() {
     return numero || "Processo sem número";
   };
 
+  const filteredProcessosDisponiveis = useMemo(() => {
+    if (!filters.clienteId) {
+      return processosDisponiveisFiltro;
+    }
+
+    return processosDisponiveisFiltro.filter(
+      (proc) => proc.clienteId === filters.clienteId,
+    );
+  }, [processosDisponiveisFiltro, filters.clienteId]);
+
+  const clienteFilterIds = useMemo(
+    () => new Set(clientesDisponiveis.map((cliente) => cliente.id)),
+    [clientesDisponiveis],
+  );
+
   const processFilterIds = useMemo(
-    () => new Set(processosDisponiveisFiltro.map((proc: any) => proc.id)),
-    [processosDisponiveisFiltro],
+    () => new Set(filteredProcessosDisponiveis.map((proc: any) => proc.id)),
+    [filteredProcessosDisponiveis],
   );
 
   const responsavelFilterIds = useMemo(
     () => new Set(responsaveisDisponiveis.map((responsavel) => responsavel.id)),
     [responsaveisDisponiveis],
   );
+
+  const selectedClienteFilterKeys =
+    filters.clienteId && clienteFilterIds.has(filters.clienteId)
+      ? [filters.clienteId]
+      : [ALL_CLIENTE_KEY];
 
   const selectedProcessFilterKeys =
     filters.processoId && processFilterIds.has(filters.processoId)
@@ -798,6 +848,23 @@ export default function AndamentosPage() {
     filters.responsavelId && responsavelFilterIds.has(filters.responsavelId)
       ? [filters.responsavelId]
       : [ALL_RESPONSAVEL_KEY];
+  const clienteFilterOptions = useMemo(
+    () => [
+      {
+        key: ALL_CLIENTE_KEY,
+        label: "Todos os clientes",
+        textValue: "Todos os clientes",
+        description: "Remove o filtro de cliente",
+      },
+      ...clientesDisponiveis.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.documento].filter(Boolean).join(" "),
+        description: cliente.documento || undefined,
+      })),
+    ],
+    [clientesDisponiveis],
+  );
   const processoFilterOptions = useMemo(
     () => [
       {
@@ -806,14 +873,17 @@ export default function AndamentosPage() {
         textValue: "Todos os processos",
         description: "Remove o filtro de processo",
       },
-      ...processosDisponiveisFiltro.map((proc: any) => ({
+      ...filteredProcessosDisponiveis.map((proc: any) => ({
         key: proc.id,
         label: getProcessNumber(proc),
         textValue: getProcessLabel(proc),
-        description: String(proc?.titulo ?? "").trim() || undefined,
+        description:
+          String(proc?.clienteNome ?? "").trim() ||
+          String(proc?.titulo ?? "").trim() ||
+          undefined,
       })),
     ],
-    [processosDisponiveisFiltro],
+    [filteredProcessosDisponiveis],
   );
   const responsavelFilterOptions = useMemo(
     () => [
@@ -840,6 +910,17 @@ export default function AndamentosPage() {
   );
 
   useEffect(() => {
+    if (filters.clienteId && !clienteFilterIds.has(filters.clienteId)) {
+      setFilters((prev) => {
+        const { clienteId, ...rest } = prev;
+
+        return rest;
+      });
+      setCurrentPage(1);
+    }
+  }, [filters.clienteId, clienteFilterIds]);
+
+  useEffect(() => {
     if (filters.processoId && !processFilterIds.has(filters.processoId)) {
       setFilters((prev) => {
         const { processoId, ...rest } = prev;
@@ -862,6 +943,7 @@ export default function AndamentosPage() {
   }, [filters.responsavelId, responsavelFilterIds]);
 
   const activeFilterCount = [
+    filters.clienteId,
     filters.processoId,
     filters.tipo,
     filters.statusOperacional,
@@ -953,7 +1035,7 @@ export default function AndamentosPage() {
             icon={<Timer className="h-4 w-4" />}
             label="Com prazo"
             tone="warning"
-            value={getCountByType("PRAZO")}
+            value={finalDashboard?.comPrazo || 0}
           />
           <PeopleMetricCard
             helper="SLA vencido e não resolvido"
@@ -1038,7 +1120,7 @@ export default function AndamentosPage() {
                 transition={{ duration: 0.25, ease: "easeOut" }}
               >
                 <CardBody className="p-5">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
                     <div className="space-y-2">
                       <label
                         className="text-sm font-medium flex items-center gap-2"
@@ -1059,6 +1141,37 @@ export default function AndamentosPage() {
                         onValueChange={handleSearch}
                       />
                     </div>
+
+                    {clientesDisponiveis.length > 0 ? (
+                      <div className="space-y-2">
+                        <label
+                          className="text-sm font-medium flex items-center gap-2"
+                          htmlFor="filtro-cliente"
+                        >
+                          <FolderOpen className="w-4 h-4" />
+                          Cliente
+                        </label>
+                        <SearchableSelect
+                          id="filtro-cliente"
+                          emptyContent="Nenhum cliente encontrado"
+                          items={clienteFilterOptions}
+                          placeholder="Todos os clientes"
+                          selectedKey={
+                            selectedClienteFilterKeys[0] ?? ALL_CLIENTE_KEY
+                          }
+                          size="sm"
+                          variant="bordered"
+                          onSelectionChange={(selectedKey) => {
+                            handleFilterChange(
+                              "clienteId",
+                              selectedKey === ALL_CLIENTE_KEY
+                                ? undefined
+                                : (selectedKey ?? undefined),
+                            );
+                          }}
+                        />
+                      </div>
+                    ) : null}
 
                     <div className="space-y-2">
                       <label
