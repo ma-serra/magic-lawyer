@@ -76,6 +76,26 @@ function shouldHideFloatingAssistant(
   return pathname.startsWith("/suporte") || pathname.startsWith("/help");
 }
 
+function getTriggerTone(scope: JuridicalAiDockScope) {
+  if (scope === "admin") {
+    return {
+      badge: "Governanca",
+      title: "Neon Lex",
+      subtitle: "IA juridica do Magic AI",
+      accentClass:
+        "border-secondary/25 bg-secondary/10 text-secondary group-hover:border-secondary/40 group-hover:bg-secondary/15",
+    };
+  }
+
+  return {
+    badge: "Contextual",
+    title: "Neon Lex",
+    subtitle: "IA juridica do Magic AI",
+    accentClass:
+      "border-primary/25 bg-primary/10 text-primary group-hover:border-primary/40 group-hover:bg-primary/15",
+  };
+}
+
 export function FloatingAssistantDock({
   scope,
 }: FloatingAssistantDockProps) {
@@ -92,6 +112,7 @@ export function FloatingAssistantDock({
     () => getJuridicalAiDockActions(pathname, scope),
     [pathname, scope],
   );
+  const triggerTone = useMemo(() => getTriggerTone(scope), [scope]);
 
   const visibleActions = actions.slice(0, 4);
 
@@ -122,10 +143,10 @@ export function FloatingAssistantDock({
   return (
     <div className="pointer-events-none fixed bottom-24 right-4 z-[74] flex flex-col items-end gap-3">
       {isExpanded ? (
-        <div className="pointer-events-auto hidden max-w-[260px] rounded-3xl border border-white/10 bg-content1/92 p-4 text-right shadow-2xl backdrop-blur sm:block">
+        <div className="pointer-events-auto hidden max-w-[280px] rounded-3xl border border-default-200/70 bg-content1/95 p-4 text-right shadow-xl backdrop-blur-md sm:block">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Treinada para jurídico
+              Neon Lex
             </p>
             <p className="text-sm font-semibold text-foreground">{context.label}</p>
             <p className="text-xs leading-6 text-default-400">
@@ -134,7 +155,7 @@ export function FloatingAssistantDock({
           </div>
           <div className="mt-3 flex justify-end">
             <Chip color="secondary" size="sm" variant="flat">
-              Speed dial contextual
+              Magic AI contextual
             </Chip>
           </div>
         </div>
@@ -143,17 +164,18 @@ export function FloatingAssistantDock({
       {visibleActions.map((action, index) => (
         <div
           key={action.id}
-          className="flex items-center gap-3 transition-all duration-300"
+          className="flex items-center gap-3 transform-gpu transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none"
           style={{
             opacity: isExpanded ? 1 : 0,
             pointerEvents: isExpanded ? "auto" : "none",
             transform: isExpanded
-              ? "translateY(0) scale(1)"
-              : `translateY(${12 * (index + 1)}px) scale(0.92)`,
-            transitionDelay: isExpanded ? `${index * 35}ms` : "0ms",
+              ? "translate3d(0, 0, 0)"
+              : `translate3d(0, ${10 * (index + 1)}px, 0)`,
+            transitionDelay: isExpanded ? `${index * 24}ms` : "0ms",
+            willChange: "transform, opacity",
           }}
         >
-          <div className="hidden max-w-[240px] rounded-full border border-white/10 bg-content1/90 px-3 py-2 text-right shadow-xl backdrop-blur sm:block">
+          <div className="hidden max-w-[250px] rounded-full border border-default-200/70 bg-content1/95 px-3 py-2 text-right shadow-lg backdrop-blur-md sm:block">
             <p className="text-xs font-semibold text-foreground">{action.title}</p>
             <p className="text-[11px] text-default-400">{action.tooltip}</p>
           </div>
@@ -170,7 +192,7 @@ export function FloatingAssistantDock({
             <Button
               isIconOnly
               aria-label={action.title}
-              className="h-11 w-11 rounded-full border border-white/10 bg-content1/90 text-foreground shadow-xl backdrop-blur transition hover:scale-[1.04] hover:border-primary/50 hover:text-primary"
+              className="h-11 w-11 transform-gpu rounded-2xl border border-default-200/70 bg-content1/95 text-foreground shadow-lg backdrop-blur-md transition-[transform,colors,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:bg-content2/80 hover:text-primary motion-reduce:transition-none"
               onPress={() => handleNavigate(action.id)}
             >
               {getActionIcon(action.id)}
@@ -184,18 +206,17 @@ export function FloatingAssistantDock({
           className="max-w-xs"
           content={
             <div className="space-y-1 p-1">
-              <p className="text-xs font-semibold">Treinada para jurídico</p>
+              <p className="text-xs font-semibold">Neon Lex</p>
               <p className="text-xs text-default-400">
-                Gere peças, analise documentos e receba sugestões sobre seus processos.
+                IA juridica contextual para pecas, documentos e estrategia.
               </p>
             </div>
           }
           placement="left"
         >
           <Button
-            isIconOnly
-            aria-label="Abrir speed dial do assistente jurídico"
-            className="h-16 w-16 rounded-full border-4 border-content1 bg-gradient-to-br from-primary via-sky-500 to-cyan-400 text-white shadow-[0_22px_48px_rgba(37,99,235,0.35)] transition hover:scale-[1.03]"
+            aria-label="Abrir dock da Neon Lex"
+            className="group h-auto min-h-[64px] transform-gpu rounded-[28px] border border-default-200/70 bg-content1/95 px-3 py-3 text-left shadow-xl backdrop-blur-md transition-[transform,colors,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-content1 motion-reduce:transition-none"
             onPress={() => {
               setIsExpanded((current) => {
                 const nextValue = !current;
@@ -211,7 +232,32 @@ export function FloatingAssistantDock({
               });
             }}
           >
-            {isExpanded ? <X className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition ${triggerTone.accentClass}`}
+              >
+                {isExpanded ? (
+                  <X className="h-4 w-4" />
+                ) : (
+                  <BrainCircuit className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {triggerTone.title}
+                  </p>
+                  <Chip
+                    className="border border-default-200/70 bg-default-100/70 text-[10px] font-semibold uppercase tracking-[0.12em] text-default-600"
+                    size="sm"
+                    variant="flat"
+                  >
+                    {triggerTone.badge}
+                  </Chip>
+                </div>
+                <p className="text-xs text-default-500">{triggerTone.subtitle}</p>
+              </div>
+            </div>
           </Button>
         </Tooltip>
       </div>

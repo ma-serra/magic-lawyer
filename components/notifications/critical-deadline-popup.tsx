@@ -200,25 +200,25 @@ export function CriticalDeadlinePopup() {
       placement="center"
       size="lg"
     >
-      <ModalContent className="border border-danger/30 bg-background/95">
+      <ModalContent className="border border-danger-200/70 bg-background/95 dark:border-danger/30">
         <ModalHeader className="flex items-start gap-3">
-          <div className="rounded-full border border-danger/30 bg-danger/10 p-2 text-danger">
+          <div className="rounded-full border border-danger-200/80 bg-danger-50 p-2 text-danger-700 dark:border-danger/30 dark:bg-danger/10 dark:text-danger">
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-danger">
               Prazo crítico
             </p>
-            <h2 className="text-xl font-semibold text-white">
+            <h2 className="text-xl font-semibold text-foreground">
               {getCriticalDeadlineLabel(current.tipo)}
             </h2>
-            <p className="text-sm text-default-400">
+            <p className="text-sm text-default-600 dark:text-default-400">
               Este alerta exige leitura explícita do advogado.
             </p>
           </div>
         </ModalHeader>
         <ModalBody className="space-y-4">
-          <div className="rounded-2xl border border-danger/20 bg-danger/5 p-4">
+          <div className="rounded-2xl border border-danger-200/70 bg-danger-50/90 p-4 dark:border-danger/20 dark:bg-danger/5">
             <div className="flex flex-wrap items-center gap-2">
               <Chip color="danger" startContent={<BellRing className="h-3 w-3" />} variant="flat">
                 {current.titulo}
@@ -232,15 +232,17 @@ export function CriticalDeadlinePopup() {
                 </Chip>
               ) : null}
             </div>
-            <p className="mt-3 text-sm text-default-200">{current.mensagem}</p>
+            <p className="mt-3 text-sm text-default-700 dark:text-default-300">
+              {current.mensagem}
+            </p>
           </div>
 
-          <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 md:grid-cols-2">
+          <div className="grid gap-3 rounded-2xl border border-default-200 bg-default-50 p-4 dark:border-white/10 dark:bg-white/5 md:grid-cols-2">
             <div>
               <p className="text-xs uppercase tracking-wide text-default-500">
                 Processo
               </p>
-              <p className="mt-1 text-sm font-medium text-white">
+              <p className="mt-1 text-sm font-medium text-foreground">
                 {processoNumero ?? "Processo não identificado"}
               </p>
             </div>
@@ -248,7 +250,7 @@ export function CriticalDeadlinePopup() {
               <p className="text-xs uppercase tracking-wide text-default-500">
                 Vencimento
               </p>
-              <p className="mt-1 text-sm font-medium text-white">
+              <p className="mt-1 text-sm font-medium text-foreground">
                 {vencimento ?? "Não informado"}
               </p>
             </div>
@@ -256,7 +258,7 @@ export function CriticalDeadlinePopup() {
               <p className="text-xs uppercase tracking-wide text-default-500">
                 Prazo
               </p>
-              <p className="mt-1 text-sm font-medium text-white">
+              <p className="mt-1 text-sm font-medium text-foreground">
                 {prazoTitulo ?? "Prazo crítico"}
               </p>
             </div>

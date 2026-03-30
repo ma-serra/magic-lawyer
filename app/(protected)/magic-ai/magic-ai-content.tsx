@@ -39,6 +39,7 @@ import {
   History,
   LibraryBig,
   Scale,
+  SendHorizontal,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -88,10 +89,10 @@ type WorkspaceResult =
   | null;
 
 const WORKSPACE_TAB_ORDER: JuridicalAiWorkspaceTab[] = [
+  "pergunta",
   "peca",
   "documento",
   "citacoes",
-  "pergunta",
   "pesquisa",
   "calculos",
   "historico",
@@ -170,7 +171,7 @@ function normalizeTabFromSearchParams(
     return getJuridicalAiWorkspaceTabForAction(action as never);
   }
 
-  return "peca";
+  return "pergunta";
 }
 
 function resolveInitialGenericTask(searchParams: {
@@ -182,6 +183,247 @@ function resolveInitialGenericTask(searchParams: {
   }
 
   return "QUESTION_ANSWERING";
+}
+
+type ChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  status: "ready" | "pending" | "error";
+  content: string;
+  summary?: string | null;
+  bullets?: string[];
+  taskKey?: JuridicalAiTaskKey;
+  engine?: "LOCAL_FALLBACK" | "OPENAI_RESPONSES";
+  promptVersionLabel?: string | null;
+  confidenceScore?: number | null;
+  createdAt: number;
+};
+
+function createChatMessageId(prefix: string) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function resolveGenericActionId(
+  taskKey: JuridicalAiTaskKey,
+  actionFromQuery: string | null,
+) {
+  if (actionFromQuery) {
+    return actionFromQuery;
+  }
+
+  switch (taskKey) {
+    case "SENTENCE_CALCULATION":
+      return "calcular-sentenca";
+    case "JURISPRUDENCE_BRIEF":
+      return "pesquisar-jurisprudencia";
+    case "CITATION_VALIDATION":
+      return "validar-citacoes";
+    case "PROCESS_SUMMARY":
+      return "resumir-processo";
+    case "CASE_STRATEGY":
+      return "estrategia-caso";
+    default:
+      return "perguntar-ia";
+  }
+}
+
+function buildChatDraftContent(message: ChatMessage) {
+  const sections = [
+    message.summary?.trim() || null,
+    message.bullets?.length
+      ? message.bullets.map((item) => `- ${item}`).join("\n")
+      : null,
+    message.content.trim() || null,
+  ].filter((value): value is string => Boolean(value));
+
+  return sections.join("\n\n");
+}
+
+function buildChatUserMessage(params: {
+  taskKey: JuridicalAiTaskKey;
+  processLabel?: string | null;
+  question: string;
+  objective: string;
+  notes: string;
+}): ChatMessage {
+  const primaryText =
+    params.taskKey === "QUESTION_ANSWERING"
+      ? params.question.trim()
+      : params.objective.trim();
+
+  const sections = [primaryText];
+
+  if (params.processLabel) {
+    sections.push(`Processo em foco: ${params.processLabel}`);
+  }
+
+  if (params.notes.trim()) {
+    sections.push(`Contexto adicional:\n${params.notes.trim()}`);
+  }
+
+  return {
+    id: createChatMessageId("user"),
+    role: "user",
+    status: "ready",
+    content: sections.join("\n\n"),
+    taskKey: params.taskKey,
+    createdAt: Date.now(),
+  };
+}
+
+function buildPendingAssistantMessage(
+  taskKey: JuridicalAiTaskKey,
+  messageId: string,
+): ChatMessage {
+  return {
+    id: messageId,
+    role: "assistant",
+    status: "pending",
+    content:
+      taskKey === "QUESTION_ANSWERING"
+        ? "A Neon Lex esta cruzando o contexto do escritorio para responder com lastro juridico."
+        : "A Neon Lex esta organizando memoria, contexto e proximos passos para entregar uma resposta auditavel.",
+    taskKey,
+    createdAt: Date.now(),
+  };
+}
+
+function buildAssistantChatMessage(
+  taskKey: JuridicalAiTaskKey,
+  result: JuridicalAiGenericResult,
+  messageId: string,
+): ChatMessage {
+  return {
+    id: messageId,
+    role: "assistant",
+    status: "ready",
+    content: result.contentMarkdown,
+    summary: result.summary,
+    bullets: result.bullets,
+    taskKey,
+    engine: result.engine,
+    promptVersionLabel: result.promptVersionLabel,
+    confidenceScore: result.confidenceScore,
+    createdAt: Date.now(),
+  };
+}
+
+function ChatMessageBubble({
+  message,
+  onCopyContent,
+  onDownloadContent,
+}: {
+  message: ChatMessage;
+  onCopyContent: (content: string) => void | Promise<void>;
+  onDownloadContent: (content: string, filename: string) => void;
+}) {
+  const isAssistant = message.role === "assistant";
+  const bubbleTone = isAssistant
+    ? "border-default-200/70 bg-content1/95"
+    : "border-primary/20 bg-primary/10";
+  const exportContent = buildChatDraftContent(message);
+
+  return (
+    <div className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}>
+      <div
+        className={`max-w-[92%] rounded-[28px] border px-5 py-4 shadow-sm ${bubbleTone}`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip
+            color={isAssistant ? "secondary" : "primary"}
+            size="sm"
+            variant="flat"
+          >
+            {isAssistant ? "Neon Lex" : "Voce"}
+          </Chip>
+          {message.taskKey ? (
+            <Chip size="sm" variant="flat">
+              {JURIDICAL_AI_TASK_LABELS[message.taskKey]}
+            </Chip>
+          ) : null}
+          {message.status === "pending" ? (
+            <Chip color="warning" size="sm" variant="flat">
+              Processando
+            </Chip>
+          ) : null}
+          {isAssistant && message.engine ? (
+            <Chip color="primary" size="sm" variant="flat">
+              {message.engine === "OPENAI_RESPONSES" ? "OpenAI" : "Motor local"}
+            </Chip>
+          ) : null}
+          {isAssistant && message.promptVersionLabel ? (
+            <Chip color="secondary" size="sm" variant="flat">
+              {message.promptVersionLabel}
+            </Chip>
+          ) : null}
+          {isAssistant && message.confidenceScore !== null && message.confidenceScore !== undefined ? (
+            <Chip
+              color={message.confidenceScore >= 75 ? "success" : "warning"}
+              size="sm"
+              variant="flat"
+            >
+              Confianca {message.confidenceScore}%
+            </Chip>
+          ) : null}
+        </div>
+
+        {message.status === "pending" ? (
+          <div className="mt-4 flex items-center gap-3 text-sm text-default-600">
+            <Spinner size="sm" />
+            <p className="leading-7">{message.content}</p>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {message.summary ? (
+              <p className="text-sm font-medium leading-7 text-foreground">
+                {message.summary}
+              </p>
+            ) : null}
+
+            {message.bullets?.length ? (
+              <ul className="space-y-2 text-sm leading-7 text-default-600">
+                {message.bullets.map((item) => (
+                  <li key={`${message.id}-${item}`}>- {item}</li>
+                ))}
+              </ul>
+            ) : null}
+
+            {message.content.trim() ? (
+              <pre className="overflow-x-auto whitespace-pre-wrap text-sm leading-7 text-default-700">
+                {message.content}
+              </pre>
+            ) : null}
+
+            {isAssistant && exportContent ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  startContent={<Copy className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() => onCopyContent(exportContent)}
+                >
+                  Copiar
+                </Button>
+                <Button
+                  size="sm"
+                  startContent={<Download className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() =>
+                    onDownloadContent(
+                      exportContent,
+                      `neon-lex-${message.taskKey?.toLowerCase() ?? "chat"}-${Date.now()}.md`,
+                    )
+                  }
+                >
+                  Baixar .md
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function UsageMetricCard({
@@ -247,10 +489,10 @@ function ResultPanel({
           </div>
           <div className="space-y-2">
             <p className="text-lg font-semibold text-foreground">
-              Resultado do workspace
+              Aguardando a primeira entrega
             </p>
             <p className="max-w-xl text-sm text-default-500">
-              A primeira execução vai aparecer aqui com resumo, rastreio do prompt e saída em markdown para revisão humana.
+              Quando você rodar uma tarefa, a Neon Lex vai mostrar aqui o resumo, o lastro do prompt e a saída pronta para revisão humana.
             </p>
           </div>
         </CardBody>
@@ -268,14 +510,14 @@ function ResultPanel({
         <div className="flex w-full flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Resultado mais recente
+              Ultima entrega da Neon Lex
             </p>
             <h3 className="text-xl font-semibold text-foreground">
               {result.kind === "piece"
                 ? result.data.title
                 : result.kind === "analysis"
-                  ? "Análise documental"
-                  : "Resposta jurídica assistida"}
+                  ? "Analise documental"
+                  : "Resposta juridica assistida"}
             </h3>
             <p className="text-sm text-default-500">{result.data.summary}</p>
           </div>
@@ -1014,6 +1256,7 @@ export function MagicAiContent() {
     resolveInitialGenericTask(searchParams),
   );
   const [workspaceResult, setWorkspaceResult] = useState<WorkspaceResult>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
   const [activeHistoryBucket, setActiveHistoryBucket] = useState<
     "sessoes" | "rascunhos" | "memorias"
@@ -1024,6 +1267,7 @@ export function MagicAiContent() {
   const [creatingPeticaoDraftId, setCreatingPeticaoDraftId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const trackedWorkspaceViewRef = useRef<string | null>(null);
+  const chatViewportRef = useRef<HTMLDivElement | null>(null);
   const deferredHistoryQuery = useDeferredValue(historyQuery.trim().toLowerCase());
 
   const returnTo = searchParams.get("returnTo");
@@ -1240,6 +1484,34 @@ export function MagicAiContent() {
         .includes(deferredHistoryQuery),
     );
   }, [bootstrapQuery.data?.recentMemories, deferredHistoryQuery]);
+
+  const selectedProcessOption = useMemo(
+    () => processOptions.find((item) => item.key === selectedProcessId) ?? null,
+    [processOptions, selectedProcessId],
+  );
+
+  const chatSuggestedPrompts = useMemo(() => {
+    switch (selectedGenericTask) {
+      case "PROCESS_SUMMARY":
+        return [
+          "Consolidar fase atual, pendencias e proxima providencia do caso.",
+          "Resumir o processo para passagem de bastao interna.",
+          "Ler o caso e destacar risco, prazo e diligencia pendente.",
+        ];
+      case "CASE_STRATEGY":
+        return [
+          "Montar estrategia para a proxima audiencia com foco probatorio.",
+          "Desenhar linha defensiva para reduzir risco na proxima peticao.",
+          "Mapear a melhor tese, fragilidades e proxima jogada do escritorio.",
+        ];
+      default:
+        return [
+          "Quais riscos processuais merecem revisao imediata neste caso?",
+          "O que eu deveria conferir antes da proxima peticao?",
+          "Explique o contexto juridico deste escritorio e por onde comecar a analise.",
+        ];
+    }
+  }, [selectedGenericTask]);
 
   const handleTabChange = (key: Key) => {
     const tab = key as JuridicalAiWorkspaceTab;
@@ -1480,6 +1752,7 @@ export function MagicAiContent() {
       }
 
       setWorkspaceResult({ kind: "generic", data: response.data });
+
       refreshWorkspace();
       addToast({
         color: "success",
@@ -1491,21 +1764,27 @@ export function MagicAiContent() {
   };
 
   const handleGenericTask = (taskKey: JuridicalAiTaskKey) => {
+    const isChatConversation =
+      selectedTab === "pergunta" && WORKSPACE_GENERIC_TASKS.includes(taskKey);
+    const pendingMessageId = createChatMessageId("assistant");
+
+    if (isChatConversation) {
+      setChatMessages((current) => [
+        ...current,
+        buildChatUserMessage({
+          taskKey,
+          processLabel: selectedProcessOption?.label ?? null,
+          question: genericForm.question,
+          objective: genericForm.objective,
+          notes: genericForm.notes,
+        }),
+        buildPendingAssistantMessage(taskKey, pendingMessageId),
+      ]);
+    }
+
     startTransition(async () => {
       const response = await executeJuridicalAiGenericTask({
-        action:
-          actionFromQuery ??
-          (taskKey === "SENTENCE_CALCULATION"
-            ? "calcular-sentenca"
-            : taskKey === "JURISPRUDENCE_BRIEF"
-              ? "pesquisar-jurisprudencia"
-              : taskKey === "CITATION_VALIDATION"
-                ? "validar-citacoes"
-                : taskKey === "PROCESS_SUMMARY"
-                  ? "resumir-processo"
-                  : taskKey === "CASE_STRATEGY"
-                    ? "estrategia-caso"
-                    : "perguntar-ia"),
+        action: resolveGenericActionId(taskKey, actionFromQuery),
         taskKey,
         processId: selectedProcessId,
         question: genericForm.question,
@@ -1515,6 +1794,21 @@ export function MagicAiContent() {
       });
 
       if (!response.success || !response.data) {
+        if (isChatConversation) {
+          setChatMessages((current) =>
+            current.map((message) =>
+              message.id === pendingMessageId
+                ? {
+                    ...message,
+                    status: "error",
+                    content:
+                      response.error ??
+                      "Nao foi possivel concluir a resposta juridica desta vez.",
+                  }
+                : message,
+            ),
+          );
+        }
         addToast({
           color: "danger",
           title: "Falha na execução",
@@ -1523,7 +1817,24 @@ export function MagicAiContent() {
         return;
       }
 
-      setWorkspaceResult({ kind: "generic", data: response.data });
+      const genericResult = response.data;
+
+      setWorkspaceResult({ kind: "generic", data: genericResult });
+      if (isChatConversation) {
+        setChatMessages((current) =>
+          current.map((message) =>
+            message.id === pendingMessageId
+              ? buildAssistantChatMessage(taskKey, genericResult, pendingMessageId)
+              : message,
+          ),
+        );
+        setGenericForm((current) => ({
+          ...current,
+          question: taskKey === "QUESTION_ANSWERING" ? "" : current.question,
+          objective: taskKey === "QUESTION_ANSWERING" ? current.objective : "",
+          notes: "",
+        }));
+      }
       refreshWorkspace();
       addToast({
         color: "success",
@@ -1551,6 +1862,28 @@ export function MagicAiContent() {
       ),
     [taskAccessMap],
   );
+  const genericChatTaskOptions = useMemo(
+    () =>
+      JURIDICAL_AI_GENERIC_TASK_OPTIONS.filter((item) =>
+        availableGenericTasks.includes(item.key),
+      ),
+    [availableGenericTasks],
+  );
+  const chatComposerValue =
+    selectedGenericTask === "QUESTION_ANSWERING"
+      ? genericForm.question
+      : genericForm.objective;
+  const chatComposerLabel =
+    selectedGenericTask === "QUESTION_ANSWERING"
+      ? "Mensagem"
+      : "Pedido para a Neon Lex";
+  const chatComposerPlaceholder =
+    selectedGenericTask === "QUESTION_ANSWERING"
+      ? "Pergunte como se estivesse falando com sua IA juridica do escritorio."
+      : "Descreva o objetivo e a entrega que a Neon Lex deve montar neste chat.";
+  const isChatSendDisabled =
+    !chatComposerValue.trim() ||
+    taskAccessMap.get(selectedGenericTask)?.enabled === false;
 
   useEffect(() => {
     if (selectedTab === "historico") {
@@ -1580,6 +1913,20 @@ export function MagicAiContent() {
     }
   }, [availableGenericTasks, selectedGenericTask]);
 
+  useEffect(() => {
+    if (selectedTab !== "pergunta" || !chatViewportRef.current) {
+      return;
+    }
+
+    const viewport = chatViewportRef.current;
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior: chatMessages.some((message) => message.status === "pending")
+        ? "auto"
+        : "smooth",
+    });
+  }, [chatMessages, selectedTab]);
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden border border-primary/15 bg-gradient-to-br from-content1 via-content1 to-primary/5">
@@ -1588,21 +1935,21 @@ export function MagicAiContent() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Chip color="primary" variant="flat">
-                  Magic AI Jurídica
+                  Magic AI
                 </Chip>
                 <Chip color="secondary" variant="flat">
-                  Treinada para jurídico
+                  Neon Lex
                 </Chip>
                 <Chip color="warning" variant="flat">
-                  Fundação operacional
+                  IA juridica do escritorio
                 </Chip>
               </div>
               <div className="space-y-2">
                 <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                  Assistente jurídico proativo do escritório
+                  O centro de comando juridico do escritorio
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-default-500 md:text-base">
-                  Gere peças, analise documentos, resuma processos e oriente estratégia com contexto real do tenant, trilha auditável e controle por plano.
+                  A Neon Lex redige, analisa, resume e orienta com contexto real do tenant, memoria por caso e trilha auditavel.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1639,10 +1986,10 @@ export function MagicAiContent() {
                   <p className="text-sm font-semibold text-foreground">
                     {actionFromQuery
                       ? JURIDICAL_AI_TASK_LABELS[getJuridicalAiTaskForAction(actionFromQuery as never)]
-                      : "Workspace geral"}
+                      : "Central geral da Neon Lex"}
                   </p>
                   <p className="text-xs text-default-500">
-                    Entrada por speed dial ou acesso direto ao workspace.
+                    Entrada pelo dock contextual ou acesso direto ao workspace.
                   </p>
                 </CardBody>
               </Card>
@@ -1662,7 +2009,7 @@ export function MagicAiContent() {
                     </Button>
                   ) : (
                     <p className="text-xs text-default-500">
-                      Sem contexto de retorno informado nesta sessão.
+                      Esta sessao foi aberta sem origem de retorno.
                     </p>
                   )}
                 </CardBody>
@@ -1693,9 +2040,9 @@ export function MagicAiContent() {
             <Card className="border border-default-200/60 bg-content1/80">
               <CardHeader className="border-b border-default-200/70">
                 <div className="space-y-1">
-                  <p className="text-lg font-semibold text-foreground">Rollout do escritório</p>
+                  <p className="text-lg font-semibold text-foreground">Estado operacional do escritorio</p>
                   <p className="text-sm text-default-500">
-                    Estado real de liberação, tarefas habilitadas e adoção do Magic AI neste tenant.
+                    O que esta liberado hoje para a Neon Lex neste tenant, com tarefas, adocao e maturidade de uso.
                   </p>
                 </div>
               </CardHeader>
@@ -2201,71 +2548,210 @@ export function MagicAiContent() {
           ) : null}
 
           {selectedTab === "pergunta" ? (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {JURIDICAL_AI_GENERIC_TASK_OPTIONS.filter((item) =>
-                    availableGenericTasks.includes(item.key),
-                  ).map((item) => (
-                    <Button
-                      key={item.key}
-                      color={selectedGenericTask === item.key ? "primary" : "default"}
-                      variant={selectedGenericTask === item.key ? "solid" : "flat"}
-                      onPress={() => setSelectedGenericTask(item.key)}
-                    >
-                      {item.label}
-                    </Button>
-                  ))}
-                </div>
-                <SearchableSelect
-                  items={processOptions}
-                  label="Processo relacionado"
-                  placeholder="Opcional"
-                  selectedKey={selectedProcessId}
-                  isLoading={isLoadingProcessos}
-                  onSelectionChange={setSelectedProcessId}
-                />
-                <Input
-                  label={selectedGenericTask === "QUESTION_ANSWERING" ? "Pergunta" : "Objetivo da ação"}
-                  placeholder={
-                    selectedGenericTask === "QUESTION_ANSWERING"
-                      ? "Ex.: quais riscos processuais devo revisar hoje?"
-                      : "Ex.: consolidar a próxima providência do caso"
-                  }
-                  value={selectedGenericTask === "QUESTION_ANSWERING" ? genericForm.question : genericForm.objective}
-                  onValueChange={(value) =>
-                    setGenericForm((current) => ({
-                      ...current,
-                      [selectedGenericTask === "QUESTION_ANSWERING" ? "question" : "objective"]: value,
-                    }))
-                  }
-                />
-                <Textarea
-                  label="Notas complementares"
-                  minRows={4}
-                  placeholder="Contexto adicional, restrições ou enfoque desejado."
-                  value={genericForm.notes}
-                  onValueChange={(value) =>
-                    setGenericForm((current) => ({ ...current, notes: value }))
-                  }
-                />
-                <div className="flex justify-end">
-                  <Button
-                    color="primary"
-                    isDisabled={
-                      (selectedGenericTask === "QUESTION_ANSWERING"
-                        ? !genericForm.question.trim()
-                        : !genericForm.objective.trim()) ||
-                      (taskAccessMap.get(selectedGenericTask)?.enabled === false)
-                    }
-                    isLoading={isPending}
-                    onPress={() => handleGenericTask(selectedGenericTask)}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+              <Card className="border border-default-200/70 bg-content1/90">
+                <CardHeader className="flex flex-col items-start gap-4 border-b border-default-200/70">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Chip color="primary" variant="flat">
+                        Chat central
+                      </Chip>
+                      <Chip color="secondary" variant="flat">
+                        {selectedProcessOption
+                          ? "Com processo em foco"
+                          : "Contexto geral do escritorio"}
+                      </Chip>
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-xl font-semibold text-foreground">
+                        Converse com a Neon Lex
+                      </h3>
+                      <p className="max-w-3xl text-sm leading-7 text-default-500">
+                        O chat agora e o ponto central do Magic AI para pecas,
+                        analise documental, estrategia e pesquisa. Cada resposta
+                        continua registrada com memoria, sessao e trilha
+                        auditavel.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {genericChatTaskOptions.map((item) => (
+                      <Button
+                        key={item.key}
+                        color={selectedGenericTask === item.key ? "primary" : "default"}
+                        variant={selectedGenericTask === item.key ? "solid" : "flat"}
+                        onPress={() => setSelectedGenericTask(item.key)}
+                      >
+                        {item.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CardHeader>
+
+                <CardBody className="gap-0 p-0">
+                  <div
+                    ref={chatViewportRef}
+                    className="flex max-h-[60vh] min-h-[460px] flex-col gap-4 overflow-y-auto px-6 py-6"
                   >
-                    Executar {JURIDICAL_AI_TASK_LABELS[selectedGenericTask]}
-                  </Button>
-                </div>
-              </div>
+                    {chatMessages.length === 0 ? (
+                      <div className="flex h-full flex-col justify-center gap-6">
+                        <div className="mx-auto max-w-2xl space-y-3 text-center">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
+                            <BrainCircuit className="h-6 w-6" />
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-lg font-semibold text-foreground">
+                              Uma conversa juridica, nao um formulario solto
+                            </p>
+                            <p className="text-sm leading-7 text-default-500">
+                              Abra a sessao como faria em uma IA moderna: mande
+                              o pedido no chat, ancore em um processo quando
+                              quiser e deixe a Neon Lex responder com contexto
+                              do escritorio.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {chatSuggestedPrompts.map((prompt) => (
+                            <Button
+                              key={prompt}
+                              className="justify-start rounded-3xl border border-default-200/70 bg-default-50/60 px-4 py-5 text-left text-sm font-normal leading-6 text-default-700"
+                              variant="flat"
+                              onPress={() =>
+                                setGenericForm((current) => ({
+                                  ...current,
+                                  question:
+                                    selectedGenericTask === "QUESTION_ANSWERING"
+                                      ? prompt
+                                      : current.question,
+                                  objective:
+                                    selectedGenericTask === "QUESTION_ANSWERING"
+                                      ? current.objective
+                                      : prompt,
+                                }))
+                              }
+                            >
+                              {prompt}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      chatMessages.map((message) => (
+                        <ChatMessageBubble
+                          key={message.id}
+                          message={message}
+                          onCopyContent={handleCopyWorkspaceOutput}
+                          onDownloadContent={handleDownloadWorkspaceOutput}
+                        />
+                      ))
+                    )}
+                  </div>
+
+                  <div className="border-t border-default-200/70 px-6 py-5">
+                    <div className="space-y-4">
+                      <Textarea
+                        label={chatComposerLabel}
+                        minRows={4}
+                        placeholder={chatComposerPlaceholder}
+                        value={chatComposerValue}
+                        onValueChange={(value) =>
+                          setGenericForm((current) => ({
+                            ...current,
+                            [selectedGenericTask === "QUESTION_ANSWERING"
+                              ? "question"
+                              : "objective"]: value,
+                          }))
+                        }
+                      />
+                      <Textarea
+                        label="Contexto adicional"
+                        minRows={3}
+                        placeholder="Recortes, restricoes, tom, urgencia, documento-chave ou ponto que precisa prevalecer."
+                        value={genericForm.notes}
+                        onValueChange={(value) =>
+                          setGenericForm((current) => ({ ...current, notes: value }))
+                        }
+                      />
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <p className="text-xs leading-6 text-default-500">
+                          {selectedProcessOption
+                            ? `Processo ancorado: ${selectedProcessOption.label}.`
+                            : "Sem processo selecionado: a Neon Lex responde com contexto geral do escritorio."}
+                        </p>
+                        <Button
+                          color="primary"
+                          endContent={<SendHorizontal className="h-4 w-4" />}
+                          isDisabled={isChatSendDisabled}
+                          isLoading={isPending}
+                          onPress={() => handleGenericTask(selectedGenericTask)}
+                        >
+                          Enviar para Neon Lex
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+
               <div className="space-y-4">
+                <Card className="border border-default-200/70 bg-content1/85">
+                  <CardHeader className="border-b border-default-200/70">
+                    <div className="space-y-1">
+                      <p className="text-lg font-semibold text-foreground">
+                        Contexto da conversa
+                      </p>
+                      <p className="text-sm text-default-500">
+                        Escolha o processo e ajuste o modo atual da sessao antes
+                        de enviar o proximo pedido.
+                      </p>
+                    </div>
+                  </CardHeader>
+                  <CardBody className="gap-4">
+                    <SearchableSelect
+                      items={processOptions}
+                      label="Processo em foco"
+                      placeholder="Opcional"
+                      selectedKey={selectedProcessId}
+                      isLoading={isLoadingProcessos}
+                      onSelectionChange={setSelectedProcessId}
+                    />
+
+                    <div className="rounded-3xl border border-default-200/70 bg-default-50/40 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-default-500">
+                        Modo ativo
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">
+                        {genericChatTaskOptions.find(
+                          (item) => item.key === selectedGenericTask,
+                        )?.label ?? JURIDICAL_AI_TASK_LABELS[selectedGenericTask]}
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-default-600">
+                        {genericChatTaskOptions.find(
+                          (item) => item.key === selectedGenericTask,
+                        )?.description ??
+                          "Sessao contextual da Neon Lex para orientar o proximo movimento juridico do escritorio."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-3xl border border-secondary/20 bg-secondary/5 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
+                        Governanca da IA
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">
+                        Conversa auditavel por tenant
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-default-600">
+                        Tudo o que entra neste chat continua atrelado a sessao,
+                        rollout, consumo e memoria do caso quando houver
+                        processo vinculado.
+                      </p>
+                    </div>
+                  </CardBody>
+                </Card>
+
                 {selectedProcessId || bootstrapQuery.data?.entitlement.allowCaseMemory === false ? (
                   <CaseMemoryCard
                     allowCaseMemory={bootstrapQuery.data?.entitlement.allowCaseMemory ?? false}
@@ -2273,17 +2759,6 @@ export function MagicAiContent() {
                     memory={caseMemoryQuery.data}
                   />
                 ) : null}
-                <ResultPanel
-                  result={workspaceResult}
-                  onCopyContent={handleCopyWorkspaceOutput}
-                  onDownloadContent={handleDownloadWorkspaceOutput}
-                  onCreateModelFromDraft={handleCreateModelFromDraft}
-                  onCreateDocumentFromDraft={handleCreateDocumentFromDraft}
-                  onCreatePeticaoFromDraft={handleCreatePeticaoFromDraft}
-                  isCreatingModel={creatingModelDraftId !== null}
-                  isCreatingDocument={creatingDocumentDraftId !== null}
-                  isCreatingPeticao={creatingPeticaoDraftId !== null}
-                />
               </div>
             </div>
           ) : null}

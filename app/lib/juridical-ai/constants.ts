@@ -9,7 +9,7 @@ export const JURIDICAL_AI_TAB_LABELS: Record<JuridicalAiWorkspaceTab, string> = 
   peca: "Peças",
   documento: "Documentos",
   citacoes: "Citações",
-  pergunta: "Perguntas",
+  pergunta: "Chat",
   pesquisa: "Pesquisa",
   calculos: "Cálculos",
   historico: "Histórico",
@@ -64,24 +64,24 @@ export const JURIDICAL_AI_GENERIC_TASK_OPTIONS: Array<{
 }> = [
   {
     key: "QUESTION_ANSWERING",
-    label: "Perguntar à IA",
-    description: "Resposta curta e contextual para dúvida jurídica operacional.",
+    label: "Perguntar a Neon Lex",
+    description: "Resposta contextual para destravar duvida juridica e orientar a proxima acao.",
   },
   {
     key: "PROCESS_SUMMARY",
-    label: "Resumir processo",
-    description: "Leitura executiva do caso com fase, status e pendências.",
+    label: "Consolidar processo",
+    description: "Leitura executiva do caso com fase, risco, pendencias e proxima providencia.",
   },
   {
     key: "CASE_STRATEGY",
-    label: "Estratégia do caso",
-    description: "Linha de atuação com risco, reforços e próxima providência.",
+    label: "Tracar estrategia",
+    description: "Linha de atuacao com risco, reforcos e proximos movimentos do caso.",
   },
   {
     key: "SENTENCE_CALCULATION",
-    label: "Calcular sentença",
+    label: "Ler sentenca",
     description:
-      "Extrai condenações, indexadores e dependências para montar memorial preliminar.",
+      "Extrai condenacoes, indexadores e dependencias para montar memorial preliminar.",
   },
 ];
 
