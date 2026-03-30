@@ -346,30 +346,7 @@ export function useProfileNavigation() {
         href: "/portal-advogado/operacoes",
         icon: "Scale",
         description:
-          "Publicações, intimações, discovery processual e fila de protocolos",
-      });
-
-      apoioJuridicoItems.push({
-        label: "Portal do Advogado",
-        href: "/portal-advogado",
-        icon: "Gavel",
-        description: "Portais dos tribunais, recessos forenses e comunicados",
-      });
-    }
-
-    if (isAdmin || isAdvogado) {
-      apoioJuridicoItems.push({
-        label: "Discovery Full",
-        href: "/portal-advogado/operacoes?tab=discovery",
-        icon: "Gavel",
-        description: "Captura por OAB, planilha e sincronização operacional",
-      });
-
-      apoioJuridicoItems.push({
-        label: "Protocolos",
-        href: "/portal-advogado/operacoes?tab=protocols",
-        icon: "FileText",
-        description: "Fila pronta para protocolar petições do escritório",
+          "Discovery, protocolos, publicações e fluxos operacionais do escritório",
       });
     }
 
