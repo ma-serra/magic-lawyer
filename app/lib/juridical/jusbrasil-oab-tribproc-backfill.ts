@@ -90,17 +90,18 @@ async function updateSyncState(
   await savePortalProcessSyncState(nextState);
 }
 
-function buildBackfillRouteUrl() {
+export function buildBackfillRouteUrl() {
   const publicOrigin = buildJusbrasilExpectedWebhookUrl().replace(
     /\/api\/webhooks\/jusbrasil$/,
     "",
   );
   const candidates = [
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    "https://magiclawyer.vercel.app",
     publicOrigin,
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.NEXTAUTH_URL,
     process.env.BASE_URL,
-    "https://magiclawyer.vercel.app",
     process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, "")}`
       : null,

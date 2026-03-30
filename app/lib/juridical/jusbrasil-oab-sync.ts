@@ -114,8 +114,10 @@ export function buildJusbrasilExpectedWebhookUrl() {
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.NEXTAUTH_URL,
     process.env.BASE_URL,
-    process.env.VERCEL_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
     "https://magiclawyer.vercel.app",
+    process.env.VERCEL_URL,
+    "http://localhost:9192",
   ];
 
   for (const candidate of candidates) {
