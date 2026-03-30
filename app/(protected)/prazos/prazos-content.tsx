@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
+  Eye,
   ExternalLink,
   Filter,
   Search,
@@ -17,13 +18,21 @@ import {
   Button,
   Chip,
   Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
   Pagination,
   Select,
   SelectItem,
   Spinner,
 } from "@heroui/react";
 
-import { getPrazosWorkspace } from "@/app/actions/prazos";
+import {
+  getPrazosWorkspace,
+  type PrazoWorkspaceItem,
+} from "@/app/actions/prazos";
 import { updateProcessoPrazo } from "@/app/actions/processos";
 import {
   PeopleEmptyState,
@@ -133,6 +142,188 @@ function getBucketLabel(bucket: PrazoOperationalBucket) {
   }
 }
 
+function PrazoDetailField({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper?: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-default-200/80 bg-default-50/80 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+      <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-medium text-foreground">{value}</p>
+      {helper ? (
+        <p className="mt-1 text-xs text-default-500 dark:text-default-400">
+          {helper}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PrazoDetailsModal({
+  prazo,
+  isOpen,
+  canEditPrazos,
+  actionPrazoId,
+  onClose,
+  onOpenProcessoPrazo,
+  onTogglePrazoStatus,
+}: {
+  prazo: PrazoWorkspaceItem | null;
+  isOpen: boolean;
+  canEditPrazos: boolean;
+  actionPrazoId: string | null;
+  onClose: () => void;
+  onOpenProcessoPrazo: (processoId: string, prazoId: string) => void;
+  onTogglePrazoStatus: (prazoId: string, statusAtual: ProcessoPrazoStatus) => void;
+}) {
+  if (!prazo) {
+    return null;
+  }
+
+  const bucket = getPrazoOperationalBucket({
+    status: prazo.status,
+    dataVencimento: prazo.dataVencimento,
+    responsavelId: prazo.responsavelId,
+  });
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      scrollBehavior="inside"
+      size="3xl"
+      onClose={onClose}
+    >
+      <ModalContent className="border border-default-200/80 bg-background/95 dark:border-white/10">
+        <ModalHeader className="flex flex-col gap-3 border-b border-default-200/70 pb-4 dark:border-white/10">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip color={getStatusTone(prazo.status)} size="sm" variant="flat">
+              {getStatusLabel(prazo.status)}
+            </Chip>
+            <Chip color={getBucketTone(bucket)} size="sm" variant="flat">
+              {getBucketLabel(bucket)}
+            </Chip>
+            {prazo.regimePrazo ? (
+              <Chip size="sm" variant="bordered">
+                {prazo.regimePrazo.nome}
+              </Chip>
+            ) : null}
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-default-500">
+              Detalhes do prazo
+            </p>
+            <h2 className="text-xl font-semibold text-foreground">
+              {prazo.titulo}
+            </h2>
+            <p className="text-sm text-default-600 dark:text-default-400">
+              {prazo.processo.clienteNome} • {prazo.processo.numero}
+            </p>
+          </div>
+        </ModalHeader>
+
+        <ModalBody className="space-y-5 py-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <PrazoDetailField
+              label="Vencimento"
+              value={DateUtils.formatDateTime(prazo.dataVencimento)}
+              helper={formatPrazoRelativeLabel(prazo.dataVencimento, prazo.status)}
+            />
+            <PrazoDetailField
+              label="Responsável"
+              value={prazo.responsavel?.nome ?? "Sem responsável"}
+              helper={prazo.responsavel?.email ?? "Atribuição ainda não definida"}
+            />
+            <PrazoDetailField
+              label="Advogado do processo"
+              value={
+                prazo.processo.advogadoResponsavelNome ??
+                "Sem advogado responsável definido"
+              }
+            />
+            <PrazoDetailField
+              label="Origem"
+              value={prazo.origemMovimentacao?.titulo ?? "Lançamento manual"}
+              helper={
+                prazo.origemMovimentacao
+                  ? `Movimentação em ${DateUtils.formatDateTime(
+                      prazo.origemMovimentacao.dataMovimentacao,
+                    )}`
+                  : "Criado diretamente na carteira de prazos"
+              }
+            />
+            <PrazoDetailField
+              label="Fundamento jurídico"
+              value={prazo.fundamentoLegal ?? "Não informado"}
+            />
+            <PrazoDetailField
+              label="Data de cumprimento"
+              value={
+                prazo.dataCumprimento
+                  ? DateUtils.formatDateTime(prazo.dataCumprimento)
+                  : "Ainda não concluído"
+              }
+            />
+            {prazo.prorrogadoPara ? (
+              <PrazoDetailField
+                label="Prorrogado para"
+                value={DateUtils.formatDateTime(prazo.prorrogadoPara)}
+              />
+            ) : null}
+          </div>
+
+          {prazo.descricao ? (
+            <div className="rounded-2xl border border-default-200/80 bg-default-50/80 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                Descrição
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-default-700 dark:text-default-300">
+                {prazo.descricao}
+              </p>
+            </div>
+          ) : null}
+        </ModalBody>
+
+        <ModalFooter className="flex flex-col gap-2 border-t border-default-200/70 pt-4 sm:flex-row sm:justify-end dark:border-white/10">
+          <Button
+            color="primary"
+            startContent={<ExternalLink className="h-3.5 w-3.5" />}
+            onPress={() => onOpenProcessoPrazo(prazo.processo.id, prazo.id)}
+          >
+            Abrir no processo
+          </Button>
+          {canEditPrazos ? (
+            <Button
+              color={
+                prazo.status === ProcessoPrazoStatus.CONCLUIDO
+                  ? "warning"
+                  : "success"
+              }
+              isLoading={actionPrazoId === prazo.id}
+              variant="bordered"
+              onPress={() => onTogglePrazoStatus(prazo.id, prazo.status)}
+            >
+              {prazo.status === ProcessoPrazoStatus.CONCLUIDO
+                ? "Reabrir prazo"
+                : "Concluir prazo"}
+            </Button>
+          ) : null}
+          <Button variant="light" onPress={onClose}>
+            Fechar
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
 export function PrazosContent() {
   const router = useRouter();
   const { hasPermission: canEditPrazos } = usePermissionCheck(
@@ -151,6 +342,9 @@ export function PrazosContent() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(12);
   const [actionPrazoId, setActionPrazoId] = useState<string | null>(null);
+  const [selectedPrazo, setSelectedPrazo] = useState<PrazoWorkspaceItem | null>(
+    null,
+  );
 
   useEffect(() => {
     setPage(1);
@@ -222,8 +416,30 @@ export function PrazosContent() {
     [data?.filters.responsaveis],
   );
 
+  useEffect(() => {
+    if (!selectedPrazo || !data) {
+      return;
+    }
+
+    const refreshedPrazo = [...data.highlights, ...data.items].find(
+      (item) => item.id === selectedPrazo.id,
+    );
+
+    if (refreshedPrazo) {
+      setSelectedPrazo(refreshedPrazo);
+    }
+  }, [data, selectedPrazo]);
+
   const handleOpenProcessoPrazo = (nextProcessoId: string, prazoId: string) => {
     router.push(`/processos/${nextProcessoId}?tab=prazos&prazoId=${encodeURIComponent(prazoId)}`);
+  };
+
+  const handleOpenPrazoDetails = (prazo: PrazoWorkspaceItem) => {
+    setSelectedPrazo(prazo);
+  };
+
+  const handleClosePrazoDetails = () => {
+    setSelectedPrazo(null);
   };
 
   const handleTogglePrazoStatus = async (
@@ -244,6 +460,22 @@ export function PrazosContent() {
       if (!result.success) {
         throw new Error(result.error || "Não foi possível atualizar o prazo");
       }
+
+      setSelectedPrazo((current) =>
+        current?.id === prazoId
+          ? {
+              ...current,
+              status:
+                statusAtual === ProcessoPrazoStatus.CONCLUIDO
+                  ? ProcessoPrazoStatus.ABERTO
+                  : ProcessoPrazoStatus.CONCLUIDO,
+              dataCumprimento:
+                statusAtual === ProcessoPrazoStatus.CONCLUIDO
+                  ? null
+                  : new Date().toISOString(),
+            }
+          : current,
+      );
 
       toast.success(
         statusAtual === ProcessoPrazoStatus.CONCLUIDO
@@ -427,10 +659,14 @@ export function PrazosContent() {
               return (
                 <div
                   key={prazo.id}
-                  className="rounded-3xl border border-white/10 bg-background/40 p-4"
+                  className="rounded-3xl border border-default-200/80 bg-default-50/80 p-4 shadow-sm transition-colors hover:border-primary/40 dark:border-white/10 dark:bg-white/[0.04]"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-2">
+                    <button
+                      className="flex-1 space-y-3 text-left"
+                      type="button"
+                      onClick={() => handleOpenPrazoDetails(prazo)}
+                    >
                       <div className="flex flex-wrap items-center gap-2">
                         <Chip color={getBucketTone(bucket)} size="sm" variant="flat">
                           {getBucketLabel(bucket)}
@@ -447,14 +683,14 @@ export function PrazosContent() {
                         <p className="text-sm font-semibold text-foreground">
                           {prazo.titulo}
                         </p>
-                        <p className="text-xs text-default-400">
+                        <p className="text-xs text-default-600 dark:text-default-400">
                           {prazo.processo.clienteNome} • {prazo.processo.numero}
                         </p>
                       </div>
-                      <div className="text-xs text-default-400">
+                      <div className="text-xs text-default-600 dark:text-default-400">
                         <p>
                           Vencimento:{" "}
-                          <span className="font-medium text-default-200">
+                          <span className="font-medium text-foreground">
                             {DateUtils.formatDate(prazo.dataVencimento)}
                           </span>
                         </p>
@@ -465,9 +701,20 @@ export function PrazosContent() {
                           <p className="text-warning">Sem responsável definido</p>
                         )}
                       </div>
-                    </div>
+                      <p className="text-xs font-medium text-primary">
+                        Clique para ver o prazo completo
+                      </p>
+                    </button>
 
                     <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        startContent={<Eye className="h-3.5 w-3.5" />}
+                        variant="bordered"
+                        onPress={() => handleOpenPrazoDetails(prazo)}
+                      >
+                        Detalhes
+                      </Button>
                       <Button
                         color="primary"
                         size="sm"
@@ -595,10 +842,14 @@ export function PrazosContent() {
                 return (
                   <div
                     key={prazo.id}
-                    className="rounded-3xl border border-white/10 bg-background/40 p-4 transition-colors hover:border-primary/30"
+                    className="rounded-3xl border border-default-200/80 bg-default-50/80 p-4 shadow-sm transition-colors hover:border-primary/40 dark:border-white/10 dark:bg-white/[0.04]"
                   >
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="space-y-3">
+                      <button
+                        className="flex-1 space-y-3 text-left"
+                        type="button"
+                        onClick={() => handleOpenPrazoDetails(prazo)}
+                      >
                         <div className="flex flex-wrap items-center gap-2">
                           <Chip
                             color={getStatusTone(prazo.status)}
@@ -625,17 +876,17 @@ export function PrazosContent() {
                           <p className="text-base font-semibold text-foreground">
                             {prazo.titulo}
                           </p>
-                          <p className="text-sm text-default-400">
+                          <p className="text-sm text-default-600 dark:text-default-400">
                             {prazo.processo.clienteNome} • {prazo.processo.numero}
                           </p>
                         </div>
 
-                        <div className="grid gap-2 text-sm text-default-400 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-2 text-sm text-default-600 md:grid-cols-2 xl:grid-cols-3 dark:text-default-400">
                           <div>
                             <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
                               Vencimento
                             </p>
-                            <p className="text-default-200">
+                          <p className="text-foreground">
                               {DateUtils.formatDate(prazo.dataVencimento)}
                             </p>
                             <p className="text-xs">
@@ -650,7 +901,7 @@ export function PrazosContent() {
                             <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
                               Responsável
                             </p>
-                            <p className="text-default-200">
+                          <p className="text-foreground">
                               {prazo.responsavel?.nome ?? "Sem responsável"}
                             </p>
                             <p className="text-xs">
@@ -664,7 +915,7 @@ export function PrazosContent() {
                             <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
                               Origem
                             </p>
-                            <p className="text-default-200">
+                          <p className="text-foreground">
                               {prazo.origemMovimentacao?.titulo ??
                                 "Lançamento manual"}
                             </p>
@@ -678,24 +929,22 @@ export function PrazosContent() {
                             ) : null}
                           </div>
 
-                          <div>
-                            <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
-                              Contexto
-                            </p>
-                            <p className="text-default-200">
-                              {prazo.fundamentoLegal || "Sem fundamento jurídico informado"}
-                            </p>
-                          </div>
                         </div>
 
-                        {prazo.descricao ? (
-                          <p className="text-sm text-default-400">
-                            {prazo.descricao}
-                          </p>
-                        ) : null}
-                      </div>
+                        <p className="text-xs font-medium text-primary">
+                          Clique para abrir os detalhes completos
+                        </p>
+                      </button>
 
                       <div className="flex flex-wrap gap-2 xl:w-[220px] xl:justify-end">
+                        <Button
+                          size="sm"
+                          startContent={<Eye className="h-3.5 w-3.5" />}
+                          variant="bordered"
+                          onPress={() => handleOpenPrazoDetails(prazo)}
+                        >
+                          Detalhes
+                        </Button>
                         <Button
                           color="primary"
                           size="sm"
@@ -768,6 +1017,16 @@ export function PrazosContent() {
           )}
         </div>
       </PeoplePanel>
+
+      <PrazoDetailsModal
+        actionPrazoId={actionPrazoId}
+        canEditPrazos={canEditPrazos}
+        isOpen={!!selectedPrazo}
+        prazo={selectedPrazo}
+        onClose={handleClosePrazoDetails}
+        onOpenProcessoPrazo={handleOpenProcessoPrazo}
+        onTogglePrazoStatus={handleTogglePrazoStatus}
+      />
     </div>
   );
 }
