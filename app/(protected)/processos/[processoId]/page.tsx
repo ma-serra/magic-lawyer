@@ -481,7 +481,7 @@ export default function ProcessoDetalhesPage() {
   const processoId = params.processoId as string;
   const highlightedPrazoId = searchParams.get("prazoId");
 
-  const { processo, isCliente, isLoading, isError, mutate } =
+  const { processo, isCliente, isLoading, isError, error, mutate } =
     useProcessoDetalhado(processoId);
   const { documentos, isLoading: isLoadingDocs, mutate: mutateDocumentos } =
     useDocumentosProcesso(processoId);
@@ -789,6 +789,11 @@ export default function ProcessoDetalhesPage() {
     return () => window.clearTimeout(timeoutId);
   }, [abaAtual, highlightedPrazoId, prazosFiltrados.length]);
 
+  const processoLoadErrorMessage =
+    error instanceof Error && error.message.trim().length > 0
+      ? error.message
+      : null;
+
   if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -804,6 +809,12 @@ export default function ProcessoDetalhesPage() {
         <p className="text-lg font-semibold text-danger">
           Erro ao carregar processo
         </p>
+        {processoLoadErrorMessage &&
+        processoLoadErrorMessage !== "Erro ao carregar processo" ? (
+          <p className="max-w-xl text-center text-sm text-default-600">
+            {processoLoadErrorMessage}
+          </p>
+        ) : null}
         <Button color="primary" onPress={() => router.back()}>
           Voltar
         </Button>

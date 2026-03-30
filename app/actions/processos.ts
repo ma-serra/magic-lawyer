@@ -455,6 +455,104 @@ async function getClienteIdFromSession(session: {
   return cliente?.id || null;
 }
 
+function getReadableProcessQueryErrorMessage(
+  error: unknown,
+  fallback: string,
+): string {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P1001"
+  ) {
+    return "Instabilidade temporaria ao acessar o banco de dados. Tente novamente em alguns instantes.";
+  }
+
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function buildProcessReadWhereClause(
+  session: { user: any },
+  processoId: string,
+): Promise<{
+  whereClause: Prisma.ProcessoWhereInput;
+  isCliente: boolean;
+}> {
+  const user = session.user as any;
+  const clienteId = await getClienteIdFromSession(session);
+  const isCliente = !!clienteId;
+
+  const whereClause: Prisma.ProcessoWhereInput = {
+    id: processoId,
+    tenantId: user.tenantId,
+    deletedAt: null,
+  };
+
+  if (isCliente) {
+    whereClause.clienteId = clienteId;
+
+    return { whereClause, isCliente };
+  }
+
+  if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+    const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
+    const orConditions: Prisma.ProcessoWhereInput[] = [
+      {
+        advogadoResponsavelId: {
+          in: accessibleAdvogados,
+        },
+      },
+      {
+        procuracoesVinculadas: {
+          some: {
+            procuracao: {
+              outorgados: {
+                some: {
+                  advogadoId: {
+                    in: accessibleAdvogados,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        partes: {
+          some: {
+            advogadoId: {
+              in: accessibleAdvogados,
+            },
+          },
+        },
+      },
+      {
+        cliente: {
+          advogadoClientes: {
+            some: {
+              advogadoId: {
+                in: accessibleAdvogados,
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    if (user.role === "ADVOGADO") {
+      orConditions.push({
+        cliente: {
+          usuario: {
+            createdById: user.id,
+          },
+        },
+      });
+    }
+
+    whereClause.OR = orConditions;
+  }
+
+  return { whereClause, isCliente };
+}
+
 async function ensureProcessMutationAccess(
   session: { user: any } | null,
   processoId: string,
@@ -1472,21 +1570,15 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
     }
 
     // Verificar se usuário é cliente
-    const clienteId = await getClienteIdFromSession(session);
-    const isCliente = !!clienteId;
-
-    let whereClause: Prisma.ProcessoWhereInput = {
-      id: processoId,
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
+    const { whereClause, isCliente } = await buildProcessReadWhereClause(
+      session,
+      processoId,
+    );
 
     // Se for cliente, só pode ver seus próprios processos
-    if (isCliente) {
-      whereClause.clienteId = clienteId;
-    }
+
     // Se for advogado (não admin), verificar acesso
-    else if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+    /* legacy access block removed after centralizing process read access
       const advogadoId = await getAdvogadoIdFromSession(session);
 
       if (!advogadoId) {
@@ -1523,7 +1615,7 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
       });
 
       whereClause.OR = whereConditions;
-    }
+    */
 
     // ✅ Usa o processoDetalhadoInclude type-safe + sobrescreve _count para lógica condicional
     const processo = await prisma.processo.findFirst({
@@ -1601,7 +1693,10 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
 
     return {
       success: false,
-      error: "Erro ao buscar processo",
+      error: getReadableProcessQueryErrorMessage(
+        error,
+        "Erro ao buscar processo",
+      ),
     };
   }
 }
@@ -1676,19 +1771,10 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
     }
 
     // Verificar se usuário é cliente
-    const clienteId = await getClienteIdFromSession(session);
-    const isCliente = !!clienteId;
+    const { whereClause: whereProcesso, isCliente } =
+      await buildProcessReadWhereClause(session, processoId);
 
-    // Verificar acesso ao processo
-    let whereProcesso: Prisma.ProcessoWhereInput = {
-      id: processoId,
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
-
-    if (isCliente) {
-      whereProcesso.clienteId = clienteId;
-    } else if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+    /* legacy access block removed after centralizing process read access
       const advogadoId = await getAdvogadoIdFromSession(session);
 
       if (!advogadoId) {
@@ -1717,7 +1803,7 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
           },
         },
       ];
-    }
+    */
 
     const processo = await prisma.processo.findFirst({
       where: whereProcesso,
@@ -1816,7 +1902,10 @@ export async function getDocumentosProcesso(processoId: string): Promise<{
 
     return {
       success: false,
-      error: "Erro ao buscar documentos",
+      error: getReadableProcessQueryErrorMessage(
+        error,
+        "Erro ao buscar documentos",
+      ),
     };
   }
 }
@@ -1858,19 +1947,8 @@ export async function getEventosProcesso(processoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar acesso ao processo
-    const clienteId = await getClienteIdFromSession(session);
-    const isCliente = !!clienteId;
-
-    let whereProcesso: Prisma.ProcessoWhereInput = {
-      id: processoId,
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
-
-    if (isCliente) {
-      whereProcesso.clienteId = clienteId;
-    }
+    const { whereClause: whereProcesso, isCliente } =
+      await buildProcessReadWhereClause(session, processoId);
 
     const processo = await prisma.processo.findFirst({
       where: whereProcesso,
@@ -1931,7 +2009,10 @@ export async function getEventosProcesso(processoId: string): Promise<{
 
     return {
       success: false,
-      error: "Erro ao buscar eventos",
+      error: getReadableProcessQueryErrorMessage(
+        error,
+        "Erro ao buscar eventos",
+      ),
     };
   }
 }
@@ -1961,19 +2042,8 @@ export async function getMovimentacoesProcesso(processoId: string): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Verificar acesso ao processo
-    const clienteId = await getClienteIdFromSession(session);
-    const isCliente = !!clienteId;
-
-    let whereProcesso: Prisma.ProcessoWhereInput = {
-      id: processoId,
-      tenantId: user.tenantId,
-      deletedAt: null,
-    };
-
-    if (isCliente) {
-      whereProcesso.clienteId = clienteId;
-    }
+    const { whereClause: whereProcesso, isCliente } =
+      await buildProcessReadWhereClause(session, processoId);
 
     const processo = await prisma.processo.findFirst({
       where: whereProcesso,
@@ -2022,7 +2092,10 @@ export async function getMovimentacoesProcesso(processoId: string): Promise<{
 
     return {
       success: false,
-      error: "Erro ao buscar movimentações",
+      error: getReadableProcessQueryErrorMessage(
+        error,
+        "Erro ao buscar movimentações",
+      ),
     };
   }
 }
