@@ -329,20 +329,12 @@ export function useProfileNavigation() {
 
     if (permissions.canViewJudgesDatabase) {
       apoioJuridicoItems.push({
-        label: "Juízes",
+        label: "Magistrados",
         href: "/juizes",
         icon: "Scale",
         description: isCliente
-          ? "Informações sobre juízes"
-          : "Base de dados de juízes",
-        requiredModules: ["juizes"],
-      });
-
-      apoioJuridicoItems.push({
-        label: "Loja Premium",
-        href: "/juizes/pacotes",
-        icon: "CreditCard",
-        description: "Comprar pacotes de autoridades premium",
+          ? "Informações sobre magistrados"
+          : "Base de magistrados e autoridades judiciárias",
         requiredModules: ["juizes"],
       });
     }

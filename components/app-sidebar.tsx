@@ -576,6 +576,7 @@ const navIconMap: Record<string, ReactElement> = {
   Honorários: <WalletIcon />,
   Parcelas: <ReceiptIcon />,
   Faturas: <ReceiptIcon />,
+  Magistrados: <ScaleIcon />,
   Juízes: <ScaleIcon />,
   "Juízes Globais": <ScaleIcon />,
   Causas: <ScaleIcon />,
