@@ -45,6 +45,19 @@ export type JusbrasilOabTribprocBackfillRequest = {
   progress?: JusbrasilOabTribprocBackfillProgress;
 };
 
+function normalizeRouteOrigin(value?: string | null) {
+  const trimmed = (value || "").replace(/^['"]+|['"]+$/g, "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed.replace(/\/+$/, "");
+  }
+
+  return `https://${trimmed.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
 function normalizeCnjDigits(value?: string | null) {
   return (value || "").replace(/\D/g, "");
 }
@@ -109,7 +122,7 @@ export function buildBackfillRouteUrl() {
   ];
 
   for (const candidate of candidates) {
-    const origin = (candidate || "").trim().replace(/\/+$/, "");
+    const origin = normalizeRouteOrigin(candidate);
     if (!origin) continue;
 
     return `${origin}/api/internal/jusbrasil/oab-backfill`;
