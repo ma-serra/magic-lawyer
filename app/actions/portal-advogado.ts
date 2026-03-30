@@ -16,6 +16,7 @@ import {
   isJusbrasilIntegrationEnabledForTenant,
   registerOrRefreshJusbrasilMonitor,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { enqueueJusbrasilOabTribprocBackfill } from "@/app/lib/juridical/jusbrasil-oab-tribproc-backfill";
 import prisma from "@/app/lib/prisma";
 import {
   PortalProcessSyncState,
@@ -495,21 +496,6 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
         }
 
         const webhookUrl = buildJusbrasilExpectedWebhookUrl();
-        const awaitingState = withPortalProcessSyncStatus(
-          initialState,
-          "AWAITING_WEBHOOK",
-          {
-            provider: "JUSBRASIL",
-            correlationId: monitor.correlation_id,
-            webhookUrl,
-            message: existed
-              ? "Monitoramento Jusbrasil atualizado. A chegada dos processos depende do webhook."
-              : "Monitoramento Jusbrasil criado. A chegada dos processos depende do webhook.",
-          },
-        );
-
-        await savePortalProcessSyncState(awaitingState);
-
         await createOabSyncAuditEntry({
           tenantId,
           usuarioId,
@@ -529,10 +515,39 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
           existingMonitor: existed,
         });
 
+        await enqueueJusbrasilOabTribprocBackfill({
+          job: {
+            syncId,
+            tenantId,
+            usuarioId,
+            advogadoId: ctx.advogadoId,
+            tribunalSigla,
+            oab: ctx.oab,
+            correlationId: monitor.correlation_id,
+            clienteNome: clienteNome ?? null,
+            webhookUrl,
+          },
+        });
+
+        const runningState = withPortalProcessSyncStatus(
+          initialState,
+          "RUNNING",
+          {
+            provider: "JUSBRASIL",
+            correlationId: monitor.correlation_id,
+            webhookUrl,
+            message: existed
+              ? "Monitoramento Jusbrasil atualizado. Backfill inicial via tribproc em andamento."
+              : "Monitoramento Jusbrasil criado. Backfill inicial via tribproc em andamento.",
+          },
+        );
+
+        await savePortalProcessSyncState(runningState);
+
         return {
           success: true,
           syncId,
-          status: toPublicSyncState(awaitingState),
+          status: toPublicSyncState(runningState),
         };
     } catch (error) {
       const failedState = withPortalProcessSyncStatus(initialState, "FAILED", {

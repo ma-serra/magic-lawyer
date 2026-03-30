@@ -140,6 +140,7 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   searchParams?: Record<string, unknown>;
   body?: unknown;
+  timeoutMs?: number;
 };
 
 export class JusbrasilClient {
@@ -186,16 +187,25 @@ export class JusbrasilClient {
   }
 
   private async request<T>(path: string, options: RequestOptions = {}) {
-    const response = await fetch(this.buildUrl(path, options.searchParams), {
-      method: options.method ?? "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-        ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-      },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      cache: "no-store",
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(this.buildUrl(path, options.searchParams), {
+        method: options.method ?? "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        cache: "no-store",
+        signal: AbortSignal.timeout(options.timeoutMs ?? 20_000),
+      });
+    } catch (error) {
+      const description =
+        error instanceof Error ? error.message : "falha de rede desconhecida";
+      throw new Error(`Falha ao consultar Jusbrasil em ${path}: ${description}`);
+    }
 
     const rawBody = await response.text();
     let data = null as T;

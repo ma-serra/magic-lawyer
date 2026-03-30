@@ -15,6 +15,7 @@ import {
   registerOrRefreshJusbrasilMonitor,
   type OabSyncAuditStatus,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { enqueueJusbrasilOabTribprocBackfill } from "@/app/lib/juridical/jusbrasil-oab-tribproc-backfill";
 import logger from "@/lib/logger";
 
 type SyncStatus = OabSyncAuditStatus;
@@ -61,6 +62,7 @@ export interface SincronizacaoInicialOabResponse {
   mode?: "SYNC" | "ASYNC_WEBHOOK";
   message?: string;
   monitoramentoRegistrado?: boolean;
+  backfillStarted?: boolean;
   correlationId?: string;
   webhookUrl?: string;
 }
@@ -369,6 +371,19 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
       existingMonitor: existed,
     });
 
+    await enqueueJusbrasilOabTribprocBackfill({
+      job: {
+        tenantId,
+        usuarioId,
+        advogadoId: context.advogadoId,
+        tribunalSigla,
+        oab: context.oab,
+        correlationId: monitor.correlation_id,
+        clienteNome: clienteNome ?? null,
+        webhookUrl,
+      },
+    });
+
     return {
       success: true,
       tribunalSigla,
@@ -380,11 +395,12 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
       provider: "JUSBRASIL",
       mode: "ASYNC_WEBHOOK",
       monitoramentoRegistrado: true,
+      backfillStarted: true,
       correlationId: monitor.correlation_id,
       webhookUrl,
       message: existed
-        ? "Monitoramento Jusbrasil atualizado. O retorno agora chegara via webhook."
-        : "Monitoramento Jusbrasil criado. O retorno chegara via webhook.",
+        ? "Monitoramento Jusbrasil atualizado. O backfill inicial via tribproc foi iniciado e o webhook seguira ativo para novas atualizacoes."
+        : "Monitoramento Jusbrasil criado. O backfill inicial via tribproc foi iniciado e o webhook seguira ativo para novas atualizacoes.",
     };
   } catch (error) {
     logger.error("[Processos Sync OAB] Erro ao sincronizar:", error);

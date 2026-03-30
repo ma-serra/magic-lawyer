@@ -22,7 +22,8 @@ export type OabSyncAuditOrigin =
   | "BACKGROUND_INITIAL"
   | "BACKGROUND_CAPTCHA"
   | "JUSBRASIL_REGISTRO"
-  | "JUSBRASIL_WEBHOOK";
+  | "JUSBRASIL_WEBHOOK"
+  | "JUSBRASIL_TRIBPROC_BACKFILL";
 
 export type OabSyncAuditPayload = {
   origem: OabSyncAuditOrigin;

@@ -190,10 +190,10 @@ export function ProcessosSyncOabModal({
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  3. Aguarde o webhook
+                  3. Backfill inicial
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O retorno dos processos chega assíncrono, sem captcha e sem seleção de tribunal.
+                  O tribproc puxa a carteira inicial e o webhook fica ativo para novas atualizações.
                 </p>
               </div>
             </CardBody>
@@ -220,7 +220,7 @@ export function ProcessosSyncOabModal({
           <Card className="border border-primary/20 bg-primary/5">
             <CardBody className="gap-2 text-sm text-primary-800">
               <p className="font-semibold">Origem da sincronização</p>
-              <p>Jusbrasil via webhook assíncrono.</p>
+              <p>Jusbrasil com backfill inicial via tribproc e continuidade por webhook.</p>
             </CardBody>
           </Card>
 
@@ -269,7 +269,9 @@ export function ProcessosSyncOabModal({
                     variant="flat"
                   >
                     {resultado.monitoramentoRegistrado
-                      ? "Aguardando webhook"
+                      ? resultado.backfillStarted
+                        ? "Backfill em andamento"
+                        : "Monitoramento ativo"
                       : resultado.success
                         ? "Concluído"
                         : "Falha"}

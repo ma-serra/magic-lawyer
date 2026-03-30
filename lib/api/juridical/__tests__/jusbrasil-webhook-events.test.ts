@@ -171,7 +171,7 @@ describe("jusbrasil-webhook-events", () => {
     });
     expect(
       events[0].movimentacoes.map((movimentacao) =>
-        normalizeText(movimentacao.tipo),
+        normalizeText(movimentacao.tipo || ""),
       ),
     ).toEqual(
       expect.arrayContaining([

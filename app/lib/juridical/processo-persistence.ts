@@ -282,6 +282,7 @@ export async function upsertProcessoFromCapture(params: {
   clienteNome?: string;
   advogadoId?: string;
   updateIfExists?: boolean;
+  syncJusbrasilProcessMonitor?: boolean;
 }) {
   const {
     tenantId,
@@ -289,6 +290,7 @@ export async function upsertProcessoFromCapture(params: {
     clienteNome,
     advogadoId,
     updateIfExists = true,
+    syncJusbrasilProcessMonitor = true,
   } = params;
   const numero = processo.numeroProcesso?.trim();
 
@@ -365,11 +367,13 @@ export async function upsertProcessoFromCapture(params: {
       });
     });
 
-    await ensureJusbrasilProcessMonitorBestEffort({
-      tenantId,
-      processoId: existente.id,
-      numeroProcesso: numero,
-    });
+    if (syncJusbrasilProcessMonitor) {
+      await ensureJusbrasilProcessMonitorBestEffort({
+        tenantId,
+        processoId: existente.id,
+        numeroProcesso: numero,
+      });
+    }
 
     return { processoId: existente.id, created: false, updated: true };
   }
@@ -416,11 +420,13 @@ export async function upsertProcessoFromCapture(params: {
     return processoCriado;
   });
 
-  await ensureJusbrasilProcessMonitorBestEffort({
-    tenantId,
-    processoId: criado.id,
-    numeroProcesso: numero,
-  });
+  if (syncJusbrasilProcessMonitor) {
+    await ensureJusbrasilProcessMonitorBestEffort({
+      tenantId,
+      processoId: criado.id,
+      numeroProcesso: numero,
+    });
+  }
 
   return { processoId: criado.id, created: true, updated: false };
 }
