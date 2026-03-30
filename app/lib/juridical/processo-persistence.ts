@@ -1,8 +1,19 @@
 import prisma from "@/app/lib/prisma";
+import { syncCapturedProcessDocuments } from "@/app/lib/juridical/process-document-sync";
 import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
-import { Prisma, ProcessoStatus, ProcessoPolo, TipoPessoa } from "@/generated/prisma";
+import {
+  Prisma,
+  ProcessoStatus,
+  ProcessoPolo,
+  TipoPessoa,
+  UserRole,
+} from "@/generated/prisma";
 import { getTribunalConfig } from "@/lib/api/juridical/config";
-import { ParteProcesso, ProcessoJuridico } from "@/lib/api/juridical/types";
+import {
+  AdvogadoParte,
+  ParteProcesso,
+  ProcessoJuridico,
+} from "@/lib/api/juridical/types";
 
 const normalizeCacheKey = (value: string) =>
   value
@@ -33,6 +44,345 @@ function resolveClienteNome(processo: ProcessoJuridico, clienteNome?: string) {
   const primeiraParte = processo.partes?.[0];
   if (primeiraParte?.nome) return primeiraParte.nome.trim();
   return "Cliente importado";
+}
+
+function splitFullName(nome: string) {
+  const parts = nome.trim().split(/\s+/).filter(Boolean);
+  const firstName = parts.shift() || nome.trim();
+  const lastName = parts.join(" ").trim() || null;
+
+  return {
+    firstName,
+    lastName,
+  };
+}
+
+function buildSyntheticExternalLawyerEmail(params: {
+  tenantId: string;
+  nome: string;
+  oabNumero?: string | null;
+  oabUf?: string | null;
+}) {
+  const base = normalizeCacheKey(params.nome)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 40);
+  const oabSegment = params.oabNumero && params.oabUf
+    ? `${params.oabUf}${params.oabNumero}`.toLowerCase()
+    : "sem-oab";
+
+  return `jusbrasil+${base || "advogado"}.${oabSegment}.${params.tenantId.slice(0, 8)}@magiclawyer.local`;
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function findExistingExternalAdvogado(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    nome: string;
+    oabNumero?: string | null;
+    oabUf?: string | null;
+  },
+) {
+  const { firstName, lastName } = splitFullName(params.nome);
+
+  const byOab =
+    params.oabNumero && params.oabUf
+      ? await tx.advogado.findFirst({
+          where: {
+            tenantId: params.tenantId,
+            oabNumero: params.oabNumero,
+            oabUf: params.oabUf,
+          },
+          select: {
+            id: true,
+            oabNumero: true,
+            oabUf: true,
+            usuario: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        })
+      : null;
+
+  if (byOab) {
+    return byOab;
+  }
+
+  return tx.advogado.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      isExterno: true,
+      usuario: {
+        firstName: {
+          equals: firstName,
+          mode: "insensitive",
+        },
+        ...(lastName
+          ? {
+              lastName: {
+                equals: lastName,
+                mode: "insensitive",
+              },
+            }
+          : {
+              OR: [{ lastName: null }, { lastName: "" }],
+            }),
+      },
+    },
+    select: {
+      id: true,
+      oabNumero: true,
+      oabUf: true,
+      usuario: {
+        select: {
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  });
+}
+
+async function ensureUniqueSyntheticEmail(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    baseEmail: string;
+  },
+) {
+  const [localPart, domainPart] = params.baseEmail.split("@");
+  let email = params.baseEmail;
+  let suffix = 1;
+
+  while (
+    await tx.usuario.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        email,
+      },
+      select: {
+        id: true,
+      },
+    })
+  ) {
+    email = `${localPart}.${suffix}@${domainPart}`;
+    suffix += 1;
+  }
+
+  return email;
+}
+
+async function ensureExternalAdvogado(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    advogado: AdvogadoParte;
+  },
+) {
+  const nome = params.advogado.nome.trim();
+  if (!nome) {
+    return null;
+  }
+
+  const oabNumero = params.advogado.oabNumero?.trim() || null;
+  const oabUf = params.advogado.oabUf?.trim().toUpperCase() || null;
+  const { firstName, lastName } = splitFullName(nome);
+  let existente = await findExistingExternalAdvogado(tx, {
+    tenantId: params.tenantId,
+    nome,
+    oabNumero,
+    oabUf,
+  });
+
+  if (existente) {
+    if (
+      (!existente.oabNumero && oabNumero) ||
+      (!existente.oabUf && oabUf) ||
+      normalizeCacheKey(
+        `${existente.usuario.firstName || ""} ${existente.usuario.lastName || ""}`.trim(),
+      ) !== normalizeCacheKey(nome)
+    ) {
+      await tx.advogado.update({
+        where: {
+          id: existente.id,
+        },
+        data: {
+          ...(oabNumero && !existente.oabNumero ? { oabNumero } : {}),
+          ...(oabUf && !existente.oabUf ? { oabUf } : {}),
+          usuario: {
+            update: {
+              ...(existente.usuario.firstName !== firstName ? { firstName } : {}),
+              ...((existente.usuario.lastName || null) !== (lastName || null)
+                ? { lastName }
+                : {}),
+            },
+          },
+        },
+      });
+    }
+
+    return {
+      id: existente.id,
+      nome,
+      oabNumero,
+      oabUf,
+    };
+  }
+
+  const syntheticEmail = await ensureUniqueSyntheticEmail(tx, {
+    tenantId: params.tenantId,
+    baseEmail: buildSyntheticExternalLawyerEmail({
+      tenantId: params.tenantId,
+      nome,
+      oabNumero,
+      oabUf,
+    }),
+  });
+
+  try {
+    const usuario = await tx.usuario.create({
+      data: {
+        tenantId: params.tenantId,
+        email: syntheticEmail,
+        passwordHash: null,
+        role: UserRole.ADVOGADO,
+        firstName,
+        lastName,
+        phone: params.advogado.telefone || null,
+        active: false,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const advogado = await tx.advogado.create({
+      data: {
+        tenantId: params.tenantId,
+        usuarioId: usuario.id,
+        oabNumero,
+        oabUf,
+        isExterno: true,
+        telefone: params.advogado.telefone || null,
+        notificarEmail: false,
+        notificarWhatsapp: false,
+        notificarSistema: false,
+        podeCriarProcessos: false,
+        podeEditarProcessos: false,
+        podeExcluirProcessos: false,
+        podeGerenciarClientes: false,
+        podeAcessarFinanceiro: false,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return {
+      id: advogado.id,
+      nome,
+      oabNumero,
+      oabUf,
+    };
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) {
+      throw error;
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await wait(150 * (attempt + 1));
+      existente = await findExistingExternalAdvogado(tx, {
+        tenantId: params.tenantId,
+        nome,
+        oabNumero,
+        oabUf,
+      });
+
+      if (existente) {
+        return {
+          id: existente.id,
+          nome,
+          oabNumero,
+          oabUf,
+        };
+      }
+    }
+
+    throw error;
+  }
+}
+
+async function summarizeParteLawyers(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  advogados: AdvogadoParte[] | undefined,
+) {
+  const ensuredLawyers: Array<{
+    id: string;
+    nome: string;
+    oabNumero?: string | null;
+    oabUf?: string | null;
+  }> = [];
+  const seen = new Set<string>();
+
+  for (const advogado of advogados || []) {
+    const ensured = await ensureExternalAdvogado(tx, {
+      tenantId,
+      advogado,
+    });
+
+    if (!ensured) {
+      continue;
+    }
+
+    const key = ensured.oabNumero && ensured.oabUf
+      ? `${ensured.oabUf}:${ensured.oabNumero}`
+      : normalizeCacheKey(ensured.nome);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    ensuredLawyers.push(ensured);
+  }
+
+  return {
+    primaryAdvogadoId: ensuredLawyers[0]?.id || null,
+    papel:
+      ensuredLawyers.length > 0
+        ? ensuredLawyers.length === 1
+          ? "Representado por 1 advogado"
+          : `Representado por ${ensuredLawyers.length} advogados`
+        : null,
+    observacoes:
+      ensuredLawyers.length > 0
+        ? `Advogados importados via Jusbrasil: ${ensuredLawyers
+            .map((item) =>
+              item.oabNumero && item.oabUf
+                ? `${item.nome} (${item.oabUf}/${item.oabNumero})`
+                : item.nome,
+            )
+            .join("; ")}`
+        : null,
+  };
 }
 
 async function ensureCliente(tenantId: string, processo: ProcessoJuridico, clienteNome?: string) {
@@ -120,7 +470,13 @@ async function ensureTribunal(tenantId: string, processo: ProcessoJuridico) {
   });
 }
 
-function buildPartesPayload(tenantId: string, processoId: string, partes: ParteProcesso[] | undefined, cliente: { id: string; nome: string; documento?: string | null }) {
+async function buildPartesPayload(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  processoId: string,
+  partes: ParteProcesso[] | undefined,
+  cliente: { id: string; nome: string; documento?: string | null },
+) {
   const payload: Array<{
     tenantId: string;
     processoId: string;
@@ -128,20 +484,24 @@ function buildPartesPayload(tenantId: string, processoId: string, partes: ParteP
     nome: string;
     documento?: string | null;
     clienteId?: string | null;
+    advogadoId?: string | null;
+    papel?: string | null;
+    observacoes?: string | null;
   }> = [];
   const seen = new Set<string>();
 
-  (partes || []).forEach((parte) => {
+  for (const parte of partes || []) {
     const tipoPolo = mapPartePolo(parte);
-    if (!tipoPolo) return;
+    if (!tipoPolo) continue;
     const nome = parte.nome.trim();
-    if (!nome) return;
+    if (!nome) continue;
 
     const key = `${tipoPolo}:${normalizeCacheKey(nome)}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) continue;
     seen.add(key);
 
     const isCliente = normalizeCacheKey(nome) === normalizeCacheKey(cliente.nome);
+    const lawyerSummary = await summarizeParteLawyers(tx, tenantId, parte.advogados);
 
     payload.push({
       tenantId,
@@ -150,8 +510,11 @@ function buildPartesPayload(tenantId: string, processoId: string, partes: ParteP
       nome,
       documento: parte.documento || null,
       clienteId: isCliente ? cliente.id : null,
+      advogadoId: lawyerSummary.primaryAdvogadoId,
+      papel: lawyerSummary.papel,
+      observacoes: lawyerSummary.observacoes,
     });
-  });
+  }
 
   const clienteKey = `${ProcessoPolo.AUTOR}:${normalizeCacheKey(cliente.nome)}`;
   if (!seen.has(clienteKey)) {
@@ -168,7 +531,7 @@ function buildPartesPayload(tenantId: string, processoId: string, partes: ParteP
   return payload;
 }
 
-type PartePayload = ReturnType<typeof buildPartesPayload>[number];
+type PartePayload = Awaited<ReturnType<typeof buildPartesPayload>>[number];
 
 async function syncProcessoPartes(
   tx: Prisma.TransactionClient,
@@ -190,6 +553,9 @@ async function syncProcessoPartes(
       nome: true,
       documento: true,
       clienteId: true,
+      advogadoId: true,
+      papel: true,
+      observacoes: true,
     },
   });
 
@@ -215,13 +581,31 @@ async function syncProcessoPartes(
       !existente.documento && Boolean(parte.documento);
     const shouldUpdateCliente =
       !existente.clienteId && Boolean(parte.clienteId);
+    const shouldUpdateAdvogado =
+      !existente.advogadoId && Boolean(parte.advogadoId);
+    const shouldUpdatePapel =
+      normalizeCacheKey(existente.papel || "") !== normalizeCacheKey(parte.papel || "");
+    const shouldUpdateObservacoes =
+      normalizeCacheKey(existente.observacoes || "") !==
+      normalizeCacheKey(parte.observacoes || "");
 
-    if (shouldUpdateDocumento || shouldUpdateCliente) {
+    if (
+      shouldUpdateDocumento ||
+      shouldUpdateCliente ||
+      shouldUpdateAdvogado ||
+      shouldUpdatePapel ||
+      shouldUpdateObservacoes
+    ) {
       await tx.processoParte.update({
         where: { id: existente.id },
         data: {
           ...(shouldUpdateDocumento ? { documento: parte.documento } : {}),
           ...(shouldUpdateCliente ? { clienteId: parte.clienteId } : {}),
+          ...(shouldUpdateAdvogado ? { advogadoId: parte.advogadoId } : {}),
+          ...(shouldUpdatePapel ? { papel: parte.papel } : {}),
+          ...(shouldUpdateObservacoes
+            ? { observacoes: parte.observacoes }
+            : {}),
         },
       });
     }
@@ -352,7 +736,8 @@ export async function upsertProcessoFromCapture(params: {
         },
       });
 
-      const partesPayload = buildPartesPayload(
+      const partesPayload = await buildPartesPayload(
+        tx,
         tenantId,
         existente.id,
         processo.partes,
@@ -360,11 +745,20 @@ export async function upsertProcessoFromCapture(params: {
       );
 
       await syncProcessoPartes(tx, partesPayload);
+      await syncCapturedProcessDocuments(tx, {
+        tenantId,
+        processoId: existente.id,
+        clienteId: clienteAlvo.id,
+        documentos: processo.documentos,
+      });
       await ensureAdvogadoClienteLink(tx, {
         tenantId,
         advogadoId,
         clienteId: clienteAlvo.id,
       });
+    }, {
+      maxWait: 10_000,
+      timeout: 30_000,
     });
 
     if (syncJusbrasilProcessMonitor) {
@@ -403,13 +797,26 @@ export async function upsertProcessoFromCapture(params: {
       },
     });
 
-    const partesPayload = buildPartesPayload(tenantId, processoCriado.id, processo.partes, cliente);
+    const partesPayload = await buildPartesPayload(
+      tx,
+      tenantId,
+      processoCriado.id,
+      processo.partes,
+      cliente,
+    );
 
     if (partesPayload.length > 0) {
       await tx.processoParte.createMany({
         data: partesPayload,
       });
     }
+
+    await syncCapturedProcessDocuments(tx, {
+      tenantId,
+      processoId: processoCriado.id,
+      clienteId: cliente.id,
+      documentos: processo.documentos,
+    });
 
     await ensureAdvogadoClienteLink(tx, {
       tenantId,
@@ -418,6 +825,9 @@ export async function upsertProcessoFromCapture(params: {
     });
 
     return processoCriado;
+  }, {
+    maxWait: 10_000,
+    timeout: 30_000,
   });
 
   if (syncJusbrasilProcessMonitor) {

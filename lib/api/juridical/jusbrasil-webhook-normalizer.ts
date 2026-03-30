@@ -1,5 +1,6 @@
 import {
   EsferaTribunal,
+  type DocumentoProcesso,
   type MovimentacaoProcesso,
   type ParteProcesso,
   type ProcessoJuridico,
@@ -280,6 +281,59 @@ function mapMovimentacoes(processo: JsonRecord): MovimentacaoProcesso[] {
   return movimentacoes;
 }
 
+function mapDocumentos(processo: JsonRecord): DocumentoProcesso[] {
+  return readArray(processo.anexos)
+    .map((item) => {
+      const tuple = readArray(item);
+      if (tuple.length > 0) {
+        const link = readString(tuple[1]);
+        const nome = readString(tuple[6]) || readString(tuple[5]) || undefined;
+
+        if (!link && !nome) {
+          return null;
+        }
+
+        return {
+          nome: nome || "Documento importado",
+          tipo: readString(tuple[2]),
+          data: readDate(tuple[4]) || readDate(tuple[3]),
+          link,
+        } satisfies DocumentoProcesso;
+      }
+
+      const record = readRecord(item);
+      if (!record) {
+        return null;
+      }
+
+      const link =
+        readString(record.url) ||
+        readString(record.link) ||
+        readString(record.docurl) ||
+        readString(record.cached_docurl);
+      const nome =
+        readString(record.nome) ||
+        readString(record.name) ||
+        readString(record.titulo) ||
+        readString(record.title);
+
+      if (!link && !nome) {
+        return null;
+      }
+
+      return {
+        nome: nome || "Documento importado",
+        tipo: readString(record.tipo) || readString(record.kind),
+        data:
+          readDate(record.updated_at) ||
+          readDate(record.created_at) ||
+          readDate(record.data),
+        link,
+      } satisfies DocumentoProcesso;
+    })
+    .filter(Boolean) as DocumentoProcesso[];
+}
+
 export function extractJusbrasilWebhookBatches(
   payload: unknown,
 ): JusbrasilWebhookBatch[] {
@@ -356,6 +410,7 @@ export function mapJusbrasilWebhookProcessoToProcesso(
     sistema: TribunalSistema.OUTRO,
     partes: mapPartes(processo),
     movimentacoes: mapMovimentacoes(processo),
+    documentos: mapDocumentos(processo),
     juiz:
       readString(readRecord(processo.relator_juiz)?.nome) ||
       readString(readRecord(processo.dados)?.presidente),

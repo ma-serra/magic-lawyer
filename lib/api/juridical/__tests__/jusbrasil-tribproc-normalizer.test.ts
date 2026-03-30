@@ -64,6 +64,17 @@ describe("jusbrasil-tribproc-normalizer", () => {
           "https://example.com/doc",
         ],
       ],
+      anexos: [
+        [
+          99,
+          "https://storage.example.com/doc-1.pdf?Expires=123",
+          "PDF",
+          "2026-03-28T10:00:00.000Z",
+          "2026-03-29T10:00:00.000Z",
+          12345,
+          "Peticao inicial",
+        ],
+      ],
     });
 
     expect(processo).not.toBeNull();
@@ -87,6 +98,10 @@ describe("jusbrasil-tribproc-normalizer", () => {
       descricao: "Publicado no DJE",
       linkDocumento: "https://example.com/doc",
     });
+    expect(processo?.documentos?.[0]).toMatchObject({
+      nome: "Peticao inicial",
+      tipo: "PDF",
+      link: "https://storage.example.com/doc-1.pdf?Expires=123",
+    });
   });
 });
-

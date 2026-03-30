@@ -2,6 +2,7 @@ import {
   EsferaTribunal,
   TribunalSistema,
   type AdvogadoParte,
+  type DocumentoProcesso,
   type MovimentacaoProcesso,
   type ParteProcesso,
   type ProcessoJuridico,
@@ -248,6 +249,27 @@ function mapMovimentacoes(raw: JsonRecord): MovimentacaoProcesso[] {
     .filter(Boolean) as MovimentacaoProcesso[];
 }
 
+function mapDocumentos(raw: JsonRecord): DocumentoProcesso[] {
+  return readArray(raw.anexos)
+    .map((entry) => {
+      const tuple = readArray(entry);
+      const link = readString(tuple[1]);
+      const nome = readString(tuple[6]) || readString(tuple[5]) || undefined;
+
+      if (!link && !nome) {
+        return null;
+      }
+
+      return {
+        nome: nome || "Documento importado",
+        tipo: readString(tuple[2]),
+        data: readDate(tuple[4]) || readDate(tuple[3]),
+        link,
+      } satisfies DocumentoProcesso;
+    })
+    .filter(Boolean) as DocumentoProcesso[];
+}
+
 function buildAssunto(raw: JsonRecord) {
   const classes = readArray(raw.classes)
     .map((item) => readString(item))
@@ -295,10 +317,10 @@ export function mapJusbrasilTribprocProcessoToProcesso(
     sistema: mapTribunalSistema(readString(raw.fonte_sistema)),
     partes: mapPartes(raw),
     movimentacoes: mapMovimentacoes(raw),
+    documentos: mapDocumentos(raw),
     juiz: readString(raw.juiz),
     capturadoEm: new Date(),
     ultimaAtualizacao: readDate(raw.alteradoEm) || new Date(),
     fonte: "API_JUSBRASIL_TRIBPROC",
   };
 }
-
