@@ -40,6 +40,7 @@
     "notifications:all": "npm run notifications:test && npm run notifications:webhook && npm run notifications:smoke && npm run notifications:crons",
     "notifications:repair": "npx tsx scripts/fix-tenant-status-simple.ts",
     "jusbrasil:backfill:process-monitors": "npx tsx scripts/jusbrasil-backfill-process-monitors.ts",
+    "jusbrasil:backfill:prazos": "npx tsx scripts/backfill-jusbrasil-prazos.ts",
     "polling:status": "npx tsx scripts/polling-control.ts --status",
     "polling:off": "npx tsx scripts/polling-control.ts --off",
     "polling:on": "npx tsx scripts/polling-control.ts --on",

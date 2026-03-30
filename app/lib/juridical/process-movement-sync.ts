@@ -2,6 +2,7 @@ import prisma from "@/app/lib/prisma";
 import { HybridNotificationService } from "@/app/lib/notifications/hybrid-notification-service";
 import { MovimentacaoTipo } from "@/generated/prisma";
 import type { MovimentacaoProcesso as MovimentacaoCapturada } from "@/lib/api/juridical/types";
+import { ensurePrazoFromMovimentacao } from "@/app/lib/juridical/process-deadline-sync";
 
 type ProcessNotificationScope = {
   titulo?: string | null;
@@ -417,6 +418,7 @@ export async function persistCapturedMovimentacoes(
   }> = [];
 
   for (const mov of normalized) {
+    const movementType = mapMovimentacaoTipo(mov);
     const key = buildMovementKey({
       dataMovimentacao: mov.data,
       titulo: mov.tipoNormalizado || mov.tipo || "Andamento processual",
@@ -434,8 +436,9 @@ export async function persistCapturedMovimentacoes(
         criadoPorId: params.criadoPorId ?? null,
         titulo: mov.tipoNormalizado || mov.tipo || "Andamento processual",
         descricao: mov.descricao || null,
-        tipo: mapMovimentacaoTipo(mov),
+        tipo: movementType,
         dataMovimentacao: mov.data,
+        slaEm: mov.prazoVencimento || null,
         prazo: mov.prazoVencimento || null,
         notificarCliente: false,
         notificarEmail: false,
@@ -443,6 +446,7 @@ export async function persistCapturedMovimentacoes(
       },
       select: {
         id: true,
+        processoId: true,
         titulo: true,
         descricao: true,
         tipo: true,
@@ -451,7 +455,14 @@ export async function persistCapturedMovimentacoes(
         responsavelId: true,
         dataMovimentacao: true,
         slaEm: true,
+        prazo: true,
+        resolvidoEm: true,
       },
+    });
+
+    await ensurePrazoFromMovimentacao({
+      tenantId: params.tenantId,
+      movement: created,
     });
 
     existingKeys.add(key);
