@@ -5,12 +5,13 @@ import prisma from "@/app/lib/prisma";
 import { ProcessoPolo } from "@/generated/prisma";
 import type {
   JusbrasilProcessChangeEvent,
+  JusbrasilProcessSnapshotEvent,
   JusbrasilSupportedProcessEvent,
 } from "@/lib/api/juridical/jusbrasil-webhook-events";
 import type { JusbrasilProcessBinding } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 
 export type JusbrasilProcessEventImportSummary = {
-  evtType: 1 | 2 | 7;
+  evtType: 1 | 2 | 4 | 7 | 13;
   processoId: string;
   updatedProcess: boolean;
   createdMovimentacoes: number;
@@ -98,7 +99,7 @@ async function softDeleteMissingProcessPartsFromSnapshot(params: {
       },
       data: buildSoftDeletePayload(
         { actorType: "WEBHOOK", actorId: "JUSBRASIL" },
-        "Parte removida com base em snapshot de mudança de processo via Jusbrasil.",
+        "Parte removida com base em snapshot de mudanca de processo via Jusbrasil.",
       ),
     });
     softDeleted += 1;
@@ -107,14 +108,18 @@ async function softDeleteMissingProcessPartsFromSnapshot(params: {
   return softDeleted;
 }
 
-function getJusbrasilEventSourceLabel(evtType: 1 | 2 | 7) {
+function getJusbrasilEventSourceLabel(evtType: 1 | 2 | 4 | 7 | 13) {
   switch (evtType) {
     case 1:
-      return "Jusbrasil - movimentações monitoradas";
+      return "Jusbrasil - movimentacoes monitoradas";
     case 2:
-      return "Jusbrasil - publicações processuais";
+      return "Jusbrasil - publicacoes processuais";
+    case 4:
+      return "Jusbrasil - distribuicao de processo";
     case 7:
-      return "Jusbrasil - mudança em processo";
+      return "Jusbrasil - mudanca em processo";
+    case 13:
+      return "Jusbrasil - atualizacao sob demanda";
     default:
       return "Webhook Jusbrasil";
   }
@@ -158,6 +163,25 @@ async function syncSnapshotForProcessChange(params: {
   };
 }
 
+async function syncSnapshotForFullProcessEvent(params: {
+  binding: JusbrasilProcessBinding;
+  event: JusbrasilProcessSnapshotEvent;
+}) {
+  if (!params.event.mappedProcess) {
+    return false;
+  }
+
+  const persisted = await upsertProcessoFromCapture({
+    tenantId: params.binding.tenantId,
+    processo: params.event.mappedProcess,
+    clienteNome: params.binding.clienteNome || undefined,
+    advogadoId: params.binding.advogadoResponsavelId || undefined,
+    updateIfExists: true,
+  });
+
+  return persisted.created || persisted.updated;
+}
+
 export async function processJusbrasilSupportedProcessEvent(params: {
   binding: JusbrasilProcessBinding;
   event: JusbrasilSupportedProcessEvent;
@@ -172,6 +196,13 @@ export async function processJusbrasilSupportedProcessEvent(params: {
     });
     updatedProcess = snapshotResult.updatedProcess;
     softDeletedPartes = snapshotResult.softDeletedPartes;
+  }
+
+  if (params.event.evtType === 4 || params.event.evtType === 13) {
+    updatedProcess = await syncSnapshotForFullProcessEvent({
+      binding: params.binding,
+      event: params.event,
+    });
   }
 
   const movimentacaoSummary = await persistCapturedMovimentacoes({

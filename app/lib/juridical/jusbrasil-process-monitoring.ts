@@ -63,6 +63,15 @@ function normalizeNumeroProcesso(value?: string | null) {
   return value.replace(/\D/g, "");
 }
 
+function formatNumeroCnj(value?: string | null) {
+  const digits = normalizeNumeroProcesso(value);
+  if (digits.length !== 20) {
+    return value || "";
+  }
+
+  return `${digits.slice(0, 7)}-${digits.slice(7, 9)}.${digits.slice(9, 13)}.${digits.slice(13, 14)}.${digits.slice(14, 16)}.${digits.slice(16)}`;
+}
+
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -154,6 +163,87 @@ export function parseJusbrasilProcessUserCustom(value?: string | null) {
     processoId,
     numeroNormalizado: numeroNormalizado || null,
   };
+}
+
+type ParsedJusbrasilProcessUserCustom = NonNullable<
+  ReturnType<typeof parseJusbrasilProcessUserCustom>
+>;
+
+function isParsedJusbrasilProcessUserCustom(
+  value: ReturnType<typeof parseJusbrasilProcessUserCustom>,
+): value is ParsedJusbrasilProcessUserCustom {
+  return Boolean(value);
+}
+
+async function resolveUniqueProcessBindingByTargetNumber(
+  targetNumber?: string | null,
+) {
+  const normalizedTarget = normalizeNumeroProcesso(targetNumber);
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const numeroFormatado = formatNumeroCnj(normalizedTarget);
+  const candidateNumbers = Array.from(
+    new Set(
+      [readString(targetNumber), normalizedTarget, numeroFormatado].filter(
+        Boolean,
+      ) as string[],
+    ),
+  );
+
+  const processos = await prisma.processo.findMany({
+    where: {
+      deletedAt: null,
+      OR: [
+        { numero: { in: candidateNumbers } },
+        { numeroCnj: { in: candidateNumbers } },
+      ],
+    },
+    select: {
+      id: true,
+      tenantId: true,
+      numero: true,
+      numeroCnj: true,
+      advogadoResponsavelId: true,
+      cliente: {
+        select: {
+          nome: true,
+        },
+      },
+    },
+    take: 10,
+  });
+
+  const matches: JusbrasilProcessBinding[] = [];
+
+  for (const processo of processos) {
+    const numeroProcesso = readString(processo.numeroCnj) || processo.numero;
+    if (normalizeNumeroProcesso(numeroProcesso) !== normalizedTarget) {
+      continue;
+    }
+
+    const integrationState = await getTenantJusbrasilIntegrationState(
+      processo.tenantId,
+    );
+    if (!integrationState.enabled) {
+      continue;
+    }
+
+    matches.push({
+      tenantId: processo.tenantId,
+      processoId: processo.id,
+      numeroProcesso,
+      advogadoResponsavelId: processo.advogadoResponsavelId,
+      clienteNome: processo.cliente?.nome ?? null,
+    });
+  }
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return matches[0];
 }
 
 async function createProcessMonitorAuditEntry(params: {
@@ -426,60 +516,68 @@ export async function resolveJusbrasilProcessBinding(params: {
   sourceUserCustom?: string | null;
   targetNumber?: string | null;
 }) {
-  const parsed = parseJusbrasilProcessUserCustom(params.sourceUserCustom);
-  if (!parsed) {
-    return null;
+  const parsedCandidates = (params.sourceUserCustom || "")
+    .split(";")
+    .map((item) => parseJusbrasilProcessUserCustom(item))
+    .filter(isParsedJusbrasilProcessUserCustom);
+
+  if (parsedCandidates.length === 0) {
+    return resolveUniqueProcessBindingByTargetNumber(params.targetNumber);
   }
 
-  const processo = await prisma.processo.findFirst({
-    where: {
-      id: parsed.processoId,
-      tenantId: parsed.tenantId,
-      deletedAt: null,
-    },
-    select: {
-      id: true,
-      tenantId: true,
-      numero: true,
-      numeroCnj: true,
-      advogadoResponsavelId: true,
-      cliente: {
-        select: {
-          nome: true,
+  for (const parsed of parsedCandidates) {
+    const processo = await prisma.processo.findFirst({
+      where: {
+        id: parsed.processoId,
+        tenantId: parsed.tenantId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        numero: true,
+        numeroCnj: true,
+        advogadoResponsavelId: true,
+        cliente: {
+          select: {
+            nome: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!processo) {
-    return null;
+    if (!processo) {
+      continue;
+    }
+
+    const numeroProcesso = readString(processo.numeroCnj) || processo.numero;
+    const numeroNormalizado = normalizeNumeroProcesso(numeroProcesso);
+    const targetNumeroNormalizado = normalizeNumeroProcesso(params.targetNumber);
+
+    if (
+      parsed.numeroNormalizado &&
+      numeroNormalizado &&
+      parsed.numeroNormalizado !== numeroNormalizado
+    ) {
+      continue;
+    }
+
+    if (
+      targetNumeroNormalizado &&
+      numeroNormalizado &&
+      targetNumeroNormalizado !== numeroNormalizado
+    ) {
+      continue;
+    }
+
+    return {
+      tenantId: processo.tenantId,
+      processoId: processo.id,
+      numeroProcesso,
+      advogadoResponsavelId: processo.advogadoResponsavelId,
+      clienteNome: processo.cliente?.nome ?? null,
+    } satisfies JusbrasilProcessBinding;
   }
 
-  const numeroProcesso = readString(processo.numeroCnj) || processo.numero;
-  const numeroNormalizado = normalizeNumeroProcesso(numeroProcesso);
-  const targetNumeroNormalizado = normalizeNumeroProcesso(params.targetNumber);
-
-  if (
-    parsed.numeroNormalizado &&
-    numeroNormalizado &&
-    parsed.numeroNormalizado !== numeroNormalizado
-  ) {
-    return null;
-  }
-
-  if (
-    targetNumeroNormalizado &&
-    numeroNormalizado &&
-    targetNumeroNormalizado !== numeroNormalizado
-  ) {
-    return null;
-  }
-
-  return {
-    tenantId: processo.tenantId,
-    processoId: processo.id,
-    numeroProcesso,
-    advogadoResponsavelId: processo.advogadoResponsavelId,
-    clienteNome: processo.cliente?.nome ?? null,
-  } satisfies JusbrasilProcessBinding;
+  return null;
 }

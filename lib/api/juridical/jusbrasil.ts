@@ -387,13 +387,31 @@ export class JusbrasilClient {
     };
   }
 
-  async getProcessByCnj(numeroCnj: string) {
+  async getProcessByCnj(
+    numeroCnj: string,
+    options?: {
+      refreshFromTribunal?: boolean;
+      includeAttachments?: boolean;
+      updateCallbackId?: string | null;
+      timeoutMs?: number;
+    },
+  ) {
     return this.request<unknown>(
       `/base-judicial/tribproc/${encodeURIComponent(numeroCnj)}`,
       {
         searchParams: {
           tipo_numero: 5,
+          ...(options?.refreshFromTribunal
+            ? { atualiza_tribunal: true }
+            : {}),
+          ...(options?.includeAttachments
+            ? { atualiza_tribunal_anexos: true }
+            : {}),
+          ...(options?.updateCallbackId
+            ? { id_update_callback: options.updateCallbackId }
+            : {}),
         },
+        timeoutMs: options?.timeoutMs,
       },
     );
   }

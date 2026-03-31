@@ -1,5 +1,6 @@
 import type { MovimentacaoProcesso, ProcessoJuridico } from "@/lib/api/juridical/types";
 import { mapJusbrasilWebhookProcessoToProcesso } from "@/lib/api/juridical/jusbrasil-webhook-normalizer";
+import { mapJusbrasilTribprocProcessoToProcesso } from "@/lib/api/juridical/jusbrasil-tribproc-normalizer";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -33,7 +34,7 @@ export type JusbrasilProcessChangeSummary = {
 
 type JusbrasilSupportedProcessEventBase = {
   id?: number | string;
-  evtType: 1 | 2 | 7;
+  evtType: 1 | 2 | 4 | 7 | 13;
   targetUrl?: string;
   targetNumber?: string;
   createdAt?: Date;
@@ -67,10 +68,19 @@ export type JusbrasilProcessChangeEvent =
     movimentacoes: MovimentacaoProcesso[];
   };
 
+export type JusbrasilProcessSnapshotEvent =
+  JusbrasilSupportedProcessEventBase & {
+    evtType: 4 | 13;
+    snapshot: JsonRecord;
+    mappedProcess?: ProcessoJuridico | null;
+    movimentacoes: MovimentacaoProcesso[];
+  };
+
 export type JusbrasilSupportedProcessEvent =
   | JusbrasilProcessMovementEvent
   | JusbrasilProcessPublicationEvent
-  | JusbrasilProcessChangeEvent;
+  | JusbrasilProcessChangeEvent
+  | JusbrasilProcessSnapshotEvent;
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -157,7 +167,7 @@ function extractProcessMonitorIds(sourceUrls: string[]) {
 
 function buildEventBase(
   item: JsonRecord,
-  evtType: 1 | 2 | 7,
+  evtType: 1 | 2 | 4 | 7 | 13,
 ): JusbrasilSupportedProcessEventBase {
   const sourceUrls = buildSourceUrls(item.source_url);
 
@@ -174,6 +184,23 @@ function buildEventBase(
     sourceUrls,
     processMonitorIds: extractProcessMonitorIds(sourceUrls),
     raw: item,
+  };
+}
+
+function mapSnapshotEvent(
+  item: JsonRecord,
+  base: JusbrasilSupportedProcessEventBase,
+  evtType: 4 | 13,
+): JusbrasilProcessSnapshotEvent {
+  const snapshot = readRecord(item.data) || {};
+  const mappedProcess = mapJusbrasilTribprocProcessoToProcesso(snapshot);
+
+  return {
+    ...base,
+    evtType,
+    snapshot,
+    mappedProcess,
+    movimentacoes: mappedProcess?.movimentacoes || [],
   };
 }
 
@@ -515,7 +542,7 @@ function mapChangeEventToMovimentacoes(params: {
 
 function mapSupportedEvent(item: JsonRecord): JusbrasilSupportedProcessEvent | null {
   const evtType = readNumber(item.evt_type);
-  if (evtType !== 1 && evtType !== 2 && evtType !== 7) {
+  if (evtType !== 1 && evtType !== 2 && evtType !== 4 && evtType !== 7 && evtType !== 13) {
     return null;
   }
 
@@ -550,6 +577,10 @@ function mapSupportedEvent(item: JsonRecord): JusbrasilSupportedProcessEvent | n
         mapPublicationToMovimentacao(publication, base.createdAt),
       ),
     };
+  }
+
+  if (evtType === 4 || evtType === 13) {
+    return mapSnapshotEvent(item, base, evtType);
   }
 
   const data = readRecord(item.data) || {};

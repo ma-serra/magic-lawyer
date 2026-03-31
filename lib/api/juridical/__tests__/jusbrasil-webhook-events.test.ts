@@ -184,4 +184,97 @@ describe("jusbrasil-webhook-events", () => {
       ]),
     );
   });
+
+  it("mapeia distribuicao do evt 4 como snapshot completo do processo", () => {
+    const events = extractJusbrasilSupportedProcessEvents([
+      {
+        id: 404,
+        evt_type: 4,
+        target_number: "0001234-56.2024.8.05.0001",
+        created_at: "2026-03-26T16:00:00.000Z",
+        data: {
+          numero: "00012345620248050001",
+          tribunal: "TJBA",
+          uf: "BA",
+          classeNatureza: "Procedimento Comum Civel",
+          comarca: "Salvador",
+          vara: "5 Vara Civel",
+          valor: 25000.55,
+          distribuicaoData: "2026-03-26T15:30:00.000Z",
+          juiz: "Magistrado Exemplo",
+          partes: [
+            [1, null, "Cliente Exemplo", null, null, null, "123.456.789-00", null, "AUTOR", []],
+            [2, null, "Empresa Reu Ltda", null, null, null, "12.345.678/0001-99", null, "REU", []],
+          ],
+          movs: [
+            [
+              "2026-03-26T15:40:00.000Z",
+              "Distribuido",
+              "Processo distribuido por sorteio",
+            ],
+          ],
+        },
+      },
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.evtType).toBe(4);
+    if (events[0]?.evtType !== 4) {
+      throw new Error("Esperava evt 4");
+    }
+
+    expect(events[0].mappedProcess?.numeroProcesso).toBe(
+      "0001234-56.2024.8.05.0001",
+    );
+    expect(events[0].mappedProcess?.movimentacoes).toHaveLength(1);
+    expect(events[0].movimentacoes[0]).toMatchObject({
+      tipo: "Distribuido",
+      descricao: "Processo distribuido por sorteio",
+    });
+  });
+
+  it("mapeia atualizacao por demanda do evt 13 como snapshot tribproc", () => {
+    const events = extractJusbrasilSupportedProcessEvents([
+      {
+        id: 1301,
+        evt_type: 13,
+        target_number: "0001234-56.2024.8.05.0001",
+        source_user_custom: "mlproc:v1:tenant-1:proc-1:00012345620248050001",
+        created_at: "2026-03-26T17:00:00.000Z",
+        data: {
+          numero: "00012345620248050001",
+          tribunal: "TJBA",
+          uf: "BA",
+          classeNatureza: "Procedimento Comum Civel",
+          comarca: "Salvador",
+          vara: "5 Vara Civel",
+          alteradoEm: "2026-03-26T16:59:00.000Z",
+          partes: [
+            [1, null, "Cliente Exemplo", null, null, null, "123.456.789-00", null, "AUTOR", []],
+          ],
+          movs: [
+            [
+              "2026-03-26T16:58:00.000Z",
+              "Despacho",
+              "Despacho atualizado no tribunal",
+            ],
+          ],
+        },
+      },
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.evtType).toBe(13);
+    if (events[0]?.evtType !== 13) {
+      throw new Error("Esperava evt 13");
+    }
+
+    expect(events[0].mappedProcess?.numeroProcesso).toBe(
+      "0001234-56.2024.8.05.0001",
+    );
+    expect(events[0].movimentacoes[0]).toMatchObject({
+      tipo: "Despacho",
+      descricao: "Despacho atualizado no tribunal",
+    });
+  });
 });

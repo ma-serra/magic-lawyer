@@ -51,6 +51,7 @@ import {
   UploadCloud,
   UserPlus,
   Search,
+  RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -85,6 +86,7 @@ import {
   linkProcuracaoAoProcesso,
   unlinkProcuracaoDoProcesso,
   updateProcesso,
+  solicitarAtualizacaoJusbrasilProcesso,
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
@@ -575,6 +577,8 @@ export default function ProcessoDetalhesPage() {
   const [documentoVisivelCliente, setDocumentoVisivelCliente] = useState(true);
   const [documentoFiles, setDocumentoFiles] = useState<File[]>([]);
   const [isUploadingDocumento, setIsUploadingDocumento] = useState(false);
+  const [isSolicitandoAtualizacaoJusbrasil, setIsSolicitandoAtualizacaoJusbrasil] =
+    useState(false);
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
   const documentoInputRef = useRef<HTMLInputElement | null>(null);
   const [, startTransition] = useTransition();
@@ -883,6 +887,29 @@ export default function ProcessoDetalhesPage() {
     startTransition(() => {
       mutate();
     });
+
+  const handleSolicitarAtualizacaoJusbrasil = async () => {
+    setIsSolicitandoAtualizacaoJusbrasil(true);
+    try {
+      const result = await solicitarAtualizacaoJusbrasilProcesso(processoId, {
+        includeAttachments: true,
+      });
+
+      if (!result.success) {
+        toast.error(
+          result.error || "Nao foi possivel solicitar atualizacao no tribunal",
+        );
+        return;
+      }
+
+      toast.success(
+        result.message ||
+          "Atualizacao no tribunal solicitada com sucesso via Jusbrasil.",
+      );
+    } finally {
+      setIsSolicitandoAtualizacaoJusbrasil(false);
+    }
+  };
 
   const handleCreateParte = async () => {
     if (!parteForm.nome.trim()) {
@@ -1323,6 +1350,18 @@ export default function ProcessoDetalhesPage() {
         </Button>
         {!isCliente && (
           <div className="flex gap-2">
+            <Button
+              isLoading={isSolicitandoAtualizacaoJusbrasil}
+              startContent={
+                isSolicitandoAtualizacaoJusbrasil ? null : (
+                  <RefreshCw className="h-4 w-4" />
+                )
+              }
+              variant="flat"
+              onPress={handleSolicitarAtualizacaoJusbrasil}
+            >
+              Atualizar no tribunal
+            </Button>
             <Button
               as={Link}
               href={`/processos/${processoId}/editar`}

@@ -29,7 +29,14 @@ import {
   getAdvogadoIdFromSession,
 } from "@/app/lib/advogado-access";
 import { validateDeadlineWithRegime } from "@/app/lib/feriados/prazo-validation";
-import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
+import {
+  buildJusbrasilProcessUserCustom,
+  ensureJusbrasilProcessMonitorBestEffort,
+} from "@/app/lib/juridical/jusbrasil-process-monitoring";
+import {
+  getJusbrasilClientFromEnv,
+  getTenantJusbrasilIntegrationState,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
 
 // ============================================
 // TYPES - Prisma Type Safety (Best Practice)
@@ -2096,6 +2103,95 @@ export async function getMovimentacoesProcesso(processoId: string): Promise<{
         error,
         "Erro ao buscar movimentações",
       ),
+    };
+  }
+}
+
+export async function solicitarAtualizacaoJusbrasilProcesso(
+  processoId: string,
+  options?: {
+    includeAttachments?: boolean;
+  },
+) {
+  try {
+    const session = await getSession();
+    const { user, processo } = await ensureProcessMutationAccess(
+      session,
+      processoId,
+    );
+
+    const tenantId = user.tenantId;
+    const integrationState = await getTenantJusbrasilIntegrationState(tenantId);
+
+    if (!integrationState.enabled) {
+      return {
+        success: false,
+        error:
+          "A integracao Jusbrasil nao esta ativa para este escritorio.",
+      };
+    }
+
+    const client = getJusbrasilClientFromEnv();
+    if (!client) {
+      return {
+        success: false,
+        error: "JUSBRASIL_API_KEY nao configurada neste ambiente.",
+      };
+    }
+
+    const numeroProcesso = processo.numeroCnj || processo.numero;
+    if (!numeroProcesso?.trim()) {
+      return {
+        success: false,
+        error: "Processo sem numero valido para consulta no Jusbrasil.",
+      };
+    }
+
+    const callbackId = buildJusbrasilProcessUserCustom({
+      tenantId,
+      processoId: processo.id,
+      numeroProcesso,
+    });
+
+    await client.getProcessByCnj(numeroProcesso, {
+      refreshFromTribunal: true,
+      includeAttachments: options?.includeAttachments ?? true,
+      updateCallbackId: callbackId,
+      timeoutMs: 30_000,
+    });
+
+    await logAudit({
+      tenantId,
+      usuarioId: user.id,
+      acao: "PROCESSO_ATUALIZACAO_JUSBRASIL_SOLICITADA",
+      entidade: "Processo",
+      entidadeId: processoId,
+      dados: toAuditJson({
+        provider: "JUSBRASIL",
+        numeroProcesso,
+        includeAttachments: options?.includeAttachments ?? true,
+        callbackId,
+        solicitadoPor: user.id,
+        solicitadoEm: new Date().toISOString(),
+      }),
+      changedFields: [],
+    });
+
+    return {
+      success: true,
+      message:
+        "Atualizacao no tribunal solicitada. O retorno chegara via webhook do Jusbrasil.",
+      callbackId,
+    };
+  } catch (error) {
+    logger.error("Erro ao solicitar atualizacao via Jusbrasil:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao solicitar atualizacao via Jusbrasil",
     };
   }
 }

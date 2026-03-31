@@ -22,7 +22,7 @@ type BatchImportSummary = {
 };
 
 type ProcessEventImportSummary = {
-  evtType: 1 | 2 | 7;
+  evtType: 1 | 2 | 4 | 7 | 13;
   processoId: string;
   createdMovimentacoes: number;
   skippedMovimentacoes: number;
