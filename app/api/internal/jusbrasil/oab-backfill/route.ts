@@ -5,12 +5,16 @@ import {
   failJusbrasilOabTribprocBackfill,
   isValidInternalBackfillAuthHeader,
   processJusbrasilOabTribprocBackfill,
+  type JusbrasilOabTribprocBackfillProgress,
   type JusbrasilOabTribprocBackfillRequest,
 } from "@/app/lib/juridical/jusbrasil-oab-tribproc-backfill";
 import logger from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const MAX_CHUNK_DURATION_MS = 240_000;
+const MIN_TIME_LEFT_FOR_NEXT_PAGE_MS = 15_000;
 
 export async function POST(request: NextRequest) {
   if (!isValidInternalBackfillAuthHeader(request.headers.get("authorization"))) {
@@ -33,22 +37,45 @@ export async function POST(request: NextRequest) {
   }
 
   after(async () => {
-    try {
-      const result = await processJusbrasilOabTribprocBackfill(payload);
+    let currentPage = payload.page ?? 1;
+    let currentProgress: JusbrasilOabTribprocBackfillProgress | undefined =
+      payload.progress;
+    const startedAt = Date.now();
 
-      if (!result.done && result.nextPage) {
-        await enqueueJusbrasilOabTribprocBackfill({
+    try {
+      while (true) {
+        const result = await processJusbrasilOabTribprocBackfill({
           job: payload.job,
-          page: result.nextPage,
-          progress: result.progress,
+          page: currentPage,
+          progress: currentProgress,
         });
+
+        currentProgress = result.progress;
+
+        if (result.done || !result.nextPage) {
+          break;
+        }
+
+        currentPage = result.nextPage;
+
+        if (
+          Date.now() - startedAt >=
+          MAX_CHUNK_DURATION_MS - MIN_TIME_LEFT_FOR_NEXT_PAGE_MS
+        ) {
+          await enqueueJusbrasilOabTribprocBackfill({
+            job: payload.job,
+            page: currentPage,
+            progress: currentProgress,
+          });
+          break;
+        }
       }
     } catch (error) {
       logger.error(
         {
           tenantId: payload.job.tenantId,
           correlationId: payload.job.correlationId,
-          page: payload.page ?? 1,
+          page: currentPage,
           error,
         },
         "Falha ao processar backfill interno do Jusbrasil via tribproc.",
@@ -57,7 +84,7 @@ export async function POST(request: NextRequest) {
       await failJusbrasilOabTribprocBackfill(
         payload.job,
         error,
-        payload.progress,
+        currentProgress,
       ).catch((auditError) => {
         logger.error(
           {
@@ -77,4 +104,3 @@ export async function POST(request: NextRequest) {
     page: payload.page ?? 1,
   });
 }
-

@@ -209,9 +209,6 @@ export function OperacoesJuridicasContent() {
   const [captureNumero, setCaptureNumero] = useState("");
   const [captureTribunal, setCaptureTribunal] = useState<string | null>(null);
   const [captureCliente, setCaptureCliente] = useState("");
-  const [syncTribunal, setSyncTribunal] = useState<string | null>(null);
-  const [syncOab, setSyncOab] = useState("");
-  const [syncCliente, setSyncCliente] = useState("");
   const [captchaText, setCaptchaText] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [createClientAccess, setCreateClientAccess] = useState(false);
@@ -296,11 +293,7 @@ export function OperacoesJuridicasContent() {
     if (!captureTribunal && tribunalOptions.length > 0) {
       setCaptureTribunal(String(tribunalOptions[0].key));
     }
-
-    if (!syncTribunal && tribunalOptions.length > 0) {
-      setSyncTribunal(String(tribunalOptions[0].key));
-    }
-  }, [captureTribunal, syncTribunal, tribunalOptions]);
+  }, [captureTribunal, tribunalOptions]);
 
   const filteredCommunications = useMemo(() => {
     const searchTerm = normalizeSearch(communicationSearch);
@@ -495,11 +488,7 @@ export function OperacoesJuridicasContent() {
   const handleStartOabSync = async () => {
     setIsSyncing(true);
     try {
-      const result = await iniciarSincronizacaoMeusProcessos({
-        tribunalSigla: syncTribunal || undefined,
-        oab: syncOab.trim() || undefined,
-        clienteNome: syncCliente.trim() || undefined,
-      });
+      const result = await iniciarSincronizacaoMeusProcessos();
 
       if (!result.success) {
         throw new Error(result.error || "Falha ao iniciar discovery por OAB.");
@@ -511,7 +500,6 @@ export function OperacoesJuridicasContent() {
               "Monitoramento Jusbrasil registrado. Aguarde o webhook com os processos."
           : "Discovery por OAB iniciado.",
       );
-      setCaptchaText("");
       await Promise.all([mutateSyncStatus(), mutate()]);
     } catch (syncError) {
       toast.error(
@@ -964,18 +952,6 @@ export function OperacoesJuridicasContent() {
                       </div>
                     </CardHeader>
                     <CardBody className="space-y-3">
-                      <Input
-                        label="OAB"
-                        placeholder="000000SP"
-                        value={syncOab}
-                        onValueChange={setSyncOab}
-                      />
-                      <Input
-                        label="Cliente alvo"
-                        placeholder="Opcional"
-                        value={syncCliente}
-                        onValueChange={setSyncCliente}
-                      />
                       <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary-800">
                         Origem da sincronização: Jusbrasil via webhook assíncrono.
                       </div>
@@ -985,7 +961,7 @@ export function OperacoesJuridicasContent() {
                         startContent={<FolderSync className="h-4 w-4" />}
                         onPress={handleStartOabSync}
                       >
-                        Iniciar discovery
+                        Sincronizar via Jusbrasil
                       </Button>
 
                       {selectedSyncStatus ? (

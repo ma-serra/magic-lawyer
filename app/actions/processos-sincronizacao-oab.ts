@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { getSession } from "@/app/lib/auth";
 import { getAdvogadoIdFromSession } from "@/app/lib/advogado-access";
 import prisma from "@/app/lib/prisma";
@@ -127,15 +125,13 @@ function extractProcessNumbers(result: SyncActionLikeResult) {
 async function resolveSyncContext(params: {
   tenantId: string;
   session: NonNullable<Awaited<ReturnType<typeof getSession>>>;
-  oab?: string;
 }): Promise<ResolvedSyncContext> {
-  const provided = sanitizeOab(params.oab);
   const advogadoId = await getAdvogadoIdFromSession(params.session);
   const sessionDisplayName = buildDisplayName(params.session?.user as any);
 
   if (!advogadoId) {
     return {
-      oab: provided,
+      oab: "",
       advogadoId: null,
       advogadoDisplayName: sessionDisplayName,
     };
@@ -166,7 +162,7 @@ async function resolveSyncContext(params: {
       : "";
 
   return {
-    oab: provided || advogadoOab,
+    oab: advogadoOab,
     advogadoId: advogado?.id ?? null,
     advogadoDisplayName: advogado?.usuario
       ? buildDisplayName(advogado.usuario)
@@ -286,11 +282,7 @@ export async function listarTribunaisSincronizacaoOab(): Promise<{
   };
 }
 
-export async function sincronizarProcessosIniciaisPorOab(params: {
-  tribunalSigla: string;
-  oab?: string;
-  clienteNome?: string;
-}): Promise<SincronizacaoInicialOabResponse> {
+export async function sincronizarProcessosIniciaisPorOab(): Promise<SincronizacaoInicialOabResponse> {
   try {
     const session = await getSession();
 
@@ -317,18 +309,16 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
     const context = await resolveSyncContext({
       tenantId,
       session,
-      oab: params.oab,
     });
 
     if (!context.oab) {
       return {
         success: false,
         tribunalSigla,
-        error: "Informe a OAB ou complete o cadastro de OAB do advogado logado.",
+        error:
+          "Nao encontramos uma OAB valida no perfil do advogado logado. Atualize os dados profissionais para sincronizar pelo Jusbrasil.",
       };
     }
-
-    const clienteNome = params.clienteNome?.trim() || undefined;
 
     if (!(await isJusbrasilIntegrationEnabledForTenant(tenantId))) {
       return {
@@ -366,7 +356,6 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
       correlationId: monitor.correlation_id,
       monitorId: monitor.id,
       advogadoId: context.advogadoId,
-      clienteNome,
       webhookUrl,
       existingMonitor: existed,
     });
@@ -379,7 +368,6 @@ export async function sincronizarProcessosIniciaisPorOab(params: {
         tribunalSigla,
         oab: context.oab,
         correlationId: monitor.correlation_id,
-        clienteNome: clienteNome ?? null,
         webhookUrl,
       },
     });

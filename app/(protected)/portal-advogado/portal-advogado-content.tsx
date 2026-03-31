@@ -8,9 +8,6 @@ import {
   Button,
   Chip,
   Spinner,
-  Input,
-  Select,
-  SelectItem,
 } from "@heroui/react";
 import {
   Building2,
@@ -21,10 +18,8 @@ import {
   Info,
   ExternalLink,
   RefreshCw,
-  ShieldAlert,
   CheckCircle2,
   Clock3,
-  CircleDashed,
   AlertTriangle,
   FolderOpen,
   UserX,
@@ -41,12 +36,10 @@ import {
   getPainelOperacionalPortalAdvogado,
   getProcessosSincronizadosPortalAdvogado,
   getRecursosOficiaisPortalAdvogado,
-  gerarNovoCaptchaSincronizacaoMeusProcessos,
   getTribunaisSincronizacaoPortalAdvogado,
   getTribunaisPorUF,
   getUFsDisponiveis,
   iniciarSincronizacaoMeusProcessos,
-  resolverCaptchaSincronizacaoMeusProcessos,
 } from "@/app/actions/portal-advogado";
 import { REALTIME_POLLING } from "@/app/lib/realtime/polling-policy";
 import {
@@ -65,13 +58,8 @@ export function PortalAdvogadoContent() {
   const router = useRouter();
   const [ufSelecionada, setUfSelecionada] = useState<string | undefined>();
   const [syncTribunalSigla] = useState("JUSBRASIL");
-  const [syncOab, setSyncOab] = useState("");
-  const [syncClienteNome, setSyncClienteNome] = useState("");
-  const [captchaText, setCaptchaText] = useState("");
   const [syncId, setSyncId] = useState<string | undefined>();
   const [isStartingSync, setIsStartingSync] = useState(false);
-  const [isResolvingCaptcha, setIsResolvingCaptcha] = useState(false);
-  const [isRefreshingCaptcha, setIsRefreshingCaptcha] = useState(false);
   const [isPollingEnabled, setIsPollingEnabled] = useState(() =>
     isPollingGloballyEnabled(),
   );
@@ -163,7 +151,6 @@ export function PortalAdvogadoContent() {
     syncStatus?.status === "QUEUED" ||
     syncStatus?.status === "RUNNING" ||
     syncStatus?.status === "AWAITING_WEBHOOK";
-  const isWaitingCaptcha = syncStatus?.status === "WAITING_CAPTCHA";
   const activeRadarTribunalSigla = syncStatus?.tribunalSigla || syncTribunalSigla;
 
   const {
@@ -234,59 +221,11 @@ export function PortalAdvogadoContent() {
     }
   }, [syncStatus?.status, refreshPainelOperacional, refreshProcessosSincronizados]);
 
-  const syncStatusMeta = useMemo(() => {
-    if (!syncStatus) return null;
-
-    switch (syncStatus.status) {
-      case "QUEUED":
-        return {
-          color: "default" as const,
-          label: "Na fila",
-          icon: <CircleDashed className="h-4 w-4" />,
-        };
-      case "RUNNING":
-        return {
-          color: "primary" as const,
-          label: "Executando",
-          icon: <Clock3 className="h-4 w-4" />,
-        };
-      case "WAITING_CAPTCHA":
-        return {
-          color: "warning" as const,
-          label: "Captcha pendente",
-          icon: <ShieldAlert className="h-4 w-4" />,
-        };
-      case "AWAITING_WEBHOOK":
-        return {
-          color: "primary" as const,
-          label: "Aguardando webhook",
-          icon: <CircleDashed className="h-4 w-4" />,
-        };
-      case "COMPLETED":
-        return {
-          color: "success" as const,
-          label: "Concluído",
-          icon: <CheckCircle2 className="h-4 w-4" />,
-        };
-      case "FAILED":
-      default:
-        return {
-          color: "danger" as const,
-          label: "Falhou",
-          icon: <AlertTriangle className="h-4 w-4" />,
-        };
-    }
-  }, [syncStatus]);
-
   const iniciarSync = async () => {
     setIsStartingSync(true);
 
     try {
-      const response = await iniciarSincronizacaoMeusProcessos({
-        tribunalSigla: syncTribunalSigla,
-        oab: syncOab || undefined,
-        clienteNome: syncClienteNome || undefined,
-      });
+      const response = await iniciarSincronizacaoMeusProcessos();
 
       if (!response.success) {
         if (response.syncId) {
@@ -306,7 +245,6 @@ export function PortalAdvogadoContent() {
         setSyncId(response.syncId);
       }
 
-      setCaptchaText("");
       addToast({
         title: "Sincronização iniciada",
         description:
@@ -322,106 +260,6 @@ export function PortalAdvogadoContent() {
       });
     } finally {
       setIsStartingSync(false);
-    }
-  };
-
-  const resolverCaptcha = async () => {
-    if (!syncStatus?.syncId) {
-      addToast({
-        title: "Sincronização ausente",
-        description: "Inicie uma sincronização para resolver captcha.",
-        color: "warning",
-      });
-      return;
-    }
-
-    if (!captchaText.trim()) {
-      addToast({
-        title: "Informe o captcha",
-        description: "Digite os caracteres da imagem para continuar.",
-        color: "warning",
-      });
-      return;
-    }
-
-    setIsResolvingCaptcha(true);
-
-    try {
-      const response = await resolverCaptchaSincronizacaoMeusProcessos({
-        syncId: syncStatus.syncId,
-        captchaText: captchaText.trim(),
-      });
-
-      if (!response.success) {
-        addToast({
-          title: "Falha ao validar captcha",
-          description: response.error || "Não foi possível continuar.",
-          color: "danger",
-        });
-        await refreshSyncStatus();
-        return;
-      }
-
-      setCaptchaText("");
-      addToast({
-        title: "Captcha enviado",
-        description: "Processamento retomado em background.",
-        color: "success",
-      });
-      await refreshSyncStatus();
-    } catch (error) {
-      addToast({
-        title: "Erro interno",
-        description: "Falha ao enviar captcha.",
-        color: "danger",
-      });
-    } finally {
-      setIsResolvingCaptcha(false);
-    }
-  };
-
-  const gerarNovoCaptcha = async () => {
-    if (!syncStatus?.syncId) {
-      addToast({
-        title: "Sincronização ausente",
-        description: "Inicie uma sincronização para gerar um novo captcha.",
-        color: "warning",
-      });
-      return;
-    }
-
-    setIsRefreshingCaptcha(true);
-
-    try {
-      const response = await gerarNovoCaptchaSincronizacaoMeusProcessos({
-        syncId: syncStatus.syncId,
-      });
-
-      if (!response.success) {
-        addToast({
-          title: "Falha ao gerar captcha",
-          description: response.error || "Não foi possível gerar novo desafio.",
-          color: "danger",
-        });
-        await refreshSyncStatus();
-        return;
-      }
-
-      setCaptchaText("");
-      addToast({
-        title: "Novo captcha solicitado",
-        description: "Aguarde alguns segundos para o novo desafio aparecer.",
-        color: "success",
-      });
-      await refreshSyncStatus();
-    } catch (error) {
-      addToast({
-        title: "Erro interno",
-        description: "Falha ao gerar novo captcha.",
-        color: "danger",
-      });
-    } finally {
-      setIsRefreshingCaptcha(false);
     }
   };
 
@@ -503,21 +341,13 @@ export function PortalAdvogadoContent() {
       <PeoplePageHeader
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {isSyncRunning || isWaitingCaptcha ? (
+            {isSyncRunning ? (
               <Chip
-                color={isWaitingCaptcha ? "warning" : "primary"}
-                startContent={
-                  isSyncRunning ? (
-                    <Spinner color="primary" size="sm" />
-                  ) : (
-                    <ShieldAlert className="h-4 w-4" />
-                  )
-                }
+                color="primary"
+                startContent={<Spinner color="primary" size="sm" />}
                 variant="flat"
               >
-                {isWaitingCaptcha
-                  ? "Sincronização pausada por captcha"
-                  : "Sincronização em andamento no background"}
+                Sincronizacao em andamento no background
               </Chip>
             ) : null}
             <Button
@@ -557,11 +387,11 @@ export function PortalAdvogadoContent() {
           value={resumoSync.atualizados}
         />
         <PeopleMetricCard
-          helper="Disponíveis para consulta"
+          helper="Backfill inicial e webhook continuo"
           icon={<Building2 className="h-4 w-4" />}
-          label="Tribunais de sync"
+          label="Canal de sync"
           tone="warning"
-          value={resumoSync.tribunaisDisponiveis}
+          value={resumoSync.tribunaisDisponiveis > 0 ? "Jusbrasil" : "Inativo"}
         />
       </div>
 
@@ -863,31 +693,13 @@ export function PortalAdvogadoContent() {
         )}
       </PeoplePanel>
 
-            <PeoplePanel
-        description="Execute a sincronização por OAB via Jusbrasil e aguarde o retorno dos processos por webhook."
+      <PeoplePanel
+        description="Clique para usar a OAB do advogado logado, puxar a carteira inicial via tribproc e seguir recebendo atualizacoes por webhook."
         title="Trazer Meus Processos"
       >
         <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              isDisabled={isStartingSync || isSyncRunning}
-              label="OAB (opcional)"
-              placeholder="Ex: 123456SP"
-              value={syncOab}
-              onChange={(event) => setSyncOab(event.target.value)}
-            />
-
-            <Input
-              isDisabled={isStartingSync || isSyncRunning}
-              label="Cliente padrão (opcional)"
-              placeholder="Nome do cliente padrão"
-              value={syncClienteNome}
-              onChange={(event) => setSyncClienteNome(event.target.value)}
-            />
-          </div>
-
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-primary-800">
-            Origem da sincronização: Jusbrasil via webhook assíncrono.
+            Fluxo ativo: Jusbrasil com a OAB cadastrada no perfil do advogado logado.
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

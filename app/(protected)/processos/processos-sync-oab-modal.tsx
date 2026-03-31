@@ -11,7 +11,6 @@ import {
   Card,
   CardBody,
   Chip,
-  Input,
   Spinner,
 } from "@heroui/react";
 import { addToast } from "@heroui/toast";
@@ -36,7 +35,7 @@ const statusMeta: Record<
 > = {
   SUCESSO: { color: "success", label: "Sucesso" },
   ERRO: { color: "danger", label: "Erro" },
-  PENDENTE_CAPTCHA: { color: "warning", label: "Legado com captcha" },
+  PENDENTE_CAPTCHA: { color: "warning", label: "Captcha legado" },
   AGUARDANDO_WEBHOOK: { color: "primary", label: "Aguardando webhook" },
 };
 
@@ -58,8 +57,6 @@ export function ProcessosSyncOabModal({
   const [historico, setHistorico] = useState<SincronizacaoInicialHistoricoItem[]>(
     [],
   );
-  const [oab, setOab] = useState("");
-  const [clienteNome, setClienteNome] = useState("");
   const [resultado, setResultado] =
     useState<SincronizacaoInicialOabResponse | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -67,8 +64,6 @@ export function ProcessosSyncOabModal({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const resetState = useCallback(() => {
-    setOab("");
-    setClienteNome("");
     setResultado(null);
   }, []);
 
@@ -114,20 +109,15 @@ export function ProcessosSyncOabModal({
     setResultado(null);
 
     try {
-      const response = await sincronizarProcessosIniciaisPorOab({
-        tribunalSigla: "JUSBRASIL",
-        oab,
-        clienteNome: clienteNome.trim() || undefined,
-      });
-
+      const response = await sincronizarProcessosIniciaisPorOab();
       setResultado(response);
 
       if (response.success) {
         addToast({
-          title: "Monitoramento registrado",
+          title: "Sincronizacao iniciada",
           description:
             response.message ||
-            "O Jusbrasil vai enviar os processos por webhook assim que concluir a coleta.",
+            "O monitoramento foi registrado e o backfill inicial ja esta em andamento.",
           color: "primary",
         });
         await loadHistorico();
@@ -136,16 +126,16 @@ export function ProcessosSyncOabModal({
       }
 
       addToast({
-        title: "Falha na sincronização",
+        title: "Falha na sincronizacao",
         description:
-          response.error || "Não foi possível registrar o monitoramento agora.",
+          response.error || "Nao foi possivel registrar o monitoramento agora.",
         color: "danger",
       });
       await loadHistorico();
     } catch {
       addToast({
         title: "Erro interno",
-        description: "Não foi possível iniciar a sincronização agora.",
+        description: "Nao foi possivel iniciar a sincronizacao agora.",
         color: "danger",
       });
     } finally {
@@ -162,10 +152,10 @@ export function ProcessosSyncOabModal({
     >
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
-          Sincronização inicial de processos (OAB)
+          Sincronizacao inicial de processos por OAB
           <p className="text-sm font-normal text-default-500">
-            A descoberta por OAB agora usa somente o Jusbrasil e recebe os
-            processos via webhook com trilha auditável.
+            Este fluxo usa somente o Jusbrasil, aproveita a OAB do advogado
+            logado e deixa o webhook ativo com trilha auditavel.
           </p>
         </ModalHeader>
 
@@ -174,18 +164,20 @@ export function ProcessosSyncOabModal({
             <CardBody className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  1. Integração ativa
+                  1. Integracao ativa
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O escritório precisa estar com a integração Jusbrasil habilitada.
+                  O escritorio precisa estar com a integracao Jusbrasil
+                  habilitada.
                 </p>
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  2. Informe a OAB
+                  2. OAB do advogado logado
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  Exemplo: 123456SP. Se vazio, usamos a OAB do advogado logado.
+                  Usamos automaticamente a OAB cadastrada em Dados
+                  Profissionais.
                 </p>
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
@@ -193,34 +185,20 @@ export function ProcessosSyncOabModal({
                   3. Backfill inicial
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O tribproc puxa a carteira inicial e o webhook fica ativo para novas atualizações.
+                  O tribproc puxa a carteira inicial e o webhook segue ativo
+                  para novas atualizacoes.
                 </p>
               </div>
             </CardBody>
           </Card>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              isDisabled={isSyncing}
-              label="OAB (opcional)"
-              placeholder="Ex: 123456SP"
-              value={oab}
-              onChange={(event) => setOab(event.target.value)}
-            />
-
-            <Input
-              isDisabled={isSyncing}
-              label="Cliente padrão (opcional)"
-              placeholder="Se informado, vincula como cliente padrão da importação"
-              value={clienteNome}
-              onChange={(event) => setClienteNome(event.target.value)}
-            />
-          </div>
-
           <Card className="border border-primary/20 bg-primary/5">
-            <CardBody className="gap-2 text-sm text-primary-800">
-              <p className="font-semibold">Origem da sincronização</p>
-              <p>Jusbrasil com backfill inicial via tribproc e continuidade por webhook.</p>
+            <CardBody className="gap-2 text-sm text-primary-800 dark:text-primary-200">
+              <p className="font-semibold">Origem da sincronizacao</p>
+              <p>
+                Jusbrasil com a OAB do advogado logado, backfill inicial via
+                tribproc e continuidade por webhook.
+              </p>
             </CardBody>
           </Card>
 
@@ -239,7 +217,7 @@ export function ProcessosSyncOabModal({
               variant="flat"
               onPress={() => loadHistorico()}
             >
-              Atualizar histórico
+              Atualizar historico
             </Button>
           </div>
 
@@ -256,7 +234,7 @@ export function ProcessosSyncOabModal({
               <CardBody className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold">
-                    Resultado da última execução
+                    Resultado da ultima execucao
                   </p>
                   <Chip
                     color={
@@ -273,7 +251,7 @@ export function ProcessosSyncOabModal({
                         ? "Backfill em andamento"
                         : "Monitoramento ativo"
                       : resultado.success
-                        ? "Concluído"
+                        ? "Concluido"
                         : "Falha"}
                   </Chip>
                 </div>
@@ -305,28 +283,28 @@ export function ProcessosSyncOabModal({
                   </div>
                 </div>
 
-                {resultado.error && (
-                  <div className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-xs text-danger-700">
+                {resultado.error ? (
+                  <div className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-xs text-danger-700 dark:text-danger-300">
                     {resultado.error}
                   </div>
-                )}
+                ) : null}
 
-                {resultado.message && !resultado.error && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-primary-700">
+                {resultado.message && !resultado.error ? (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-primary-700 dark:text-primary-300">
                     {resultado.message}
                   </div>
-                )}
+                ) : null}
 
-                {resultado.monitoramentoRegistrado && resultado.webhookUrl && (
+                {resultado.monitoramentoRegistrado && resultado.webhookUrl ? (
                   <div className="rounded-xl border border-default-200/70 bg-content1 p-3 text-xs text-default-600">
                     Webhook esperado: {resultado.webhookUrl}
                   </div>
-                )}
+                ) : null}
 
-                {processosPreview.length > 0 && (
+                {processosPreview.length > 0 ? (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                      Processos sincronizados (amostra)
+                      Processos sincronizados
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {processosPreview.map((numero) => (
@@ -336,7 +314,7 @@ export function ProcessosSyncOabModal({
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
               </CardBody>
             </Card>
           )}
@@ -346,18 +324,18 @@ export function ProcessosSyncOabModal({
               <div className="flex items-center gap-2">
                 <History className="h-4 w-4 text-default-500" />
                 <p className="text-sm font-semibold">
-                  Histórico de sincronizações
+                  Historico de sincronizacoes
                 </p>
               </div>
 
               {isLoadingHistory ? (
                 <div className="flex items-center gap-2 text-sm text-default-500">
                   <Spinner size="sm" />
-                  Carregando histórico...
+                  Carregando historico...
                 </div>
               ) : historico.length === 0 ? (
                 <p className="text-sm text-default-500">
-                  Nenhuma sincronização registrada até o momento.
+                  Nenhuma sincronizacao registrada ate o momento.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -399,11 +377,11 @@ export function ProcessosSyncOabModal({
                         {item.syncedCount} processo(s) processado(s)
                       </p>
 
-                      {item.error && (
-                        <div className="mt-2 rounded-lg border border-danger/30 bg-danger/5 p-2 text-xs text-danger-700">
+                      {item.error ? (
+                        <div className="mt-2 rounded-lg border border-danger/30 bg-danger/5 p-2 text-xs text-danger-700 dark:text-danger-300">
                           {item.error}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -411,18 +389,18 @@ export function ProcessosSyncOabModal({
             </CardBody>
           </Card>
 
-          {isBootstrapping && (
+          {isBootstrapping ? (
             <div className="flex items-center gap-2 text-xs text-default-500">
               <Bot className="h-4 w-4" />
-              Carregando configurações da sincronização...
+              Carregando configuracoes da sincronizacao...
             </div>
-          )}
+          ) : null}
         </ModalBody>
 
         <ModalFooter className="flex flex-col gap-2 border-t border-default-200/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-xs text-default-500">
             <ShieldCheck className="h-4 w-4" />
-            Todas as execuções são registradas com auditoria.
+            Todas as execucoes sao registradas com auditoria.
           </div>
           <div className="flex w-full justify-end gap-2 sm:w-auto">
             <Button variant="flat" onPress={handleClose}>

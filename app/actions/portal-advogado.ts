@@ -26,7 +26,6 @@ import type { Prisma } from "@/generated/prisma";
 import {
   TRIBUNAIS_CONFIG,
   getTribunalConfig,
-  getTribunaisScrapingDisponiveis,
 } from "@/lib/api/juridical/config";
 import logger from "@/lib/logger";
 
@@ -278,9 +277,7 @@ function toPublicSyncState(state: PortalProcessSyncState) {
 async function resolveAdvogadoContext(params: {
   tenantId: string;
   usuarioId: string;
-  oab?: string;
 }) {
-  const providedOab = sanitizeOab(params.oab);
   const usuario = await prisma.usuario.findFirst({
     where: {
       id: params.usuarioId,
@@ -319,7 +316,7 @@ async function resolveAdvogadoContext(params: {
 
   return {
     advogadoId: advogado?.id ?? null,
-    oab: providedOab || advogadoOab,
+    oab: advogadoOab,
     displayName: advogado?.usuario
       ? `${advogado.usuario.firstName ?? ""} ${advogado.usuario.lastName ?? ""}`.trim() ||
         advogado.usuario.email ||
@@ -390,27 +387,19 @@ export async function getTribunaisSincronizacaoPortalAdvogado(): Promise<{
     };
   }
 
-  const tribunais = getTribunaisScrapingDisponiveis()
-    .map((item) => ({
-      sigla: item.sigla,
-      nome: item.nome,
-      uf: item.uf,
-      urlBase: item.urlBase,
-      urlConsulta: item.urlConsulta,
-    }))
-    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-
   return {
     success: true,
-    tribunais,
+    tribunais: [
+      {
+        sigla: JUSBRASIL_DISCOVERY_SIGLA,
+        nome: "Jusbrasil",
+        uf: "BR",
+      },
+    ],
   };
 }
 
-export async function iniciarSincronizacaoMeusProcessos(params?: {
-  tribunalSigla?: string;
-  oab?: string;
-  clienteNome?: string;
-}): Promise<{
+export async function iniciarSincronizacaoMeusProcessos(): Promise<{
   success: boolean;
   syncId?: string;
   status?: ReturnType<typeof toPublicSyncState>;
@@ -450,14 +439,13 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
     const ctx = await resolveAdvogadoContext({
       tenantId,
       usuarioId,
-      oab: params?.oab,
     });
 
     if (!ctx.oab) {
       return {
         success: false,
         error:
-          "Não encontramos OAB válida no seu perfil. Atualize seu cadastro ou informe manualmente.",
+          "Nao encontramos uma OAB valida no seu perfil. Atualize seus dados profissionais para sincronizar pelo Jusbrasil.",
       };
     }
 
@@ -468,9 +456,7 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
           "A integracao Jusbrasil esta desativada para este escritorio. Ative em Configuracoes > Jusbrasil para buscar processos por OAB.",
       };
     }
-
     const syncId = randomUUID();
-    const clienteNome = params?.clienteNome?.trim() || undefined;
     const initialState = buildInitialPortalProcessSyncState({
       syncId,
       tenantId,
@@ -510,7 +496,6 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
           monitorId: monitor.id,
           syncId,
           advogadoId: ctx.advogadoId,
-          clienteNome,
           webhookUrl,
           existingMonitor: existed,
         });
@@ -524,7 +509,6 @@ export async function iniciarSincronizacaoMeusProcessos(params?: {
             tribunalSigla,
             oab: ctx.oab,
             correlationId: monitor.correlation_id,
-            clienteNome: clienteNome ?? null,
             webhookUrl,
           },
         });
