@@ -11,6 +11,7 @@ import type {
   StatFormat,
   Tone,
 } from "@/app/actions/dashboard";
+import { UserRole } from "@/generated/prisma";
 
 import NextLink from "next/link";
 import { Button } from "@heroui/button";
@@ -29,6 +30,7 @@ import {
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import { BrazilCoverageMap } from "@/components/dashboard/brazil-coverage-map";
 import { useDashboardData } from "@/app/hooks/use-dashboard";
 import {
   useUserPermissions,
@@ -947,6 +949,7 @@ export function DashboardContent() {
     trends,
     alerts,
     activity,
+    geographicOverview,
     isLoading,
     isError,
     error,
@@ -1181,6 +1184,18 @@ export function DashboardContent() {
           </p>
         )}
       </PeoplePanel>
+
+      {role === UserRole.ADMIN || role === UserRole.ADVOGADO ? (
+        <PeoplePanel
+          description="Leitura territorial do escritorio com base em processos, equipe jurídica e unidades registradas."
+          title="Mapa do Brasil"
+        >
+          <BrazilCoverageMap
+            audienceLabel="o escritorio"
+            overview={geographicOverview}
+          />
+        </PeoplePanel>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <PeoplePanel

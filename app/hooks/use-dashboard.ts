@@ -34,6 +34,7 @@ export function useDashboardData() {
     trends: data?.trends ?? [],
     alerts: data?.alerts ?? [],
     activity: data?.activity ?? [],
+    geographicOverview: data?.geographicOverview ?? null,
     isLoading,
     isError: !!error,
     error,

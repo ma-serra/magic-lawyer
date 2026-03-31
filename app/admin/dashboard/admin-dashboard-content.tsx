@@ -46,6 +46,7 @@ import {
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import { BrazilCoverageMap } from "@/components/dashboard/brazil-coverage-map";
 
 const CHART_COLORS = {
   revenue: "#0ea5e9",
@@ -484,6 +485,16 @@ export function AdminDashboardContent() {
           icon={<Users className="h-4 w-4" />}
         />
       </div>
+
+      <PeoplePanel
+        title="Mapa da base pelo Brasil"
+        description="Onde a plataforma concentra mais processos, advogados internos e escritorios ativos por UF."
+      >
+        <BrazilCoverageMap
+          audienceLabel="a plataforma"
+          overview={data.geographicOverview}
+        />
+      </PeoplePanel>
 
       <PeoplePanel
         title="Presença online em tempo real"

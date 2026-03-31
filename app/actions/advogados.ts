@@ -472,9 +472,12 @@ export async function getAdvogados(): Promise<ActionResponse<AdvogadoData[]>> {
       );
       const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
 
-      // Se não há vínculos, acesso total (sem filtros)
+      // Mantém a carteira interna restrita, mas exibe externos identificados no tenant.
       if (accessibleAdvogados.length > 0) {
-        whereClause.id = { in: accessibleAdvogados };
+        whereClause.OR = [
+          { isExterno: true },
+          { id: { in: accessibleAdvogados } },
+        ];
       }
     }
 

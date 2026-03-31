@@ -2,6 +2,8 @@
 
 import { getServerSession } from "next-auth/next";
 
+import { getGlobalBrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage-service";
+import type { BrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage";
 import prisma from "@/app/lib/prisma";
 import { getOnlinePresenceSnapshot } from "@/app/lib/realtime/session-presence";
 import {
@@ -203,6 +205,7 @@ export interface AdminDashboardData {
     byTenant: AdminOnlineTenantPresence[];
     byLocation: AdminOnlineLocationPresence[];
   };
+  geographicOverview: BrazilCoverageOverview;
 }
 
 export interface AdminDashboardResponse {
@@ -486,6 +489,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       outstandingInvoices,
       revenueAllTimeAgg,
       revenueLast30Agg,
+      geographicOverview,
     ] = await Promise.all([
       prisma.tenant.count({
         where: PRODUCTION_TENANT_WHERE,
@@ -552,6 +556,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
           },
         },
       }),
+      getGlobalBrazilCoverageOverview(),
     ]);
 
     const totalRevenueAllTime = decimalToNumber(revenueAllTimeAgg._sum.valor);
@@ -1023,6 +1028,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
           byTenant: onlineByTenant,
           byLocation: onlineByLocation,
         },
+        geographicOverview,
       },
     };
   } catch (error) {

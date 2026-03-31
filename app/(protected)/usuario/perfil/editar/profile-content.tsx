@@ -12,15 +12,52 @@ import { Tabs, Tab } from "@heroui/tabs";
 import { Spinner } from "@heroui/spinner";
 import { toast } from "@/lib/toast";
 import {
-  User, Mail, Phone, Shield, Settings, BarChart3, UserCheck, Lock, Info, MapPin, Copy, CopyCheck, Briefcase, Save, CreditCard, Building2, PlusIcon, Star, Zap, Bell, ExternalLink, ShieldCheck, Send, Link2, CheckCircle2, Unplug, MessageSquare, Smartphone,
+  User,
+  Mail,
+  Phone,
+  Shield,
+  Settings,
+  BarChart3,
+  UserCheck,
+  Lock,
+  Info,
+  MapPin,
+  Copy,
+  CopyCheck,
+  Briefcase,
+  Save,
+  CreditCard,
+  Building2,
+  PlusIcon,
+  Star,
+  Zap,
+  Bell,
+  ExternalLink,
+  ShieldCheck,
+  Send,
+  Link2,
+  CheckCircle2,
+  Unplug,
+  MessageSquare,
+  Smartphone,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Textarea, Select, SelectItem } from "@heroui/react";
 
 import { RoleSpecificInfo } from "./role-specific-info";
 
-import { getCurrentUserProfile, updateUserProfile, changePassword, getUserStats, type UpdateProfileData, type ChangePasswordData } from "@/app/actions/profile";
-import { updateCurrentUserAdvogado, type UpdateAdvogadoInput } from "@/app/actions/advogados";
+import {
+  getCurrentUserProfile,
+  updateUserProfile,
+  changePassword,
+  getUserStats,
+  type UpdateProfileData,
+  type ChangePasswordData,
+} from "@/app/actions/profile";
+import {
+  updateCurrentUserAdvogado,
+  type UpdateAdvogadoInput,
+} from "@/app/actions/advogados";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { EnderecoManager } from "@/components/endereco-manager";
 import { UserPermissionsInfo } from "@/components/user-permissions-info";
@@ -78,15 +115,24 @@ export function ProfileContent() {
   const router = useRouter();
 
   // Buscar dados com SWR
-  const { data: profileResult, mutate: mutateProfile } = useSWR("current-user-profile", getCurrentUserProfile);
+  const { data: profileResult, mutate: mutateProfile } = useSWR(
+    "current-user-profile",
+    getCurrentUserProfile,
+  );
   const { data: statsResult } = useSWR("user-stats", getUserStats);
   const { advogado, mutate: mutateAdvogado } = useCurrentUserAdvogado();
   const { ufs } = useEstadosBrasil();
   const { dadosBancarios: minhasContas } = useMeusDadosBancarios();
 
   // Buscar certificados digitais do advogado atual
-  const { data: myCertificates = [] } = useSWR(advogado ? "my-digital-certificates" : null, listMyDigitalCertificates);
-  const { data: policyResult } = useSWR("digital-certificate-policy", getDigitalCertificatePolicy);
+  const { data: myCertificates = [] } = useSWR(
+    advogado ? "my-digital-certificates" : null,
+    listMyDigitalCertificates,
+  );
+  const { data: policyResult } = useSWR(
+    "digital-certificate-policy",
+    getDigitalCertificatePolicy,
+  );
   const { data: telegramStatusResult, mutate: mutateTelegramStatus } = useSWR(
     "my-telegram-notification-status",
     getMyTelegramNotificationStatus,
@@ -389,7 +435,8 @@ export function ProfileContent() {
     );
   }
 
-  const currentRole = ((session?.user as any)?.role as string | undefined) || profile.role;
+  const currentRole =
+    ((session?.user as any)?.role as string | undefined) || profile.role;
   const isAdminRole = currentRole === "ADMIN" || currentRole === "SUPER_ADMIN";
   const certificatePolicyLabel =
     certificatePolicy === DigitalCertificatePolicy.OFFICE
@@ -414,12 +461,22 @@ export function ProfileContent() {
   return (
     <div className="space-y-6">
       {/* Header do Perfil */}
-      <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+      <Card className="border border-default-200/70 bg-content1 shadow-sm">
         <CardBody className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 p-4 sm:p-6">
-          <AvatarUpload currentAvatarUrl={profile.avatarUrl} userName={profile.firstName || profile.email} onAvatarChange={handleAvatarChange} />
+          <AvatarUpload
+            currentAvatarUrl={profile.avatarUrl}
+            userName={profile.firstName || profile.email}
+            onAvatarChange={handleAvatarChange}
+          />
           <div className="flex-1 text-center sm:text-left">
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground">{profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : profile.email}</h1>
-            <p className="text-sm sm:text-base text-default-400">{profile.email}</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">
+              {profile.firstName && profile.lastName
+                ? `${profile.firstName} ${profile.lastName}`
+                : profile.email}
+            </h1>
+            <p className="text-sm sm:text-base text-default-400">
+              {profile.email}
+            </p>
             <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
               <Chip color="primary" size="sm" variant="flat">
                 {getRoleLabel(profile.role)}
@@ -485,7 +542,8 @@ export function ProfileContent() {
             placement="top"
             classNames={{
               base: "w-full",
-              tabList: "w-full justify-center gap-2 overflow-x-auto flex-nowrap px-3 sm:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+              tabList:
+                "w-full justify-center gap-2 overflow-x-auto flex-nowrap px-3 sm:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
               tab: "max-w-fit px-3 sm:px-4 py-2 text-sm whitespace-nowrap flex-shrink-0 outline-none data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/35 data-[focus-visible=true]:ring-offset-0",
               tabContent: "text-sm font-medium whitespace-nowrap",
               panel: "w-full",
@@ -504,7 +562,9 @@ export function ProfileContent() {
               <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden">
                 <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                   <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                  <h3 className="text-base sm:text-lg font-semibold">Informações Básicas</h3>
+                  <h3 className="text-base sm:text-lg font-semibold">
+                    Informações Básicas
+                  </h3>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -547,7 +607,9 @@ export function ProfileContent() {
                   placeholder="(11) 99999-9999"
                   startContent={<Phone className="w-4 h-4 text-default-400" />}
                   value={profileData.phone || ""}
-                  onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, phone: e.target.value })
+                  }
                 />
 
                 <Card className="border border-primary/20 bg-primary/5">
@@ -558,20 +620,24 @@ export function ProfileContent() {
                           Centro de alertas e escalonamento
                         </p>
                         <p className="text-xs text-default-500">
-                          Gerencie Telegram, email, in-app, popup obrigatório e canais futuros na aba <strong>Notificações</strong>.
+                          Gerencie Telegram, email, in-app, popup obrigatório e
+                          canais futuros na aba <strong>Notificações</strong>.
                         </p>
                       </div>
                       <Chip
-                        color={telegramStatus?.connected ? "success" : "warning"}
+                        color={
+                          telegramStatus?.connected ? "success" : "warning"
+                        }
                         size="sm"
                         variant="flat"
                       >
-                        Telegram {telegramStatus?.connected ? "conectado" : "pendente"}
+                        Telegram{" "}
+                        {telegramStatus?.connected ? "conectado" : "pendente"}
                       </Chip>
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl border border-default-200/70 bg-default-50/80 p-3 dark:bg-default-100/10">
                         <p className="text-[11px] uppercase tracking-wide text-default-500">
                           Bot ativo
                         </p>
@@ -585,12 +651,13 @@ export function ProfileContent() {
                             : "Bot ainda não configurado"}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl border border-default-200/70 bg-default-50/80 p-3 dark:bg-default-100/10">
                         <p className="text-[11px] uppercase tracking-wide text-default-500">
                           Vínculo Telegram
                         </p>
                         <p className="mt-1 text-sm font-medium text-foreground">
-                          {telegramStatus?.chatIdMasked || "Nenhum chat vinculado"}
+                          {telegramStatus?.chatIdMasked ||
+                            "Nenhum chat vinculado"}
                         </p>
                       </div>
                     </div>
@@ -607,7 +674,9 @@ export function ProfileContent() {
                       <Button
                         className="w-full sm:w-auto"
                         variant="bordered"
-                        onPress={() => router.push("/usuario/preferencias-notificacoes")}
+                        onPress={() =>
+                          router.push("/usuario/preferencias-notificacoes")
+                        }
                       >
                         Preferências por evento
                       </Button>
@@ -618,7 +687,13 @@ export function ProfileContent() {
                 <Divider />
 
                 <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                  <Button color="primary" disabled={saving} isLoading={saving} className="w-full sm:w-auto flex-shrink-0" onPress={handleUpdateProfile}>
+                  <Button
+                    color="primary"
+                    disabled={saving}
+                    isLoading={saving}
+                    className="w-full sm:w-auto flex-shrink-0"
+                    onPress={handleUpdateProfile}
+                  >
                     Salvar Alterações
                   </Button>
                 </div>
@@ -638,7 +713,9 @@ export function ProfileContent() {
                 <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden">
                   <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                     <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                    <h3 className="text-base sm:text-lg font-semibold">Informações da OAB</h3>
+                    <h3 className="text-base sm:text-lg font-semibold">
+                      Informações da OAB
+                    </h3>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -678,7 +755,9 @@ export function ProfileContent() {
                     <Input
                       label="Telefone Profissional"
                       placeholder="(11) 3333-3333"
-                      startContent={<Phone className="w-4 h-4 text-default-400" />}
+                      startContent={
+                        <Phone className="w-4 h-4 text-default-400" />
+                      }
                       value={advogadoData.telefone || ""}
                       onChange={(e) =>
                         setAdvogadoData({
@@ -690,7 +769,9 @@ export function ProfileContent() {
                     <Input
                       label="WhatsApp"
                       placeholder="(11) 99999-9999"
-                      startContent={<Phone className="w-4 h-4 text-default-400" />}
+                      startContent={
+                        <Phone className="w-4 h-4 text-default-400" />
+                      }
                       value={advogadoData.whatsapp || ""}
                       onChange={(e) =>
                         setAdvogadoData({
@@ -716,7 +797,12 @@ export function ProfileContent() {
                     }}
                   >
                     {Object.values(EspecialidadeJuridica).map((esp) => (
-                      <SelectItem key={esp} textValue={especialidadeLabels[esp]}>{especialidadeLabels[esp]}</SelectItem>
+                      <SelectItem
+                        key={esp}
+                        textValue={especialidadeLabels[esp]}
+                      >
+                        {especialidadeLabels[esp]}
+                      </SelectItem>
                     ))}
                   </Select>
 
@@ -740,7 +826,9 @@ export function ProfileContent() {
                       <Settings className="w-4 h-4 text-primary" />
                       Configurações de Comissão
                     </h4>
-                    <p className="text-xs text-default-500">Percentuais padrão para cálculos automáticos</p>
+                    <p className="text-xs text-default-500">
+                      Percentuais padrão para cálculos automáticos
+                    </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <Input
@@ -774,7 +862,9 @@ export function ProfileContent() {
                         label="Honorários (%)"
                         placeholder="0.00"
                         type="number"
-                        value={advogadoData.comissaoHonorarios?.toString() || ""}
+                        value={
+                          advogadoData.comissaoHonorarios?.toString() || ""
+                        }
                         onChange={(e) =>
                           setAdvogadoData({
                             ...advogadoData,
@@ -788,7 +878,14 @@ export function ProfileContent() {
                   <Divider />
 
                   <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-0">
-                    <Button color="primary" disabled={saving} isLoading={saving} className="w-full sm:w-auto" startContent={<Save className="w-4 h-4" />} onPress={handleUpdateAdvogado}>
+                    <Button
+                      color="primary"
+                      disabled={saving}
+                      isLoading={saving}
+                      className="w-full sm:w-auto"
+                      startContent={<Save className="w-4 h-4" />}
+                      onPress={handleUpdateAdvogado}
+                    >
                       Salvar Dados Profissionais
                     </Button>
                   </div>
@@ -808,7 +905,9 @@ export function ProfileContent() {
               <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden">
                 <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                   <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                  <h3 className="text-base sm:text-lg font-semibold">Alterar Senha</h3>
+                  <h3 className="text-base sm:text-lg font-semibold">
+                    Alterar Senha
+                  </h3>
                 </div>
 
                 <Input
@@ -840,7 +939,13 @@ export function ProfileContent() {
                 <Divider />
 
                 <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                  <Button color="primary" disabled={saving} isLoading={saving} className="w-full sm:w-auto flex-shrink-0" onPress={handleChangePassword}>
+                  <Button
+                    color="primary"
+                    disabled={saving}
+                    isLoading={saving}
+                    className="w-full sm:w-auto flex-shrink-0"
+                    onPress={handleChangePassword}
+                  >
                     Alterar Senha
                   </Button>
                 </div>
@@ -859,54 +964,74 @@ export function ProfileContent() {
               <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden">
                 <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                   <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                  <h3 className="text-base sm:text-lg font-semibold">Informações da Conta</h3>
+                  <h3 className="text-base sm:text-lg font-semibold">
+                    Informações da Conta
+                  </h3>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                    <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                       <div className="flex items-center gap-2 mb-2">
                         <Shield className="w-4 h-4 text-primary" />
-                        <p className="text-sm font-medium text-default-500">Função</p>
+                        <p className="text-sm font-medium text-default-500">
+                          Função
+                        </p>
                       </div>
                       <Chip color="primary" size="sm" variant="flat">
                         {getRoleLabel(profile.role)}
                       </Chip>
                     </div>
 
-                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                    <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                       <div className="flex items-center gap-2 mb-2">
                         <UserCheck className="w-4 h-4 text-success" />
-                        <p className="text-sm font-medium text-default-500">Status</p>
+                        <p className="text-sm font-medium text-default-500">
+                          Status
+                        </p>
                       </div>
-                      <Chip color={profile.active ? "success" : "danger"} size="sm" variant="flat">
+                      <Chip
+                        color={profile.active ? "success" : "danger"}
+                        size="sm"
+                        variant="flat"
+                      >
                         {profile.active ? "Ativo" : "Inativo"}
                       </Chip>
                     </div>
 
-                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                    <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                       <div className="flex items-center gap-2 mb-2">
                         <Settings className="w-4 h-4 text-warning" />
-                        <p className="text-sm font-medium text-default-500">Último Login</p>
+                        <p className="text-sm font-medium text-default-500">
+                          Último Login
+                        </p>
                       </div>
-                      <p className="text-foreground font-medium">{formatDate(profile.lastLoginAt)}</p>
+                      <p className="text-foreground font-medium">
+                        {formatDate(profile.lastLoginAt)}
+                      </p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                    <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                       <div className="flex items-center gap-2 mb-2">
                         <User className="w-4 h-4 text-secondary" />
-                        <p className="text-sm font-medium text-default-500">Membro desde</p>
+                        <p className="text-sm font-medium text-default-500">
+                          Membro desde
+                        </p>
                       </div>
-                      <p className="text-foreground font-medium">{formatDate(profile.createdAt)}</p>
+                      <p className="text-foreground font-medium">
+                        {formatDate(profile.createdAt)}
+                      </p>
                     </div>
 
                     {profile.tenant && (
-                      <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                      <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                         <div className="flex items-center gap-2 mb-2">
                           <Mail className="w-4 h-4 text-info" />
-                          <p className="text-sm font-medium text-default-500">Escritório</p>
+                          <p className="text-sm font-medium text-default-500">
+                            Escritório
+                          </p>
                         </div>
                         <Chip color="secondary" size="sm" variant="flat">
                           {profile.tenant.name}
@@ -914,15 +1039,28 @@ export function ProfileContent() {
                       </div>
                     )}
 
-                    <div className="p-4 rounded-lg border border-white/10 bg-background/50">
+                    <div className="rounded-lg border border-default-200/70 bg-default-50/80 p-4 dark:bg-default-100/10">
                       <div className="flex items-center gap-2 mb-2">
                         <Info className="w-4 h-4 text-default-400" />
-                        <p className="text-sm font-medium text-default-500">ID do Usuário</p>
-                        <button className="ml-2 p-1 rounded hover:bg-default-200 transition cursor-pointer" title="Copiar ID" type="button" onClick={handleCopyId}>
-                          {copied ? <CopyCheck className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-default-400" />}
+                        <p className="text-sm font-medium text-default-500">
+                          ID do Usuário
+                        </p>
+                        <button
+                          className="ml-2 p-1 rounded hover:bg-default-200 transition cursor-pointer"
+                          title="Copiar ID"
+                          type="button"
+                          onClick={handleCopyId}
+                        >
+                          {copied ? (
+                            <CopyCheck className="w-4 h-4 text-success" />
+                          ) : (
+                            <Copy className="w-4 h-4 text-default-400" />
+                          )}
                         </button>
                       </div>
-                      <p className="text-foreground font-mono text-xs">{profile.id}</p>
+                      <p className="text-foreground font-mono text-xs">
+                        {profile.id}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -945,10 +1083,21 @@ export function ProfileContent() {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
                   <div className="flex items-center gap-2 sm:gap-3">
                     <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0" />
-                    <h3 className="text-base sm:text-lg font-semibold">Minhas Contas Bancárias</h3>
+                    <h3 className="text-base sm:text-lg font-semibold">
+                      Minhas Contas Bancárias
+                    </h3>
                   </div>
-                  <Button color="primary" size="sm" className="w-full sm:w-auto flex-shrink-0" startContent={<PlusIcon className="w-4 h-4" />} onPress={() => setActiveTab("dados-bancarios")}>
-                    <a className="text-foreground" href="/financeiro/dados-bancarios">
+                  <Button
+                    color="primary"
+                    size="sm"
+                    className="w-full sm:w-auto flex-shrink-0"
+                    startContent={<PlusIcon className="w-4 h-4" />}
+                    onPress={() => setActiveTab("dados-bancarios")}
+                  >
+                    <a
+                      className="text-foreground"
+                      href="/financeiro/dados-bancarios"
+                    >
                       <span className="hidden sm:inline">Gerenciar Contas</span>
                       <span className="sm:hidden">Gerenciar</span>
                     </a>
@@ -957,10 +1106,22 @@ export function ProfileContent() {
 
                 {minhasContas.length === 0 ? (
                   <div className="text-center py-8">
-                    <CreditCard className="mx-auto text-default-400 mb-4" size={48} />
-                    <p className="text-default-500 mb-4">Nenhuma conta bancária cadastrada</p>
-                    <Button color="primary" startContent={<PlusIcon className="w-4 h-4" />} variant="flat">
-                      <a className="text-primary" href="/financeiro/dados-bancarios">
+                    <CreditCard
+                      className="mx-auto text-default-400 mb-4"
+                      size={48}
+                    />
+                    <p className="text-default-500 mb-4">
+                      Nenhuma conta bancária cadastrada
+                    </p>
+                    <Button
+                      color="primary"
+                      startContent={<PlusIcon className="w-4 h-4" />}
+                      variant="flat"
+                    >
+                      <a
+                        className="text-primary"
+                        href="/financeiro/dados-bancarios"
+                      >
                         Cadastrar Primeira Conta
                       </a>
                     </Button>
@@ -974,45 +1135,77 @@ export function ProfileContent() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
                                 <Building2 className="w-5 h-5 text-primary" />
-                                <span className="font-semibold">{conta.banco?.nome || conta.bancoCodigo}</span>
+                                <span className="font-semibold">
+                                  {conta.banco?.nome || conta.bancoCodigo}
+                                </span>
                                 {conta.principal && (
-                                  <Chip color="primary" size="sm" startContent={<Star className="w-3 h-3" />} variant="flat">
+                                  <Chip
+                                    color="primary"
+                                    size="sm"
+                                    startContent={<Star className="w-3 h-3" />}
+                                    variant="flat"
+                                  >
                                     Principal
                                   </Chip>
                                 )}
-                                <Chip color={conta.ativo ? "success" : "default"} size="sm" variant="flat">
+                                <Chip
+                                  color={conta.ativo ? "success" : "default"}
+                                  size="sm"
+                                  variant="flat"
+                                >
                                   {conta.ativo ? "Ativa" : "Inativa"}
                                 </Chip>
                               </div>
 
                               <div className="grid grid-cols-2 gap-4 mt-3">
                                 <div>
-                                  <p className="text-xs text-default-500">Agência</p>
-                                  <p className="font-medium text-foreground">{conta.agencia}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-default-500">Conta</p>
+                                  <p className="text-xs text-default-500">
+                                    Agência
+                                  </p>
                                   <p className="font-medium text-foreground">
-                                    {conta.conta}
-                                    {conta.digitoConta && `-${conta.digitoConta}`}
+                                    {conta.agencia}
                                   </p>
                                 </div>
                                 <div>
-                                  <p className="text-xs text-default-500">Tipo</p>
-                                  <p className="font-medium capitalize text-foreground">{conta.tipoContaBancaria.toLowerCase()}</p>
+                                  <p className="text-xs text-default-500">
+                                    Conta
+                                  </p>
+                                  <p className="font-medium text-foreground">
+                                    {conta.conta}
+                                    {conta.digitoConta &&
+                                      `-${conta.digitoConta}`}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-default-500">
+                                    Tipo
+                                  </p>
+                                  <p className="font-medium capitalize text-foreground">
+                                    {conta.tipoContaBancaria.toLowerCase()}
+                                  </p>
                                 </div>
                                 {conta.chavePix && (
                                   <div>
-                                    <p className="text-xs text-default-500">Chave PIX</p>
-                                    <p className="font-medium text-sm text-foreground">{conta.chavePix}</p>
+                                    <p className="text-xs text-default-500">
+                                      Chave PIX
+                                    </p>
+                                    <p className="font-medium text-sm text-foreground">
+                                      {conta.chavePix}
+                                    </p>
                                   </div>
                                 )}
                               </div>
 
                               <div className="mt-3 pt-3 border-t">
-                                <p className="text-xs text-default-500">Titular</p>
-                                <p className="font-medium text-foreground">{conta.titularNome}</p>
-                                <p className="text-sm text-default-500">{conta.titularDocumento}</p>
+                                <p className="text-xs text-default-500">
+                                  Titular
+                                </p>
+                                <p className="font-medium text-foreground">
+                                  {conta.titularNome}
+                                </p>
+                                <p className="text-sm text-default-500">
+                                  {conta.titularDocumento}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -1022,7 +1215,8 @@ export function ProfileContent() {
 
                     <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
                       <p className="text-sm text-primary-300">
-                        <strong>Dica:</strong> Use a página de Dados Bancários para adicionar, editar ou remover contas.
+                        <strong>Dica:</strong> Use a página de Dados Bancários
+                        para adicionar, editar ou remover contas.
                       </p>
                     </div>
                   </div>
@@ -1057,14 +1251,22 @@ export function ProfileContent() {
                 <div className="p-3 sm:p-6 space-y-4 min-w-0 overflow-x-hidden">
                   <Card className="border border-primary/20 bg-primary/5">
                     <CardBody className="space-y-2 text-sm text-default-300">
-                      <p className="font-medium text-foreground">Escopo desta aba: certificado do advogado logado</p>
-                      <p>
-                        Aqui você gerencia apenas o seu certificado pessoal para autenticação no
-                        PJe. Política ativa do escritório: <strong>{certificatePolicyLabel}</strong>.
+                      <p className="font-medium text-foreground">
+                        Escopo desta aba: certificado do advogado logado
                       </p>
                       <p>
-                        Certificado do <strong>escritório</strong> (tenant) é gerenciado em{" "}
-                        <strong>Configurações do escritório → Integrações → Certificados e PJe</strong>.
+                        Aqui você gerencia apenas o seu certificado pessoal para
+                        autenticação no PJe. Política ativa do escritório:{" "}
+                        <strong>{certificatePolicyLabel}</strong>.
+                      </p>
+                      <p>
+                        Certificado do <strong>escritório</strong> (tenant) é
+                        gerenciado em{" "}
+                        <strong>
+                          Configurações do escritório → Integrações →
+                          Certificados e PJe
+                        </strong>
+                        .
                       </p>
                     </CardBody>
                   </Card>
@@ -1076,8 +1278,9 @@ export function ProfileContent() {
                           Política atual bloqueia certificado pessoal
                         </p>
                         <p>
-                          Neste tenant, a política exige certificado central do escritório. O
-                          certificado pessoal do advogado fica desativado até mudança de política.
+                          Neste tenant, a política exige certificado central do
+                          escritório. O certificado pessoal do advogado fica
+                          desativado até mudança de política.
                         </p>
                         {isAdminRole ? (
                           <div className="pt-1">
@@ -1141,14 +1344,17 @@ export function ProfileContent() {
                       </h3>
                     </div>
                     <p className="text-xs sm:text-sm text-default-500">
-                      Configure canais para alertas críticos e ajustes finos por evento.
+                      Configure canais para alertas críticos e ajustes finos por
+                      evento.
                     </p>
                   </div>
                   <Button
                     color="primary"
                     endContent={<ExternalLink className="w-4 h-4" />}
                     size="sm"
-                    onPress={() => router.push("/usuario/preferencias-notificacoes")}
+                    onPress={() =>
+                      router.push("/usuario/preferencias-notificacoes")
+                    }
                   >
                     Preferências por evento
                   </Button>
@@ -1169,7 +1375,8 @@ export function ProfileContent() {
                         </Chip>
                       </div>
                       <p className="text-xs text-default-500">
-                        Notificações em tempo real dentro do sistema com feed por prioridade.
+                        Notificações em tempo real dentro do sistema com feed
+                        por prioridade.
                       </p>
                     </CardBody>
                   </Card>
@@ -1188,7 +1395,8 @@ export function ProfileContent() {
                         </Chip>
                       </div>
                       <p className="text-xs text-default-500">
-                        Para alertas críticos de prazo: exige confirmação de leitura na entrada.
+                        Para alertas críticos de prazo: exige confirmação de
+                        leitura na entrada.
                       </p>
                     </CardBody>
                   </Card>
@@ -1227,11 +1435,14 @@ export function ProfileContent() {
                             </p>
                           </div>
                           <p className="text-xs text-default-500">
-                            Canal de escalonamento para alertas de prazo no limite.
+                            Canal de escalonamento para alertas de prazo no
+                            limite.
                           </p>
                         </div>
                         <Chip
-                          color={telegramStatus?.connected ? "success" : "warning"}
+                          color={
+                            telegramStatus?.connected ? "success" : "warning"
+                          }
                           size="sm"
                           variant="flat"
                         >
@@ -1240,7 +1451,7 @@ export function ProfileContent() {
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-2">
-                        <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                        <div className="rounded-xl border border-default-200/70 bg-default-50/80 p-3 dark:bg-default-100/10">
                           <p className="text-[11px] uppercase tracking-wide text-default-500">
                             Provedor
                           </p>
@@ -1259,12 +1470,13 @@ export function ProfileContent() {
                               : "Defina o bot global ou o bot dedicado do tenant em Configurações → Integrações."}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                        <div className="rounded-xl border border-default-200/70 bg-default-50/80 p-3 dark:bg-default-100/10">
                           <p className="text-[11px] uppercase tracking-wide text-default-500">
                             Vínculo atual
                           </p>
                           <p className="mt-1 text-sm font-medium text-foreground">
-                            {telegramStatus?.chatIdMasked || "Nenhum chat vinculado"}
+                            {telegramStatus?.chatIdMasked ||
+                              "Nenhum chat vinculado"}
                           </p>
                           <p className="mt-2 text-xs text-default-500">
                             {telegramStatus?.username
@@ -1282,14 +1494,19 @@ export function ProfileContent() {
                                 Código de conexão pronto
                               </p>
                               <p className="text-xs text-default-500">
-                                Abra o bot, envie o comando e o próprio Telegram responderá se a integração funcionou ou falhou.
+                                Abra o bot, envie o comando e o próprio Telegram
+                                responderá se a integração funcionou ou falhou.
                               </p>
                             </div>
                             <Chip color="warning" size="sm" variant="flat">
-                              expira em {Math.round(telegramConnectionDraft.expiresInSeconds / 60)} min
+                              expira em{" "}
+                              {Math.round(
+                                telegramConnectionDraft.expiresInSeconds / 60,
+                              )}{" "}
+                              min
                             </Chip>
                           </div>
-                          <div className="mt-3 rounded-xl border border-white/10 bg-background/50 p-3">
+                          <div className="mt-3 rounded-xl border border-default-200/70 bg-default-50/80 p-3 dark:bg-default-100/10">
                             <p className="text-[11px] uppercase tracking-wide text-default-500">
                               Comando
                             </p>
@@ -1305,7 +1522,9 @@ export function ProfileContent() {
                                 color="primary"
                                 href={telegramConnectionDraft.deepLink}
                                 rel="noreferrer"
-                                startContent={<ExternalLink className="h-4 w-4" />}
+                                startContent={
+                                  <ExternalLink className="h-4 w-4" />
+                                }
                                 target="_blank"
                               >
                                 Abrir bot no Telegram
@@ -1315,7 +1534,9 @@ export function ProfileContent() {
                               className="w-full sm:w-auto"
                               color="warning"
                               isLoading={telegramBusy}
-                              startContent={<CheckCircle2 className="h-4 w-4" />}
+                              startContent={
+                                <CheckCircle2 className="h-4 w-4" />
+                              }
                               variant="flat"
                               onPress={handleConfirmTelegramConnection}
                             >
@@ -1379,7 +1600,8 @@ export function ProfileContent() {
                         </Chip>
                       </div>
                       <p className="text-xs text-default-500">
-                        Canal previsto para alertas transacionais e comunicação com cliente.
+                        Canal previsto para alertas transacionais e comunicação
+                        com cliente.
                       </p>
                     </CardBody>
                   </Card>
@@ -1398,7 +1620,8 @@ export function ProfileContent() {
                         </Chip>
                       </div>
                       <p className="text-xs text-default-500">
-                        Fallback para alertas críticos quando email e Telegram falharem.
+                        Fallback para alertas críticos quando email e Telegram
+                        falharem.
                       </p>
                     </CardBody>
                   </Card>
@@ -1423,20 +1646,23 @@ export function ProfileContent() {
                   </Card>
                 </div>
 
-                <Card className="border border-white/10 bg-background/50">
+                <Card className="border border-default-200/70 bg-default-50/80 dark:bg-default-100/10">
                   <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-foreground">
                         Matriz de eventos, urgência e canais
                       </p>
                       <p className="text-xs text-default-500">
-                        Defina evento por evento quais canais são usados (ex.: prazo 30d, 10d, 3d, 1d, vencido).
+                        Defina evento por evento quais canais são usados (ex.:
+                        prazo 30d, 10d, 3d, 1d, vencido).
                       </p>
                     </div>
                     <Button
                       color="primary"
                       endContent={<ExternalLink className="w-4 h-4" />}
-                      onPress={() => router.push("/usuario/preferencias-notificacoes")}
+                      onPress={() =>
+                        router.push("/usuario/preferencias-notificacoes")
+                      }
                     >
                       Abrir preferências detalhadas
                     </Button>

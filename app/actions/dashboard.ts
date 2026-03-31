@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
+import { getTenantBrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage-service";
 import {
   Prisma,
   ContratoParcelaStatus,
@@ -18,6 +19,7 @@ import {
   TicketStatus,
   UserRole,
 } from "@/generated/prisma";
+import type { BrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage";
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 
@@ -96,6 +98,7 @@ export interface DashboardData {
   trends: DashboardTrend[];
   alerts: DashboardAlert[];
   activity: DashboardActivity[];
+  geographicOverview?: BrazilCoverageOverview | null;
 }
 
 interface DashboardResponse {
@@ -522,6 +525,7 @@ async function buildAdminDashboard(
     recentEventos,
     recentDocumentos,
     recentMovimentacoes,
+    geographicOverview,
   ] = await Promise.all([
     prisma.processo.count({
       where: { tenantId, deletedAt: null },
@@ -674,6 +678,7 @@ async function buildAdminDashboard(
         processo: { select: { id: true, numero: true } },
       },
     }),
+    getTenantBrazilCoverageOverview(tenantId),
   ]);
 
   const stats: DashboardStatDto[] = [
@@ -912,6 +917,7 @@ async function buildAdminDashboard(
     trends,
     alerts,
     activity,
+    geographicOverview,
   };
 }
 
@@ -957,6 +963,7 @@ async function buildAdvogadoDashboard(
         trends: [],
         alerts: [],
         activity: [],
+        geographicOverview: null,
       };
     }
     advogadoIds = [advogado.id];
@@ -972,6 +979,7 @@ async function buildAdvogadoDashboard(
       trends: [],
       alerts: [],
       activity: [],
+      geographicOverview: null,
     };
   }
 
@@ -992,6 +1000,7 @@ async function buildAdvogadoDashboard(
     tarefasDetalhes,
     documentosRecentes,
     movimentacoesRecentes,
+    geographicOverview,
   ] = await Promise.all([
     prisma.processo.count({
       where: {
@@ -1120,6 +1129,7 @@ async function buildAdvogadoDashboard(
         processo: { select: { id: true, numero: true } },
       },
     }),
+    getTenantBrazilCoverageOverview(tenantId),
   ]);
 
   const stats: DashboardStatDto[] = [
@@ -1367,6 +1377,7 @@ async function buildAdvogadoDashboard(
     trends,
     alerts,
     activity,
+    geographicOverview,
   };
 }
 
