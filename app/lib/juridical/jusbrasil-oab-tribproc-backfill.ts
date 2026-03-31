@@ -232,8 +232,8 @@ async function finalizeBackfillSuccess(
     processosNumeros: progress.processNumbers,
     message:
       progress.failedCount > 0
-        ? `Backfill inicial concluido com ${progress.failedCount} falha(s) pontuais. O webhook segue ativo para novas atualizacoes.`
-        : "Backfill inicial concluido. O webhook segue ativo para novas atualizacoes.",
+        ? `Busca concluida com ${progress.failedCount} pendencia(s) pontuais. As proximas atualizacoes continuarao chegando automaticamente.`
+        : "Busca concluida. As proximas atualizacoes continuarao chegando automaticamente.",
     error: undefined,
   });
 }
@@ -246,7 +246,7 @@ export async function failJusbrasilOabTribprocBackfill(
   const message =
     error instanceof Error
       ? error.message
-      : "Falha ao processar backfill inicial via tribproc.";
+      : "Falha ao processar a busca inicial de processos.";
 
   await createOabSyncAuditEntry({
     tenantId: job.tenantId,
@@ -275,7 +275,7 @@ export async function failJusbrasilOabTribprocBackfill(
     createdCount: progress?.createdCount ?? 0,
     updatedCount: progress?.updatedCount ?? 0,
     processosNumeros: progress?.processNumbers ?? [],
-    message: "O monitor foi registrado, mas o backfill inicial falhou.",
+    message: "A busca foi iniciada, mas tivemos um problema ao trazer os processos.",
     error: message,
   });
 }
@@ -307,7 +307,7 @@ export async function processJusbrasilOabTribprocBackfill(
 
   await updateSyncState(job, "RUNNING", {
     message:
-      "Backfill inicial via tribproc iniciado. O webhook segue ativo para novas atualizacoes.",
+      "A busca inicial de processos ja comecou. Voce pode continuar usando o sistema enquanto os dados chegam.",
     syncedCount: progress.importedProcesses,
     createdCount: progress.createdCount,
     updatedCount: progress.updatedCount,
@@ -394,14 +394,14 @@ export async function processJusbrasilOabTribprocBackfill(
     processosNumeros: progress.processNumbers,
     message:
       totalCountHint && totalCountHint > 0
-        ? `Backfill via tribproc em andamento: ${Math.min(progress.fetchedLinks, totalCountHint)} de ${totalCountHint} vinculos consultados.`
-        : "Backfill via tribproc em andamento.",
+        ? `Buscando processos: ${Math.min(progress.fetchedLinks, totalCountHint)} de ${totalCountHint} referencias analisadas.`
+        : "Buscando processos para o seu escritorio.",
   });
 
   if (links.length < BACKFILL_PAGE_SIZE) {
     if (progress.importedProcesses === 0 && progress.failedCount > 0) {
       throw new Error(
-        "O backfill via tribproc nao conseguiu importar nenhum processo.",
+        "Nao conseguimos trazer nenhum processo nesta tentativa inicial.",
       );
     }
 
@@ -452,8 +452,8 @@ export async function enqueueJusbrasilOabTribprocBackfill(
       error:
         error instanceof Error
           ? error.message
-          : "Falha ao iniciar o backfill via tribproc.",
-      message: "O monitor foi registrado, mas o backfill inicial nao foi iniciado.",
+          : "Falha ao iniciar a busca inicial de processos.",
+      message: "A busca foi registrada, mas nao conseguiu comecar corretamente.",
     }).catch(() => undefined);
 
     throw error;

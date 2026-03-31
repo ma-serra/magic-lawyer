@@ -359,7 +359,7 @@ export function PortalAdvogadoContent() {
             </Button>
           </div>
         }
-        description="Operação de captura de processos por OAB, monitoramento da sincronização e acesso rápido aos portais dos tribunais."
+        description="Busque processos pela OAB do advogado logado e acompanhe a chegada das atualizacoes no mesmo lugar."
         tag="Atividade juridica"
         title="Portal do Advogado"
       />
@@ -387,7 +387,7 @@ export function PortalAdvogadoContent() {
           value={resumoSync.atualizados}
         />
         <PeopleMetricCard
-          helper="Backfill inicial e webhook continuo"
+          helper="Importacao inicial e atualizacoes automaticas"
           icon={<Building2 className="h-4 w-4" />}
           label="Canal de sync"
           tone="warning"
@@ -694,12 +694,12 @@ export function PortalAdvogadoContent() {
       </PeoplePanel>
 
       <PeoplePanel
-        description="Clique para usar a OAB do advogado logado, puxar a carteira inicial via tribproc e seguir recebendo atualizacoes por webhook."
+        description="Clique para buscar os processos ligados a OAB do advogado logado. Depois disso, as novas atualizacoes continuam chegando automaticamente."
         title="Trazer Meus Processos"
       >
         <div className="space-y-4">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-primary-800">
-            Fluxo ativo: Jusbrasil com a OAB cadastrada no perfil do advogado logado.
+            Usamos a OAB cadastrada no perfil do advogado logado para localizar e importar os processos.
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -729,9 +729,8 @@ export function PortalAdvogadoContent() {
                 </p>
               </div>
               <p className="mt-1 text-xs text-default-400">
-                O monitoramento já foi registrado e a chegada dos processos depende
-                do webhook do Jusbrasil. Você pode usar o sistema normalmente e
-                acompanhar o progresso por aqui.
+                A busca ja foi iniciada. Voce pode continuar usando o sistema
+                enquanto os processos chegam e acompanhar tudo por aqui.
               </p>
             </div>
           ) : null}

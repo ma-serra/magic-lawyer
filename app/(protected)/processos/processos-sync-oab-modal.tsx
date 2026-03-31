@@ -36,7 +36,7 @@ const statusMeta: Record<
   SUCESSO: { color: "success", label: "Sucesso" },
   ERRO: { color: "danger", label: "Erro" },
   PENDENTE_CAPTCHA: { color: "warning", label: "Captcha legado" },
-  AGUARDANDO_WEBHOOK: { color: "primary", label: "Aguardando webhook" },
+  AGUARDANDO_WEBHOOK: { color: "primary", label: "Recebendo atualizacoes" },
 };
 
 function formatDateTime(value: string) {
@@ -114,10 +114,10 @@ export function ProcessosSyncOabModal({
 
       if (response.success) {
         addToast({
-          title: "Sincronizacao iniciada",
+          title: "Busca iniciada",
           description:
             response.message ||
-            "O monitoramento foi registrado e o backfill inicial ja esta em andamento.",
+            "Ja comecamos a buscar os processos pela OAB do advogado logado.",
           color: "primary",
         });
         await loadHistorico();
@@ -126,9 +126,9 @@ export function ProcessosSyncOabModal({
       }
 
       addToast({
-        title: "Falha na sincronizacao",
+        title: "Nao foi possivel iniciar",
         description:
-          response.error || "Nao foi possivel registrar o monitoramento agora.",
+          response.error || "Nao conseguimos iniciar a busca agora.",
         color: "danger",
       });
       await loadHistorico();
@@ -152,10 +152,10 @@ export function ProcessosSyncOabModal({
     >
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
-          Sincronizacao inicial de processos por OAB
+          Buscar processos pela OAB
           <p className="text-sm font-normal text-default-500">
-            Este fluxo usa somente o Jusbrasil, aproveita a OAB do advogado
-            logado e deixa o webhook ativo com trilha auditavel.
+            Ao clicar, vamos buscar os processos ligados a OAB do advogado
+            logado e continuar trazendo novas atualizacoes automaticamente.
           </p>
         </ModalHeader>
 
@@ -164,29 +164,27 @@ export function ProcessosSyncOabModal({
             <CardBody className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  1. Integracao ativa
+                  1. Integracao pronta
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O escritorio precisa estar com a integracao Jusbrasil
-                  habilitada.
+                  O escritorio precisa estar com o Jusbrasil habilitado.
                 </p>
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  2. OAB do advogado logado
+                  2. Usamos a OAB do cadastro
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  Usamos automaticamente a OAB cadastrada em Dados
-                  Profissionais.
+                  Nao precisa preencher nada manualmente aqui.
                 </p>
               </div>
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
-                  3. Backfill inicial
+                  3. Busca inicial
                 </p>
                 <p className="mt-1 text-xs text-default-500">
-                  O tribproc puxa a carteira inicial e o webhook segue ativo
-                  para novas atualizacoes.
+                  Trazemos os processos ja encontrados e seguimos atualizando
+                  automaticamente depois disso.
                 </p>
               </div>
             </CardBody>
@@ -194,10 +192,10 @@ export function ProcessosSyncOabModal({
 
           <Card className="border border-primary/20 bg-primary/5">
             <CardBody className="gap-2 text-sm text-primary-800 dark:text-primary-200">
-              <p className="font-semibold">Origem da sincronizacao</p>
+              <p className="font-semibold">Como funciona</p>
               <p>
-                Jusbrasil com a OAB do advogado logado, backfill inicial via
-                tribproc e continuidade por webhook.
+                Usamos a OAB do advogado logado para localizar processos no
+                Jusbrasil e manter a carteira atualizada no sistema.
               </p>
             </CardBody>
           </Card>
@@ -209,7 +207,7 @@ export function ProcessosSyncOabModal({
               startContent={<RefreshCw className="h-4 w-4" />}
               onPress={executarSincronizacao}
             >
-              Sincronizar via Jusbrasil
+              Buscar meus processos
             </Button>
             <Button
               isLoading={isBootstrapping}
@@ -248,8 +246,8 @@ export function ProcessosSyncOabModal({
                   >
                     {resultado.monitoramentoRegistrado
                       ? resultado.backfillStarted
-                        ? "Backfill em andamento"
-                        : "Monitoramento ativo"
+                        ? "Importando agora"
+                        : "Atualizacoes ativas"
                       : resultado.success
                         ? "Concluido"
                         : "Falha"}
@@ -259,7 +257,7 @@ export function ProcessosSyncOabModal({
                 <div className="grid gap-2 sm:grid-cols-3">
                   <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                     <p className="text-xs uppercase tracking-wide text-default-500">
-                      Capturados
+                      Encontrados
                     </p>
                     <p className="text-lg font-semibold">
                       {resultado.syncedCount ?? 0}
@@ -292,12 +290,6 @@ export function ProcessosSyncOabModal({
                 {resultado.message && !resultado.error ? (
                   <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-primary-700 dark:text-primary-300">
                     {resultado.message}
-                  </div>
-                ) : null}
-
-                {resultado.monitoramentoRegistrado && resultado.webhookUrl ? (
-                  <div className="rounded-xl border border-default-200/70 bg-content1 p-3 text-xs text-default-600">
-                    Webhook esperado: {resultado.webhookUrl}
                   </div>
                 ) : null}
 
@@ -400,7 +392,7 @@ export function ProcessosSyncOabModal({
         <ModalFooter className="flex flex-col gap-2 border-t border-default-200/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-xs text-default-500">
             <ShieldCheck className="h-4 w-4" />
-            Todas as execucoes sao registradas com auditoria.
+            Todas as etapas ficam registradas para consulta.
           </div>
           <div className="flex w-full justify-end gap-2 sm:w-auto">
             <Button variant="flat" onPress={handleClose}>

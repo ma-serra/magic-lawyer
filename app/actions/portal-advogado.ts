@@ -477,7 +477,7 @@ export async function iniciarSincronizacaoMeusProcessos(): Promise<{
 
         if (!monitor.correlation_id) {
           throw new Error(
-            "Jusbrasil nao retornou correlation_id para o monitoramento da OAB.",
+            "Nao foi possivel iniciar a busca automatica por OAB agora.",
           );
         }
 
@@ -521,8 +521,8 @@ export async function iniciarSincronizacaoMeusProcessos(): Promise<{
             correlationId: monitor.correlation_id,
             webhookUrl,
             message: existed
-              ? "Monitoramento Jusbrasil atualizado. Backfill inicial via tribproc em andamento."
-              : "Monitoramento Jusbrasil criado. Backfill inicial via tribproc em andamento.",
+              ? "A busca foi retomada e a importacao dos processos ja esta em andamento."
+              : "A busca foi iniciada e os processos devem comecar a chegar em instantes.",
           },
         );
 
@@ -538,7 +538,7 @@ export async function iniciarSincronizacaoMeusProcessos(): Promise<{
         error:
           error instanceof Error
             ? error.message
-            : "Falha ao registrar monitoramento Jusbrasil.",
+            : "Falha ao iniciar a busca de processos.",
       });
       await savePortalProcessSyncState(failedState);
 

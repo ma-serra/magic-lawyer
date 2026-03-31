@@ -337,7 +337,7 @@ export async function sincronizarProcessosIniciaisPorOab(): Promise<Sincronizaca
 
     if (!monitor.correlation_id) {
       throw new Error(
-        "Jusbrasil nao retornou correlation_id para o monitoramento da OAB.",
+        "Nao foi possivel iniciar a busca automatica por OAB agora.",
       );
     }
 
@@ -387,8 +387,8 @@ export async function sincronizarProcessosIniciaisPorOab(): Promise<Sincronizaca
       correlationId: monitor.correlation_id,
       webhookUrl,
       message: existed
-        ? "Monitoramento Jusbrasil atualizado. O backfill inicial via tribproc foi iniciado e o webhook seguira ativo para novas atualizacoes."
-        : "Monitoramento Jusbrasil criado. O backfill inicial via tribproc foi iniciado e o webhook seguira ativo para novas atualizacoes.",
+        ? "A busca foi retomada e a importacao dos processos ja esta em andamento."
+        : "A busca foi iniciada e os processos devem comecar a chegar em instantes.",
     };
   } catch (error) {
     logger.error("[Processos Sync OAB] Erro ao sincronizar:", error);
