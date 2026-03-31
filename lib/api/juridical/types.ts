@@ -55,6 +55,8 @@ export interface ParteProcesso {
   nome: string;
   documento?: string; // CPF ou CNPJ
   tipoDocumento?: "CPF" | "CNPJ";
+  email?: string;
+  telefone?: string;
   advogados?: AdvogadoParte[];
   representacao?: string; // Ex: "Advogado", "Procurador"
 }

@@ -57,6 +57,25 @@ function splitFullName(nome: string) {
   };
 }
 
+function normalizeOptionalString(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeOptionalEmail(value?: string | null) {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}
+
+function isSyntheticExternalLawyerEmail(value?: string | null) {
+  const normalized = normalizeOptionalEmail(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.endsWith("@magiclawyer.local") || normalized.includes("jusbrasil+");
+}
+
 function buildSyntheticExternalLawyerEmail(params: {
   tenantId: string;
   nome: string;
@@ -111,10 +130,15 @@ async function findExistingExternalAdvogado(
             id: true,
             oabNumero: true,
             oabUf: true,
+            telefone: true,
+            whatsapp: true,
             usuario: {
               select: {
+                id: true,
                 firstName: true,
                 lastName: true,
+                email: true,
+                phone: true,
               },
             },
           },
@@ -150,10 +174,15 @@ async function findExistingExternalAdvogado(
       id: true,
       oabNumero: true,
       oabUf: true,
+      telefone: true,
+      whatsapp: true,
       usuario: {
         select: {
+          id: true,
           firstName: true,
           lastName: true,
+          email: true,
+          phone: true,
         },
       },
     },
@@ -189,6 +218,67 @@ async function ensureUniqueSyntheticEmail(
   return email;
 }
 
+async function isTenantEmailAvailable(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    email: string;
+    exceptUserId?: string;
+  },
+) {
+  const existing = await tx.usuario.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      email: params.email,
+      ...(params.exceptUserId
+        ? {
+            NOT: {
+              id: params.exceptUserId,
+            },
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return !existing;
+}
+
+async function resolveExternalAdvogadoEmail(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    nome: string;
+    oabNumero?: string | null;
+    oabUf?: string | null;
+    email?: string | null;
+  },
+) {
+  const preferredEmail = normalizeOptionalEmail(params.email);
+
+  if (
+    preferredEmail &&
+    (await isTenantEmailAvailable(tx, {
+      tenantId: params.tenantId,
+      email: preferredEmail,
+    }))
+  ) {
+    return preferredEmail;
+  }
+
+  return ensureUniqueSyntheticEmail(tx, {
+    tenantId: params.tenantId,
+    baseEmail: buildSyntheticExternalLawyerEmail({
+      tenantId: params.tenantId,
+      nome: params.nome,
+      oabNumero: params.oabNumero,
+      oabUf: params.oabUf,
+    }),
+  });
+}
+
 async function ensureExternalAdvogado(
   tx: Prisma.TransactionClient,
   params: {
@@ -203,6 +293,8 @@ async function ensureExternalAdvogado(
 
   const oabNumero = params.advogado.oabNumero?.trim() || null;
   const oabUf = params.advogado.oabUf?.trim().toUpperCase() || null;
+  const telefone = normalizeOptionalString(params.advogado.telefone);
+  const email = normalizeOptionalEmail(params.advogado.email);
   const { firstName, lastName } = splitFullName(nome);
   let existente = await findExistingExternalAdvogado(tx, {
     tenantId: params.tenantId,
@@ -212,9 +304,27 @@ async function ensureExternalAdvogado(
   });
 
   if (existente) {
+    const shouldUpdatePhone =
+      Boolean(telefone) &&
+      !normalizeOptionalString(existente.telefone) &&
+      !normalizeOptionalString(existente.usuario.phone);
+    const shouldUpdateWhatsapp =
+      Boolean(telefone) && !normalizeOptionalString(existente.whatsapp);
+    const shouldUpdateEmail =
+      Boolean(email) &&
+      isSyntheticExternalLawyerEmail(existente.usuario.email) &&
+      (await isTenantEmailAvailable(tx, {
+        tenantId: params.tenantId,
+        email: email!,
+        exceptUserId: existente.usuario.id,
+      }));
+
     if (
       (!existente.oabNumero && oabNumero) ||
       (!existente.oabUf && oabUf) ||
+      shouldUpdatePhone ||
+      shouldUpdateWhatsapp ||
+      shouldUpdateEmail ||
       normalizeCacheKey(
         `${existente.usuario.firstName || ""} ${existente.usuario.lastName || ""}`.trim(),
       ) !== normalizeCacheKey(nome)
@@ -226,12 +336,16 @@ async function ensureExternalAdvogado(
         data: {
           ...(oabNumero && !existente.oabNumero ? { oabNumero } : {}),
           ...(oabUf && !existente.oabUf ? { oabUf } : {}),
+          ...(shouldUpdatePhone ? { telefone } : {}),
+          ...(shouldUpdateWhatsapp ? { whatsapp: telefone } : {}),
           usuario: {
             update: {
               ...(existente.usuario.firstName !== firstName ? { firstName } : {}),
               ...((existente.usuario.lastName || null) !== (lastName || null)
                 ? { lastName }
                 : {}),
+              ...(shouldUpdatePhone ? { phone: telefone } : {}),
+              ...(shouldUpdateEmail ? { email: email! } : {}),
             },
           },
         },
@@ -246,26 +360,24 @@ async function ensureExternalAdvogado(
     };
   }
 
-  const syntheticEmail = await ensureUniqueSyntheticEmail(tx, {
+  const resolvedEmail = await resolveExternalAdvogadoEmail(tx, {
     tenantId: params.tenantId,
-    baseEmail: buildSyntheticExternalLawyerEmail({
-      tenantId: params.tenantId,
-      nome,
-      oabNumero,
-      oabUf,
-    }),
+    nome,
+    oabNumero,
+    oabUf,
+    email,
   });
 
   try {
     const usuario = await tx.usuario.create({
       data: {
         tenantId: params.tenantId,
-        email: syntheticEmail,
+        email: resolvedEmail,
         passwordHash: null,
         role: UserRole.ADVOGADO,
         firstName,
         lastName,
-        phone: params.advogado.telefone || null,
+        phone: telefone,
         active: false,
       },
       select: {
@@ -280,7 +392,8 @@ async function ensureExternalAdvogado(
         oabNumero,
         oabUf,
         isExterno: true,
-        telefone: params.advogado.telefone || null,
+        telefone,
+        whatsapp: telefone,
         notificarEmail: false,
         notificarWhatsapp: false,
         notificarSistema: false,
@@ -366,6 +479,7 @@ async function summarizeParteLawyers(
 
   return {
     primaryAdvogadoId: ensuredLawyers[0]?.id || null,
+    advogadoIds: ensuredLawyers.map((item) => item.id),
     papel:
       ensuredLawyers.length > 0
         ? ensuredLawyers.length === 1
@@ -385,11 +499,21 @@ async function summarizeParteLawyers(
   };
 }
 
-async function ensureCliente(tenantId: string, processo: ProcessoJuridico, clienteNome?: string) {
+async function ensureCliente(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  processo: ProcessoJuridico,
+  clienteNome?: string,
+) {
   const nome = resolveClienteNome(processo, clienteNome);
-  const documento = processo.partes?.find((parte) => parte.nome.trim().toLowerCase() === nome.trim().toLowerCase() && parte.documento)?.documento;
+  const parteCorrespondente = processo.partes?.find(
+    (parte) => normalizeCacheKey(parte.nome) === normalizeCacheKey(nome),
+  );
+  const documento = normalizeOptionalString(parteCorrespondente?.documento);
+  const email = normalizeOptionalEmail(parteCorrespondente?.email);
+  const telefone = normalizeOptionalString(parteCorrespondente?.telefone);
 
-  const existente = await prisma.cliente.findFirst({
+  const existente = await tx.cliente.findFirst({
     where: {
       tenantId,
       nome: {
@@ -401,24 +525,59 @@ async function ensureCliente(tenantId: string, processo: ProcessoJuridico, clien
       id: true,
       nome: true,
       documento: true,
+      email: true,
+      telefone: true,
+      celular: true,
     },
   });
 
   if (existente) {
-    return existente;
+    const shouldUpdateDocumento =
+      Boolean(documento) && !normalizeOptionalString(existente.documento);
+    const shouldUpdateEmail =
+      Boolean(email) && !normalizeOptionalEmail(existente.email);
+    const shouldUpdateTelefone =
+      Boolean(telefone) &&
+      !normalizeOptionalString(existente.telefone) &&
+      !normalizeOptionalString(existente.celular);
+
+    if (shouldUpdateDocumento || shouldUpdateEmail || shouldUpdateTelefone) {
+      await tx.cliente.update({
+        where: {
+          id: existente.id,
+        },
+        data: {
+          ...(shouldUpdateDocumento ? { documento } : {}),
+          ...(shouldUpdateEmail ? { email } : {}),
+          ...(shouldUpdateTelefone ? { telefone } : {}),
+        },
+      });
+    }
+
+    return {
+      id: existente.id,
+      nome: existente.nome,
+      documento: shouldUpdateDocumento ? documento : existente.documento,
+      email: shouldUpdateEmail ? email : existente.email,
+      telefone: shouldUpdateTelefone ? telefone : existente.telefone,
+    };
   }
 
-  return prisma.cliente.create({
+  return tx.cliente.create({
     data: {
       tenantId,
       nome,
       tipoPessoa: inferTipoPessoa(nome),
-      documento: documento || null,
+      documento,
+      email,
+      telefone,
     },
     select: {
       id: true,
       nome: true,
       documento: true,
+      email: true,
+      telefone: true,
     },
   });
 }
@@ -475,7 +634,13 @@ async function buildPartesPayload(
   tenantId: string,
   processoId: string,
   partes: ParteProcesso[] | undefined,
-  cliente: { id: string; nome: string; documento?: string | null },
+  cliente: {
+    id: string;
+    nome: string;
+    documento?: string | null;
+    email?: string | null;
+    telefone?: string | null;
+  },
 ) {
   const payload: Array<{
     tenantId: string;
@@ -483,6 +648,8 @@ async function buildPartesPayload(
     tipoPolo: ProcessoPolo;
     nome: string;
     documento?: string | null;
+    email?: string | null;
+    telefone?: string | null;
     clienteId?: string | null;
     advogadoId?: string | null;
     papel?: string | null;
@@ -503,12 +670,24 @@ async function buildPartesPayload(
     const isCliente = normalizeCacheKey(nome) === normalizeCacheKey(cliente.nome);
     const lawyerSummary = await summarizeParteLawyers(tx, tenantId, parte.advogados);
 
+    if (isCliente) {
+      for (const advogadoId of lawyerSummary.advogadoIds) {
+        await ensureAdvogadoClienteLink(tx, {
+          tenantId,
+          advogadoId,
+          clienteId: cliente.id,
+        });
+      }
+    }
+
     payload.push({
       tenantId,
       processoId,
       tipoPolo,
       nome,
       documento: parte.documento || null,
+      email: normalizeOptionalEmail(parte.email),
+      telefone: normalizeOptionalString(parte.telefone),
       clienteId: isCliente ? cliente.id : null,
       advogadoId: lawyerSummary.primaryAdvogadoId,
       papel: lawyerSummary.papel,
@@ -524,6 +703,8 @@ async function buildPartesPayload(
       tipoPolo: ProcessoPolo.AUTOR,
       nome: cliente.nome,
       documento: cliente.documento || null,
+      email: cliente.email || null,
+      telefone: cliente.telefone || null,
       clienteId: cliente.id,
     });
   }
@@ -552,6 +733,8 @@ async function syncProcessoPartes(
       tipoPolo: true,
       nome: true,
       documento: true,
+      email: true,
+      telefone: true,
       clienteId: true,
       advogadoId: true,
       papel: true,
@@ -579,6 +762,8 @@ async function syncProcessoPartes(
 
     const shouldUpdateDocumento =
       !existente.documento && Boolean(parte.documento);
+    const shouldUpdateEmail = !existente.email && Boolean(parte.email);
+    const shouldUpdateTelefone = !existente.telefone && Boolean(parte.telefone);
     const shouldUpdateCliente =
       !existente.clienteId && Boolean(parte.clienteId);
     const shouldUpdateAdvogado =
@@ -591,6 +776,8 @@ async function syncProcessoPartes(
 
     if (
       shouldUpdateDocumento ||
+      shouldUpdateEmail ||
+      shouldUpdateTelefone ||
       shouldUpdateCliente ||
       shouldUpdateAdvogado ||
       shouldUpdatePapel ||
@@ -600,6 +787,8 @@ async function syncProcessoPartes(
         where: { id: existente.id },
         data: {
           ...(shouldUpdateDocumento ? { documento: parte.documento } : {}),
+          ...(shouldUpdateEmail ? { email: parte.email } : {}),
+          ...(shouldUpdateTelefone ? { telefone: parte.telefone } : {}),
           ...(shouldUpdateCliente ? { clienteId: parte.clienteId } : {}),
           ...(shouldUpdateAdvogado ? { advogadoId: parte.advogadoId } : {}),
           ...(shouldUpdatePapel ? { papel: parte.papel } : {}),
@@ -704,18 +893,24 @@ export async function upsertProcessoFromCapture(params: {
   }
 
   if (existente && updateIfExists) {
-    const clienteAtual =
-      (await prisma.cliente.findUnique({
-        where: { id: existente.clienteId },
-        select: { id: true, nome: true, documento: true },
-      })) ||
-      (await ensureCliente(tenantId, processo, clienteNome));
-
-    const clienteAlvo = reatribuirCliente
-      ? await ensureCliente(tenantId, processo, clienteNome)
-      : clienteAtual;
-
     await prisma.$transaction(async (tx) => {
+      const clienteAtual =
+        (await tx.cliente.findUnique({
+          where: { id: existente.clienteId },
+          select: {
+            id: true,
+            nome: true,
+            documento: true,
+            email: true,
+            telefone: true,
+          },
+        })) ||
+        (await ensureCliente(tx, tenantId, processo, clienteNome));
+
+      const clienteAlvo = reatribuirCliente
+        ? await ensureCliente(tx, tenantId, processo, clienteNome)
+        : clienteAtual;
+
       await tx.processo.update({
         where: { id: existente.id },
         data: {
@@ -772,9 +967,9 @@ export async function upsertProcessoFromCapture(params: {
     return { processoId: existente.id, created: false, updated: true };
   }
 
-  const cliente = await ensureCliente(tenantId, processo, clienteNome);
-
   const criado = await prisma.$transaction(async (tx) => {
+    const cliente = await ensureCliente(tx, tenantId, processo, clienteNome);
+
     const processoCriado = await tx.processo.create({
       data: {
         tenantId,
@@ -822,7 +1017,7 @@ export async function upsertProcessoFromCapture(params: {
       tenantId,
       advogadoId,
       clienteId: cliente.id,
-    });
+      });
 
     return processoCriado;
   }, {

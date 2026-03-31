@@ -240,6 +240,11 @@ function mapPartes(processo: JsonRecord): ParteProcesso[] {
       tipo,
       nome,
       documento: extractParteDocumento(parte),
+      email: readString(ator?.email) || readString(ator?.email_principal),
+      telefone:
+        readString(ator?.telefone) ||
+        readString(ator?.celular) ||
+        readString(ator?.telefone_principal),
     });
   }
 
