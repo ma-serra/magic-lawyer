@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import useSWR from "swr";
 import { Card, CardBody } from "@heroui/card";
@@ -101,24 +101,38 @@ export function ProfileContent() {
   const loading = !profileResult || !statsResult;
 
   // Estados dos formulários - inicializados diretamente com valores
-  const [profileData, setProfileData] = useState<UpdateProfileData>({
-    firstName: profile?.firstName || "",
-    lastName: profile?.lastName || "",
-    phone: profile?.phone || "",
-    avatarUrl: profile?.avatarUrl || "",
+  const buildProfileFormState = (
+    currentProfile: typeof profile,
+  ): UpdateProfileData => ({
+    firstName: currentProfile?.firstName || "",
+    lastName: currentProfile?.lastName || "",
+    phone: currentProfile?.phone || "",
+    avatarUrl: currentProfile?.avatarUrl || "",
   });
 
-  const [advogadoData, setAdvogadoData] = useState<UpdateAdvogadoInput>({
-    oabNumero: advogado?.oabNumero || "",
-    oabUf: advogado?.oabUf || "",
-    telefone: advogado?.telefone || "",
-    whatsapp: advogado?.whatsapp || "",
-    bio: advogado?.bio || "",
-    especialidades: advogado?.especialidades || [],
-    comissaoPadrao: advogado?.comissaoPadrao,
-    comissaoAcaoGanha: advogado?.comissaoAcaoGanha,
-    comissaoHonorarios: advogado?.comissaoHonorarios,
+  const [profileData, setProfileData] = useState<UpdateProfileData>(
+    buildProfileFormState(profile),
+  );
+
+  const buildAdvogadoFormState = (
+    currentAdvogado: typeof advogado,
+  ): UpdateAdvogadoInput => ({
+    oabNumero: currentAdvogado?.oabNumero || "",
+    oabUf: currentAdvogado?.oabUf || "",
+    telefone: currentAdvogado?.telefone || "",
+    whatsapp: currentAdvogado?.whatsapp || "",
+    bio: currentAdvogado?.bio || "",
+    especialidades: currentAdvogado?.especialidades || [],
+    comissaoPadrao: currentAdvogado?.comissaoPadrao,
+    comissaoAcaoGanha: currentAdvogado?.comissaoAcaoGanha,
+    comissaoHonorarios: currentAdvogado?.comissaoHonorarios,
   });
+
+  const [advogadoData, setAdvogadoData] = useState<UpdateAdvogadoInput>(
+    buildAdvogadoFormState(advogado),
+  );
+  const hydratedProfileSnapshotRef = useRef<string | null>(null);
+  const hydratedAdvogadoSnapshotRef = useRef<string | null>(null);
 
   const [passwordData, setPasswordData] = useState<ChangePasswordData>({
     newPassword: "",
@@ -129,6 +143,38 @@ export function ProfileContent() {
     advogadoData.oabUf && ufKeySet.has(advogadoData.oabUf)
       ? [advogadoData.oabUf]
       : [];
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    const nextState = buildProfileFormState(profile);
+    const nextSnapshot = JSON.stringify(nextState);
+
+    if (hydratedProfileSnapshotRef.current === nextSnapshot) {
+      return;
+    }
+
+    hydratedProfileSnapshotRef.current = nextSnapshot;
+    setProfileData(nextState);
+  }, [profile]);
+
+  useEffect(() => {
+    if (!advogado) {
+      return;
+    }
+
+    const nextState = buildAdvogadoFormState(advogado);
+    const nextSnapshot = JSON.stringify(nextState);
+
+    if (hydratedAdvogadoSnapshotRef.current === nextSnapshot) {
+      return;
+    }
+
+    hydratedAdvogadoSnapshotRef.current = nextSnapshot;
+    setAdvogadoData(nextState);
+  }, [advogado]);
 
   // Atualizar dados pessoais
   const handleUpdateProfile = async () => {
