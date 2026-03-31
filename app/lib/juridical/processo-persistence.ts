@@ -128,6 +128,7 @@ async function findExistingExternalAdvogado(
           },
           select: {
             id: true,
+            isExterno: true,
             oabNumero: true,
             oabUf: true,
             telefone: true,
@@ -172,6 +173,7 @@ async function findExistingExternalAdvogado(
     },
     select: {
       id: true,
+      isExterno: true,
       oabNumero: true,
       oabUf: true,
       telefone: true,
@@ -304,13 +306,18 @@ async function ensureExternalAdvogado(
   });
 
   if (existente) {
+    const canOverwriteProfileData = existente.isExterno;
     const shouldUpdatePhone =
+      canOverwriteProfileData &&
       Boolean(telefone) &&
       !normalizeOptionalString(existente.telefone) &&
       !normalizeOptionalString(existente.usuario.phone);
     const shouldUpdateWhatsapp =
-      Boolean(telefone) && !normalizeOptionalString(existente.whatsapp);
+      canOverwriteProfileData &&
+      Boolean(telefone) &&
+      !normalizeOptionalString(existente.whatsapp);
     const shouldUpdateEmail =
+      canOverwriteProfileData &&
       Boolean(email) &&
       isSyntheticExternalLawyerEmail(existente.usuario.email) &&
       (await isTenantEmailAvailable(tx, {
@@ -318,6 +325,11 @@ async function ensureExternalAdvogado(
         email: email!,
         exceptUserId: existente.usuario.id,
       }));
+    const shouldUpdateDisplayName =
+      canOverwriteProfileData &&
+      normalizeCacheKey(
+        `${existente.usuario.firstName || ""} ${existente.usuario.lastName || ""}`.trim(),
+      ) !== normalizeCacheKey(nome);
 
     if (
       (!existente.oabNumero && oabNumero) ||
@@ -325,9 +337,7 @@ async function ensureExternalAdvogado(
       shouldUpdatePhone ||
       shouldUpdateWhatsapp ||
       shouldUpdateEmail ||
-      normalizeCacheKey(
-        `${existente.usuario.firstName || ""} ${existente.usuario.lastName || ""}`.trim(),
-      ) !== normalizeCacheKey(nome)
+      shouldUpdateDisplayName
     ) {
       await tx.advogado.update({
         where: {
@@ -338,16 +348,24 @@ async function ensureExternalAdvogado(
           ...(oabUf && !existente.oabUf ? { oabUf } : {}),
           ...(shouldUpdatePhone ? { telefone } : {}),
           ...(shouldUpdateWhatsapp ? { whatsapp: telefone } : {}),
-          usuario: {
-            update: {
-              ...(existente.usuario.firstName !== firstName ? { firstName } : {}),
-              ...((existente.usuario.lastName || null) !== (lastName || null)
-                ? { lastName }
-                : {}),
-              ...(shouldUpdatePhone ? { phone: telefone } : {}),
-              ...(shouldUpdateEmail ? { email: email! } : {}),
-            },
-          },
+          ...(canOverwriteProfileData
+            ? {
+                usuario: {
+                  update: {
+                    ...(shouldUpdateDisplayName &&
+                    existente.usuario.firstName !== firstName
+                      ? { firstName }
+                      : {}),
+                    ...(shouldUpdateDisplayName &&
+                    (existente.usuario.lastName || null) !== (lastName || null)
+                      ? { lastName }
+                      : {}),
+                    ...(shouldUpdatePhone ? { phone: telefone } : {}),
+                    ...(shouldUpdateEmail ? { email: email! } : {}),
+                  },
+                },
+              }
+            : {}),
         },
       });
     }
