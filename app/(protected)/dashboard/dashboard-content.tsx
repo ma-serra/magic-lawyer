@@ -1099,18 +1099,18 @@ export function DashboardContent() {
                   <Button
                     key={action.label}
                     as={NextLink}
-                    className={`h-auto w-full justify-start gap-3 rounded-2xl border bg-background/40 p-4 text-left ${styles.container} hover:bg-white/10`}
+                    className={`h-auto min-h-[92px] w-full items-start justify-start gap-3 rounded-2xl border bg-background/40 p-4 text-left ${styles.container} hover:bg-white/10`}
                     href={action.href}
                     variant="bordered"
                   >
-                    <span aria-hidden className="text-2xl">
+                    <span aria-hidden className="shrink-0 pt-0.5 text-2xl">
                       {action.icon}
                     </span>
-                    <div className="min-w-0 text-left">
-                      <p className={`truncate font-semibold ${styles.title}`}>
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className={`text-sm font-semibold leading-5 ${styles.title}`}>
                         {action.label}
                       </p>
-                      <p className="text-xs text-default-400">
+                      <p className="mt-1 whitespace-normal break-words text-xs leading-5 text-default-400">
                         {action.description}
                       </p>
                     </div>
