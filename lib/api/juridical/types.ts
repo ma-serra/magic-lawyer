@@ -34,6 +34,8 @@ export interface ProcessoJuridico {
   dataDistribuicao?: Date;
   dataAutuacao?: Date;
   status?: string;
+  statusTribunalArquivado?: boolean;
+  statusTribunalExtinto?: boolean;
   sistema?: TribunalSistema;
   // Dados das partes
   partes?: ParteProcesso[];

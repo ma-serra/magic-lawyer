@@ -294,6 +294,9 @@ export function mapJusbrasilTribprocProcessoToProcesso(
   }
 
   const tribunalSigla = readString(raw.tribunal);
+  const statusArquivado =
+    typeof raw.arquivado === "boolean" ? raw.arquivado : undefined;
+  const statusExtinto = readNumber(raw.extinto);
 
   return {
     numeroProcesso,
@@ -314,6 +317,9 @@ export function mapJusbrasilTribprocProcessoToProcesso(
     dataDistribuicao: readDate(raw.distribuicaoData),
     dataAutuacao: readDate(raw.criadoEm),
     status: readString(raw.situacao),
+    statusTribunalArquivado: statusArquivado,
+    statusTribunalExtinto:
+      typeof statusExtinto === "number" ? statusExtinto > 0 : undefined,
     sistema: mapTribunalSistema(readString(raw.fonte_sistema)),
     partes: mapPartes(raw),
     movimentacoes: mapMovimentacoes(raw),

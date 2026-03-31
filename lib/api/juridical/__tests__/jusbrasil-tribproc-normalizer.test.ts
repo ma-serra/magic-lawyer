@@ -15,6 +15,8 @@ describe("jusbrasil-tribproc-normalizer", () => {
       distribuicaoData: "2019-01-10",
       criadoEm: "2019-01-10T12:00:00.000Z",
       situacao: "MOVIMENTO",
+      arquivado: false,
+      extinto: 0,
       fonte_sistema: "TJMT PJE",
       alteradoEm: "2026-03-30T12:00:00.000Z",
       juiz: "MAGISTRADO TESTE",
@@ -82,6 +84,8 @@ describe("jusbrasil-tribproc-normalizer", () => {
     expect(processo?.tribunalSigla).toBe("TJMT");
     expect(processo?.comarca).toBe("PEDRA PRETA");
     expect(processo?.classe).toBe("PROCEDIMENTO COMUM CIVEL");
+    expect(processo?.statusTribunalArquivado).toBe(false);
+    expect(processo?.statusTribunalExtinto).toBe(false);
     expect(processo?.partes).toHaveLength(2);
     expect(processo?.partes?.[0]).toMatchObject({
       tipo: "AUTOR",

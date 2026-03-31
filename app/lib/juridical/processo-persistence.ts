@@ -2,6 +2,10 @@ import prisma from "@/app/lib/prisma";
 import { syncCapturedProcessDocuments } from "@/app/lib/juridical/process-document-sync";
 import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 import {
+  inferImportedProcessoStatus,
+  mergeImportedProcessoStatus,
+} from "@/app/lib/juridical/processo-status-mapping";
+import {
   Prisma,
   ProcessoStatus,
   ProcessoPolo,
@@ -905,6 +909,7 @@ export async function upsertProcessoFromCapture(params: {
 
   const tribunal = await ensureTribunal(tenantId, processo);
   const reatribuirCliente = Boolean(clienteNome && clienteNome.trim().length > 0);
+  const importedStatus = inferImportedProcessoStatus(processo);
 
   if (existente && !updateIfExists) {
     return { processoId: existente.id, created: false, updated: false };
@@ -940,9 +945,7 @@ export async function upsertProcessoFromCapture(params: {
           valorCausa: processo.valorCausa ?? null,
           tribunalId: tribunal.id,
           descricao: processo.assunto || null,
-          ...(existente.status === ProcessoStatus.RASCUNHO
-            ? { status: ProcessoStatus.EM_ANDAMENTO }
-            : {}),
+          status: mergeImportedProcessoStatus(existente.status, importedStatus),
           ...(advogadoId ? { advogadoResponsavelId: advogadoId } : {}),
           ...(reatribuirCliente ? { clienteId: clienteAlvo.id } : {}),
           tags: buildExternalSyncTags(existente.tags),
@@ -993,7 +996,7 @@ export async function upsertProcessoFromCapture(params: {
         tenantId,
         numero,
         numeroCnj: numero,
-        status: ProcessoStatus.EM_ANDAMENTO,
+        status: importedStatus,
         classeProcessual: processo.classe || null,
         comarca: processo.comarca || null,
         vara: processo.vara || null,
