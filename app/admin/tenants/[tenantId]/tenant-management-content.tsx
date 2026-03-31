@@ -17,7 +17,13 @@ import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
 import { Input } from "@heroui/input";
 
-import { Skeleton, Tooltip, Select, SelectItem } from "@heroui/react";
+import {
+  Skeleton,
+  Tooltip,
+  Select,
+  SelectItem,
+  Pagination,
+} from "@heroui/react";
 import {
   Table,
   TableBody,
@@ -58,6 +64,7 @@ import {
   LifeBuoy,
   MessageSquare,
   PlugZap,
+  Search,
   Send,
   Smartphone,
 } from "lucide-react";
@@ -1673,6 +1680,62 @@ function UsersTab({
   onImpersonateUser,
   onOpenUserModal,
 }: UsersTabProps) {
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"ALL" | UserRole>("ALL");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "ACTIVE" | "INACTIVE"
+  >("ALL");
+  const [pageSize, setPageSize] = useState<10 | 25 | 50>(10);
+  const [page, setPage] = useState(1);
+
+  const filteredUsers = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        user.name.toLowerCase().includes(normalizedSearch) ||
+        user.email.toLowerCase().includes(normalizedSearch);
+      const matchesRole = roleFilter === "ALL" || user.role === roleFilter;
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && user.active) ||
+        (statusFilter === "INACTIVE" && !user.active);
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [users, search, roleFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, statusFilter, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const showingFrom = filteredUsers.length ? (page - 1) * pageSize + 1 : 0;
+  const showingTo = filteredUsers.length
+    ? Math.min(page * pageSize, filteredUsers.length)
+    : 0;
+  const roleFilterOptions = useMemo(
+    () => [
+      { value: "ALL" as const, label: "Todos os papeis" },
+      ...userRoleOptions,
+    ],
+    [userRoleOptions],
+  );
+
   return (
     <Card className="border border-white/10 bg-background/70 backdrop-blur">
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1694,112 +1757,239 @@ function UsersTab({
         </Button>
       </CardHeader>
       <Divider className="border-white/10" />
-      <CardBody>
-        {users.length ? (
-          <Table removeWrapper aria-label="Usuários do tenant">
-            <TableHeader>
-              <TableColumn>Nome Completo</TableColumn>
-              <TableColumn>Email</TableColumn>
-              <TableColumn>Função</TableColumn>
-              <TableColumn>Status</TableColumn>
-              <TableColumn className="text-right">Ações</TableColumn>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => {
-                const isPending = pendingUserId === user.id && isUpdatingUser;
+      <CardBody className="space-y-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-1 flex-col gap-3 lg:flex-row">
+            <Input
+              className="w-full lg:max-w-sm"
+              placeholder="Buscar por nome ou email"
+              startContent={<Search className="h-4 w-4 text-default-400" />}
+              value={search}
+              onValueChange={setSearch}
+            />
+            <Select
+              className="w-full lg:max-w-[220px]"
+              items={roleFilterOptions}
+              label="Papel"
+              placeholder="Todos"
+              selectedKeys={[roleFilter]}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as
+                  | UserRole
+                  | "ALL"
+                  | undefined;
+                setRoleFilter(selected ?? "ALL");
+              }}
+            >
+              {(option) => (
+                <SelectItem key={option.value} textValue={option.label}>
+                  {option.label}
+                </SelectItem>
+              )}
+            </Select>
+            <Select
+              className="w-full lg:max-w-[200px]"
+              label="Status"
+              placeholder="Todos"
+              selectedKeys={[statusFilter]}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as
+                  | "ALL"
+                  | "ACTIVE"
+                  | "INACTIVE"
+                  | undefined;
+                setStatusFilter(selected ?? "ALL");
+              }}
+            >
+              <SelectItem key="ALL" textValue="Todos os status">
+                Todos os status
+              </SelectItem>
+              <SelectItem key="ACTIVE" textValue="Ativo">
+                Ativo
+              </SelectItem>
+              <SelectItem key="INACTIVE" textValue="Desativado">
+                Desativado
+              </SelectItem>
+            </Select>
+          </div>
 
-                return (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{user.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-default-500">{user.email}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Chip color="primary" size="sm" variant="flat">
-                        {userRoleOptions.find((r) => r.value === user.role)
-                          ?.label || user.role}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        color={user.active ? "success" : "warning"}
-                        size="sm"
-                        variant="flat"
-                      >
-                        {user.active ? "Ativo" : "Desativado"}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Tooltip content="Editar usuário completo">
-                          <Button
-                            isIconOnly
-                            color="primary"
-                            radius="full"
-                            size="sm"
-                            variant="bordered"
-                            onPress={() => onOpenUserModal(user)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </Tooltip>
-                        <Tooltip
-                          content={
-                            user.active
-                              ? "Desativar usuário"
-                              : "Reativar usuário"
-                          }
-                        >
-                          <Button
-                            isIconOnly
-                            color="default"
-                            isLoading={isPending}
-                            radius="full"
-                            size="sm"
-                            variant="bordered"
-                            onPress={() => onToggleActive(user.id, user.active)}
-                          >
-                            <ToggleLeft className="h-4 w-4" />
-                          </Button>
-                        </Tooltip>
-                        <Tooltip content="Reenviar primeiro acesso">
-                          <Button
-                            isIconOnly
-                            color="secondary"
-                            isLoading={isPending}
-                            radius="full"
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip size="sm" variant="flat">
+              {numberFormatter.format(filteredUsers.length)} de{" "}
+              {numberFormatter.format(users.length)} usuarios
+            </Chip>
+            <Select
+              aria-label="Itens por pagina"
+              className="w-[150px]"
+              label="Itens por pagina"
+              placeholder="10"
+              selectedKeys={[String(pageSize)]}
+              onSelectionChange={(keys) => {
+                const selected = Number(Array.from(keys)[0] ?? 10) as
+                  | 10
+                  | 25
+                  | 50;
+                setPageSize(selected);
+              }}
+            >
+              <SelectItem key="10" textValue="10 por pagina">
+                10 por pagina
+              </SelectItem>
+              <SelectItem key="25" textValue="25 por pagina">
+                25 por pagina
+              </SelectItem>
+              <SelectItem key="50" textValue="50 por pagina">
+                50 por pagina
+              </SelectItem>
+            </Select>
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => {
+                setSearch("");
+                setRoleFilter("ALL");
+                setStatusFilter("ALL");
+                setPageSize(10);
+              }}
+            >
+              Limpar filtros
+            </Button>
+          </div>
+        </div>
+
+        {users.length ? (
+          filteredUsers.length ? (
+            <>
+              <Table removeWrapper aria-label="Usuários do tenant">
+                <TableHeader>
+                  <TableColumn>Nome Completo</TableColumn>
+                  <TableColumn>Email</TableColumn>
+                  <TableColumn>Função</TableColumn>
+                  <TableColumn>Status</TableColumn>
+                  <TableColumn className="text-right">Ações</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {paginatedUsers.map((user) => {
+                    const isPending =
+                      pendingUserId === user.id && isUpdatingUser;
+
+                    return (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{user.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-default-500">{user.email}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Chip color="primary" size="sm" variant="flat">
+                            {userRoleOptions.find((r) => r.value === user.role)
+                              ?.label || user.role}
+                          </Chip>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            color={user.active ? "success" : "warning"}
                             size="sm"
                             variant="flat"
-                            onPress={() => onResetPassword(user.id)}
                           >
-                            <KeyRound className="h-4 w-4" />
-                          </Button>
-                        </Tooltip>
-                        <Tooltip content="Entrar como este usuário (sessão monitorada)">
-                          <Button
-                            isIconOnly
-                            color="warning"
-                            isDisabled={!user.active}
-                            isLoading={isPending}
-                            radius="full"
-                            size="sm"
-                            variant="flat"
-                            onPress={() => onImpersonateUser(user.id)}
-                          >
-                            <LogIn className="h-4 w-4" />
-                          </Button>
-                        </Tooltip>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                            {user.active ? "Ativo" : "Desativado"}
+                          </Chip>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Tooltip content="Editar usuário completo">
+                              <Button
+                                isIconOnly
+                                color="primary"
+                                radius="full"
+                                size="sm"
+                                variant="bordered"
+                                onPress={() => onOpenUserModal(user)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip
+                              content={
+                                user.active
+                                  ? "Desativar usuário"
+                                  : "Reativar usuário"
+                              }
+                            >
+                              <Button
+                                isIconOnly
+                                color="default"
+                                isLoading={isPending}
+                                radius="full"
+                                size="sm"
+                                variant="bordered"
+                                onPress={() =>
+                                  onToggleActive(user.id, user.active)
+                                }
+                              >
+                                <ToggleLeft className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content="Reenviar primeiro acesso">
+                              <Button
+                                isIconOnly
+                                color="secondary"
+                                isLoading={isPending}
+                                radius="full"
+                                size="sm"
+                                variant="flat"
+                                onPress={() => onResetPassword(user.id)}
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content="Entrar como este usuário (sessão monitorada)">
+                              <Button
+                                isIconOnly
+                                color="warning"
+                                isDisabled={!user.active}
+                                isLoading={isPending}
+                                radius="full"
+                                size="sm"
+                                variant="flat"
+                                onPress={() => onImpersonateUser(user.id)}
+                              >
+                                <LogIn className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="flex flex-col gap-3 border-t border-white/10 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-default-500">
+                  Mostrando {showingFrom} a {showingTo} de{" "}
+                  {numberFormatter.format(filteredUsers.length)} usuarios
+                </p>
+                <Pagination
+                  showControls
+                  page={page}
+                  total={totalPages}
+                  onChange={setPage}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-background/40 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">
+                Nenhum usuario encontrado com os filtros atuais.
+              </p>
+              <p className="mt-1 text-sm text-default-500">
+                Ajuste a busca, o papel ou o status para localizar o acesso.
+              </p>
+            </div>
+          )
         ) : (
           <p className="text-sm text-default-400">Nenhum usuário encontrado.</p>
         )}
@@ -2073,7 +2263,8 @@ function ChannelProviderAdminPanel({
                 <strong>{summary.lastValidationMode ?? "Não executado"}</strong>
               </p>
             </div>
-            {summary.fallbackAvailable && summary.effectiveSource !== "TENANT" ? (
+            {summary.fallbackAvailable &&
+            summary.effectiveSource !== "TENANT" ? (
               <p className="mt-3 text-xs text-default-400">
                 Fallback disponível: <strong>{summary.fallbackLabel}</strong>
                 {summary.fallbackDescription
