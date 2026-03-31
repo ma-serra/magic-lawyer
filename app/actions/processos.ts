@@ -21,7 +21,10 @@ import { logUnifiedSensitiveView } from "@/app/lib/audit/unified";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import { ProcessoNotificationIntegration } from "@/app/lib/notifications/examples/processo-integration";
 import { HybridNotificationService } from "@/app/lib/notifications/hybrid-notification-service";
-import { publishProcessNotificationToLawyers } from "@/app/lib/juridical/process-movement-sync";
+import {
+  persistCapturedMovimentacoes,
+  publishProcessNotificationToLawyers,
+} from "@/app/lib/juridical/process-movement-sync";
 import { buildProcessoDiff } from "@/app/lib/processos/diff";
 import { checkPermission } from "@/app/actions/equipe";
 import {
@@ -33,10 +36,13 @@ import {
   buildJusbrasilProcessUserCustom,
   ensureJusbrasilProcessMonitorBestEffort,
 } from "@/app/lib/juridical/jusbrasil-process-monitoring";
+import { upsertProcessoFromCapture } from "@/app/lib/juridical/processo-persistence";
 import {
   getJusbrasilClientFromEnv,
   getTenantJusbrasilIntegrationState,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { normalizarProcesso } from "@/lib/api/juridical/normalization";
+import { mapJusbrasilTribprocProcessoToProcesso } from "@/lib/api/juridical/jusbrasil-tribproc-normalizer";
 
 // ============================================
 // TYPES - Prisma Type Safety (Best Practice)
@@ -2153,12 +2159,51 @@ export async function solicitarAtualizacaoJusbrasilProcesso(
       numeroProcesso,
     });
 
-    await client.getProcessByCnj(numeroProcesso, {
+    const { data } = await client.getProcessByCnj(numeroProcesso, {
       refreshFromTribunal: true,
       includeAttachments: options?.includeAttachments ?? false,
       updateCallbackId: callbackId,
       timeoutMs: 30_000,
     });
+
+    const mappedProcess = mapJusbrasilTribprocProcessoToProcesso(
+      ((data as Record<string, unknown> | null) || {}) as Record<string, unknown>,
+    );
+
+    let syncSummary: {
+      created: boolean;
+      updated: boolean;
+      createdMovimentacoes: number;
+    } | null = null;
+
+    if (mappedProcess) {
+      const processoNormalizado = normalizarProcesso(mappedProcess);
+      const persisted = await upsertProcessoFromCapture({
+        tenantId,
+        processo: processoNormalizado,
+        clienteNome: processo.cliente?.nome || undefined,
+        advogadoId: processo.advogadoResponsavelId || undefined,
+        updateIfExists: true,
+        syncJusbrasilProcessMonitor: false,
+      });
+
+      const movimentacaoSummary = await persistCapturedMovimentacoes({
+        tenantId,
+        processoId: persisted.processoId,
+        criadoPorId: user.id,
+        movimentacoes: processoNormalizado.movimentacoes,
+        notifyLawyers: false,
+        actorName: "Atualizacao manual via Jusbrasil",
+        sourceLabel: "Atualizacao sob demanda no tribunal",
+        sourceKind: "EXTERNAL",
+      });
+
+      syncSummary = {
+        created: persisted.created,
+        updated: persisted.updated,
+        createdMovimentacoes: movimentacaoSummary.created,
+      };
+    }
 
     await logAudit({
       tenantId,
@@ -2171,6 +2216,7 @@ export async function solicitarAtualizacaoJusbrasilProcesso(
         numeroProcesso,
         includeAttachments: options?.includeAttachments ?? false,
         callbackId,
+        syncSummary,
         solicitadoPor: user.id,
         solicitadoEm: new Date().toISOString(),
       }),
@@ -2179,9 +2225,11 @@ export async function solicitarAtualizacaoJusbrasilProcesso(
 
     return {
       success: true,
-      message:
-        "Atualizacao no tribunal solicitada. O retorno chegara via webhook do Jusbrasil.",
+      message: syncSummary
+        ? "Atualizacao no tribunal solicitada e dados atuais sincronizados com sucesso."
+        : "Atualizacao no tribunal solicitada. O retorno chegara via webhook do Jusbrasil.",
       callbackId,
+      syncSummary,
     };
   } catch (error) {
     logger.error("Erro ao solicitar atualizacao via Jusbrasil:", error);
