@@ -159,9 +159,9 @@ export function ProcessosSyncOabModal({
           </p>
         </ModalHeader>
 
-        <ModalBody className="space-y-4">
+        <ModalBody className="space-y-4 overflow-x-hidden">
           <Card className="border border-default-200/70 bg-default-50/70">
-            <CardBody className="grid gap-3 md:grid-cols-3">
+            <CardBody className="grid h-auto flex-none gap-3 overflow-visible md:grid-cols-3">
               <div className="rounded-xl border border-default-200/70 bg-content1 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-default-500">
                   1. Integracao pronta
@@ -191,7 +191,7 @@ export function ProcessosSyncOabModal({
           </Card>
 
           <Card className="border border-primary/20 bg-primary/5">
-            <CardBody className="gap-2 text-sm text-primary-800 dark:text-primary-200">
+            <CardBody className="h-auto flex-none gap-2 overflow-visible text-sm text-primary-800 dark:text-primary-200">
               <p className="font-semibold">Como funciona</p>
               <p>
                 Usamos a OAB do advogado logado para localizar processos no
@@ -229,7 +229,7 @@ export function ProcessosSyncOabModal({
                     : "border-danger/30 bg-danger/5"
               }`}
             >
-              <CardBody className="space-y-3">
+              <CardBody className="h-auto flex-none space-y-3 overflow-visible">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold">
                     Resultado da ultima execucao
@@ -312,7 +312,7 @@ export function ProcessosSyncOabModal({
           )}
 
           <Card className="border border-default-200/70">
-            <CardBody className="space-y-3">
+            <CardBody className="h-auto flex-none space-y-3 overflow-visible">
               <div className="flex items-center gap-2">
                 <History className="h-4 w-4 text-default-500" />
                 <p className="text-sm font-semibold">
