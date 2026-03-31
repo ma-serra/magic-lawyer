@@ -14,7 +14,14 @@ import {
   Spinner,
 } from "@heroui/react";
 import { addToast } from "@heroui/toast";
-import { Bot, History, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  Bot,
+  Copy,
+  History,
+  Info,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 
 import {
   listarHistoricoSincronizacaoOab,
@@ -49,6 +56,66 @@ function formatDateTime(value: string) {
   });
 }
 
+interface ErrorDetailsToggleProps {
+  error: string;
+  errorKey: string;
+  isExpanded: boolean;
+  onCopy: (error: string) => void;
+  onToggle: (errorKey: string) => void;
+}
+
+function ErrorDetailsToggle({
+  error,
+  errorKey,
+  isExpanded,
+  onCopy,
+  onToggle,
+}: ErrorDetailsToggleProps) {
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          isIconOnly
+          aria-label={isExpanded ? "Ocultar erro" : "Ver erro"}
+          color="danger"
+          size="sm"
+          variant="flat"
+          onPress={() => onToggle(errorKey)}
+        >
+          <Info className="h-4 w-4" />
+        </Button>
+        <p className="text-xs font-medium text-danger-700 dark:text-danger-300">
+          {isExpanded ? "Detalhes do erro" : "Ver erro"}
+        </p>
+        {isExpanded ? (
+          <>
+            <Button
+              color="danger"
+              size="sm"
+              startContent={<Copy className="h-3.5 w-3.5" />}
+              variant="light"
+              onPress={() => onCopy(error)}
+            >
+              Copiar erro
+            </Button>
+            <Button size="sm" variant="light" onPress={() => onToggle(errorKey)}>
+              Recolher
+            </Button>
+          </>
+        ) : null}
+      </div>
+
+      {isExpanded ? (
+        <div className="rounded-lg border border-danger/30 bg-danger/5 p-3">
+          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-danger-700 dark:text-danger-300">
+            {error}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProcessosSyncOabModal({
   isOpen,
   onClose,
@@ -62,9 +129,13 @@ export function ProcessosSyncOabModal({
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [expandedErrorKeys, setExpandedErrorKeys] = useState<
+    Record<string, boolean>
+  >({});
 
   const resetState = useCallback(() => {
     setResultado(null);
+    setExpandedErrorKeys({});
   }, []);
 
   const handleClose = () => {
@@ -104,9 +175,34 @@ export function ProcessosSyncOabModal({
     [resultado],
   );
 
+  const toggleErrorDetails = useCallback((errorKey: string) => {
+    setExpandedErrorKeys((current) => ({
+      ...current,
+      [errorKey]: !current[errorKey],
+    }));
+  }, []);
+
+  const copyError = useCallback(async (error: string) => {
+    try {
+      await navigator.clipboard.writeText(error);
+      addToast({
+        title: "Erro copiado",
+        description: "O texto do erro foi copiado para a area de transferencia.",
+        color: "success",
+      });
+    } catch {
+      addToast({
+        title: "Nao foi possivel copiar",
+        description: "Tente copiar manualmente o texto do erro.",
+        color: "danger",
+      });
+    }
+  }, []);
+
   const executarSincronizacao = async () => {
     setIsSyncing(true);
     setResultado(null);
+    setExpandedErrorKeys({});
 
     try {
       const response = await sincronizarProcessosIniciaisPorOab();
@@ -282,9 +378,13 @@ export function ProcessosSyncOabModal({
                 </div>
 
                 {resultado.error ? (
-                  <div className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-xs text-danger-700 dark:text-danger-300">
-                    {resultado.error}
-                  </div>
+                  <ErrorDetailsToggle
+                    error={resultado.error}
+                    errorKey="resultado-atual"
+                    isExpanded={Boolean(expandedErrorKeys["resultado-atual"])}
+                    onCopy={copyError}
+                    onToggle={toggleErrorDetails}
+                  />
                 ) : null}
 
                 {resultado.message && !resultado.error ? (
@@ -370,9 +470,13 @@ export function ProcessosSyncOabModal({
                       </p>
 
                       {item.error ? (
-                        <div className="mt-2 rounded-lg border border-danger/30 bg-danger/5 p-2 text-xs text-danger-700 dark:text-danger-300">
-                          {item.error}
-                        </div>
+                        <ErrorDetailsToggle
+                          error={item.error}
+                          errorKey={item.id}
+                          isExpanded={Boolean(expandedErrorKeys[item.id])}
+                          onCopy={copyError}
+                          onToggle={toggleErrorDetails}
+                        />
                       ) : null}
                     </div>
                   ))}
