@@ -89,6 +89,16 @@ function asPayloadRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => asNonEmptyString(item))
+    .filter((item): item is string => Boolean(item));
+}
+
 function getSecurityActionUrl(notification?: NotificationItem | null) {
   if (!notification) {
     return null;
@@ -328,6 +338,13 @@ export const NotificationCenter = () => {
     const diffCandidate = (detailPayload as any).diff;
 
     return Array.isArray(diffCandidate) ? diffCandidate : [];
+  }, [detailPayload]);
+  const detailLines = useMemo(() => {
+    if (!detailPayload) {
+      return [] as string[];
+    }
+
+    return asStringArray((detailPayload as any).detailLines);
   }, [detailPayload]);
 
   const handleStatusChange = async (id: string, status: NotificationStatus) => {
@@ -729,7 +746,7 @@ export const NotificationCenter = () => {
                   <span className="text-xs font-medium uppercase tracking-wide text-default-400">
                     {notification ? formatDate(notification.criadoEm) : ""}
                   </span>
-                  <span className="text-lg font-semibold text-white">
+                  <span className="text-lg font-semibold text-foreground">
                     {notification?.titulo ?? "Detalhes da notificação"}
                   </span>
                 </ModalHeader>
@@ -754,49 +771,67 @@ export const NotificationCenter = () => {
                   ) : null}
 
                   {notification?.mensagem ? (
-                    <p className="whitespace-pre-wrap text-sm text-default-300">
+                    <p className="whitespace-pre-wrap text-sm text-default-700 dark:text-default-300">
                       {notification.mensagem}
                     </p>
                   ) : null}
 
                   {statusSummary ? (
-                    <div className="rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary-100">
+                    <div className="rounded-lg border border-primary/20 bg-primary-50 p-3 text-sm text-primary-700 dark:border-primary/40 dark:bg-primary/10 dark:text-primary-100">
                       {statusSummary}
                     </div>
                   ) : null}
 
                   {summary ? (
-                    <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-default-300">
+                    <div className="rounded-lg border border-default-200 bg-default-50 p-3 text-sm text-default-700 dark:border-white/10 dark:bg-white/5 dark:text-default-300">
                       Campos atualizados: {summary}
                     </div>
                   ) : null}
 
                   {!summary && additionalSummary ? (
-                    <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-default-300">
+                    <div className="rounded-lg border border-default-200 bg-default-50 p-3 text-sm text-default-700 dark:border-white/10 dark:bg-white/5 dark:text-default-300">
                       Outras alterações: {additionalSummary}
                     </div>
                   ) : null}
 
+                  {detailLines.length > 0 ? (
+                    <div className="rounded-xl border border-default-200 bg-default-50 p-4 dark:border-white/10 dark:bg-white/5">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-default-500">
+                        Detalhes capturados
+                      </p>
+                      <ul className="space-y-2">
+                        {detailLines.map((line, index) => (
+                          <li
+                            key={`${line}-${index}`}
+                            className="rounded-lg bg-background/80 px-3 py-2 text-sm text-default-700 shadow-sm dark:bg-default-100/5 dark:text-default-200"
+                          >
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
                   {detailDiffItems.length > 0 ? (
-                    <div className="overflow-hidden rounded-xl border border-white/10">
+                    <div className="overflow-hidden rounded-xl border border-default-200 dark:border-white/10">
                       <table className="w-full text-left text-sm">
-                        <thead className="bg-white/5 text-xs uppercase tracking-wide text-default-500">
+                        <thead className="bg-default-100 text-xs uppercase tracking-wide text-default-600 dark:bg-white/5 dark:text-default-500">
                           <tr>
                             <th className="px-4 py-2 font-semibold">Campo</th>
                             <th className="px-4 py-2 font-semibold">Antes</th>
                             <th className="px-4 py-2 font-semibold">Depois</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody className="divide-y divide-default-200 dark:divide-white/5">
                           {detailDiffItems.map((change: any, index: number) => (
                             <tr key={change.field ?? index}>
-                              <td className="px-4 py-2 text-sm font-medium text-white">
+                              <td className="px-4 py-2 text-sm font-medium text-default-900 dark:text-white">
                                 {change.label ?? change.field ?? "-"}
                               </td>
-                              <td className="px-4 py-2 text-sm text-default-400">
+                              <td className="px-4 py-2 text-sm text-default-500 dark:text-default-400">
                                 {change.before ?? "—"}
                               </td>
-                              <td className="px-4 py-2 text-sm text-default-200">
+                              <td className="px-4 py-2 text-sm text-default-700 dark:text-default-200">
                                 {change.after ?? "—"}
                               </td>
                             </tr>
@@ -804,11 +839,11 @@ export const NotificationCenter = () => {
                         </tbody>
                       </table>
                     </div>
-                  ) : (
-                    <p className="text-sm text-default-400">
+                  ) : detailLines.length === 0 ? (
+                    <p className="text-sm text-default-500 dark:text-default-400">
                       Nenhum detalhamento de alteração disponível.
                     </p>
-                  )}
+                  ) : null}
                 </ModalBody>
                 <ModalFooter className="flex flex-wrap justify-end gap-2">
                   {securityActionUrl ? (
