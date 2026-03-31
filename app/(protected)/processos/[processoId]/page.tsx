@@ -892,7 +892,7 @@ export default function ProcessoDetalhesPage() {
     setIsSolicitandoAtualizacaoJusbrasil(true);
     try {
       const result = await solicitarAtualizacaoJusbrasilProcesso(processoId, {
-        includeAttachments: true,
+        includeAttachments: false,
       });
 
       if (!result.success) {

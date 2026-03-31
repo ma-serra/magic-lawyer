@@ -2155,7 +2155,7 @@ export async function solicitarAtualizacaoJusbrasilProcesso(
 
     await client.getProcessByCnj(numeroProcesso, {
       refreshFromTribunal: true,
-      includeAttachments: options?.includeAttachments ?? true,
+      includeAttachments: options?.includeAttachments ?? false,
       updateCallbackId: callbackId,
       timeoutMs: 30_000,
     });
@@ -2169,7 +2169,7 @@ export async function solicitarAtualizacaoJusbrasilProcesso(
       dados: toAuditJson({
         provider: "JUSBRASIL",
         numeroProcesso,
-        includeAttachments: options?.includeAttachments ?? true,
+        includeAttachments: options?.includeAttachments ?? false,
         callbackId,
         solicitadoPor: user.id,
         solicitadoEm: new Date().toISOString(),
