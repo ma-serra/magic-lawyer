@@ -2,14 +2,26 @@
 
 import type { CepData, CnpjData } from "@/types/brazil";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type Key, } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Key,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Chip } from "@heroui/chip";
 import {
-  Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, } from "@heroui/dropdown";
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from "@heroui/dropdown";
 import { Divider } from "@heroui/divider";
 import { Avatar } from "@heroui/avatar";
 import { Textarea } from "@heroui/input";
@@ -19,11 +31,49 @@ import { Tooltip } from "@heroui/tooltip";
 import { Skeleton } from "@heroui/skeleton";
 import { Spinner } from "@heroui/spinner";
 import {
-  Plus, Search, MoreVertical, Edit, Trash2, Eye, User, Building2, Phone, Mail, FileText, Users, Key as KeyIcon, Copy, CheckCircle, KeyRound, RefreshCw, AlertCircle, Filter, RotateCcw, XCircle, TrendingUp, BarChart3, Target, Calendar, Info, Smartphone, Activity, UploadCloud, } from "lucide-react";
+  Plus,
+  Search,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Eye,
+  User,
+  Building2,
+  Phone,
+  Mail,
+  FileText,
+  Users,
+  Key as KeyIcon,
+  Copy,
+  CheckCircle,
+  KeyRound,
+  RefreshCw,
+  AlertCircle,
+  Filter,
+  RotateCcw,
+  XCircle,
+  TrendingUp,
+  BarChart3,
+  Target,
+  Calendar,
+  Info,
+  Smartphone,
+  Activity,
+  UploadCloud,
+} from "lucide-react";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
 import {
-  Modal as HeroUIModal, ModalContent, ModalBody, ModalFooter, Pagination, Tabs, Tab, Select, SelectItem } from "@heroui/react";
+  Modal as HeroUIModal,
+  ModalContent,
+  ModalBody,
+  ModalFooter,
+  Pagination,
+  Tabs,
+  Tab,
+  Select,
+  SelectItem,
+} from "@heroui/react";
 
 import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { useClientesAdvogado, useAllClientes } from "@/app/hooks/use-clientes";
@@ -154,6 +204,10 @@ const INITIAL_CLIENTE_FORM_STATE: ClienteCreateInput = {
   celular: "",
   dataNascimento: undefined,
   inscricaoEstadual: "",
+  nomePai: "",
+  documentoPai: "",
+  nomeMae: "",
+  documentoMae: "",
   observacoes: "",
   responsavelNome: "",
   responsavelEmail: "",
@@ -386,225 +440,229 @@ const ClientesListSection = memo(function ClientesListSection({
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
                   {paginatedClientes.map((cliente, index) => (
-                  <motion.div
-                    key={cliente.id}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    initial={{ opacity: 0, y: 20 }}
-                    transition={{
-                      duration: 0.24,
-                      delay: Math.min(index * 0.03, 0.2),
-                    }}
-                    whileHover={{ scale: 1.02 }}
-                  >
-	                    <PeopleEntityCard
-	                      isPressable
-	                      onPress={() => onViewCliente(cliente)}
-	                    >
-	                      <PeopleEntityCardHeader className="cursor-pointer">
-	                        <div className="flex gap-4 w-full">
-                          <motion.div
-                            transition={{
-                              type: "spring",
-                              stiffness: 400,
-                              damping: 10,
-                            }}
-                            whileHover={{ scale: 1.1, rotate: 5 }}
-                          >
-                            <Avatar
-                              showFallback
-                              className="bg-blue-500 text-white shadow-lg"
-                              icon={
-                                cliente.tipoPessoa === TipoPessoa.JURIDICA ? (
-                                  <Building2 className="text-white" />
-                                ) : (
-                                  <User className="text-white" />
-                                )
-                              }
-                              name={getInitials(cliente.nome)}
-                              size="lg"
-                            />
-                          </motion.div>
-                          <div className="flex flex-col flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                {cliente.nome}
-                              </h3>
-                              {cliente.usuarioId && (
+                    <motion.div
+                      key={cliente.id}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      initial={{ opacity: 0, y: 20 }}
+                      transition={{
+                        duration: 0.24,
+                        delay: Math.min(index * 0.03, 0.2),
+                      }}
+                      whileHover={{ scale: 1.02 }}
+                    >
+                      <PeopleEntityCard
+                        isPressable
+                        onPress={() => onViewCliente(cliente)}
+                      >
+                        <PeopleEntityCardHeader className="cursor-pointer">
+                          <div className="flex gap-4 w-full">
+                            <motion.div
+                              transition={{
+                                type: "spring",
+                                stiffness: 400,
+                                damping: 10,
+                              }}
+                              whileHover={{ scale: 1.1, rotate: 5 }}
+                            >
+                              <Avatar
+                                showFallback
+                                className="bg-blue-500 text-white shadow-lg"
+                                icon={
+                                  cliente.tipoPessoa === TipoPessoa.JURIDICA ? (
+                                    <Building2 className="text-white" />
+                                  ) : (
+                                    <User className="text-white" />
+                                  )
+                                }
+                                name={getInitials(cliente.nome)}
+                                size="lg"
+                              />
+                            </motion.div>
+                            <div className="flex flex-col flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                  {cliente.nome}
+                                </h3>
+                                {cliente.usuarioId && (
+                                  <Badge
+                                    color="success"
+                                    content="✓"
+                                    size="sm"
+                                    variant="shadow"
+                                  >
+                                    <Chip
+                                      className="font-semibold"
+                                      color="success"
+                                      size="sm"
+                                      startContent={
+                                        <KeyIcon className="h-3 w-3" />
+                                      }
+                                      variant="flat"
+                                    >
+                                      Acesso
+                                    </Chip>
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Chip
+                                  color={
+                                    cliente.tipoPessoa === TipoPessoa.FISICA
+                                      ? "secondary"
+                                      : "warning"
+                                  }
+                                  size="sm"
+                                  startContent={
+                                    cliente.tipoPessoa === TipoPessoa.FISICA ? (
+                                      <User className="h-3 w-3" />
+                                    ) : (
+                                      <Building2 className="h-3 w-3" />
+                                    )
+                                  }
+                                  variant="flat"
+                                >
+                                  {cliente.tipoPessoa === TipoPessoa.FISICA
+                                    ? "Pessoa Física"
+                                    : "Pessoa Jurídica"}
+                                </Chip>
+                              </div>
+                            </div>
+                            <Dropdown>
+                              <DropdownTrigger>
+                                <Button
+                                  isIconOnly
+                                  className="hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-110 transition-all"
+                                  size="sm"
+                                  variant="light"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownTrigger>
+                              <DropdownMenu aria-label="Ações do cliente">
+                                <DropdownItem
+                                  key="view"
+                                  as={Link}
+                                  href={`/clientes/${cliente.id}`}
+                                  startContent={<Eye className="h-4 w-4" />}
+                                >
+                                  Ver Detalhes
+                                </DropdownItem>
+                                <DropdownItem
+                                  key="edit"
+                                  startContent={<Edit className="h-4 w-4" />}
+                                  onPress={() => onEditCliente(cliente)}
+                                >
+                                  Editar
+                                </DropdownItem>
+                                {cliente.usuarioId ? (
+                                  <DropdownItem
+                                    key="reset-password"
+                                    className="text-warning"
+                                    color="warning"
+                                    startContent={
+                                      <KeyRound className="h-4 w-4" />
+                                    }
+                                    onPress={() => onOpenResetModal(cliente)}
+                                  >
+                                    Reenviar Primeiro Acesso
+                                  </DropdownItem>
+                                ) : null}
+                                <DropdownItem
+                                  key="delete"
+                                  className="text-danger"
+                                  color="danger"
+                                  startContent={<Trash2 className="h-4 w-4" />}
+                                  onPress={() => onDeleteCliente(cliente.id)}
+                                >
+                                  Excluir
+                                </DropdownItem>
+                              </DropdownMenu>
+                            </Dropdown>
+                          </div>
+                        </PeopleEntityCardHeader>
+                        <PeopleEntityCardBody className="space-y-4 p-6">
+                          <div className="space-y-3">
+                            {cliente.documento && (
+                              <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <FileText className="h-4 w-4 text-blue-500" />
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  {cliente.documento}
+                                </span>
+                              </div>
+                            )}
+                            {cliente.email && (
+                              <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <Mail className="h-4 w-4 text-green-500" />
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  {cliente.email}
+                                </span>
+                              </div>
+                            )}
+                            {cliente.telefone && (
+                              <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <Phone className="h-4 w-4 text-purple-500" />
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  {cliente.telefone}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <Divider className="my-4" />
+
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex gap-2">
                                 <Badge
-                                  color="success"
-                                  content="✓"
+                                  color="primary"
+                                  content={cliente._count?.processos || 0}
                                   size="sm"
                                   variant="shadow"
                                 >
                                   <Chip
                                     className="font-semibold"
-                                    color="success"
-                                    size="sm"
-                                    startContent={<KeyIcon className="h-3 w-3" />}
+                                    color="primary"
+                                    size="md"
                                     variant="flat"
                                   >
-                                    Acesso
+                                    {cliente._count?.processos || 0} processo(s)
                                   </Chip>
                                 </Badge>
-                              )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Chip
-                                color={
-                                  cliente.tipoPessoa === TipoPessoa.FISICA
-                                    ? "secondary"
-                                    : "warning"
-                                }
+
+                            <div className="flex gap-2">
+                              <Button
+                                as={Link}
+                                className="flex-1 hover:scale-105 transition-transform"
+                                color="primary"
+                                href={`/clientes/${cliente.id}`}
+                                onClick={(event) => event.stopPropagation()}
                                 size="sm"
-                                startContent={
-                                  cliente.tipoPessoa === TipoPessoa.FISICA ? (
-                                    <User className="h-3 w-3" />
-                                  ) : (
-                                    <Building2 className="h-3 w-3" />
-                                  )
-                                }
+                                startContent={<Eye className="h-4 w-4" />}
                                 variant="flat"
                               >
-                                {cliente.tipoPessoa === TipoPessoa.FISICA
-                                  ? "Pessoa Física"
-                                  : "Pessoa Jurídica"}
-                              </Chip>
-                            </div>
-                          </div>
-	                          <Dropdown>
-	                            <DropdownTrigger>
-	                              <Button
-                                isIconOnly
-                                className="hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-110 transition-all"
-                                size="sm"
-                                variant="light"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownTrigger>
-                            <DropdownMenu aria-label="Ações do cliente">
-                              <DropdownItem
-                                key="view"
-                                as={Link}
-                                href={`/clientes/${cliente.id}`}
-                                startContent={<Eye className="h-4 w-4" />}
-                              >
                                 Ver Detalhes
-                              </DropdownItem>
-                              <DropdownItem
-                                key="edit"
-                                startContent={<Edit className="h-4 w-4" />}
-                                onPress={() => onEditCliente(cliente)}
-                              >
-                                Editar
-                              </DropdownItem>
-                              {cliente.usuarioId ? (
-                                <DropdownItem
-                                  key="reset-password"
-                                  className="text-warning"
-                                  color="warning"
-                                  startContent={<KeyRound className="h-4 w-4" />}
-                                  onPress={() => onOpenResetModal(cliente)}
-                                >
-                                  Reenviar Primeiro Acesso
-                                </DropdownItem>
-                              ) : null}
-                              <DropdownItem
-                                key="delete"
-                                className="text-danger"
-                                color="danger"
-                                startContent={<Trash2 className="h-4 w-4" />}
-                                onPress={() => onDeleteCliente(cliente.id)}
-                              >
-                                Excluir
-                              </DropdownItem>
-                            </DropdownMenu>
-	                          </Dropdown>
-	                        </div>
-	                      </PeopleEntityCardHeader>
-	                      <PeopleEntityCardBody className="space-y-4 p-6">
-                        <div className="space-y-3">
-                          {cliente.documento && (
-                            <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                              <FileText className="h-4 w-4 text-blue-500" />
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                {cliente.documento}
-                              </span>
-                            </div>
-                          )}
-                          {cliente.email && (
-                            <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                              <Mail className="h-4 w-4 text-green-500" />
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                {cliente.email}
-                              </span>
-                            </div>
-                          )}
-                          {cliente.telefone && (
-                            <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                              <Phone className="h-4 w-4 text-purple-500" />
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                {cliente.telefone}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        <Divider className="my-4" />
-
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex gap-2">
-                              <Badge
-                                color="primary"
-                                content={cliente._count?.processos || 0}
+                              </Button>
+                              <Button
+                                as={Link}
+                                className="hover:scale-105 transition-transform"
+                                color="secondary"
+                                href={`/clientes/${cliente.id}`}
+                                onClick={(event) => event.stopPropagation()}
                                 size="sm"
-                                variant="shadow"
+                                startContent={<FileText className="h-4 w-4" />}
+                                variant="flat"
                               >
-                                <Chip
-                                  className="font-semibold"
-                                  color="primary"
-                                  size="md"
-                                  variant="flat"
-                                >
-                                  {cliente._count?.processos || 0} processo(s)
-                                </Chip>
-                              </Badge>
+                                Processos
+                              </Button>
                             </div>
                           </div>
-
-                          <div className="flex gap-2">
-	                            <Button
-	                              as={Link}
-	                              className="flex-1 hover:scale-105 transition-transform"
-	                              color="primary"
-	                              href={`/clientes/${cliente.id}`}
-	                              onClick={(event) => event.stopPropagation()}
-	                              size="sm"
-	                              startContent={<Eye className="h-4 w-4" />}
-	                              variant="flat"
-                            >
-                              Ver Detalhes
-                            </Button>
-	                            <Button
-	                              as={Link}
-	                              className="hover:scale-105 transition-transform"
-	                              color="secondary"
-	                              href={`/clientes/${cliente.id}`}
-	                              onClick={(event) => event.stopPropagation()}
-	                              size="sm"
-	                              startContent={<FileText className="h-4 w-4" />}
-	                              variant="flat"
-                            >
-                              Processos
-                            </Button>
-	                          </div>
-	                        </div>
-	                      </PeopleEntityCardBody>
-	                    </PeopleEntityCard>
-	                  </motion.div>
+                        </PeopleEntityCardBody>
+                      </PeopleEntityCard>
+                    </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
@@ -676,15 +734,15 @@ export function ClientesContent() {
   const isLoading = canManageAllClients ? isLoadingAdmin : isLoadingAdvogado;
   const mutate = canManageAllClients ? mutateAdmin : mutateAdvogado;
 
-  const [formState, setFormState] =
-    useState<ClienteCreateInput>(INITIAL_CLIENTE_FORM_STATE);
+  const [formState, setFormState] = useState<ClienteCreateInput>(
+    INITIAL_CLIENTE_FORM_STATE,
+  );
   const advogadoIdSet = useMemo(
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
   );
   const selectedAdvogadosKeys = useMemo(
-    () =>
-      (formState.advogadosIds || []).filter((id) => advogadoIdSet.has(id)),
+    () => (formState.advogadosIds || []).filter((id) => advogadoIdSet.has(id)),
     [advogadoIdSet, formState.advogadosIds],
   );
 
@@ -767,22 +825,25 @@ export function ClientesContent() {
     [mutate],
   );
 
-  const handleDeleteCliente = useCallback(async (clienteId: string) => {
-    if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
+  const handleDeleteCliente = useCallback(
+    async (clienteId: string) => {
+      if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
 
-    try {
-      const result = await deleteCliente(clienteId);
+      try {
+        const result = await deleteCliente(clienteId);
 
-      if (result.success) {
-        toast.success("Cliente excluído com sucesso!");
-        mutate();
-      } else {
-        toast.error(result.error || "Erro ao excluir cliente");
+        if (result.success) {
+          toast.success("Cliente excluído com sucesso!");
+          mutate();
+        } else {
+          toast.error(result.error || "Erro ao excluir cliente");
+        }
+      } catch (error) {
+        toast.error("Erro ao excluir cliente");
       }
-    } catch (error) {
-      toast.error("Erro ao excluir cliente");
-    }
-  }, [mutate]);
+    },
+    [mutate],
+  );
 
   const handleCreateCliente = async () => {
     if (!formState.nome) {
@@ -809,6 +870,22 @@ export function ClientesContent() {
         inscricaoEstadual:
           formState.tipoPessoa === TipoPessoa.JURIDICA
             ? formState.inscricaoEstadual || undefined
+            : undefined,
+        nomePai:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.nomePai || undefined
+            : undefined,
+        documentoPai:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.documentoPai || undefined
+            : undefined,
+        nomeMae:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.nomeMae || undefined
+            : undefined,
+        documentoMae:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.documentoMae || undefined
             : undefined,
         enderecoPrincipal: normalizeEnderecoPrincipalForPayload(
           formState.enderecoPrincipal,
@@ -873,6 +950,22 @@ export function ClientesContent() {
           formState.tipoPessoa === TipoPessoa.JURIDICA
             ? formState.inscricaoEstadual || undefined
             : undefined,
+        nomePai:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.nomePai || undefined
+            : undefined,
+        documentoPai:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.documentoPai || undefined
+            : undefined,
+        nomeMae:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.nomeMae || undefined
+            : undefined,
+        documentoMae:
+          formState.tipoPessoa === TipoPessoa.FISICA
+            ? formState.documentoMae || undefined
+            : undefined,
         observacoes: formState.observacoes,
         responsavelNome: formState.responsavelNome,
         responsavelEmail: formState.responsavelEmail,
@@ -880,8 +973,9 @@ export function ClientesContent() {
         enderecoPrincipal: normalizeEnderecoPrincipalForPayload(
           formState.enderecoPrincipal,
         ),
-        advogadosIds:
-          canManageAllClients ? formState.advogadosIds || [] : undefined,
+        advogadosIds: canManageAllClients
+          ? formState.advogadosIds || []
+          : undefined,
       };
 
       const result = await updateCliente(selectedCliente.id, updateData);
@@ -917,6 +1011,10 @@ export function ClientesContent() {
         ? new Date(cliente.dataNascimento)
         : undefined,
       inscricaoEstadual: cliente.inscricaoEstadual || "",
+      nomePai: cliente.nomePai || "",
+      documentoPai: cliente.documentoPai || "",
+      nomeMae: cliente.nomeMae || "",
+      documentoMae: cliente.documentoMae || "",
       observacoes: cliente.observacoes || "",
       responsavelNome: cliente.responsavelNome || "",
       responsavelEmail: cliente.responsavelEmail || "",
@@ -957,36 +1055,46 @@ export function ClientesContent() {
       ...prev,
       enderecoPrincipal: {
         ...(prev.enderecoPrincipal || INITIAL_ENDERECO_PRINCIPAL),
-        cep: formatCepForInput(cepData.cep || prev.enderecoPrincipal?.cep || ""),
-        logradouro: cepData.logradouro || prev.enderecoPrincipal?.logradouro || "",
+        cep: formatCepForInput(
+          cepData.cep || prev.enderecoPrincipal?.cep || "",
+        ),
+        logradouro:
+          cepData.logradouro || prev.enderecoPrincipal?.logradouro || "",
         bairro: cepData.bairro || prev.enderecoPrincipal?.bairro || "",
         cidade: cepData.localidade || prev.enderecoPrincipal?.cidade || "",
-        estado: (cepData.uf || prev.enderecoPrincipal?.estado || "").toUpperCase(),
+        estado: (
+          cepData.uf ||
+          prev.enderecoPrincipal?.estado ||
+          ""
+        ).toUpperCase(),
       },
     }));
   }, []);
 
-  const handleAdvogadosSelectionChange = useCallback((keys: "all" | Set<Key>) => {
-    if (keys === "all") {
-      const allAdvogados = (advogados || []).map((advogado) => advogado.id);
+  const handleAdvogadosSelectionChange = useCallback(
+    (keys: "all" | Set<Key>) => {
+      if (keys === "all") {
+        const allAdvogados = (advogados || []).map((advogado) => advogado.id);
+
+        setFormState((prev) => ({
+          ...prev,
+          advogadosIds: allAdvogados.length > 0 ? allAdvogados : undefined,
+        }));
+
+        return;
+      }
+
+      const selected = Array.from(keys)
+        .filter((key): key is string => typeof key === "string")
+        .filter((id) => advogadoIdSet.has(id));
 
       setFormState((prev) => ({
         ...prev,
-        advogadosIds: allAdvogados.length > 0 ? allAdvogados : undefined,
+        advogadosIds: selected.length > 0 ? selected : [],
       }));
-
-      return;
-    }
-
-    const selected = Array.from(keys)
-      .filter((key): key is string => typeof key === "string")
-      .filter((id) => advogadoIdSet.has(id));
-
-    setFormState((prev) => ({
-      ...prev,
-      advogadosIds: selected.length > 0 ? selected : [],
-    }));
-  }, [advogadoIdSet, advogados]);
+    },
+    [advogadoIdSet, advogados],
+  );
 
   const handleEnderecoPrincipalChange = useCallback(
     (field: EnderecoPrincipalField, value: string) => {
@@ -1054,6 +1162,12 @@ export function ClientesContent() {
         selectedTipo === TipoPessoa.JURIDICA ? undefined : prev.dataNascimento,
       inscricaoEstadual:
         selectedTipo === TipoPessoa.JURIDICA ? prev.inscricaoEstadual : "",
+      nomePai: selectedTipo === TipoPessoa.JURIDICA ? "" : prev.nomePai,
+      documentoPai:
+        selectedTipo === TipoPessoa.JURIDICA ? "" : prev.documentoPai,
+      nomeMae: selectedTipo === TipoPessoa.JURIDICA ? "" : prev.nomeMae,
+      documentoMae:
+        selectedTipo === TipoPessoa.JURIDICA ? "" : prev.documentoMae,
       responsavelNome:
         selectedTipo === TipoPessoa.JURIDICA ? prev.responsavelNome : "",
       responsavelEmail:
@@ -1173,6 +1287,10 @@ export function ClientesContent() {
       description: "Opcional para pessoa jurídica.",
     },
     {
+      label: "nomePai / documentoPai / nomeMae / documentoMae",
+      description: "Dados de genitores para pessoa física (opcional).",
+    },
+    {
       label: "observacoes",
       description: "Observações internas do cadastro (opcional).",
     },
@@ -1225,7 +1343,10 @@ export function ClientesContent() {
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
-            <Skeleton key={`clientes-metric-skeleton-${index}`} className="h-28 rounded-xl" />
+            <Skeleton
+              key={`clientes-metric-skeleton-${index}`}
+              className="h-28 rounded-xl"
+            />
           ))}
         </div>
       ) : (
@@ -1585,10 +1706,16 @@ export function ClientesContent() {
                         selectedKeys={new Set([formState.tipoPessoa])}
                         onSelectionChange={handleTipoPessoaSelectionChange}
                       >
-                        <SelectItem key={TipoPessoa.FISICA} textValue="Pessoa Física">
+                        <SelectItem
+                          key={TipoPessoa.FISICA}
+                          textValue="Pessoa Física"
+                        >
                           Pessoa Física
                         </SelectItem>
-                        <SelectItem key={TipoPessoa.JURIDICA} textValue="Pessoa Jurídica">
+                        <SelectItem
+                          key={TipoPessoa.JURIDICA}
+                          textValue="Pessoa Jurídica"
+                        >
                           Pessoa Jurídica
                         </SelectItem>
                       </Select>
@@ -1645,7 +1772,7 @@ export function ClientesContent() {
                               dataNascimento: parseDateFromInput(value),
                             })
                           }
-                         />
+                        />
                       ) : (
                         <Input
                           label="Inscrição Estadual"
@@ -1669,7 +1796,9 @@ export function ClientesContent() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <Input
-                          endContent={isSearchingCep ? <Spinner size="sm" /> : null}
+                          endContent={
+                            isSearchingCep ? <Spinner size="sm" /> : null
+                          }
                           label="CEP"
                           placeholder="00000-000"
                           value={formState.enderecoPrincipal?.cep || ""}
@@ -1745,6 +1874,60 @@ export function ClientesContent() {
                       </div>
                     </div>
                   </ModalSectionCard>
+
+                  {formState.tipoPessoa === TipoPessoa.FISICA && (
+                    <ModalSectionCard
+                      description="Dados de filiação importantes para qualificação completa do cliente."
+                      title="Genitores"
+                    >
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <Input
+                          label="Nome do Pai"
+                          placeholder="Informe o nome do pai"
+                          startContent={
+                            <User className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.nomePai}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, nomePai: value })
+                          }
+                        />
+                        <Input
+                          label="Documento do Pai"
+                          placeholder="CPF ou outro documento"
+                          startContent={
+                            <FileText className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.documentoPai}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, documentoPai: value })
+                          }
+                        />
+                        <Input
+                          label="Nome da Mãe"
+                          placeholder="Informe o nome da mãe"
+                          startContent={
+                            <User className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.nomeMae}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, nomeMae: value })
+                          }
+                        />
+                        <Input
+                          label="Documento da Mãe"
+                          placeholder="CPF ou outro documento"
+                          startContent={
+                            <FileText className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.documentoMae}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, documentoMae: value })
+                          }
+                        />
+                      </div>
+                    </ModalSectionCard>
+                  )}
 
                   {(isAdmin || isSuperAdmin) && (
                     <ModalSectionCard
@@ -2040,10 +2223,16 @@ export function ClientesContent() {
                         selectedKeys={new Set([formState.tipoPessoa])}
                         onSelectionChange={handleTipoPessoaSelectionChange}
                       >
-                        <SelectItem key={TipoPessoa.FISICA} textValue="Pessoa Física">
+                        <SelectItem
+                          key={TipoPessoa.FISICA}
+                          textValue="Pessoa Física"
+                        >
                           Pessoa Física
                         </SelectItem>
-                        <SelectItem key={TipoPessoa.JURIDICA} textValue="Pessoa Jurídica">
+                        <SelectItem
+                          key={TipoPessoa.JURIDICA}
+                          textValue="Pessoa Jurídica"
+                        >
                           Pessoa Jurídica
                         </SelectItem>
                       </Select>
@@ -2100,7 +2289,7 @@ export function ClientesContent() {
                               dataNascimento: parseDateFromInput(value),
                             })
                           }
-                         />
+                        />
                       ) : (
                         <Input
                           label="Inscrição Estadual"
@@ -2124,7 +2313,9 @@ export function ClientesContent() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <Input
-                          endContent={isSearchingCep ? <Spinner size="sm" /> : null}
+                          endContent={
+                            isSearchingCep ? <Spinner size="sm" /> : null
+                          }
                           label="CEP"
                           placeholder="00000-000"
                           value={formState.enderecoPrincipal?.cep || ""}
@@ -2200,6 +2391,60 @@ export function ClientesContent() {
                       </div>
                     </div>
                   </ModalSectionCard>
+
+                  {formState.tipoPessoa === TipoPessoa.FISICA && (
+                    <ModalSectionCard
+                      description="Dados de filiação importantes para qualificação completa do cliente."
+                      title="Genitores"
+                    >
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <Input
+                          label="Nome do Pai"
+                          placeholder="Informe o nome do pai"
+                          startContent={
+                            <User className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.nomePai}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, nomePai: value })
+                          }
+                        />
+                        <Input
+                          label="Documento do Pai"
+                          placeholder="CPF ou outro documento"
+                          startContent={
+                            <FileText className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.documentoPai}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, documentoPai: value })
+                          }
+                        />
+                        <Input
+                          label="Nome da Mãe"
+                          placeholder="Informe o nome da mãe"
+                          startContent={
+                            <User className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.nomeMae}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, nomeMae: value })
+                          }
+                        />
+                        <Input
+                          label="Documento da Mãe"
+                          placeholder="CPF ou outro documento"
+                          startContent={
+                            <FileText className="h-4 w-4 text-default-400" />
+                          }
+                          value={formState.documentoMae}
+                          onValueChange={(value) =>
+                            setFormState({ ...formState, documentoMae: value })
+                          }
+                        />
+                      </div>
+                    </ModalSectionCard>
+                  )}
 
                   {(isAdmin || isSuperAdmin) && (
                     <ModalSectionCard
@@ -2410,11 +2655,7 @@ export function ClientesContent() {
         }
         isOpen={!!credenciaisModal}
         size="lg"
-        title={
-          credenciaisModal
-            ? "🔐 Primeiro acesso do cliente"
-            : ""
-        }
+        title={credenciaisModal ? "🔐 Primeiro acesso do cliente" : ""}
         onOpenChange={() => setCredenciaisModal(null)}
       >
         {credenciaisModal && (
@@ -2461,7 +2702,9 @@ export function ClientesContent() {
                 </div>
 
                 <div>
-                  <p className="text-xs text-default-400 mb-1">Email mascarado</p>
+                  <p className="text-xs text-default-400 mb-1">
+                    Email mascarado
+                  </p>
                   <Input readOnly value={credenciaisModal.maskedEmail} />
                 </div>
               </CardBody>
@@ -2470,14 +2713,18 @@ export function ClientesContent() {
             {credenciaisModal.primeiroAcessoEnviado ? (
               <div className="rounded-lg bg-primary/10 border border-primary/20 p-3">
                 <p className="text-xs text-primary-700 dark:text-primary-300">
-                  ✅ Link de primeiro acesso enviado para {credenciaisModal.maskedEmail}.
+                  ✅ Link de primeiro acesso enviado para{" "}
+                  {credenciaisModal.maskedEmail}.
                 </p>
               </div>
             ) : (
               <div className="rounded-lg bg-warning/10 border border-warning/20 p-3">
                 <p className="text-xs text-warning-700 dark:text-warning-300">
-                  ⚠️ Cliente criado, mas o e-mail de primeiro acesso não foi enviado automaticamente.
-                  {credenciaisModal.erroEnvio ? ` Motivo: ${credenciaisModal.erroEnvio}` : ""}
+                  ⚠️ Cliente criado, mas o e-mail de primeiro acesso não foi
+                  enviado automaticamente.
+                  {credenciaisModal.erroEnvio
+                    ? ` Motivo: ${credenciaisModal.erroEnvio}`
+                    : ""}
                 </p>
               </div>
             )}
@@ -2753,6 +3000,72 @@ export function ClientesContent() {
                         )}
                       </div>
                     </ModalSectionCard>
+
+                    {clienteParaVisualizar.tipoPessoa === TipoPessoa.FISICA &&
+                      (clienteParaVisualizar.nomePai ||
+                        clienteParaVisualizar.documentoPai ||
+                        clienteParaVisualizar.nomeMae ||
+                        clienteParaVisualizar.documentoMae) && (
+                        <ModalSectionCard
+                          description="Dados de filiação armazenados no cadastro."
+                          title="Genitores"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {clienteParaVisualizar.nomePai && (
+                              <div className="flex items-center gap-3 p-3 bg-default-50 rounded-lg">
+                                <User className="h-4 w-4 text-primary" />
+                                <div>
+                                  <p className="text-xs text-default-500">
+                                    Nome do Pai
+                                  </p>
+                                  <p className="text-sm font-medium">
+                                    {clienteParaVisualizar.nomePai}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {clienteParaVisualizar.documentoPai && (
+                              <div className="flex items-center gap-3 p-3 bg-default-50 rounded-lg">
+                                <FileText className="h-4 w-4 text-secondary" />
+                                <div>
+                                  <p className="text-xs text-default-500">
+                                    Documento do Pai
+                                  </p>
+                                  <p className="text-sm font-medium">
+                                    {clienteParaVisualizar.documentoPai}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {clienteParaVisualizar.nomeMae && (
+                              <div className="flex items-center gap-3 p-3 bg-default-50 rounded-lg">
+                                <User className="h-4 w-4 text-warning" />
+                                <div>
+                                  <p className="text-xs text-default-500">
+                                    Nome da Mãe
+                                  </p>
+                                  <p className="text-sm font-medium">
+                                    {clienteParaVisualizar.nomeMae}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {clienteParaVisualizar.documentoMae && (
+                              <div className="flex items-center gap-3 p-3 bg-default-50 rounded-lg">
+                                <FileText className="h-4 w-4 text-success" />
+                                <div>
+                                  <p className="text-xs text-default-500">
+                                    Documento da Mãe
+                                  </p>
+                                  <p className="text-sm font-medium">
+                                    {clienteParaVisualizar.documentoMae}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </ModalSectionCard>
+                      )}
 
                     {clienteParaVisualizar.tipoPessoa === TipoPessoa.JURIDICA &&
                       (clienteParaVisualizar.responsavelNome ||

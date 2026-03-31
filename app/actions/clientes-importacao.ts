@@ -17,6 +17,10 @@ type ImportHeaderField =
   | "documento"
   | "dataNascimento"
   | "inscricaoEstadual"
+  | "nomePai"
+  | "documentoPai"
+  | "nomeMae"
+  | "documentoMae"
   | "observacoes"
   | "responsavelNome"
   | "responsavelEmail"
@@ -53,6 +57,14 @@ const HEADER_ALIASES: Record<string, ImportHeaderField> = {
   nascimento: "dataNascimento",
   inscricaoestadual: "inscricaoEstadual",
   ie: "inscricaoEstadual",
+  nomepai: "nomePai",
+  paicliente: "nomePai",
+  documentopai: "documentoPai",
+  cpfpai: "documentoPai",
+  nomemae: "nomeMae",
+  maecliente: "nomeMae",
+  documentomae: "documentoMae",
+  cpfmae: "documentoMae",
   observacoes: "observacoes",
   observacao: "observacoes",
   responsavelnome: "responsavelNome",
@@ -375,9 +387,7 @@ export async function importarClientesPlanilha(
         totalRows: rows.length,
         importedCount: 0,
         failedCount: rows.length,
-        errors: [
-          `Arquivo com ${rows.length} linhas. Divida em lotes menores.`,
-        ],
+        errors: [`Arquivo com ${rows.length} linhas. Divida em lotes menores.`],
         warnings: [],
       };
     }
@@ -452,6 +462,22 @@ export async function importarClientesPlanilha(
         inscricaoEstadual:
           tipoPessoa === TipoPessoa.JURIDICA
             ? stringValue(row.inscricaoEstadual)
+            : undefined,
+        nomePai:
+          tipoPessoa === TipoPessoa.FISICA
+            ? stringValue(row.nomePai)
+            : undefined,
+        documentoPai:
+          tipoPessoa === TipoPessoa.FISICA
+            ? stringValue(row.documentoPai)
+            : undefined,
+        nomeMae:
+          tipoPessoa === TipoPessoa.FISICA
+            ? stringValue(row.nomeMae)
+            : undefined,
+        documentoMae:
+          tipoPessoa === TipoPessoa.FISICA
+            ? stringValue(row.documentoMae)
             : undefined,
         observacoes: stringValue(row.observacoes),
         responsavelNome: stringValue(row.responsavelNome),

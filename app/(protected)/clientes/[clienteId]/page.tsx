@@ -198,9 +198,12 @@ export default function ClienteDetalhesPage() {
   const procuracoesItems = procuracoes || [];
   const documentosItems = documentos || [];
   const clienteEventos = cliente?.eventos || [];
-  const processoIdsDisponiveis = new Set(processosItems.map((processo) => processo.id));
+  const processoIdsDisponiveis = new Set(
+    processosItems.map((processo) => processo.id),
+  );
   const selectedProcessoKeys =
-    uploadFormData.processoId && processoIdsDisponiveis.has(uploadFormData.processoId)
+    uploadFormData.processoId &&
+    processoIdsDisponiveis.has(uploadFormData.processoId)
       ? [uploadFormData.processoId]
       : [];
   const eventosItems = [...clienteEventos].sort(
@@ -706,6 +709,40 @@ export default function ClienteDetalhesPage() {
                 </div>
               ) : null}
 
+              {cliente.tipoPessoa === "FISICA" &&
+              (cliente.nomePai ||
+                cliente.documentoPai ||
+                cliente.nomeMae ||
+                cliente.documentoMae) ? (
+                <div className="rounded-lg border border-default-200 bg-default-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-default-500">
+                    Genitores
+                  </p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    {cliente.nomePai ? (
+                      <p className="text-sm text-default-600">
+                        Pai: {cliente.nomePai}
+                      </p>
+                    ) : null}
+                    {cliente.documentoPai ? (
+                      <p className="text-sm text-default-600">
+                        Documento do pai: {cliente.documentoPai}
+                      </p>
+                    ) : null}
+                    {cliente.nomeMae ? (
+                      <p className="text-sm text-default-600">
+                        Mãe: {cliente.nomeMae}
+                      </p>
+                    ) : null}
+                    {cliente.documentoMae ? (
+                      <p className="text-sm text-default-600">
+                        Documento da mãe: {cliente.documentoMae}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               {cliente.observacoes && (
                 <div className="rounded-lg bg-default-100 p-3">
                   <p className="text-sm text-default-600">
@@ -764,11 +801,11 @@ export default function ClienteDetalhesPage() {
           }
         >
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <Card className="border border-default-200">
-                <CardHeader className="pb-2">
-                  <div>
-                    <p className="text-sm font-semibold">Advogados vinculados</p>
-                    <p className="text-xs text-default-400">
+            <Card className="border border-default-200">
+              <CardHeader className="pb-2">
+                <div>
+                  <p className="text-sm font-semibold">Advogados vinculados</p>
+                  <p className="text-xs text-default-400">
                     Profissionais com acesso direto ao cliente.
                   </p>
                 </div>
@@ -973,11 +1010,13 @@ export default function ClienteDetalhesPage() {
                           {conta.digitoConta ? `-${conta.digitoConta}` : ""}
                         </p>
                         <p className="text-xs text-default-500">
-                          Titular: {conta.titularNome} ({conta.titularDocumento})
+                          Titular: {conta.titularNome} ({conta.titularDocumento}
+                          )
                         </p>
                         {conta.chavePix ? (
                           <p className="text-xs text-default-500">
-                            PIX: {conta.tipoChavePix || "Chave"} - {conta.chavePix}
+                            PIX: {conta.tipoChavePix || "Chave"} -{" "}
+                            {conta.chavePix}
                           </p>
                         ) : null}
                       </div>
@@ -1045,7 +1084,9 @@ export default function ClienteDetalhesPage() {
                               )}
                               variant="flat"
                             >
-                              {getStatusLabel(processo.status as ProcessoStatus)}
+                              {getStatusLabel(
+                                processo.status as ProcessoStatus,
+                              )}
                             </Chip>
                             {processo.fase && (
                               <Chip
@@ -1218,7 +1259,9 @@ export default function ClienteDetalhesPage() {
                           </div>
                           <Chip
                             color={
-                              contrato.status === "ATIVO" ? "success" : "default"
+                              contrato.status === "ATIVO"
+                                ? "success"
+                                : "default"
                             }
                             size="sm"
                             variant="flat"
@@ -1327,7 +1370,9 @@ export default function ClienteDetalhesPage() {
                     <Card key={tarefa.id} className="border border-default-200">
                       <CardBody className="gap-2">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-semibold">{tarefa.titulo}</p>
+                          <p className="text-sm font-semibold">
+                            {tarefa.titulo}
+                          </p>
                           <Chip
                             color={getTarefaStatusColor(
                               tarefa.status as TarefaStatus,
@@ -1335,7 +1380,9 @@ export default function ClienteDetalhesPage() {
                             size="sm"
                             variant="flat"
                           >
-                            {getTarefaStatusLabel(tarefa.status as TarefaStatus)}
+                            {getTarefaStatusLabel(
+                              tarefa.status as TarefaStatus,
+                            )}
                           </Chip>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -1425,7 +1472,9 @@ export default function ClienteDetalhesPage() {
                       <CardBody className="gap-2">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <p className="text-sm font-semibold">{evento.titulo}</p>
+                            <p className="text-sm font-semibold">
+                              {evento.titulo}
+                            </p>
                             <p className="text-xs text-default-500">
                               {formatDateTime(evento.dataInicio)} -{" "}
                               {formatDateTime(evento.dataFim)}
@@ -1517,7 +1566,10 @@ export default function ClienteDetalhesPage() {
               <>
                 <div className="space-y-3">
                   {assinaturasPaginadas.map((assinatura) => (
-                    <Card key={assinatura.id} className="border border-default-200">
+                    <Card
+                      key={assinatura.id}
+                      className="border border-default-200"
+                    >
                       <CardBody className="gap-2">
                         <div className="flex items-start justify-between gap-2">
                           <div>
@@ -1535,9 +1587,12 @@ export default function ClienteDetalhesPage() {
                         <div className="grid gap-1 text-xs text-default-500 sm:grid-cols-3">
                           <p>Envio: {formatDateTime(assinatura.dataEnvio)}</p>
                           <p>
-                            Assinado: {formatDateTime(assinatura.dataAssinatura)}
+                            Assinado:{" "}
+                            {formatDateTime(assinatura.dataAssinatura)}
                           </p>
-                          <p>Expira: {formatDateTime(assinatura.dataExpiracao)}</p>
+                          <p>
+                            Expira: {formatDateTime(assinatura.dataExpiracao)}
+                          </p>
                         </div>
                         {assinatura.documento.url ? (
                           <Button
@@ -1610,7 +1665,9 @@ export default function ClienteDetalhesPage() {
                       key={procuracao.id}
                       isPressable
                       className="cursor-pointer border border-default-200 transition-all hover:border-success hover:shadow-lg"
-                      onPress={() => router.push(`/procuracoes/${procuracao.id}`)}
+                      onPress={() =>
+                        router.push(`/procuracoes/${procuracao.id}`)
+                      }
                     >
                       <CardHeader className="flex flex-col items-start gap-2 pb-2">
                         <div className="flex w-full items-start justify-between">
@@ -1694,27 +1751,30 @@ export default function ClienteDetalhesPage() {
                               )}
                             </div>
                           )}
-                        {procuracao.poderes && procuracao.poderes.length > 0 && (
-                          <div className="space-y-1">
-                            <p className="text-xs font-semibold text-default-500">
-                              Poderes:
-                            </p>
-                            {procuracao.poderes.slice(0, 2).map((poder: any) => (
-                              <p
-                                key={poder.id}
-                                className="text-xs text-default-600 line-clamp-1"
-                              >
-                                {poder.titulo ? `${poder.titulo}: ` : ""}
-                                {poder.descricao}
+                        {procuracao.poderes &&
+                          procuracao.poderes.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold text-default-500">
+                                Poderes:
                               </p>
-                            ))}
-                            {procuracao.poderes.length > 2 && (
-                              <p className="text-xs text-default-400">
-                                +{procuracao.poderes.length - 2} poderes
-                              </p>
-                            )}
-                          </div>
-                        )}
+                              {procuracao.poderes
+                                .slice(0, 2)
+                                .map((poder: any) => (
+                                  <p
+                                    key={poder.id}
+                                    className="text-xs text-default-600 line-clamp-1"
+                                  >
+                                    {poder.titulo ? `${poder.titulo}: ` : ""}
+                                    {poder.descricao}
+                                  </p>
+                                ))}
+                              {procuracao.poderes.length > 2 && (
+                                <p className="text-xs text-default-400">
+                                  +{procuracao.poderes.length - 2} poderes
+                                </p>
+                              )}
+                            </div>
+                          )}
                         {procuracao.processos &&
                           procuracao.processos.length > 0 && (
                             <div className="space-y-1">
@@ -1745,7 +1805,8 @@ export default function ClienteDetalhesPage() {
                           <div className="flex items-center gap-2 text-xs">
                             <Calendar className="h-3 w-3 text-default-400" />
                             <span className="text-default-600">
-                              Emitida: {DateUtils.formatDate(procuracao.emitidaEm)}
+                              Emitida:{" "}
+                              {DateUtils.formatDate(procuracao.emitidaEm)}
                             </span>
                           </div>
                         )}

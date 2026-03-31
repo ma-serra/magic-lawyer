@@ -4,7 +4,9 @@ const CSV_SEPARATOR = ";";
 
 function csvEscape(value: string) {
   const shouldQuote =
-    value.includes(CSV_SEPARATOR) || value.includes('"') || value.includes("\n");
+    value.includes(CSV_SEPARATOR) ||
+    value.includes('"') ||
+    value.includes("\n");
 
   if (!shouldQuote) {
     return value;
@@ -26,6 +28,10 @@ const CSV_HEADER = [
   "documento",
   "dataNascimento",
   "inscricaoEstadual",
+  "nomePai",
+  "documentoPai",
+  "nomeMae",
+  "documentoMae",
   "observacoes",
   "responsavelNome",
   "responsavelEmail",
@@ -50,6 +56,10 @@ const CSV_SAMPLE_ROW = [
   "12345678901",
   "1990-05-15",
   "",
+  "João Souza",
+  "98765432100",
+  "Maria Souza",
+  "11223344556",
   "Cliente VIP; prefere contato por WhatsApp",
   "",
   "",

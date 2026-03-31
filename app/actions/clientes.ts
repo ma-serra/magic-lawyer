@@ -30,6 +30,10 @@ export interface Cliente {
   celular: string | null;
   dataNascimento: Date | null;
   inscricaoEstadual: string | null;
+  nomePai: string | null;
+  documentoPai: string | null;
+  nomeMae: string | null;
+  documentoMae: string | null;
   responsavelNome: string | null;
   responsavelEmail: string | null;
   responsavelTelefone: string | null;
@@ -856,6 +860,10 @@ export interface ClienteCreateInput {
   celular?: string;
   dataNascimento?: Date;
   inscricaoEstadual?: string;
+  nomePai?: string;
+  documentoPai?: string;
+  nomeMae?: string;
+  documentoMae?: string;
   observacoes?: string;
   responsavelNome?: string;
   responsavelEmail?: string;
@@ -962,7 +970,9 @@ export async function createCliente(data: ClienteCreateInput): Promise<{
     const { advogadosIds, criarUsuario, enderecoPrincipal, ...clienteData } =
       data;
     const enderecoPrincipalData = sanitizeEnderecoInput(enderecoPrincipal);
-    const enderecoValidationError = validateEnderecoInput(enderecoPrincipalData);
+    const enderecoValidationError = validateEnderecoInput(
+      enderecoPrincipalData,
+    );
 
     if (enderecoValidationError) {
       return {
@@ -1083,6 +1093,22 @@ export async function createCliente(data: ClienteCreateInput): Promise<{
           clienteData.tipoPessoa === TipoPessoa.JURIDICA
             ? undefined
             : clienteData.dataNascimento,
+        nomePai:
+          clienteData.tipoPessoa === TipoPessoa.JURIDICA
+            ? undefined
+            : clienteData.nomePai,
+        documentoPai:
+          clienteData.tipoPessoa === TipoPessoa.JURIDICA
+            ? undefined
+            : clienteData.documentoPai,
+        nomeMae:
+          clienteData.tipoPessoa === TipoPessoa.JURIDICA
+            ? undefined
+            : clienteData.nomeMae,
+        documentoMae:
+          clienteData.tipoPessoa === TipoPessoa.JURIDICA
+            ? undefined
+            : clienteData.documentoMae,
         tenantId: user.tenantId,
         usuarioId,
         advogadoClientes: advogadosParaVincular
@@ -1184,6 +1210,10 @@ export interface ClienteUpdateInput {
   celular?: string;
   dataNascimento?: Date;
   inscricaoEstadual?: string;
+  nomePai?: string;
+  documentoPai?: string;
+  nomeMae?: string;
+  documentoMae?: string;
   responsavelNome?: string;
   responsavelEmail?: string;
   responsavelTelefone?: string;
@@ -1241,7 +1271,9 @@ export async function updateCliente(
 
     const { advogadosIds, enderecoPrincipal, ...clienteData } = data;
     const enderecoPrincipalData = sanitizeEnderecoInput(enderecoPrincipal);
-    const enderecoValidationError = validateEnderecoInput(enderecoPrincipalData);
+    const enderecoValidationError = validateEnderecoInput(
+      enderecoPrincipalData,
+    );
 
     if (enderecoValidationError) {
       return {
@@ -1255,6 +1287,10 @@ export async function updateCliente(
 
     if (clienteData.tipoPessoa === TipoPessoa.JURIDICA) {
       updateData.dataNascimento = null;
+      updateData.nomePai = null;
+      updateData.documentoPai = null;
+      updateData.nomeMae = null;
+      updateData.documentoMae = null;
     }
 
     // Se advogadosIds foi fornecido, atualizar relacionamentos
@@ -1304,7 +1340,8 @@ export async function updateCliente(
     });
 
     if (enderecoPrincipalData) {
-      const tipoPessoaAtualizada = clienteData.tipoPessoa || existingCliente.tipoPessoa;
+      const tipoPessoaAtualizada =
+        clienteData.tipoPessoa || existingCliente.tipoPessoa;
       const tipoEndereco =
         tipoPessoaAtualizada === TipoPessoa.JURIDICA
           ? TipoEndereco.COMERCIAL
