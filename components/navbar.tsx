@@ -288,19 +288,36 @@ export const Navbar = ({ onOpenSidebar, rightExtras, showAuthenticatedSecondaryN
             <div className="hidden sm:block">
               <Dropdown placement="bottom-end">
                 <DropdownTrigger>
-                  <Button className="min-w-0 p-1.5 sm:p-2 h-auto gap-2 border border-divider bg-content1 shadow-sm transition hover:border-primary/40 hover:bg-primary/5" variant="light">
+                  <Button
+                    className="h-auto max-w-[28rem] min-w-0 gap-2 overflow-hidden border border-divider bg-content1 p-1.5 shadow-sm transition hover:border-primary/40 hover:bg-primary/5 sm:p-2 2xl:max-w-[32rem]"
+                    variant="light"
+                  >
                     <Badge
+                      className="shrink-0"
                       color={userRole === "ADMIN" ? "danger" : userRole === "ADVOGADO" ? "primary" : "default"}
                       content={userRole?.replace(/_/g, " ").charAt(0) || "U"}
                       placement="bottom-right"
                       shape="circle"
                       size="sm"
                     >
-                      <Avatar isBordered className="w-8 h-8 text-xs" name={userDisplayName} size="sm" src={userAvatar} />
+                      <Avatar
+                        isBordered
+                        className="h-8 w-8 shrink-0 text-xs"
+                        name={userDisplayName}
+                        size="sm"
+                        src={userAvatar}
+                      />
                     </Badge>
-                    <div className="hidden xl:block min-w-0 flex-1 text-left">
-                      <p className="text-sm font-medium truncate">{userDisplayName}</p>
-                      <p className="text-xs text-default-500 truncate">{userRole?.replace(/_/g, " ").toLowerCase()}</p>
+                    <div className="hidden min-w-0 flex-1 overflow-hidden text-left xl:block">
+                      <p
+                        className="truncate whitespace-nowrap text-sm font-medium leading-tight"
+                        title={userDisplayName}
+                      >
+                        {userDisplayName}
+                      </p>
+                      <p className="truncate whitespace-nowrap text-xs text-default-500">
+                        {userRole?.replace(/_/g, " ").toLowerCase()}
+                      </p>
                     </div>
                   </Button>
                 </DropdownTrigger>
