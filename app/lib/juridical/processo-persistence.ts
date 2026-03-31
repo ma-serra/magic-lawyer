@@ -41,10 +41,106 @@ function mapPartePolo(parte: ParteProcesso): ProcessoPolo | null {
   return null;
 }
 
-function resolveClienteNome(processo: ProcessoJuridico, clienteNome?: string) {
-  if (clienteNome) return clienteNome.trim();
-  const autor = processo.partes?.find((parte) => parte.tipo === "AUTOR");
-  if (autor?.nome) return autor.nome.trim();
+type AdvogadoResponsavelContext = {
+  nome: string;
+  oabNumero?: string | null;
+  oabUf?: string | null;
+};
+
+function matchesAdvogadoResponsavelNome(
+  value: string | null | undefined,
+  advogadoResponsavel?: AdvogadoResponsavelContext | null,
+) {
+  if (!value || !advogadoResponsavel?.nome) {
+    return false;
+  }
+
+  return normalizeCacheKey(value) === normalizeCacheKey(advogadoResponsavel.nome);
+}
+
+function matchesAdvogadoResponsavelIdentidade(
+  advogado: AdvogadoParte | undefined,
+  advogadoResponsavel?: AdvogadoResponsavelContext | null,
+) {
+  if (!advogado || !advogadoResponsavel) {
+    return false;
+  }
+
+  if (
+    advogadoResponsavel.oabNumero &&
+    advogadoResponsavel.oabUf &&
+    advogado.oabNumero &&
+    advogado.oabUf
+  ) {
+    return (
+      advogado.oabNumero.trim() === advogadoResponsavel.oabNumero.trim() &&
+      advogado.oabUf.trim().toUpperCase() ===
+        advogadoResponsavel.oabUf.trim().toUpperCase()
+    );
+  }
+
+  return matchesAdvogadoResponsavelNome(advogado.nome, advogadoResponsavel);
+}
+
+function resolveClienteNome(
+  processo: ProcessoJuridico,
+  options?: {
+    clienteNome?: string;
+    advogadoResponsavel?: AdvogadoResponsavelContext | null;
+  },
+) {
+  if (options?.clienteNome) return options.clienteNome.trim();
+  const autores =
+    processo.partes?.filter(
+      (parte) => parte.tipo === "AUTOR" && Boolean(parte.nome?.trim()),
+    ) || [];
+
+  const parteRepresentadaPelaAdvogada = processo.partes?.find(
+    (parte) =>
+      Boolean(parte.nome?.trim()) &&
+      !matchesAdvogadoResponsavelNome(parte.nome, options?.advogadoResponsavel) &&
+      (parte.advogados || []).some((advogado) =>
+        matchesAdvogadoResponsavelIdentidade(
+          advogado,
+          options?.advogadoResponsavel,
+        ),
+      ),
+  );
+
+  if (parteRepresentadaPelaAdvogada?.nome) {
+    return parteRepresentadaPelaAdvogada.nome.trim();
+  }
+
+  if (autores.length > 0) {
+    const autorRepresentadoPelaAdvogada = autores.find(
+      (parte) =>
+        !matchesAdvogadoResponsavelNome(parte.nome, options?.advogadoResponsavel) &&
+        (parte.advogados || []).some((advogado) =>
+          matchesAdvogadoResponsavelIdentidade(
+            advogado,
+            options?.advogadoResponsavel,
+          ),
+        ),
+    );
+
+    if (autorRepresentadoPelaAdvogada?.nome) {
+      return autorRepresentadoPelaAdvogada.nome.trim();
+    }
+
+    const autorDistintoDaAdvogada = autores.find(
+      (parte) =>
+        !matchesAdvogadoResponsavelNome(parte.nome, options?.advogadoResponsavel),
+    );
+
+    if (autorDistintoDaAdvogada?.nome) {
+      return autorDistintoDaAdvogada.nome.trim();
+    }
+
+    if (autores[0]?.nome) {
+      return autores[0].nome.trim();
+    }
+  }
+
   const primeiraParte = processo.partes?.[0];
   if (primeiraParte?.nome) return primeiraParte.nome.trim();
   return "Cliente importado";
@@ -526,8 +622,12 @@ async function ensureCliente(
   tenantId: string,
   processo: ProcessoJuridico,
   clienteNome?: string,
+  advogadoResponsavel?: AdvogadoResponsavelContext | null,
 ) {
-  const nome = resolveClienteNome(processo, clienteNome);
+  const nome = resolveClienteNome(processo, {
+    clienteNome,
+    advogadoResponsavel,
+  });
   const parteCorrespondente = processo.partes?.find(
     (parte) => normalizeCacheKey(parte.nome) === normalizeCacheKey(nome),
   );
@@ -602,6 +702,42 @@ async function ensureCliente(
       telefone: true,
     },
   });
+}
+
+async function getAdvogadoResponsavelContext(
+  tx: Prisma.TransactionClient,
+  advogadoId?: string | null,
+): Promise<AdvogadoResponsavelContext | null> {
+  if (!advogadoId) {
+    return null;
+  }
+
+  const advogado = await tx.advogado.findUnique({
+    where: { id: advogadoId },
+    select: {
+      oabNumero: true,
+      oabUf: true,
+      usuario: {
+        select: {
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  });
+
+  const nome = `${advogado?.usuario.firstName || ""} ${advogado?.usuario.lastName || ""}`
+    .trim();
+
+  if (!advogado || !nome) {
+    return null;
+  }
+
+  return {
+    nome,
+    oabNumero: advogado.oabNumero,
+    oabUf: advogado.oabUf,
+  };
 }
 
 async function ensureTribunal(tenantId: string, processo: ProcessoJuridico) {
@@ -917,6 +1053,10 @@ export async function upsertProcessoFromCapture(params: {
 
   if (existente && updateIfExists) {
     await prisma.$transaction(async (tx) => {
+      const advogadoResponsavel = await getAdvogadoResponsavelContext(
+        tx,
+        advogadoId || existente.advogadoResponsavelId,
+      );
       const clienteAtual =
         (await tx.cliente.findUnique({
           where: { id: existente.clienteId },
@@ -928,10 +1068,22 @@ export async function upsertProcessoFromCapture(params: {
             telefone: true,
           },
         })) ||
-        (await ensureCliente(tx, tenantId, processo, clienteNome));
+        (await ensureCliente(
+          tx,
+          tenantId,
+          processo,
+          clienteNome,
+          advogadoResponsavel,
+        ));
 
       const clienteAlvo = reatribuirCliente
-        ? await ensureCliente(tx, tenantId, processo, clienteNome)
+        ? await ensureCliente(
+            tx,
+            tenantId,
+            processo,
+            clienteNome,
+            advogadoResponsavel,
+          )
         : clienteAtual;
 
       await tx.processo.update({
@@ -989,7 +1141,17 @@ export async function upsertProcessoFromCapture(params: {
   }
 
   const criado = await prisma.$transaction(async (tx) => {
-    const cliente = await ensureCliente(tx, tenantId, processo, clienteNome);
+    const advogadoResponsavel = await getAdvogadoResponsavelContext(
+      tx,
+      advogadoId,
+    );
+    const cliente = await ensureCliente(
+      tx,
+      tenantId,
+      processo,
+      clienteNome,
+      advogadoResponsavel,
+    );
 
     const processoCriado = await tx.processo.create({
       data: {
