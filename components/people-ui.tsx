@@ -52,9 +52,11 @@ const toneMap: Record<
     label: "text-secondary/80",
   },
   default: {
-    card: "border-white/10 bg-background/50",
+    card:
+      "border-default-200/80 bg-content1/80 dark:border-white/10 dark:bg-background/50",
     value: "text-foreground",
-    iconWrap: "bg-white/10 text-default-300",
+    iconWrap:
+      "border border-default-200/80 bg-default-100/55 text-default-500 dark:border-white/10 dark:bg-white/10 dark:text-default-300",
     label: "text-default-500",
   },
 };
@@ -155,8 +157,9 @@ export function PeopleEntityCard({
     >
       <Card
         className={joinClasses(
-          "group border border-white/10 bg-background/60 transition-all duration-300 hover:border-primary/40 hover:bg-background/80",
-          isSelected && "border-primary/50 bg-primary/10",
+          "group border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 transition-all duration-300 hover:border-primary/40 hover:bg-content1 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20 dark:hover:bg-background/80",
+          isSelected &&
+            "border-primary/45 bg-primary/5 dark:border-primary/50 dark:bg-primary/10",
           isPressable && "cursor-pointer ml-wave-surface",
           className,
         )}
@@ -182,7 +185,10 @@ export function PeopleEntityCardHeader({
 }: PeopleEntityCardHeaderProps) {
   return (
     <CardHeader
-      className={joinClasses("border-b border-white/10 p-4", className)}
+      className={joinClasses(
+        "border-b border-default-200/80 p-4 dark:border-white/10",
+        className,
+      )}
       {...headerProps}
     >
       {children}
@@ -216,7 +222,7 @@ export function PeoplePageHeader({
   tag = "Gestao de pessoas",
 }: PeoplePageHeaderProps) {
   return (
-    <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+    <Card className="border border-default-200/80 bg-content1/90 shadow-sm shadow-black/5 backdrop-blur-xl dark:border-white/10 dark:bg-background/70 dark:shadow-black/20">
       <CardBody className="flex flex-col gap-4 p-5 sm:p-6">
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
@@ -292,7 +298,7 @@ export function PeoplePanel({
   children,
 }: PeoplePanelProps) {
   return (
-    <Card className="border border-white/10 bg-background/70 backdrop-blur-xl">
+    <Card className="border border-default-200/80 bg-content1/90 shadow-sm shadow-black/5 backdrop-blur-xl dark:border-white/10 dark:bg-background/70 dark:shadow-black/20">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
@@ -302,7 +308,7 @@ export function PeoplePanel({
         </div>
         {actions ? <div className="flex gap-2">{actions}</div> : null}
       </CardHeader>
-      <Divider className="border-white/10" />
+      <Divider className="border-default-200/80 dark:border-white/10" />
       <CardBody>{children}</CardBody>
     </Card>
   );
@@ -326,12 +332,12 @@ export function PeopleEmptyState({
   return (
     <div
       className={joinClasses(
-        "flex min-h-44 flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-background/30 px-6 py-10 text-center",
+        "flex min-h-44 flex-col items-center justify-center rounded-3xl border border-dashed border-default-200/80 bg-default-100/45 px-6 py-10 text-center dark:border-white/10 dark:bg-background/30",
         className,
       )}
     >
       {icon ? (
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-default-400">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-default-200/80 bg-default-100/70 text-default-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-default-400">
           {icon}
         </div>
       ) : null}

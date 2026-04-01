@@ -7,6 +7,7 @@ import prisma from "@/app/lib/prisma";
 import { Prisma, PeticaoStatus } from "@/generated/prisma";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // ============================================
@@ -102,9 +103,7 @@ async function withStaffScope(
       ...andClauses,
       {
         processo: {
-          advogadoResponsavelId: {
-            in: accessibleAdvogados,
-          },
+          ...buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
         },
       },
     ],

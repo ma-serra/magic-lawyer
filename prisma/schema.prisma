@@ -150,6 +150,8 @@ model Tenant {
   pagamentos                Pagamento[]
   pagamentoComissoes        PagamentoComissao[]
   processos                 Processo[]
+  processoClientes          ProcessoCliente[]
+  processoResponsaveis      ProcessoResponsavel[]
   processoDocumentos        ProcessoDocumento[]
   processoPartes            ProcessoParte[]
   processoPrazos            ProcessoPrazo[]
@@ -819,6 +821,7 @@ model Advogado {
   agendaDisponibilidades AgendaDisponibilidade[]
   pagamentoComissoes     PagamentoComissao[]
   processos              Processo[]              @relation("ProcessoAdvogadoResponsavel")
+  processoVinculos       ProcessoResponsavel[]
   procuracoes            ProcuracaoAdvogado[]
   ProcessoParte          ProcessoParte[]
 
@@ -862,6 +865,7 @@ model Cliente {
   documentoAssinaturas DocumentoAssinatura[]
   eventos              Evento[]
   processos            Processo[]
+  processoVinculos     ProcessoCliente[]
   procuracoes          Procuracao[]
   tarefas              Tarefa[]              @relation("TarefaCliente")
   ProcessoParte        ProcessoParte[]
@@ -1075,6 +1079,7 @@ model Processo {
   titulo                String?
   descricao             String?
   status                ProcessoStatus                           @default(RASCUNHO)
+  arquivamentoTipo      ProcessoArquivamentoTipo?
   areaId                String?
   classeProcessual      String?
   orgaoJulgador         String?
@@ -1119,12 +1124,51 @@ model Processo {
   diligencias           Diligencia[]
   peticoes              Peticao[]
   contratoDocumentos    ContratoDocumento[]
+  responsaveis          ProcessoResponsavel[]
+  clientesRelacionados  ProcessoCliente[]
 
   @@unique([tenantId, numero])
   @@index([tenantId, status])
+  @@index([tenantId, status, arquivamentoTipo])
   @@index([tenantId, clienteId])
   @@index([tenantId, createdAt])
   @@index([tenantId, deletedAt])
+  @@schema("magiclawyer")
+}
+
+model ProcessoResponsavel {
+  id          String   @id @default(cuid())
+  tenantId    String
+  processoId  String
+  advogadoId  String
+  isPrincipal Boolean  @default(false)
+  ordem       Int      @default(0)
+  createdAt   DateTime @default(now())
+  advogado    Advogado @relation(fields: [advogadoId], references: [id], onDelete: Cascade)
+  processo    Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([processoId, advogadoId])
+  @@index([tenantId, processoId])
+  @@index([tenantId, advogadoId])
+  @@index([tenantId, processoId, isPrincipal])
+  @@schema("magiclawyer")
+}
+
+model ProcessoCliente {
+  id         String   @id @default(cuid())
+  tenantId   String
+  processoId String
+  clienteId  String
+  ordem      Int      @default(0)
+  createdAt  DateTime @default(now())
+  cliente    Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  processo   Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([processoId, clienteId])
+  @@index([tenantId, processoId])
+  @@index([tenantId, clienteId])
   @@schema("magiclawyer")
 }
 
@@ -3197,6 +3241,13 @@ enum ProcessoStatus {
   SUSPENSO
   ENCERRADO
   ARQUIVADO
+
+  @@schema("magiclawyer")
+}
+
+enum ProcessoArquivamentoTipo {
+  PROVISORIO
+  DEFINITIVO
 
   @@schema("magiclawyer")
 }

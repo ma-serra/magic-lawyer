@@ -150,7 +150,7 @@ function ChartTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="rounded-lg border border-white/10 bg-content1/95 p-3 shadow-xl backdrop-blur">
+    <div className="rounded-lg ml-admin-tooltip-surface p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
         {label}
       </p>
@@ -175,14 +175,14 @@ function DashboardSkeleton() {
         {Array.from({ length: 5 }).map((_, index) => (
           <div
             key={`metric-skeleton-${index}`}
-            className="h-28 animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]"
+            className="h-28 animate-pulse rounded-2xl ml-admin-surface-muted"
           />
         ))}
       </div>
       {Array.from({ length: 3 }).map((_, index) => (
         <div
           key={`panel-skeleton-${index}`}
-          className="h-80 animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]"
+          className="h-80 animate-pulse rounded-2xl ml-admin-surface-muted"
         />
       ))}
     </div>
@@ -503,7 +503,7 @@ export function AdminDashboardContent() {
         <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
                   Usuários online
                 </p>
@@ -511,7 +511,7 @@ export function AdminDashboardContent() {
                   {formatNumber(data.onlinePresence.totalUsersOnline)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
                   Tenants ativos agora
                 </p>
@@ -519,7 +519,7 @@ export function AdminDashboardContent() {
                   {formatNumber(data.onlinePresence.tenantsWithUsersOnline)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-default-500">
                   Sessões de suporte
                 </p>
@@ -529,7 +529,7 @@ export function AdminDashboardContent() {
               </div>
             </div>
 
-            <div className="relative min-h-[280px] overflow-hidden rounded-2xl border border-white/10 bg-background/20">
+            <div className="relative min-h-[280px] overflow-hidden rounded-2xl border border-default-200/80 bg-default-100/35 dark:border-white/10 dark:bg-background/20">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(34,197,94,0.16),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(14,165,233,0.16),transparent_45%)]" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:22px_22px]" />
               {data.onlinePresence.byLocation.length === 0 ? (
@@ -564,7 +564,7 @@ export function AdminDashboardContent() {
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <div className="rounded-2xl ml-admin-surface-subtle p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <MapPinned className="h-4 w-4 text-primary" />
                 Top localizações online
@@ -578,7 +578,7 @@ export function AdminDashboardContent() {
                   data.onlinePresence.byLocation.slice(0, 6).map((location) => (
                     <div
                       key={`location-${location.key}`}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                      className="flex items-center justify-between rounded-xl ml-admin-surface-subtle px-3 py-2"
                     >
                       <div>
                         <p className="text-xs font-semibold text-foreground">
@@ -597,7 +597,7 @@ export function AdminDashboardContent() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+            <div className="rounded-2xl ml-admin-surface-subtle p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Users className="h-4 w-4 text-success" />
                 Usuários conectados agora
@@ -611,7 +611,7 @@ export function AdminDashboardContent() {
                   data.onlinePresence.users.slice(0, 8).map((entry) => (
                     <div
                       key={`${entry.tenantId}-${entry.userId}-${entry.lastSeenAt}`}
-                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                      className="rounded-xl ml-admin-surface-subtle px-3 py-2"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -711,7 +711,7 @@ export function AdminDashboardContent() {
 
             <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
               <div className="space-y-3">
-                <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                <div className="rounded-2xl ml-admin-surface-subtle p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                     <Users className="h-4 w-4 text-primary" />
                     Quem mais acessou
@@ -725,7 +725,7 @@ export function AdminDashboardContent() {
                       securitySnapshot.topAccessUsers.slice(0, 5).map((entry) => (
                         <div
                           key={`${entry.tenantId || "global"}-${entry.actorId || entry.email || entry.name}`}
-                          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                          className="flex items-center justify-between rounded-xl ml-admin-surface-subtle px-3 py-2"
                         >
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-foreground">
@@ -745,7 +745,7 @@ export function AdminDashboardContent() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+                <div className="rounded-2xl ml-admin-surface-subtle p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                     <MapPinned className="h-4 w-4 text-success" />
                     Locais com mais atividade
@@ -759,7 +759,7 @@ export function AdminDashboardContent() {
                       securitySnapshot.topLocations.slice(0, 5).map((entry) => (
                         <div
                           key={entry.label}
-                          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                          className="flex items-center justify-between rounded-xl ml-admin-surface-subtle px-3 py-2"
                         >
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-foreground">
@@ -779,7 +779,7 @@ export function AdminDashboardContent() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+              <div className="rounded-2xl ml-admin-surface-subtle p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                   <Shield className="h-4 w-4 text-warning" />
                   Ultimos eventos de acesso
@@ -793,7 +793,7 @@ export function AdminDashboardContent() {
                     securitySnapshot.recentAccesses.slice(0, 8).map((entry) => (
                       <div
                         key={entry.id}
-                        className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                        className="rounded-xl ml-admin-surface-subtle px-3 py-2"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -846,7 +846,7 @@ export function AdminDashboardContent() {
           {analytics.focusCards.map((item) => (
             <div
               key={item.label}
-              className="rounded-2xl border border-white/10 bg-background/30 p-4"
+              className="rounded-2xl ml-admin-surface-subtle p-4"
             >
               <div className="mb-2 flex items-center gap-2">
                 <Chip color={item.tone} size="sm" variant="flat">
@@ -928,7 +928,7 @@ export function AdminDashboardContent() {
           </ResponsiveContainer>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="rounded-xl ml-admin-surface-subtle p-3">
             <p className="text-xs uppercase tracking-[0.14em] text-default-500">
               Crescimento de receita
             </p>
@@ -936,7 +936,7 @@ export function AdminDashboardContent() {
               {pctLabel(analytics.revenueMoM)}
             </p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="rounded-xl ml-admin-surface-subtle p-3">
             <p className="text-xs uppercase tracking-[0.14em] text-default-500">
               Crescimento de novos tenants
             </p>
@@ -944,7 +944,7 @@ export function AdminDashboardContent() {
               {pctLabel(analytics.tenantGrowthMoM)}
             </p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="rounded-xl ml-admin-surface-subtle p-3">
             <p className="text-xs uppercase tracking-[0.14em] text-default-500">
               Ticket médio por tenant ativo
             </p>
@@ -1040,7 +1040,7 @@ export function AdminDashboardContent() {
                 {analytics.tenantStatusChart.map((item) => (
                   <div
                     key={item.name}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                    className="flex items-center justify-between rounded-xl ml-admin-surface-subtle px-3 py-2"
                   >
                     <div className="flex items-center gap-2 text-sm text-foreground">
                       <span
@@ -1074,7 +1074,7 @@ export function AdminDashboardContent() {
               analytics.recommendations.map((item, idx) => (
                 <div
                   key={`${item.title}-${idx}`}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                  className="rounded-xl ml-admin-surface-subtle p-3"
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <Chip size="sm" color={item.tone} variant="flat">
@@ -1120,7 +1120,7 @@ export function AdminDashboardContent() {
               data.auditLog.map((entry) => (
                 <div
                   key={entry.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                  className="rounded-xl ml-admin-surface-subtle p-3"
                 >
                   <p className="text-xs text-default-500">
                     {new Date(entry.createdAt).toLocaleString("pt-BR")}

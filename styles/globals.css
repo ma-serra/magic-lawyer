@@ -155,6 +155,36 @@ body {
 }
 
 /* Efeito de onda para superfícies clicáveis (cards/listas) */
+@layer utilities {
+    .ml-admin-surface {
+        @apply border border-default-200/80 bg-content1/85 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20;
+    }
+
+    .ml-admin-surface-soft {
+        @apply border border-default-200/80 bg-default-100/45 dark:border-white/10 dark:bg-background/35;
+    }
+
+    .ml-admin-surface-muted {
+        @apply border border-default-200/80 bg-default-100/60 dark:border-white/10 dark:bg-white/[0.04];
+    }
+
+    .ml-admin-surface-subtle {
+        @apply border border-default-200/80 bg-default-100/35 dark:border-white/10 dark:bg-background/30;
+    }
+
+    .ml-admin-tooltip-surface {
+        @apply border border-default-200/80 bg-content1/95 shadow-xl shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-background/90 dark:shadow-black/30;
+    }
+
+    .ml-admin-divider {
+        @apply border-default-200/80 dark:border-white/10;
+    }
+
+    .ml-admin-text-muted {
+        @apply text-default-600 dark:text-default-300;
+    }
+}
+
 .ml-wave-surface {
     position: relative;
     isolation: isolate;

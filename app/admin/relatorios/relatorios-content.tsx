@@ -306,7 +306,7 @@ function ChartTooltip({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-content1/95 p-3 shadow-xl backdrop-blur">
+    <div className="rounded-xl ml-admin-tooltip-surface p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-default-500">
         {label}
       </p>
@@ -596,7 +596,7 @@ export function RelatoriosContent() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-2xl ml-admin-surface-muted p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-default-500">
                 Escopo
               </p>
@@ -604,7 +604,7 @@ export function RelatoriosContent() {
                 {data?.summary.scopeLabel ?? "Carregando..."}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-2xl ml-admin-surface-muted p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-default-500">
                 Catalogo
               </p>
@@ -617,7 +617,7 @@ export function RelatoriosContent() {
                 frentes
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-2xl ml-admin-surface-muted p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-default-500">
                 Watchlist
               </p>
@@ -834,7 +834,7 @@ export function RelatoriosContent() {
                             data.paymentMethodBreakdown.map((entry, index) => (
                               <div
                                 key={entry.id}
-                                className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3"
+                                className="flex items-center justify-between rounded-2xl ml-admin-surface-subtle px-4 py-3"
                               >
                                 <div className="flex items-center gap-3">
                                   <span
@@ -853,7 +853,7 @@ export function RelatoriosContent() {
                                     </p>
                                   </div>
                                 </div>
-                                <span className="text-sm font-semibold text-default-200">
+                                <span className="text-sm font-semibold text-default-700 dark:text-default-200">
                                   {numberFormatter.format(entry.value)}
                                 </span>
                               </div>
@@ -868,7 +868,7 @@ export function RelatoriosContent() {
                       description="Fila de atendimento e distribuicao do funil comercial."
                     >
                       <div className="grid gap-4 lg:grid-cols-2">
-                        <div className="h-52 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                        <div className="h-52 rounded-2xl ml-admin-surface-subtle p-3">
                           <ResponsiveContainer
                             height="100%"
                             minHeight={180}
@@ -890,7 +890,7 @@ export function RelatoriosContent() {
                           </ResponsiveContainer>
                         </div>
 
-                        <div className="h-52 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                        <div className="h-52 rounded-2xl ml-admin-surface-subtle p-3">
                           <ResponsiveContainer
                             height="100%"
                             minHeight={180}
@@ -936,7 +936,7 @@ export function RelatoriosContent() {
                           <PeopleEntityCardHeader>
                             <div className="flex w-full items-start justify-between gap-3">
                               <div className="flex items-center gap-3">
-                                <span className="rounded-2xl border border-white/10 bg-white/[0.06] p-2 text-primary">
+                                <span className="rounded-2xl border border-default-200/80 bg-default-100/70 p-2 text-primary dark:border-white/10 dark:bg-white/[0.06]">
                                   {getCategoryIcon(category.icon)}
                                 </span>
                                 <div>
@@ -952,8 +952,8 @@ export function RelatoriosContent() {
                             </div>
                           </PeopleEntityCardHeader>
                           <PeopleEntityCardBody className="space-y-3">
-                            <p className="text-sm text-default-300">{category.description}</p>
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                            <p className="text-sm text-default-600 dark:text-default-300">{category.description}</p>
+                            <div className="rounded-2xl ml-admin-surface-muted p-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-default-500">
                                 {category.primaryMetricLabel}
                               </p>
@@ -968,7 +968,7 @@ export function RelatoriosContent() {
                               {category.highlights.map((highlight) => (
                                 <div
                                   key={`${category.id}-${highlight}`}
-                                  className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-default-300"
+                                  className="rounded-xl ml-admin-surface-subtle px-3 py-2 text-xs text-default-600 dark:text-default-300"
                                 >
                                   {highlight}
                                 </div>
@@ -988,7 +988,7 @@ export function RelatoriosContent() {
                       {data.spotlightReports.map((report) => (
                         <div
                           key={report.id}
-                          className="rounded-2xl border border-white/10 bg-white/[0.02] p-4"
+                          className="rounded-2xl ml-admin-surface-subtle p-4"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -1014,7 +1014,7 @@ export function RelatoriosContent() {
                               </Chip>
                             ))}
                           </div>
-                          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                          <div className="mt-4 rounded-2xl ml-admin-surface-muted p-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-default-500">
                               {report.liveMetricLabel}
                             </p>
@@ -1100,7 +1100,7 @@ export function RelatoriosContent() {
                       />
                     </div>
 
-                    <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="mb-4 flex flex-col gap-3 rounded-2xl ml-admin-surface-subtle p-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-sm font-semibold text-foreground">
                           Exibindo {catalogRangeStart}-{catalogRangeEnd} de{" "}
@@ -1235,7 +1235,7 @@ export function RelatoriosContent() {
                         </Table>
 
                         {catalogTotalPages > 1 ? (
-                          <div className="flex flex-col gap-3 border-t border-white/10 pt-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex flex-col gap-3 border-t border-default-200/80 pt-4 dark:border-white/10 lg:flex-row lg:items-center lg:justify-between">
                             <p className="text-xs text-default-400">
                               Pagina {safeCatalogPage} de {catalogTotalPages} no catalogo mestre.
                             </p>
@@ -1270,7 +1270,7 @@ export function RelatoriosContent() {
                           data.topTenants.map((tenant) => (
                             <div
                               key={tenant.id}
-                              className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                              className="flex items-center justify-between rounded-2xl ml-admin-surface-subtle p-3"
                             >
                               <div>
                                 <p className="text-sm font-semibold text-foreground">
@@ -1354,7 +1354,7 @@ export function RelatoriosContent() {
                           data.latestAudit.map((entry) => (
                             <div
                               key={entry.id}
-                              className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                              className="rounded-2xl ml-admin-surface-subtle p-3"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -1389,7 +1389,7 @@ export function RelatoriosContent() {
                           data.latestSupport.map((ticket) => (
                             <div
                               key={ticket.id}
-                              className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                              className="rounded-2xl ml-admin-surface-subtle p-3"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>

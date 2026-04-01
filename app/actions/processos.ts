@@ -5,6 +5,7 @@ import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import logger from "@/lib/logger";
 import {
   Prisma,
+  ProcessoArquivamentoTipo,
   ProcessoStatus,
   ProcessoFase,
   ProcessoGrau,
@@ -26,6 +27,21 @@ import {
   publishProcessNotificationToLawyers,
 } from "@/app/lib/juridical/process-movement-sync";
 import { buildProcessoDiff } from "@/app/lib/processos/diff";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  buildProcessoClienteMembershipWhere,
+  decorateProcessoWithVinculos,
+  decorateProcessosWithVinculos,
+  ensureProcessoClientePartes,
+  getProcessoResponsibleUserIds,
+  normalizeProcessoLinkInput,
+  processoClienteResumoSelect,
+  processoClientesRelacionadosInclude,
+  processoResponsaveisRelacionadosInclude,
+  syncProcessoClientes,
+  syncProcessoResponsaveis,
+  uniqueOrderedProcessoRelationIds,
+} from "@/app/lib/processos/processo-vinculos";
 import { checkPermission } from "@/app/actions/equipe";
 import {
   getAccessibleAdvogadoIds,
@@ -95,6 +111,8 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
           },
         },
       },
+      ...processoClientesRelacionadosInclude,
+      ...processoResponsaveisRelacionadosInclude,
       juiz: {
         select: {
           id: true,
@@ -263,6 +281,7 @@ export interface Processo {
   titulo: string | null;
   descricao: string | null;
   status: ProcessoStatus;
+  arquivamentoTipo: ProcessoArquivamentoTipo | null;
   areaId: string | null;
   classeProcessual: string | null;
   orgaoJulgador: string | null;
@@ -274,7 +293,9 @@ export interface Processo {
   valorCausa: number | null;
   rito: string | null;
   clienteId: string;
+  clienteIds?: string[];
   advogadoResponsavelId: string | null;
+  advogadoResponsavelIds?: string[];
   juizId: string | null;
   tribunalId: string | null;
   tags: Prisma.JsonValue | null;
@@ -287,6 +308,25 @@ export interface Processo {
   updatedAt: Date;
   partes?: ProcessoParte[];
   prazos?: ProcessoPrazo[];
+  clientesVinculados?: Array<{
+    id: string;
+    nome: string;
+    email: string | null;
+    telefone: string | null;
+    tipoPessoa: string;
+  }>;
+  advogadosResponsaveis?: Array<{
+    id: string;
+    oabNumero: string | null;
+    oabUf: string | null;
+    usuario: {
+      id?: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      email: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
 }
 
 export interface ProcessoParte {
@@ -482,6 +522,97 @@ function getReadableProcessQueryErrorMessage(
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function orderByRequestedIds<T extends { id: string }>(ids: string[], items: T[]) {
+  const order = new Map(ids.map((id, index) => [id, index]));
+
+  return [...items].sort(
+    (a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+function haveSameIdMembership(a: string[], b: string[]) {
+  const normalize = (values: string[]) =>
+    uniqueOrderedProcessoRelationIds(values).sort().join("|");
+
+  return normalize(a) === normalize(b);
+}
+
+async function resolveClientesVinculadosValidos(
+  tenantId: string,
+  clienteIds: string[],
+) {
+  const normalizedIds = uniqueOrderedProcessoRelationIds(clienteIds);
+
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const clientes = await prisma.cliente.findMany({
+    where: {
+      tenantId,
+      id: {
+        in: normalizedIds,
+      },
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      nome: true,
+      email: true,
+      telefone: true,
+      celular: true,
+      documento: true,
+      tipoPessoa: true,
+    },
+  });
+
+  if (clientes.length !== normalizedIds.length) {
+    throw new Error("Um ou mais clientes informados não foram encontrados");
+  }
+
+  return orderByRequestedIds(normalizedIds, clientes);
+}
+
+async function resolveAdvogadosResponsaveisValidos(
+  tenantId: string,
+  advogadoIds: string[],
+) {
+  const normalizedIds = uniqueOrderedProcessoRelationIds(advogadoIds);
+
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const advogados = await prisma.advogado.findMany({
+    where: {
+      tenantId,
+      id: {
+        in: normalizedIds,
+      },
+    },
+    select: {
+      id: true,
+      oabNumero: true,
+      oabUf: true,
+      usuario: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatarUrl: true,
+        },
+      },
+    },
+  });
+
+  if (advogados.length !== normalizedIds.length) {
+    throw new Error("Um ou mais responsáveis informados não foram encontrados");
+  }
+
+  return orderByRequestedIds(normalizedIds, advogados);
+}
+
 async function buildProcessReadWhereClause(
   session: { user: any },
   processoId: string,
@@ -500,7 +631,7 @@ async function buildProcessReadWhereClause(
   };
 
   if (isCliente) {
-    whereClause.clienteId = clienteId;
+    whereClause.AND = [buildProcessoClienteMembershipWhere(clienteId)];
 
     return { whereClause, isCliente };
   }
@@ -508,11 +639,7 @@ async function buildProcessReadWhereClause(
   if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
     const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
     const orConditions: Prisma.ProcessoWhereInput[] = [
-      {
-        advogadoResponsavelId: {
-          in: accessibleAdvogados,
-        },
-      },
+      buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
       {
         procuracoesVinculadas: {
           some: {
@@ -538,25 +665,59 @@ async function buildProcessReadWhereClause(
         },
       },
       {
-        cliente: {
-          advogadoClientes: {
-            some: {
-              advogadoId: {
-                in: accessibleAdvogados,
+        OR: [
+          {
+            cliente: {
+              advogadoClientes: {
+                some: {
+                  advogadoId: {
+                    in: accessibleAdvogados,
+                  },
+                },
               },
             },
           },
-        },
+          {
+            clientesRelacionados: {
+              some: {
+                cliente: {
+                  advogadoClientes: {
+                    some: {
+                      advogadoId: {
+                        in: accessibleAdvogados,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
       },
     ];
 
     if (user.role === "ADVOGADO") {
       orConditions.push({
-        cliente: {
-          usuario: {
-            createdById: user.id,
+        OR: [
+          {
+            cliente: {
+              usuario: {
+                createdById: user.id,
+              },
+            },
           },
-        },
+          {
+            clientesRelacionados: {
+              some: {
+                cliente: {
+                  usuario: {
+                    createdById: user.id,
+                  },
+                },
+              },
+            },
+          },
+        ],
       });
     }
 
@@ -593,6 +754,7 @@ async function ensureProcessMutationAccess(
       advogadoResponsavelId: true,
       numero: true,
       status: true,
+      arquivamentoTipo: true,
       titulo: true,
       descricao: true,
       fase: true,
@@ -615,6 +777,18 @@ async function ensureProcessMutationAccess(
           nome: true,
         },
       },
+      clientesRelacionados: {
+        select: {
+          clienteId: true,
+          cliente: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+        },
+        orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
+      },
       advogadoResponsavel: {
         select: {
           id: true,
@@ -627,6 +801,25 @@ async function ensureProcessMutationAccess(
             },
           },
         },
+      },
+      responsaveis: {
+        select: {
+          advogadoId: true,
+          advogado: {
+            select: {
+              id: true,
+              usuario: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ isPrincipal: "desc" }, { ordem: "asc" }, { createdAt: "asc" }],
       },
       area: {
         select: {
@@ -667,12 +860,20 @@ async function ensureProcessMutationAccess(
       throw new Error("Advogado não encontrado");
     }
 
-    const isResponsavel = processo.advogadoResponsavelId === advogadoId;
+    const clienteIdsDoProcesso = uniqueOrderedProcessoRelationIds([
+      processo.clienteId,
+      ...processo.clientesRelacionados.map((item) => item.clienteId),
+    ]);
+    const isResponsavel =
+      processo.advogadoResponsavelId === advogadoId ||
+      processo.responsaveis.some((item) => item.advogadoId === advogadoId);
 
     const possuiVinculoCliente = await prisma.advogadoCliente.findFirst({
       where: {
         advogadoId,
-        clienteId: processo.clienteId,
+        clienteId: {
+          in: clienteIdsDoProcesso,
+        },
         tenantId: user.tenantId,
       },
       select: { id: true },
@@ -899,6 +1100,17 @@ function parseNullableDateInput(
   return { ok: true, date: parsed.date };
 }
 
+function normalizeArquivamentoTipo(
+  status: ProcessoStatus | null | undefined,
+  arquivamentoTipo: ProcessoArquivamentoTipo | null | undefined,
+): ProcessoArquivamentoTipo | null {
+  if (status !== ProcessoStatus.ARQUIVADO) {
+    return null;
+  }
+
+  return arquivamentoTipo ?? null;
+}
+
 function normalizeAuditDate(value?: Date | string | null): string | null {
   if (!value) {
     return null;
@@ -1031,17 +1243,13 @@ export async function getAllProcessos(): Promise<{
     const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
     if (clienteId) {
-      whereClause.clienteId = clienteId;
+      whereClause.AND = [buildProcessoClienteMembershipWhere(clienteId)];
     }
     // ADMIN / SUPER_ADMIN: já acessam toda base
     // Funcionário sem vínculos: acesso total (não aplicar filtros)
     else if (!isAdmin && accessibleAdvogados.length > 0) {
       const orConditions: Prisma.ProcessoWhereInput[] = [
-        {
-          advogadoResponsavelId: {
-            in: accessibleAdvogados,
-          },
-        },
+        buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
         {
           procuracoesVinculadas: {
             some: {
@@ -1067,25 +1275,59 @@ export async function getAllProcessos(): Promise<{
           },
         },
         {
-          cliente: {
-            advogadoClientes: {
-              some: {
-                advogadoId: {
-                  in: accessibleAdvogados,
+          OR: [
+            {
+              cliente: {
+                advogadoClientes: {
+                  some: {
+                    advogadoId: {
+                      in: accessibleAdvogados,
+                    },
+                  },
                 },
               },
             },
-          },
+            {
+              clientesRelacionados: {
+                some: {
+                  cliente: {
+                    advogadoClientes: {
+                      some: {
+                        advogadoId: {
+                          in: accessibleAdvogados,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       ];
 
       if (user.role === "ADVOGADO") {
         orConditions.push({
-          cliente: {
-            usuario: {
-              createdById: user.id,
+          OR: [
+            {
+              cliente: {
+                usuario: {
+                  createdById: user.id,
+                },
+              },
             },
-          },
+            {
+              clientesRelacionados: {
+                some: {
+                  cliente: {
+                    usuario: {
+                      createdById: user.id,
+                    },
+                  },
+                },
+              },
+            },
+          ],
         });
       }
 
@@ -1125,6 +1367,8 @@ export async function getAllProcessos(): Promise<{
             },
           },
         },
+        ...processoClientesRelacionadosInclude,
+        ...processoResponsaveisRelacionadosInclude,
         partes: {
           select: {
             id: true,
@@ -1227,9 +1471,8 @@ export async function getAllProcessos(): Promise<{
       }),
     );
 
-    return {
-      success: true,
-      processos: serialized.map((processo: Processo) => ({
+    const processosDecorated = decorateProcessosWithVinculos(serialized).map(
+      (processo) => ({
         ...processo,
         origemSincronizacaoExterna:
           hasExternalSyncTag(processo.tags) ||
@@ -1239,7 +1482,12 @@ export async function getAllProcessos(): Promise<{
           syncedProcessNumbers.has(
             normalizeProcessNumberForMatch(processo.numeroCnj),
           ),
-      })),
+      }),
+    ) as unknown as Processo[];
+
+    return {
+      success: true,
+      processos: processosDecorated,
     };
   } catch (error) {
     logger.error("Erro ao buscar processos:", error);
@@ -1282,7 +1530,7 @@ export async function getProcessosDoClienteLogado(): Promise<{
     const processos = await prisma.processo.findMany({
       where: {
         tenantId: user.tenantId,
-        clienteId: clienteId,
+        AND: [buildProcessoClienteMembershipWhere(clienteId)],
         deletedAt: null,
       },
       include: {
@@ -1306,6 +1554,8 @@ export async function getProcessosDoClienteLogado(): Promise<{
             },
           },
         },
+        ...processoClientesRelacionadosInclude,
+        ...processoResponsaveisRelacionadosInclude,
         partes: {
           select: {
             id: true,
@@ -1380,7 +1630,7 @@ export async function getProcessosDoClienteLogado(): Promise<{
 
     return {
       success: true,
-      processos: serialized,
+      processos: decorateProcessosWithVinculos(serialized),
     };
   } catch (error) {
     logger.error("Erro ao buscar processos do cliente:", error);
@@ -1447,7 +1697,7 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
     const processos = await prisma.processo.findMany({
       where: {
         tenantId: user.tenantId,
-        clienteId: clienteId,
+        AND: [buildProcessoClienteMembershipWhere(clienteId)],
         deletedAt: null,
       },
       include: {
@@ -1472,6 +1722,8 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
             },
           },
         },
+        ...processoClientesRelacionadosInclude,
+        ...processoResponsaveisRelacionadosInclude,
         partes: {
           select: {
             id: true,
@@ -1544,7 +1796,7 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
 
     return {
       success: true,
-      processos: serialized,
+      processos: decorateProcessosWithVinculos(serialized),
     };
   } catch (error) {
     logger.error("Erro ao buscar processos do cliente:", error);
@@ -1587,7 +1839,6 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
       session,
       processoId,
     );
-
     // Se for cliente, só pode ver seus próprios processos
 
     // Se for advogado (não admin), verificar acesso
@@ -1695,10 +1946,11 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
         return value;
       }),
     );
+    const serializedDecorated = decorateProcessoWithVinculos(serialized);
 
     return {
       success: true,
-      processo: serialized,
+      processo: serializedDecorated,
       isCliente,
     };
   } catch (error) {
@@ -2254,6 +2506,7 @@ export interface ProcessoCreateInput {
   titulo?: string;
   descricao?: string;
   status?: ProcessoStatus;
+  arquivamentoTipo?: ProcessoArquivamentoTipo | null;
   fase?: ProcessoFase;
   grau?: ProcessoGrau;
   areaId?: string;
@@ -2266,8 +2519,10 @@ export interface ProcessoCreateInput {
   segredoJustica?: boolean;
   valorCausa?: number;
   rito?: string;
-  clienteId: string;
+  clienteId?: string;
+  clienteIds?: string[];
   advogadoResponsavelId?: string;
+  advogadoResponsavelIds?: string[];
   juizId?: string;
   tribunalId?: string;
   numeroInterno?: string;
@@ -2327,6 +2582,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
 
     // Verificar permissão para criar processos
     const podeCriar = await checkPermission("processos", "criar");
+    let normalizedLinks = normalizeProcessoLinkInput(data);
 
     if (!podeCriar) {
       return {
@@ -2336,7 +2592,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
     }
 
     // Validar campos obrigatórios
-    if (!data.numero || !data.clienteId || !data.juizId) {
+    if (!data.numero || normalizedLinks.clienteIds.length === 0 || !data.juizId) {
       return {
         success: false,
         error:
@@ -2347,7 +2603,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
     // Validar acesso ao cliente
     const cliente = await prisma.cliente.findFirst({
       where: {
-        id: data.clienteId,
+        id: normalizedLinks.clienteId!,
         tenantId: user.tenantId,
         deletedAt: null,
       },
@@ -2364,6 +2620,8 @@ export async function createProcesso(data: ProcessoCreateInput) {
     if (!cliente) {
       return { success: false, error: "Cliente não encontrado" };
     }
+
+    await resolveClientesVinculadosValidos(user.tenantId, normalizedLinks.clienteIds);
 
     const juiz = await prisma.juiz.findFirst({
       where: {
@@ -2418,6 +2676,14 @@ export async function createProcesso(data: ProcessoCreateInput) {
         return { success: false, error: "Advogado não encontrado" };
       }
 
+      if (normalizedLinks.advogadoResponsavelIds.length === 0) {
+        normalizedLinks = normalizeProcessoLinkInput({
+          ...data,
+          clienteIds: normalizedLinks.clienteIds,
+          advogadoResponsavelIds: [advogadoId],
+        });
+      }
+
       const vinculo = await prisma.advogadoCliente.findFirst({
         where: {
           advogadoId,
@@ -2431,12 +2697,38 @@ export async function createProcesso(data: ProcessoCreateInput) {
       }
 
       // Se não informou advogado responsável, usar o próprio
+      const vinculosSelecionados = await prisma.advogadoCliente.findMany({
+        where: {
+          advogadoId,
+          clienteId: {
+            in: normalizedLinks.clienteIds,
+          },
+          tenantId: user.tenantId,
+        },
+        select: {
+          clienteId: true,
+        },
+      });
+
+      if (vinculosSelecionados.length !== normalizedLinks.clienteIds.length) {
+        return {
+          success: false,
+          error: "VocÃª nÃ£o tem acesso a um ou mais clientes selecionados",
+        };
+      }
+
       if (!data.advogadoResponsavelId) {
         data.advogadoResponsavelId = advogadoId;
       }
     }
 
     // Verificar se número do processo já existe
+    const advogadosResponsaveisSelecionados =
+      await resolveAdvogadosResponsaveisValidos(
+        user.tenantId,
+        normalizedLinks.advogadoResponsavelIds,
+      );
+
     const processoExistente = await prisma.processo.findFirst({
       where: {
         numero: data.numero,
@@ -2448,6 +2740,11 @@ export async function createProcesso(data: ProcessoCreateInput) {
       return { success: false, error: "Já existe um processo com este número" };
     }
 
+    const normalizedStatus = data.status || ProcessoStatus.RASCUNHO;
+    const normalizedArquivamentoTipo = normalizeArquivamentoTipo(
+      normalizedStatus,
+      data.arquivamentoTipo,
+    );
     const numeroCnj = data.numeroCnj || data.numero;
     const dataDistribuicao = data.dataDistribuicao
       ? new Date(data.dataDistribuicao)
@@ -2464,7 +2761,8 @@ export async function createProcesso(data: ProcessoCreateInput) {
           numeroCnj,
           titulo: data.titulo,
           descricao: data.descricao,
-          status: data.status || ProcessoStatus.RASCUNHO,
+          status: normalizedStatus,
+          arquivamentoTipo: normalizedArquivamentoTipo,
           fase: data.fase || null,
           grau: data.grau || null,
           areaId: data.areaId,
@@ -2477,8 +2775,8 @@ export async function createProcesso(data: ProcessoCreateInput) {
           segredoJustica: data.segredoJustica || false,
           valorCausa: data.valorCausa,
           rito: data.rito,
-          clienteId: data.clienteId,
-          advogadoResponsavelId: data.advogadoResponsavelId,
+          clienteId: normalizedLinks.clienteId!,
+          advogadoResponsavelId: normalizedLinks.advogadoResponsavelId,
           juizId: data.juizId,
           tribunalId: data.tribunalId,
           numeroInterno: data.numeroInterno,
@@ -2493,23 +2791,28 @@ export async function createProcesso(data: ProcessoCreateInput) {
               usuario: true,
             },
           },
+          ...processoClientesRelacionadosInclude,
+          ...processoResponsaveisRelacionadosInclude,
           juiz: true,
           tribunal: true,
         },
       });
 
-      await tx.processoParte.create({
-        data: {
-          tenantId: user.tenantId,
-          processoId: criado.id,
-          tipoPolo: ProcessoPolo.AUTOR,
-          nome: cliente.nome,
-          documento: cliente.documento || null,
-          email: cliente.email || null,
-          telefone: cliente.telefone || cliente.celular || null,
-          clienteId: cliente.id,
-          observacoes: "Parte principal (cliente)",
-        },
+      await syncProcessoClientes(tx, {
+        tenantId: user.tenantId,
+        processoId: criado.id,
+        clienteIds: normalizedLinks.clienteIds,
+      });
+      await syncProcessoResponsaveis(tx, {
+        tenantId: user.tenantId,
+        processoId: criado.id,
+        advogadoIds: normalizedLinks.advogadoResponsavelIds,
+        advogadoPrincipalId: normalizedLinks.advogadoResponsavelId,
+      });
+      await ensureProcessoClientePartes(tx, {
+        tenantId: user.tenantId,
+        processoId: criado.id,
+        clienteIds: normalizedLinks.clienteIds,
       });
 
       return criado;
@@ -2537,6 +2840,8 @@ export async function createProcesso(data: ProcessoCreateInput) {
     );
 
     // Notificação: processo criado (responsável ou usuário atual)
+    const serializedDecorated = decorateProcessoWithVinculos(serialized);
+
     await ensureJusbrasilProcessMonitorBestEffort({
       tenantId: user.tenantId,
       processoId: processo.id,
@@ -2557,6 +2862,23 @@ export async function createProcesso(data: ProcessoCreateInput) {
         clienteNome: processo.cliente?.nome,
         advogadoNome: (processo.advogadoResponsavel?.usuario as any)?.firstName,
       });
+
+      const additionalResponsibleUserIds = uniqueOrderedProcessoRelationIds(
+        advogadosResponsaveisSelecionados
+          .map((advogado) => advogado.usuario?.id)
+          .filter((userId) => userId && userId !== responsavelUserId),
+      );
+
+      for (const userId of additionalResponsibleUserIds) {
+        await ProcessoNotificationIntegration.notifyProcessoCreated({
+          processoId: processo.id,
+          numero: processo.numero,
+          tenantId: user.tenantId,
+          userId,
+          clienteNome: processo.cliente?.nome,
+          advogadoNome: (processo.advogadoResponsavel?.usuario as any)?.firstName,
+        });
+      }
     } catch (e) {
       logger.warn("Falha ao emitir notificação de processo criado", e);
     }
@@ -2570,7 +2892,14 @@ export async function createProcesso(data: ProcessoCreateInput) {
         processoId: processo.id,
         numero: processo.numero,
         clienteId: processo.clienteId,
+        clienteIds:
+          serializedDecorated.clientesVinculados?.map(
+            (item: { id: string }) => item.id,
+          ) ?? [
+            processo.clienteId,
+          ],
         status: processo.status,
+        arquivamentoTipo: processo.arquivamentoTipo ?? null,
         titulo: processo.titulo ?? null,
         fase: processo.fase ?? null,
         grau: processo.grau ?? null,
@@ -2578,6 +2907,10 @@ export async function createProcesso(data: ProcessoCreateInput) {
         tribunalId: processo.tribunalId ?? null,
         juizId: processo.juizId ?? null,
         advogadoResponsavelId: processo.advogadoResponsavelId ?? null,
+        advogadoResponsavelIds:
+          serializedDecorated.advogadosResponsaveis?.map(
+            (item: { id: string }) => item.id,
+          ) ?? [],
         prazoPrincipal: processo.prazoPrincipal ?? null,
         createdAt: processo.createdAt,
         criadoPor: actorName,
@@ -2600,7 +2933,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
 
     return {
       success: true,
-      processo: serialized,
+      processo: serializedDecorated,
     };
   } catch (error) {
     logger.error("Erro ao criar processo:", error);
@@ -2650,7 +2983,43 @@ export async function updateProcesso(
     }
 
     // Validar mudança de cliente para perfis restritos
-    if (data.clienteId && data.clienteId !== processo.clienteId) {
+    const currentClienteIds = uniqueOrderedProcessoRelationIds([
+      processo.clienteId,
+      ...processo.clientesRelacionados.map((item) => item.clienteId),
+    ]);
+    const currentAdvogadoIds = uniqueOrderedProcessoRelationIds([
+      processo.advogadoResponsavelId,
+      ...processo.responsaveis.map((item) => item.advogadoId),
+    ]);
+    let normalizedLinks = normalizeProcessoLinkInput(
+      {
+        ...data,
+        clienteIds:
+          data.clienteIds ??
+          (data.clienteId !== undefined ? [data.clienteId] : currentClienteIds),
+        advogadoResponsavelIds:
+          data.advogadoResponsavelIds ??
+          (data.advogadoResponsavelId !== undefined
+            ? [data.advogadoResponsavelId]
+            : currentAdvogadoIds),
+      },
+      {
+        fallbackClienteId: processo.clienteId,
+        fallbackAdvogadoResponsavelId: processo.advogadoResponsavelId,
+      },
+    );
+
+    if (normalizedLinks.clienteIds.length === 0) {
+      return {
+        success: false,
+        error: "Selecione ao menos um cliente para o processo",
+      };
+    }
+
+    if (
+      (data.clienteId !== undefined || data.clienteIds !== undefined) &&
+      !haveSameIdMembership(normalizedLinks.clienteIds, currentClienteIds)
+    ) {
       if (user.role === "ADVOGADO") {
         return {
           success: false,
@@ -2677,6 +3046,12 @@ export async function updateProcesso(
       }
     }
 
+    await resolveClientesVinculadosValidos(tenantId, normalizedLinks.clienteIds);
+    await resolveAdvogadosResponsaveisValidos(
+      tenantId,
+      normalizedLinks.advogadoResponsavelIds,
+    );
+
     let novoCliente: {
       id: string;
       nome: string;
@@ -2686,10 +3061,14 @@ export async function updateProcesso(
       documento: string | null;
     } | null = null;
 
-    if (data.clienteId && data.clienteId !== processo.clienteId) {
+    if (
+      !haveSameIdMembership(normalizedLinks.clienteIds, currentClienteIds) &&
+      normalizedLinks.clienteId &&
+      normalizedLinks.clienteId !== processo.clienteId
+    ) {
       const cliente = await prisma.cliente.findFirst({
         where: {
-          id: data.clienteId,
+          id: normalizedLinks.clienteId,
           tenantId,
           deletedAt: null,
         },
@@ -2710,10 +3089,10 @@ export async function updateProcesso(
       novoCliente = cliente;
     }
 
-    if (data.advogadoResponsavelId) {
+    if (normalizedLinks.advogadoResponsavelId) {
       const advogado = await prisma.advogado.findFirst({
         where: {
-          id: data.advogadoResponsavelId,
+          id: normalizedLinks.advogadoResponsavelId,
           tenantId,
         },
         select: { id: true },
@@ -2771,6 +3150,16 @@ export async function updateProcesso(
       }
     }
 
+    const effectiveStatus = data.status ?? processo.status;
+    const effectiveArquivamentoTipo =
+      data.arquivamentoTipo !== undefined
+        ? data.arquivamentoTipo
+        : processo.arquivamentoTipo;
+    const normalizedArquivamentoTipo = normalizeArquivamentoTipo(
+      effectiveStatus,
+      effectiveArquivamentoTipo,
+    );
+
     const updatePayload: Prisma.ProcessoUncheckedUpdateInput = {};
 
     if (data.numero !== undefined) updatePayload.numero = data.numero;
@@ -2780,6 +3169,9 @@ export async function updateProcesso(
     if (data.descricao !== undefined)
       updatePayload.descricao = data.descricao || null;
     if (data.status !== undefined) updatePayload.status = data.status;
+    if (data.status !== undefined || data.arquivamentoTipo !== undefined) {
+      updatePayload.arquivamentoTipo = normalizedArquivamentoTipo;
+    }
     if (data.fase !== undefined) updatePayload.fase = data.fase;
     if (data.grau !== undefined) updatePayload.grau = data.grau;
     if (data.areaId !== undefined) updatePayload.areaId = data.areaId || null;
@@ -2802,9 +3194,14 @@ export async function updateProcesso(
       updatePayload.valorCausa =
         data.valorCausa === null ? null : data.valorCausa;
     if (data.rito !== undefined) updatePayload.rito = data.rito || null;
-    if (data.clienteId !== undefined) updatePayload.clienteId = data.clienteId;
-    if (data.advogadoResponsavelId !== undefined)
-      updatePayload.advogadoResponsavelId = data.advogadoResponsavelId || null;
+    if (data.clienteId !== undefined || data.clienteIds !== undefined)
+      updatePayload.clienteId = normalizedLinks.clienteId!;
+    if (
+      data.advogadoResponsavelId !== undefined ||
+      data.advogadoResponsavelIds !== undefined
+    )
+      updatePayload.advogadoResponsavelId =
+        normalizedLinks.advogadoResponsavelId || null;
     if (data.juizId !== undefined) updatePayload.juizId = data.juizId || null;
     if (data.tribunalId !== undefined)
       updatePayload.tribunalId = data.tribunalId || null;
@@ -2837,9 +3234,28 @@ export async function updateProcesso(
               },
             },
           },
+          ...processoClientesRelacionadosInclude,
+          ...processoResponsaveisRelacionadosInclude,
           juiz: true,
           tribunal: true,
         },
+      });
+
+      await syncProcessoClientes(tx, {
+        tenantId,
+        processoId,
+        clienteIds: normalizedLinks.clienteIds,
+      });
+      await syncProcessoResponsaveis(tx, {
+        tenantId,
+        processoId,
+        advogadoIds: normalizedLinks.advogadoResponsavelIds,
+        advogadoPrincipalId: normalizedLinks.advogadoResponsavelId,
+      });
+      await ensureProcessoClientePartes(tx, {
+        tenantId,
+        processoId,
+        clienteIds: normalizedLinks.clienteIds,
       });
 
       if (novoCliente) {
@@ -2875,7 +3291,10 @@ export async function updateProcesso(
       return processoAtualizado;
     });
 
-    const diff = buildProcessoDiff(processo as any, atualizado as any);
+    const diff = buildProcessoDiff(
+      decorateProcessoWithVinculos(processo as any),
+      decorateProcessoWithVinculos(atualizado as any),
+    );
 
     const converted = convertAllDecimalFields(
       atualizado,
@@ -2895,6 +3314,7 @@ export async function updateProcesso(
         return value;
       }),
     );
+    const serializedDecorated = decorateProcessoWithVinculos(serialized);
 
     // Notificações, diff estruturado e auditoria da alteração
     await ensureJusbrasilProcessMonitorBestEffort({
@@ -3016,7 +3436,7 @@ export async function updateProcesso(
 
     return {
       success: true,
-      processo: serialized,
+      processo: serializedDecorated,
     };
   } catch (error) {
     logger.error("Erro ao atualizar processo:", error);

@@ -5,6 +5,10 @@ import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  buildProcessoClienteMembershipWhere,
+} from "@/app/lib/processos/processo-vinculos";
 import { Prisma, ProcessoPrazoStatus, UserRole } from "@/generated/prisma";
 
 type PrazoWorkspaceHorizon =
@@ -142,17 +146,15 @@ async function buildAccessibleProcessWhere(session: { user: any }) {
   };
 
   if (clienteId) {
-    whereClause.clienteId = clienteId;
-    return whereClause;
+    return {
+      ...whereClause,
+      ...buildProcessoClienteMembershipWhere(clienteId),
+    };
   }
 
   if (!isAdmin && accessibleAdvogados.length > 0) {
     const orConditions: Prisma.ProcessoWhereInput[] = [
-      {
-        advogadoResponsavelId: {
-          in: accessibleAdvogados,
-        },
-      },
+      buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
       {
         procuracoesVinculadas: {
           some: {

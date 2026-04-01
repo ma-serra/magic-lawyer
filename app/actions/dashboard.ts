@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
 import { getTenantBrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage-service";
+import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 import {
   Prisma,
   ContratoParcelaStatus,
@@ -1006,7 +1007,7 @@ async function buildAdvogadoDashboard(
       where: {
         tenantId,
         deletedAt: null,
-        advogadoResponsavelId: { in: advogadoIds },
+        ...buildProcessoAdvogadoMembershipWhere(advogadoIds),
         status: { in: [ProcessoStatus.EM_ANDAMENTO, ProcessoStatus.SUSPENSO] },
       },
     }),
@@ -1014,7 +1015,7 @@ async function buildAdvogadoDashboard(
       where: {
         tenantId,
         deletedAt: null,
-        advogadoResponsavelId: { in: advogadoIds },
+        ...buildProcessoAdvogadoMembershipWhere(advogadoIds),
       },
     }),
     prisma.advogadoCliente.count({
@@ -1223,7 +1224,7 @@ async function buildAdvogadoDashboard(
         where: {
           tenantId,
           deletedAt: null,
-          advogadoResponsavelId: { in: advogadoIds },
+          ...buildProcessoAdvogadoMembershipWhere(advogadoIds),
           createdAt: {
             gte: start,
             lt: end,
@@ -1833,11 +1834,7 @@ async function buildSecretariaDashboard(
     whereProcessos = {
       ...whereProcessos,
       OR: [
-        {
-          advogadoResponsavelId: {
-            in: accessibleAdvogados,
-          },
-        },
+        buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
         {
           procuracoesVinculadas: {
             some: {

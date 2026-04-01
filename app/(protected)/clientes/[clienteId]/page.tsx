@@ -39,7 +39,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
 
 import {
@@ -60,6 +60,7 @@ import {
 import { DateUtils } from "@/app/lib/date-utils";
 import { Modal } from "@/components/ui/modal";
 import { anexarDocumentoCliente } from "@/app/actions/clientes";
+import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 
 const TAB_PAGE_SIZES = {
   processos: 6,
@@ -70,6 +71,22 @@ const TAB_PAGE_SIZES = {
   procuracoes: 6,
   documentos: 6,
 } as const;
+
+const PROCESSOS_STATUS_FILTER_OPTIONS = [
+  { key: "TODOS", label: "Todos" },
+  { key: "EM_ANDAMENTO", label: "Em andamento" },
+  { key: "SUSPENSO", label: "Suspenso" },
+  { key: "ENCERRADO", label: "Encerrado" },
+  { key: "ARQUIVADO_PROVISORIO", label: "Arquivado provisoriamente" },
+  { key: "ARQUIVADO_DEFINITIVO", label: "Arquivado definitivamente" },
+  {
+    key: "ARQUIVADO_SEM_CLASSIFICACAO",
+    label: "Arquivado sem classificacao",
+  },
+] as const;
+
+type ProcessoStatusFilterKey =
+  (typeof PROCESSOS_STATUS_FILTER_OPTIONS)[number]["key"];
 
 function getTotalPages(totalItems: number, pageSize: number) {
   return Math.max(1, Math.ceil(totalItems / pageSize));
@@ -166,6 +183,9 @@ export default function ClienteDetalhesPage() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [processosPage, setProcessosPage] = useState(1);
+  const [processosSearch, setProcessosSearch] = useState("");
+  const [processosStatusFilter, setProcessosStatusFilter] =
+    useState<ProcessoStatusFilterKey>("TODOS");
   const [contratosPage, setContratosPage] = useState(1);
   const [tarefasPage, setTarefasPage] = useState(1);
   const [eventosPage, setEventosPage] = useState(1);
@@ -183,6 +203,8 @@ export default function ClienteDetalhesPage() {
 
   useEffect(() => {
     setProcessosPage(1);
+    setProcessosSearch("");
+    setProcessosStatusFilter("TODOS");
     setContratosPage(1);
     setTarefasPage(1);
     setEventosPage(1);
@@ -210,9 +232,121 @@ export default function ClienteDetalhesPage() {
     (a, b) =>
       new Date(b.dataInicio).getTime() - new Date(a.dataInicio).getTime(),
   );
+  const processStatusFilterKeys = useMemo(
+    () =>
+      new Set(PROCESSOS_STATUS_FILTER_OPTIONS.map((option) => option.key)),
+    [],
+  );
+  const selectedProcessosStatusKeys = processStatusFilterKeys.has(
+    processosStatusFilter,
+  )
+    ? [processosStatusFilter]
+    : ["TODOS"];
+
+  const matchesProcessoStatusFilter = (
+    processo: (typeof processosItems)[number],
+    filter: ProcessoStatusFilterKey,
+  ) => {
+    if (filter === "TODOS") {
+      return true;
+    }
+
+    if (filter === "ARQUIVADO_PROVISORIO") {
+      return (
+        processo.status === ProcessoStatus.ARQUIVADO &&
+        processo.arquivamentoTipo === "PROVISORIO"
+      );
+    }
+
+    if (filter === "ARQUIVADO_DEFINITIVO") {
+      return (
+        processo.status === ProcessoStatus.ARQUIVADO &&
+        processo.arquivamentoTipo === "DEFINITIVO"
+      );
+    }
+
+    if (filter === "ARQUIVADO_SEM_CLASSIFICACAO") {
+      return (
+        processo.status === ProcessoStatus.ARQUIVADO &&
+        !processo.arquivamentoTipo
+      );
+    }
+
+    return processo.status === filter;
+  };
+
+  const getProcessoResponsaveis = (processo: (typeof processosItems)[number]) =>
+    Array.isArray((processo as any).advogadosResponsaveis) &&
+    (processo as any).advogadosResponsaveis.length > 0
+      ? (processo as any).advogadosResponsaveis
+      : processo.advogadoResponsavel
+        ? [processo.advogadoResponsavel]
+        : [];
+
+  const formatAdvogadoResponsavelNome = (advogado: any) =>
+    [advogado?.usuario?.firstName, advogado?.usuario?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  const formatResponsaveisResumo = (processo: (typeof processosItems)[number]) => {
+    const nomes = getProcessoResponsaveis(processo)
+      .map((advogado: any) => formatAdvogadoResponsavelNome(advogado))
+      .filter(Boolean);
+
+    if (nomes.length === 0) {
+      return "Nao definido";
+    }
+
+    const principais = nomes.slice(0, 2).join(", ");
+
+    return nomes.length > 2
+      ? `${principais} +${nomes.length - 2}`
+      : principais;
+  };
+
+  const processosFiltrados = useMemo(() => {
+    const normalizedSearch = processosSearch.trim().toLowerCase();
+
+    return processosItems.filter((processo) => {
+      if (!matchesProcessoStatusFilter(processo, processosStatusFilter)) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const advogadoNome = getProcessoResponsaveis(processo)
+        .map((advogado: any) => formatAdvogadoResponsavelNome(advogado))
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const haystack = [
+        processo.numero,
+        processo.numeroCnj,
+        processo.titulo,
+        processo.area?.nome,
+        advogadoNome,
+        getProcessoStatusLabel(
+          processo.status as ProcessoStatus,
+          processo.arquivamentoTipo as
+            | "PROVISORIO"
+            | "DEFINITIVO"
+            | null
+            | undefined,
+        ),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [processosItems, processosSearch, processosStatusFilter]);
 
   const processosTotalPages = getTotalPages(
-    processosItems.length,
+    processosFiltrados.length,
     TAB_PAGE_SIZES.processos,
   );
   const contratosTotalPages = getTotalPages(
@@ -241,7 +375,7 @@ export default function ClienteDetalhesPage() {
   );
 
   const processosPaginados = paginateItems(
-    processosItems,
+    processosFiltrados,
     processosPage,
     TAB_PAGE_SIZES.processos,
   );
@@ -279,6 +413,10 @@ export default function ClienteDetalhesPage() {
   useEffect(() => {
     setProcessosPage((prev) => Math.min(prev, processosTotalPages));
   }, [processosTotalPages]);
+
+  useEffect(() => {
+    setProcessosPage(1);
+  }, [processosSearch, processosStatusFilter]);
 
   useEffect(() => {
     setContratosPage((prev) => Math.min(prev, contratosTotalPages));
@@ -418,22 +556,10 @@ export default function ClienteDetalhesPage() {
     }
   };
 
-  const getStatusLabel = (status: ProcessoStatus) => {
-    switch (status) {
-      case ProcessoStatus.EM_ANDAMENTO:
-        return "Em Andamento";
-      case ProcessoStatus.ENCERRADO:
-        return "Encerrado";
-      case ProcessoStatus.ARQUIVADO:
-        return "Arquivado";
-      case ProcessoStatus.SUSPENSO:
-        return "Suspenso";
-      case ProcessoStatus.RASCUNHO:
-        return "Rascunho";
-      default:
-        return status;
-    }
-  };
+  const getStatusLabel = (
+    status: ProcessoStatus,
+    arquivamentoTipo?: "PROVISORIO" | "DEFINITIVO" | null,
+  ) => getProcessoStatusLabel(status, arquivamentoTipo);
 
   const getStatusIcon = (status: ProcessoStatus) => {
     switch (status) {
@@ -1062,6 +1188,68 @@ export default function ClienteDetalhesPage() {
               </Card>
             ) : (
               <>
+                <div className="mb-4 rounded-xl border border-default-200 bg-default-50/70 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex flex-1 flex-col gap-3 sm:flex-row">
+                      <Input
+                        isClearable
+                        className="flex-1"
+                        label="Buscar processos"
+                        placeholder="Numero, CNJ, titulo, area ou advogado"
+                        value={processosSearch}
+                        onValueChange={setProcessosSearch}
+                        onClear={() => setProcessosSearch("")}
+                      />
+                      <Select
+                        className="sm:max-w-xs"
+                        label="Status"
+                        placeholder="Filtrar por status"
+                        selectedKeys={selectedProcessosStatusKeys}
+                        onSelectionChange={(keys) => {
+                          const nextKey =
+                            (Array.from(keys)[0] as ProcessoStatusFilterKey) ||
+                            "TODOS";
+
+                          setProcessosStatusFilter(
+                            processStatusFilterKeys.has(nextKey)
+                              ? nextKey
+                              : "TODOS",
+                          );
+                        }}
+                      >
+                        {PROCESSOS_STATUS_FILTER_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.key}
+                            textValue={option.label}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="text-sm text-default-500">
+                      Mostrando {processosFiltrados.length} de{" "}
+                      {processosItems.length} processo
+                      {processosItems.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                </div>
+
+                {processosFiltrados.length === 0 ? (
+                  <Card className="border border-default-200">
+                    <CardBody className="py-12 text-center">
+                      <Scale className="mx-auto h-12 w-12 text-default-300" />
+                      <p className="mt-4 text-lg font-semibold text-default-600">
+                        Nenhum processo encontrado
+                      </p>
+                      <p className="mt-2 text-sm text-default-400">
+                        Ajuste a busca ou o filtro de status para localizar os
+                        processos deste cliente.
+                      </p>
+                    </CardBody>
+                  </Card>
+                ) : (
+                  <>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {processosPaginados.map((processo) => (
                     <Card
@@ -1086,6 +1274,11 @@ export default function ClienteDetalhesPage() {
                             >
                               {getStatusLabel(
                                 processo.status as ProcessoStatus,
+                                processo.arquivamentoTipo as
+                                  | "PROVISORIO"
+                                  | "DEFINITIVO"
+                                  | null
+                                  | undefined,
                               )}
                             </Chip>
                             {processo.fase && (
@@ -1145,12 +1338,11 @@ export default function ClienteDetalhesPage() {
                             </span>
                           </div>
                         )}
-                        {processo.advogadoResponsavel && (
+                        {getProcessoResponsaveis(processo).length > 0 && (
                           <div className="flex items-center gap-2 text-xs">
                             <User className="h-3 w-3 text-default-400" />
                             <span className="text-default-600">
-                              {processo.advogadoResponsavel.usuario.firstName}{" "}
-                              {processo.advogadoResponsavel.usuario.lastName}
+                              {formatResponsaveisResumo(processo)}
                             </span>
                           </div>
                         )}
@@ -1193,10 +1385,12 @@ export default function ClienteDetalhesPage() {
                   itemLabel="processos"
                   page={processosPage}
                   pageSize={TAB_PAGE_SIZES.processos}
-                  totalItems={processosItems.length}
+                  totalItems={processosFiltrados.length}
                   totalPages={processosTotalPages}
                   onChange={setProcessosPage}
                 />
+                  </>
+                )}
               </>
             )}
           </div>

@@ -21,6 +21,10 @@ import {
   notifyLawyersAboutProcessMovement,
   publishProcessNotificationToLawyers,
 } from "@/app/lib/juridical/process-movement-sync";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  buildProcessoClienteMembershipWhere,
+} from "@/app/lib/processos/processo-vinculos";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // ============================================
@@ -106,6 +110,7 @@ interface ProcessoDisponivel {
   numero: string;
   titulo: string | null;
   clienteId: string | null;
+  clienteIds: string[];
   clienteNome: string | null;
 }
 
@@ -196,7 +201,7 @@ async function getProcessoScopeForSession(
       return { id: "__CLIENTE_SEM_ACESSO__" };
     }
 
-    return { clienteId: user.clienteId };
+    return buildProcessoClienteMembershipWhere(user.clienteId);
   }
 
   const { getAccessibleAdvogadoIds } = await import("@/app/lib/advogado-access");
@@ -212,11 +217,7 @@ async function getProcessoScopeForSession(
     return undefined;
   }
 
-  return {
-    advogadoResponsavelId: {
-      in: accessibleAdvogados,
-    },
-  };
+  return buildProcessoAdvogadoMembershipWhere(accessibleAdvogados);
 }
 
 async function ensurePermissionOrThrow(acao: "visualizar" | "criar" | "editar" | "excluir") {
@@ -287,7 +288,7 @@ export async function listAndamentos(
     if (filters.clienteId) {
       where.processo = {
         ...(where.processo || {}),
-        clienteId: filters.clienteId,
+        ...buildProcessoClienteMembershipWhere(filters.clienteId),
       };
     }
 
@@ -542,6 +543,19 @@ export async function listAndamentos(
                   documento: true,
                 },
               },
+              clientesRelacionados: {
+                orderBy: [{ ordem: "asc" }, { createdAt: "asc" }],
+                select: {
+                  clienteId: true,
+                  cliente: {
+                    select: {
+                      id: true,
+                      nome: true,
+                      documento: true,
+                    },
+                  },
+                },
+              },
             },
             orderBy: {
               numero: "asc",
@@ -552,15 +566,27 @@ export async function listAndamentos(
     const clientesDisponiveis = Array.from(
       new Map(
         processosDisponiveis
-          .filter((processo) => processo.cliente?.id && processo.cliente?.nome)
-          .map((processo) => [
-            processo.cliente!.id,
-            {
-              id: processo.cliente!.id,
-              nome: processo.cliente!.nome,
-              documento: processo.cliente!.documento ?? null,
-            },
-          ]),
+          .flatMap((processo) => {
+            const clientesRelacionados =
+              processo.clientesRelacionados.length > 0
+                ? processo.clientesRelacionados
+                    .map((item) => item.cliente)
+                    .filter(Boolean)
+                : processo.cliente
+                  ? [processo.cliente]
+                  : [];
+
+            return clientesRelacionados
+              .filter((cliente) => cliente?.id && cliente?.nome)
+              .map((cliente) => [
+                cliente!.id,
+                {
+                  id: cliente!.id,
+                  nome: cliente!.nome,
+                  documento: cliente!.documento ?? null,
+                },
+              ]);
+          }),
       ).values(),
     ).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
@@ -604,7 +630,16 @@ export async function listAndamentos(
         numero: processo.numero,
         titulo: processo.titulo,
         clienteId: processo.clienteId ?? null,
-        clienteNome: processo.cliente?.nome ?? null,
+        clienteIds:
+          processo.clientesRelacionados.length > 0
+            ? processo.clientesRelacionados.map((item) => item.clienteId)
+            : processo.clienteId
+              ? [processo.clienteId]
+              : [],
+        clienteNome:
+          processo.clientesRelacionados[0]?.cliente?.nome ??
+          processo.cliente?.nome ??
+          null,
       })),
       clientesDisponiveis,
       responsaveisDisponiveis,

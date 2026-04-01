@@ -5,6 +5,7 @@ import prisma from "@/app/lib/prisma";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
 import { listPortalProcessSyncStates } from "@/app/lib/juridical/process-sync-status-store";
+import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 import {
   buildDiscoveryBacklogReasons,
   buildProtocolReadiness,
@@ -81,11 +82,7 @@ async function getProcessScopeForSession(
     return undefined;
   }
 
-  return {
-    advogadoResponsavelId: {
-      in: accessibleAdvogados,
-    },
-  };
+  return buildProcessoAdvogadoMembershipWhere(accessibleAdvogados);
 }
 
 export async function getOperacoesJuridicasWorkspace() {

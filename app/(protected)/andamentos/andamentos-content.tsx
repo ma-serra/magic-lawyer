@@ -157,6 +157,7 @@ interface ProcessoFiltroDisponivel {
   numero: string;
   titulo: string | null;
   clienteId: string | null;
+  clienteIds?: string[];
   clienteNome: string | null;
 }
 
@@ -814,9 +815,15 @@ export default function AndamentosPage() {
       return processosDisponiveisFiltro;
     }
 
-    return processosDisponiveisFiltro.filter(
-      (proc) => proc.clienteId === filters.clienteId,
-    );
+    return processosDisponiveisFiltro.filter((proc) => {
+      const clienteIds = Array.isArray(proc.clienteIds)
+        ? proc.clienteIds
+        : proc.clienteId
+          ? [proc.clienteId]
+          : [];
+
+      return clienteIds.includes(filters.clienteId!);
+    });
   }, [processosDisponiveisFiltro, filters.clienteId]);
 
   const clienteFilterIds = useMemo(

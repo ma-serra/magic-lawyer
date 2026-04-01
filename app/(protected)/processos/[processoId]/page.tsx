@@ -108,6 +108,7 @@ import {
   formatPrazoRelativeLabel,
   getPrazoOperationalBucket,
 } from "@/app/lib/prazos/workspace";
+import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 
 const parteFormInitial: {
   tipoPolo: ProcessoPolo;
@@ -326,21 +327,10 @@ const getStatusColor = (status: ProcessoStatus) => {
   }
 };
 
-const getStatusLabel = (status: ProcessoStatus) => {
-  switch (status) {
-    case ProcessoStatus.EM_ANDAMENTO:
-      return "Em Andamento";
-    case ProcessoStatus.ENCERRADO:
-      return "Encerrado";
-    case ProcessoStatus.ARQUIVADO:
-      return "Arquivado";
-    case ProcessoStatus.SUSPENSO:
-      return "Suspenso";
-    case ProcessoStatus.RASCUNHO:
-    default:
-      return "Rascunho";
-  }
-};
+const getStatusLabel = (
+  status: ProcessoStatus,
+  arquivamentoTipo?: "PROVISORIO" | "DEFINITIVO" | null,
+) => getProcessoStatusLabel(status, arquivamentoTipo);
 
 const getStatusIcon = (status: ProcessoStatus) => {
   switch (status) {
@@ -829,11 +819,36 @@ export default function ProcessoDetalhesPage() {
   const faseLabel = processo.fase ? getFaseLabel(processo.fase) : null;
   const grauLabel = processo.grau ? getGrauLabel(processo.grau) : null;
   const pastaUrl = processo.pastaCompartilhadaUrl;
-  const clienteLink = processo.cliente?.id
-    ? `/clientes/${processo.cliente.id}`
+  const clientesVinculados =
+    processo.clientesVinculados && processo.clientesVinculados.length > 0
+      ? processo.clientesVinculados
+      : processo.cliente
+        ? [processo.cliente]
+        : [];
+  const responsaveisProcesso =
+    processo.advogadosResponsaveis && processo.advogadosResponsaveis.length > 0
+      ? processo.advogadosResponsaveis
+      : processo.advogadoResponsavel
+        ? [processo.advogadoResponsavel]
+        : [];
+  const clienteResumo = clientesVinculados
+    .map((cliente) => cliente.nome)
+    .filter(Boolean)
+    .join(", ");
+  const responsaveisResumo = responsaveisProcesso
+    .map((advogado) =>
+      [advogado.usuario?.firstName, advogado.usuario?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(", ");
+  const clienteLink = clientesVinculados[0]?.id
+    ? `/clientes/${clientesVinculados[0].id}`
     : undefined;
-  const advogadoLink = processo.advogadoResponsavel?.id
-    ? `/advogados/${processo.advogadoResponsavel.id}`
+  const advogadoLink = responsaveisProcesso[0]?.id
+    ? `/advogados/${responsaveisProcesso[0].id}`
     : undefined;
 
   const quickActions: QuickAction[] = [
@@ -1400,7 +1415,7 @@ export default function ProcessoDetalhesPage() {
               startContent={getStatusIcon(processo.status)}
               variant="flat"
             >
-              {getStatusLabel(processo.status)}
+              {getStatusLabel(processo.status, processo.arquivamentoTipo)}
             </Chip>
             {faseLabel && (
               <Chip
@@ -1438,27 +1453,30 @@ export default function ProcessoDetalhesPage() {
                   {processo.area.nome}
                 </InfoItem>
               )}
-              {processo.cliente && (
+              {clientesVinculados.length > 0 && (
                 <InfoItem
                   icon={
-                    processo.cliente.tipoPessoa === "JURIDICA"
+                    clientesVinculados[0]?.tipoPessoa === "JURIDICA"
                       ? Building2
                       : User
                   }
-                  label="Cliente"
+                  label={clientesVinculados.length > 1 ? "Clientes vinculados" : "Cliente"}
                   href={clienteLink}
                 >
-                  {processo.cliente.nome}
+                  {clienteResumo}
                 </InfoItem>
               )}
-              {processo.advogadoResponsavel && (
+              {responsaveisProcesso.length > 0 && (
                 <InfoItem
                   icon={User}
-                  label="Advogado responsável"
+                  label={
+                    responsaveisProcesso.length > 1
+                      ? "Advogados responsáveis"
+                      : "Advogado responsável"
+                  }
                   href={advogadoLink}
                 >
-                  {processo.advogadoResponsavel.usuario.firstName}{" "}
-                  {processo.advogadoResponsavel.usuario.lastName}
+                  {responsaveisResumo}
                 </InfoItem>
               )}
               {processo.vara && (

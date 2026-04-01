@@ -15,6 +15,14 @@ type ProcessNotificationScope = {
       active: boolean;
     } | null;
   } | null;
+  responsaveis?: Array<{
+    advogado?: {
+      usuario?: {
+        id: string;
+        active: boolean;
+      } | null;
+    } | null;
+  }>;
   partes?: Array<{
     advogado?: {
       usuario?: {
@@ -72,6 +80,13 @@ export function extractLawyerUserIdsFromProcessScope(
     scope.advogadoResponsavel?.usuario?.id,
     scope.advogadoResponsavel?.usuario?.active,
   );
+
+  for (const responsavel of scope.responsaveis ?? []) {
+    maybeAdd(
+      responsavel.advogado?.usuario?.id,
+      responsavel.advogado?.usuario?.active,
+    );
+  }
 
   for (const parte of scope.partes ?? []) {
     maybeAdd(parte.advogado?.usuario?.id, parte.advogado?.usuario?.active);
@@ -199,6 +214,20 @@ export async function getProcessNotificationRecipientsContext(
             select: {
               id: true,
               active: true,
+            },
+          },
+        },
+      },
+      responsaveis: {
+        select: {
+          advogado: {
+            select: {
+              usuario: {
+                select: {
+                  id: true,
+                  active: true,
+                },
+              },
             },
           },
         },

@@ -614,7 +614,7 @@ function DashboardTooltip({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-background/90 p-3 shadow-xl">
+    <div className="rounded-xl ml-admin-tooltip-surface p-3">
       {label ? (
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-default-400">
           {label}
@@ -666,7 +666,7 @@ function TopTenantCard({
   mode: "receita" | "risco";
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+    <div className="rounded-2xl ml-admin-surface-soft p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">
@@ -699,7 +699,7 @@ function TopTenantCard({
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
             Em aberto
           </p>
-          <p className="mt-1 text-sm font-medium text-default-300">
+            <p className="mt-1 text-sm font-medium text-default-600 dark:text-default-300">
             {formatCurrency(tenant.abertoAtual)}
           </p>
         </div>
@@ -709,7 +709,7 @@ function TopTenantCard({
           </p>
           <p
             className={`mt-1 text-sm font-medium ${
-              mode === "risco" ? "text-danger" : "text-default-300"
+              mode === "risco" ? "text-danger" : "text-default-600 dark:text-default-300"
             }`}
           >
             {mode === "risco"
@@ -785,7 +785,7 @@ function PaymentMethodList({
       {items.map((item, index) => (
         <div
           key={item.key}
-          className="rounded-2xl border border-white/10 bg-background/40 p-3"
+          className="rounded-2xl ml-admin-surface-soft p-3"
         >
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -868,7 +868,7 @@ function InvoiceTable({ items }: { items: DashboardInvoice[] }) {
               </div>
             </TableCell>
             <TableCell>
-              <span className="text-sm text-default-300">
+              <span className="text-sm text-default-600 dark:text-default-300">
                 {getBillingContextLabel(resolveInvoiceBillingContext(invoice))}
               </span>
             </TableCell>
@@ -1409,7 +1409,7 @@ export function FinanceiroContent() {
             <ChartLoading label="Gerando recomendações..." />
           ) : (
             <div className="space-y-3">
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                   Forecast 30 dias
                 </p>
@@ -1420,7 +1420,7 @@ export function FinanceiroContent() {
                   Caixa previsto para os próximos 30 dias com a carteira atual.
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                   Vencendo em 7 dias
                 </p>
@@ -1431,7 +1431,7 @@ export function FinanceiroContent() {
                   Janela ideal para cobrança preventiva e renegociação.
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
                   Inadimplência
                 </p>
@@ -1445,7 +1445,7 @@ export function FinanceiroContent() {
               {playbook.map((item) => (
                 <div
                   key={item.title}
-                  className="rounded-2xl border border-white/10 bg-background/40 p-4"
+                  className="rounded-2xl ml-admin-surface-soft p-4"
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <Chip color={item.tone} size="sm" variant="flat">
@@ -1501,7 +1501,7 @@ export function FinanceiroContent() {
                 {data.revenueMix.map((item, index) => (
                   <div
                     key={item.key}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-background/40 p-3 text-sm"
+                    className="flex items-center justify-between gap-3 rounded-2xl ml-admin-surface-soft p-3 text-sm"
                   >
                     <div className="flex items-center gap-2">
                       <span
@@ -1555,9 +1555,9 @@ export function FinanceiroContent() {
                 {data.aging.map((item) => (
                   <div
                     key={item.bucket}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-background/40 p-3 text-sm"
+                    className="flex items-center justify-between gap-3 rounded-2xl ml-admin-surface-soft p-3 text-sm"
                   >
-                    <span className="text-default-300">{item.label}</span>
+                    <span className="text-default-600 dark:text-default-300">{item.label}</span>
                     <div className="text-right">
                       <p className="font-semibold text-foreground">
                         {formatCurrency(item.valor)}
@@ -1609,10 +1609,10 @@ export function FinanceiroContent() {
                 {data.forecast.map((item) => (
                   <div
                     key={item.bucket}
-                    className="rounded-2xl border border-white/10 bg-background/40 p-3"
+                    className="rounded-2xl ml-admin-surface-soft p-3"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-default-300">{item.label}</span>
+                      <span className="text-sm text-default-600 dark:text-default-300">{item.label}</span>
                       <span className="text-sm font-semibold text-foreground">
                         {formatCurrency(item.previsto + item.emRisco)}
                       </span>

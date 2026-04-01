@@ -445,7 +445,7 @@ export function CausasAdminContent() {
         description="A governança do catálogo acontece no tenant. O admin existe para sincronizar a fonte oficial, medir impacto operacional e apontar o tenant certo quando houver inconsistência."
       >
         <div className="grid gap-4 xl:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-sm font-semibold text-foreground">
               Área do tenant
             </p>
@@ -465,7 +465,7 @@ export function CausasAdminContent() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-sm font-semibold text-foreground">
               Área administrativa
             </p>
@@ -486,7 +486,7 @@ export function CausasAdminContent() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-sm font-semibold text-foreground">
               Área do cliente
             </p>
@@ -567,7 +567,7 @@ export function CausasAdminContent() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),420px]">
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-sm font-semibold text-foreground">
                   Escritório em foco
                 </p>
@@ -613,7 +613,7 @@ export function CausasAdminContent() {
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Processos
                         </p>
@@ -621,7 +621,7 @@ export function CausasAdminContent() {
                           {formatNumber(selectedTenantLinkage.processCount)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Diligências
                         </p>
@@ -629,7 +629,7 @@ export function CausasAdminContent() {
                           {formatNumber(selectedTenantLinkage.diligenciaCount)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Petições
                         </p>
@@ -637,7 +637,7 @@ export function CausasAdminContent() {
                           {formatNumber(selectedTenantLinkage.peticaoCount)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Prazos
                         </p>
@@ -645,7 +645,7 @@ export function CausasAdminContent() {
                           {formatNumber(selectedTenantLinkage.prazoCount)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Docs/contratos
                         </p>
@@ -655,7 +655,7 @@ export function CausasAdminContent() {
                           )}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-background/50 p-3">
+                      <div className="rounded-xl ml-admin-surface-muted p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                           Cliente impactado
                         </p>
@@ -669,7 +669,7 @@ export function CausasAdminContent() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-default-300">
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-default-600 dark:text-default-300">
                       Impacto operacional estimado:{" "}
                       <strong className="text-foreground">
                         {formatNumber(selectedTenantImpactCount)}
@@ -686,7 +686,7 @@ export function CausasAdminContent() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-sm font-semibold text-foreground">
                   Tenants mais dependentes
                 </p>
@@ -699,7 +699,7 @@ export function CausasAdminContent() {
                     featuredLinkageTenants.map((tenant) => (
                       <div
                         key={tenant.tenantId}
-                        className="rounded-xl border border-white/10 bg-background/50 p-3"
+                        className="rounded-xl ml-admin-surface-muted p-3"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -803,7 +803,7 @@ export function CausasAdminContent() {
                 onSelectionChange={handleTargetTenantChange}
               />
 
-              <div className="rounded-2xl border border-white/10 bg-background/40 px-4 py-3">
+              <div className="rounded-2xl ml-admin-surface-soft px-4 py-3">
                 <Switch
                   isSelected={syncAllTenants}
                   onValueChange={setSyncAllTenants}
@@ -813,7 +813,7 @@ export function CausasAdminContent() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+            <div className="rounded-2xl ml-admin-surface-soft p-4">
               {syncAllTenants ? (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-foreground">
@@ -925,7 +925,7 @@ export function CausasAdminContent() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),320px]">
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-sm font-semibold text-foreground">
                   Origem da execução
                 </p>
@@ -936,7 +936,7 @@ export function CausasAdminContent() {
                   </p>
                   <p>
                     <strong className="text-foreground">Fonte oficial:</strong>{" "}
-                    <span className="text-default-200">
+                    <span className="text-default-700 dark:text-default-200">
                       {lastResult.fontesOficiaisInfo?.source ?? "cnj-oficial"}
                     </span>
                   </p>
@@ -982,7 +982,7 @@ export function CausasAdminContent() {
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-background/40 p-4">
+              <div className="rounded-2xl ml-admin-surface-soft p-4">
                 <p className="text-sm font-semibold text-foreground">
                   Resultado por escritório
                 </p>
@@ -1024,7 +1024,7 @@ export function CausasAdminContent() {
                   {tenantResults.map((tenant) => (
                     <div
                       key={tenant.tenantId}
-                      className="rounded-2xl border border-white/10 bg-background/40 p-4"
+                      className="rounded-2xl ml-admin-surface-soft p-4"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>

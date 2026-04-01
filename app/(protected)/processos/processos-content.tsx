@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo, ReactNode } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -26,6 +26,7 @@ import { Pagination, Select, SelectItem } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { SearchableSelect } from "@/components/searchable-select";
+import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 
 interface ProcessoFiltros {
   busca: string;
@@ -155,15 +156,15 @@ export function ProcessosContent({
     try {
       await navigator.clipboard.writeText(numero);
       addToast({
-        title: "Número copiado!",
-        description: `O número do processo "${numero}" foi copiado para a área de transferência.`,
+        title: "NÃºmero copiado!",
+        description: `O nÃºmero do processo "${numero}" foi copiado para a Ã¡rea de transferÃªncia.`,
         color: "success",
         timeout: 3000,
       });
     } catch (error) {
       addToast({
         title: "Erro ao copiar",
-        description: "Não foi possível copiar o número do processo.",
+        description: "NÃ£o foi possÃ­vel copiar o nÃºmero do processo.",
         color: "danger",
         timeout: 3000,
       });
@@ -187,22 +188,10 @@ export function ProcessosContent({
     }
   };
 
-  const getStatusLabel = (status: ProcessoStatus) => {
-    switch (status) {
-      case ProcessoStatus.EM_ANDAMENTO:
-        return "Em Andamento";
-      case ProcessoStatus.ENCERRADO:
-        return "Encerrado";
-      case ProcessoStatus.ARQUIVADO:
-        return "Arquivado";
-      case ProcessoStatus.SUSPENSO:
-        return "Suspenso";
-      case ProcessoStatus.RASCUNHO:
-        return "Rascunho";
-      default:
-        return status;
-    }
-  };
+  const getStatusLabel = (
+    status: ProcessoStatus,
+    arquivamentoTipo?: "PROVISORIO" | "DEFINITIVO" | null,
+  ) => getProcessoStatusLabel(status, arquivamentoTipo);
 
   const getStatusIcon = (status: ProcessoStatus) => {
     switch (status) {
@@ -221,21 +210,75 @@ export function ProcessosContent({
     }
   };
 
+  const getProcessoClientes = (processo: any) =>
+    Array.isArray(processo?.clientesVinculados) &&
+    processo.clientesVinculados.length > 0
+      ? processo.clientesVinculados
+      : processo?.cliente
+        ? [processo.cliente]
+        : [];
+
+  const getProcessoResponsaveis = (processo: any) =>
+    Array.isArray(processo?.advogadosResponsaveis) &&
+    processo.advogadosResponsaveis.length > 0
+      ? processo.advogadosResponsaveis
+      : processo?.advogadoResponsavel
+        ? [processo.advogadoResponsavel]
+        : [];
+
+  const formatAdvogadoResponsavelNome = (advogado: any) =>
+    [advogado?.usuario?.firstName, advogado?.usuario?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  const formatClienteResumo = (processo: any) => {
+    const nomes = getProcessoClientes(processo)
+      .map((cliente: any) => cliente.nome)
+      .filter(Boolean);
+
+    if (nomes.length === 0) {
+      return "Nao informado";
+    }
+
+    const principais = nomes.slice(0, 2).join(", ");
+
+    return nomes.length > 2
+      ? `${principais} +${nomes.length - 2}`
+      : principais;
+  };
+
+  const formatResponsaveisResumo = (processo: any) => {
+    const nomes = getProcessoResponsaveis(processo)
+      .map((advogado: any) => formatAdvogadoResponsavelNome(advogado))
+      .filter(Boolean);
+
+    if (nomes.length === 0) {
+      return "Nao definido";
+    }
+
+    const principais = nomes.slice(0, 2).join(", ");
+
+    return nomes.length > 2
+      ? `${principais} +${nomes.length - 2}`
+      : principais;
+  };
+
   const getFaseLabel = (fase?: ProcessoFase | null) => {
     if (!fase) return "-";
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "Petição Inicial";
+        return "PetiÃ§Ã£o Inicial";
       case ProcessoFase.CITACAO:
-        return "Citação";
+        return "CitaÃ§Ã£o";
       case ProcessoFase.INSTRUCAO:
-        return "Instrução";
+        return "InstruÃ§Ã£o";
       case ProcessoFase.SENTENCA:
-        return "Sentença";
+        return "SentenÃ§a";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "Execução";
+        return "ExecuÃ§Ã£o";
       default:
         return fase;
     }
@@ -245,9 +288,9 @@ export function ProcessosContent({
     if (!grau) return "-";
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1º Grau";
+        return "1Âº Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2º Grau";
+        return "2Âº Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:
@@ -271,7 +314,7 @@ export function ProcessosContent({
     );
   };
 
-  // Extrair dados únicos para filtros
+  // Extrair dados Ãºnicos para filtros
   const areasUnicas = useMemo(() => {
     if (!processos || !Array.isArray(processos)) return [];
     const areas = processos.map((p: any) => p.area?.nome).filter(Boolean);
@@ -363,14 +406,12 @@ export function ProcessosContent({
         const matchBusca =
           processo.numero.toLowerCase().includes(busca) ||
           processo.titulo?.toLowerCase().includes(busca) ||
-          processo.cliente?.nome?.toLowerCase().includes(busca) ||
-          (
-            processo.advogadoResponsavel?.usuario?.firstName +
-            " " +
-            processo.advogadoResponsavel?.usuario?.lastName
-          )
-            ?.toLowerCase()
-            .includes(busca);
+          getProcessoClientes(processo).some((cliente: any) =>
+            cliente.nome?.toLowerCase().includes(busca),
+          ) ||
+          getProcessoResponsaveis(processo).some((advogado: any) =>
+            formatAdvogadoResponsavelNome(advogado).toLowerCase().includes(busca),
+          );
 
         if (!matchBusca) return false;
       }
@@ -397,7 +438,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Área
+      // Ãrea
       if (filtros.areaId && processo.area?.nome !== filtros.areaId) {
         return false;
       }
@@ -405,13 +446,20 @@ export function ProcessosContent({
       // Advogado
       if (
         filtros.advogadoId &&
-        processo.advogadoResponsavel?.id !== filtros.advogadoId
+        !getProcessoResponsaveis(processo).some(
+          (advogado: any) => advogado.id === filtros.advogadoId,
+        )
       ) {
         return false;
       }
 
       // Cliente
-      if (filtros.clienteId && processo.clienteId !== filtros.clienteId) {
+      if (
+        filtros.clienteId &&
+        !getProcessoClientes(processo).some(
+          (cliente: any) => cliente.id === filtros.clienteId,
+        )
+      ) {
         return false;
       }
 
@@ -420,7 +468,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Segredo de justiça
+      // Segredo de justiÃ§a
       if (
         filtros.segredoJustica !== null &&
         processo.segredoJustica !== filtros.segredoJustica
@@ -446,7 +494,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Data de distribuição
+      // Data de distribuiÃ§Ã£o
       if (
         filtros.dataDistribuicaoInicio &&
         processo.dataDistribuicao &&
@@ -555,13 +603,13 @@ export function ProcessosContent({
           <h3 className="text-lg font-semibold text-danger mb-2">
             Erro ao carregar processos
           </h3>
-          <p className="text-default-500">Tente recarregar a página</p>
+          <p className="text-default-500">Tente recarregar a pÃ¡gina</p>
         </div>
       </div>
     );
   }
 
-  // Se ainda não temos dados, mostrar loading
+  // Se ainda nÃ£o temos dados, mostrar loading
   if (!processos) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -574,7 +622,7 @@ export function ProcessosContent({
     <div className="space-y-6">
       {/* Header */}
       <PeoplePageHeader
-        tag="Atividades jurídicas"
+        tag="Atividades jurÃ­dicas"
         title="Processos"
         description={`${processosFiltrados.length} de ${processos?.length || 0} processos${temFiltrosAtivos ? " (filtrados)" : ""}`}
         actions={
@@ -668,7 +716,7 @@ export function ProcessosContent({
                 </Button>
               )
             }
-            placeholder="Buscar por número, título, cliente ou advogado..."
+            placeholder="Buscar por nÃºmero, tÃ­tulo, cliente ou advogado..."
             startContent={<Search className="h-4 w-4 text-default-400" />}
             value={filtros.busca}
             onChange={(e) =>
@@ -681,7 +729,7 @@ export function ProcessosContent({
         </CardBody>
       </Card>
 
-      {/* Filtros Avançados */}
+      {/* Filtros AvanÃ§ados */}
       <AnimatePresence initial={false}>
         {mostrarFiltros ? (
           <motion.div
@@ -693,7 +741,7 @@ export function ProcessosContent({
             <Card className="overflow-hidden">
               <CardHeader>
                 <div className="flex items-center justify-between w-full">
-                  <h3 className="text-lg font-semibold">Filtros Avançados</h3>
+                  <h3 className="text-lg font-semibold">Filtros AvanÃ§ados</h3>
                   <Button
                     isDisabled={!temFiltrosAtivos}
                     size="sm"
@@ -803,12 +851,12 @@ export function ProcessosContent({
                 <FilterSection
                   icon={Users}
                   title="Equipe e partes"
-                  description="Refine por área, advogado responsável e cliente impactado."
+                  description="Refine por Ã¡rea, advogado responsÃ¡vel e cliente impactado."
                 >
                   <div className="space-y-3">
                     <Select
-                      label="Área"
-                      placeholder="Todas as áreas"
+                      label="Ãrea"
+                      placeholder="Todas as Ã¡reas"
                       selectedKeys={selectedAreaKeys}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
@@ -829,7 +877,7 @@ export function ProcessosContent({
                     <SearchableSelect
                       emptyContent="Nenhum advogado encontrado"
                       items={advogadoFilterOptions}
-                      label="Advogado responsável"
+                      label="Advogado responsÃ¡vel"
                       placeholder="Todos os advogados"
                       selectedKey={selectedAdvogadoKeys[0] ?? null}
                       onSelectionChange={(selectedKey) => {
@@ -861,8 +909,8 @@ export function ProcessosContent({
               <div className="grid gap-4 lg:grid-cols-2">
                 <FilterSection
                   icon={MapPin}
-                  title="Jurisdição e sigilo"
-                  description="Selecione rapidamente a comarca e o nível de sigilo."
+                  title="JurisdiÃ§Ã£o e sigilo"
+                  description="Selecione rapidamente a comarca e o nÃ­vel de sigilo."
                 >
                   <div className="space-y-3">
                     <Select
@@ -886,7 +934,7 @@ export function ProcessosContent({
                     </Select>
 
                     <Select
-                      label="Segredo de justiça"
+                      label="Segredo de justiÃ§a"
                       placeholder="Todos"
                       selectedKeys={selectedSegredoJusticaKeys}
                       onSelectionChange={(keys) => {
@@ -905,10 +953,10 @@ export function ProcessosContent({
                           <span>Em segredo</span>
                         </div>
                       </SelectItem>
-                      <SelectItem key="false" textValue="Público">
+                      <SelectItem key="false" textValue="PÃºblico">
                         <div className="flex items-center gap-2">
                           <Eye className="h-4 w-4 text-success" />
-                          <span>Público</span>
+                          <span>PÃºblico</span>
                         </div>
                       </SelectItem>
                     </Select>
@@ -918,12 +966,12 @@ export function ProcessosContent({
                 <FilterSection
                   icon={Calendar}
                   title="Valores e datas"
-                  description="Acompanhe valores da causa, distribuição e prazos críticos."
+                  description="Acompanhe valores da causa, distribuiÃ§Ã£o e prazos crÃ­ticos."
                 >
                   <div className="space-y-3">
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Input
-                        label="Valor mínimo"
+                        label="Valor mÃ­nimo"
                         startContent={
                           <DollarSign className="h-4 w-4 text-default-400" />
                         }
@@ -937,7 +985,7 @@ export function ProcessosContent({
                         }
                       />
                       <Input
-                        label="Valor máximo"
+                        label="Valor mÃ¡ximo"
                         startContent={
                           <DollarSign className="h-4 w-4 text-default-400" />
                         }
@@ -953,7 +1001,7 @@ export function ProcessosContent({
                     </div>
 
                     <DateRangeInput
-                      label="Distribuição (de/até)"
+                      label="DistribuiÃ§Ã£o (de/atÃ©)"
                       startValue={filtros.dataDistribuicaoInicio}
                       endValue={filtros.dataDistribuicaoFim}
                       onRangeChange={({ start, end }) =>
@@ -1077,7 +1125,10 @@ export function ProcessosContent({
                               startContent={getStatusIcon(processo.status)}
                               variant="flat"
                             >
-                              {getStatusLabel(processo.status)}
+                              {getStatusLabel(
+                                processo.status,
+                                processo.arquivamentoTipo,
+                              )}
                             </Chip>
                             {processo.segredoJustica && (
                               <Shield className="h-4 w-4 text-warning" />
@@ -1090,7 +1141,7 @@ export function ProcessosContent({
                               </p>
                               <Button
                                 isIconOnly
-                                aria-label="Copiar número do processo"
+                                aria-label="Copiar nÃºmero do processo"
                                 className="min-w-6 h-6 w-6"
                                 size="sm"
                                 variant="light"
@@ -1119,7 +1170,7 @@ export function ProcessosContent({
                             {isProcessoOrigemSincronizacaoExterna(processo) && (
                               <div className="mt-2">
                                 <Chip color="warning" size="sm" variant="flat">
-                                  Criado via sincronização
+                                  Criado via sincronizaÃ§Ã£o
                                 </Chip>
                               </div>
                             )}
@@ -1135,24 +1186,24 @@ export function ProcessosContent({
                               </span>
                             </div>
                           )}
-                          {processo.advogadoResponsavel && (
+                          {getProcessoResponsaveis(processo).length > 0 && (
                             <div className="flex items-center gap-2 text-xs">
                               <User className="h-3 w-3 text-default-400" />
                               <span className="text-default-600">
-                                {processo.advogadoResponsavel.usuario.firstName}{" "}
-                                {processo.advogadoResponsavel.usuario.lastName}
+                                {formatResponsaveisResumo(processo)}
                               </span>
                             </div>
                           )}
-                          {processo.cliente && (
+                          {getProcessoClientes(processo).length > 0 && (
                             <div className="flex items-center gap-2 text-xs">
-                              {processo.cliente.tipoPessoa === "JURIDICA" ? (
+                              {getProcessoClientes(processo)[0]?.tipoPessoa ===
+                              "JURIDICA" ? (
                                 <Building2 className="h-3 w-3 text-default-400" />
                               ) : (
                                 <User className="h-3 w-3 text-default-400" />
                               )}
                               <span className="text-default-600">
-                                {processo.cliente.nome}
+                                {formatClienteResumo(processo)}
                               </span>
                             </div>
                           )}
@@ -1264,17 +1315,13 @@ export function ProcessosContent({
                       Prazos
                     </p>
                     <p className="text-right text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
-                      Ações
+                      AÃ§Ãµes
                     </p>
                   </div>
 
                   <div className="divide-y divide-default-200">
                     {processosPaginados.map((processo: any) => {
-                      const advogadoNome = processo.advogadoResponsavel
-                        ? `${processo.advogadoResponsavel.usuario.firstName ?? ""} ${
-                            processo.advogadoResponsavel.usuario.lastName ?? ""
-                          }`.trim()
-                        : "Não definido";
+                      const advogadoNome = formatResponsaveisResumo(processo);
                       const prazoPrincipal = processo.prazoPrincipal &&
                         DateUtils.isValid(processo.prazoPrincipal)
                         ? DateUtils.formatDate(processo.prazoPrincipal)
@@ -1297,7 +1344,7 @@ export function ProcessosContent({
                                 </p>
                                 <Button
                                   isIconOnly
-                                  aria-label="Copiar número do processo"
+                                  aria-label="Copiar nÃºmero do processo"
                                   className="min-w-6 h-6 w-6"
                                   size="sm"
                                   variant="light"
@@ -1324,13 +1371,13 @@ export function ProcessosContent({
                               {isProcessoOrigemSincronizacaoExterna(processo) ? (
                                 <div className="mt-1">
                                   <Chip color="warning" size="sm" variant="flat">
-                                    Criado via sincronização
+                                    Criado via sincronizaÃ§Ã£o
                                   </Chip>
                                 </div>
                               ) : null}
                               <p className="mt-1 text-xs text-default-400">
-                                {processo.area?.nome ?? "Área não informada"}
-                                {processo.comarca ? ` • ${processo.comarca}` : ""}
+                                {processo.area?.nome ?? "Ãrea nÃ£o informada"}
+                                {processo.comarca ? ` â€¢ ${processo.comarca}` : ""}
                               </p>
                             </div>
 
@@ -1339,13 +1386,13 @@ export function ProcessosContent({
                                 Cliente
                               </p>
                               <div className="flex items-center gap-2">
-                                {processo.cliente?.tipoPessoa === "JURIDICA" ? (
+                                {getProcessoClientes(processo)[0]?.tipoPessoa === "JURIDICA" ? (
                                   <Building2 className="h-3.5 w-3.5 text-default-400" />
                                 ) : (
                                   <User className="h-3.5 w-3.5 text-default-400" />
                                 )}
                                 <p className="truncate text-sm text-default-600">
-                                  {processo.cliente?.nome ?? "Não informado"}
+                                  {formatClienteResumo(processo)}
                                 </p>
                               </div>
                             </div>
@@ -1355,7 +1402,7 @@ export function ProcessosContent({
                                 Advogado
                               </p>
                               <p className="truncate text-sm text-default-600">
-                                {advogadoNome || "Não definido"}
+                                {advogadoNome}
                               </p>
                             </div>
 
@@ -1369,7 +1416,10 @@ export function ProcessosContent({
                                 startContent={getStatusIcon(processo.status)}
                                 variant="flat"
                               >
-                                {getStatusLabel(processo.status)}
+                                {getStatusLabel(
+                                  processo.status,
+                                  processo.arquivamentoTipo,
+                                )}
                               </Chip>
                             </div>
 
@@ -1452,3 +1502,4 @@ export function ProcessosContent({
     </div>
   );
 }
+

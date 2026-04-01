@@ -33,8 +33,6 @@ import {
   useDisclosure,
 } from "@heroui/react";
 import {
-  AlertTriangle,
-  BadgeInfo,
   Building2,
   CircleOff,
   Eye,
@@ -433,10 +431,8 @@ export default function BancosAdminPage() {
                   Instituicoes financeiras que alimentam o produto
                 </h1>
                 <p className="text-sm leading-6 text-default-500">
-                  Esse catalogo existe para padronizar o banco exibido em dados
-                  bancarios de escritorio, usuarios, clientes, contratos,
-                  honorarios e parcelas. Alterar aqui impacta novos cadastros e
-                  a leitura operacional do sistema inteiro.
+                  Gerencie as instituicoes financeiras disponiveis para novos
+                  cadastros e mantenha o catalogo padronizado em todo o sistema.
                 </p>
               </div>
             </div>
@@ -448,44 +444,6 @@ export default function BancosAdminPage() {
             >
               Adicionar instituicao
             </Button>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-3xl border border-default-100 bg-default-50/40 p-5 dark:border-white/10 dark:bg-background/30">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl border border-default-200 bg-background p-3 text-default-600 dark:border-white/10">
-                  <BadgeInfo className="h-5 w-5" />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-foreground">
-                    Quando essa tela faz sentido
-                  </p>
-                  <p className="text-sm leading-6 text-default-500">
-                    Sempre que o sistema precisar reconhecer corretamente uma
-                    instituicao financeira em selects, fichas de conta, fluxo de
-                    recebimento ou geracao de dados de pagamento.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-warning/20 bg-warning/5 p-5">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl border border-warning/30 bg-background p-3 text-warning">
-                  <AlertTriangle className="h-5 w-5" />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-foreground">
-                    Regra operacional
-                  </p>
-                  <p className="text-sm leading-6 text-default-500">
-                    Excluir so faz sentido para instituicao sem uso. Para bancos
-                    ja vinculados, o fluxo correto e desativar para novos
-                    cadastros e corrigir metadados com cuidado.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </CardBody>
       </Card>

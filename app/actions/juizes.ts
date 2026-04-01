@@ -183,6 +183,143 @@ export interface JuizSerializado {
   };
 }
 
+export interface JuizAdminDetalhesProcesso {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  tenantSlug: string;
+  numero: string;
+  numeroCnj: string | null;
+  titulo: string | null;
+  status: string;
+  fase: string | null;
+  grau: string | null;
+  valorCausa: number | null;
+  dataDistribuicao: string | null;
+  updatedAt: string;
+  areaNome: string | null;
+  clientePrincipal: string;
+  clientesRelacionados: string[];
+}
+
+export interface JuizAdminDetalhesPacote {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  preco: number;
+  moeda: string;
+  status: string;
+  isPublico: boolean;
+  ordemExibicao: number;
+  totalAssinaturas: number;
+  tenantsAtivos: number;
+  ativoNoPacote: boolean;
+}
+
+export interface JuizAdminDetalhesTenantUnlock {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  tenantSlug: string;
+  tenantStatus: string;
+  nivelAcesso: string;
+  origem: string;
+  status: string;
+  dataInicio: string;
+  dataFim: string | null;
+  observacoes: string | null;
+  assinaturaPacoteId: string | null;
+  assinaturaStatus: string | null;
+  pacoteId: string | null;
+  pacoteNome: string | null;
+  precoPago: number | null;
+}
+
+export interface JuizAdminDetalhesContribuicao {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  tenantSlug: string;
+  origem: string;
+  status: string;
+  campos: string[];
+  notaConfianca: number | null;
+  observacoes: string | null;
+  criadoEm: string;
+  aprovadoEm: string | null;
+  criadoPorNome: string;
+  criadoPorEmail: string;
+  aprovadoPorNome: string | null;
+}
+
+export interface JuizAdminDetalhesJulgamento {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  titulo: string;
+  tipoJulgamento: string;
+  resultado: string | null;
+  dataJulgamento: string;
+  processoNumero: string | null;
+}
+
+export interface JuizAdminDetalhesAnalise {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  titulo: string;
+  tipoAnalise: string;
+  isPublico: boolean;
+  createdAt: string;
+}
+
+export interface JuizAdminDetalhesTenantRelacionamento {
+  tenantId: string;
+  tenantNome: string;
+  tenantSlug: string;
+  tenantStatus: string;
+  possuiAcesso: boolean;
+  niveisAcesso: string[];
+  pacotes: string[];
+  totalContribuicoes: number;
+  totalProcessos: number;
+  totalJulgamentos: number;
+  totalAnalises: number;
+}
+
+export interface JuizAdminDetalhesSerializado extends JuizSerializado {
+  superAdminCriador: {
+    id: string;
+    nome: string;
+    email: string;
+  } | null;
+  origemCadastro: "SUPER_ADMIN" | "TENANT" | "INDEFINIDA";
+  primeiroTenantContribuinte: {
+    id: string;
+    nome: string;
+    slug: string;
+    criadoEm: string;
+  } | null;
+  resumoRelacionamentos: {
+    processos: number;
+    julgamentos: number;
+    analises: number;
+    favoritos: number;
+    pacotes: number;
+    tenantsComAcesso: number;
+    contribuicoes: number;
+    acessosRegistrados: number;
+    tenantsRelacionados: number;
+  };
+  processosRecentes: JuizAdminDetalhesProcesso[];
+  pacotesRelacionados: JuizAdminDetalhesPacote[];
+  tenantsComAcesso: JuizAdminDetalhesTenantUnlock[];
+  tenantsRelacionadosDetalhados: JuizAdminDetalhesTenantRelacionamento[];
+  contribuicoesRecentes: JuizAdminDetalhesContribuicao[];
+  julgamentosRecentes: JuizAdminDetalhesJulgamento[];
+  analisesRecentes: JuizAdminDetalhesAnalise[];
+}
+
 export interface JuizFormData {
   tipoAutoridade: JuizTipoAutoridade;
   nome: string;
@@ -2383,6 +2520,687 @@ export async function getJuizesAdmin(filters?: {
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro ao buscar juízes",
+    };
+  }
+}
+
+export async function getJuizAdminDetails(juizId: string): Promise<{
+  success: boolean;
+  data?: JuizAdminDetalhesSerializado;
+  error?: string;
+}> {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Nao autorizado" };
+    }
+
+    const user = session.user as any;
+
+    if (user.role !== "SUPER_ADMIN") {
+      return { success: false, error: "Acesso negado - apenas super admin" };
+    }
+
+    const juiz = await prisma.juiz.findUnique({
+      where: { id: juizId },
+      include: {
+        tribunal: {
+          select: {
+            id: true,
+            nome: true,
+            sigla: true,
+            esfera: true,
+            uf: true,
+            siteUrl: true,
+          },
+        },
+        superAdmin: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        pacotes: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          include: {
+            pacote: {
+              select: {
+                id: true,
+                nome: true,
+                descricao: true,
+                preco: true,
+                moeda: true,
+                status: true,
+                isPublico: true,
+                ordemExibicao: true,
+                _count: {
+                  select: {
+                    assinaturas: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        tenantUnlocks: {
+          orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                status: true,
+              },
+            },
+            assinaturaPacote: {
+              select: {
+                id: true,
+                pacoteId: true,
+                status: true,
+                precoPago: true,
+                pacote: {
+                  select: {
+                    id: true,
+                    nome: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        contribuicoes: {
+          orderBy: {
+            criadoEm: "desc",
+          },
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+            criadoPor: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            aprovadoPor: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        processos: {
+          orderBy: {
+            updatedAt: "desc",
+          },
+          take: 12,
+          select: {
+            id: true,
+            tenantId: true,
+            numero: true,
+            numeroCnj: true,
+            titulo: true,
+            status: true,
+            fase: true,
+            grau: true,
+            valorCausa: true,
+            dataDistribuicao: true,
+            updatedAt: true,
+            tenant: {
+              select: {
+                name: true,
+                slug: true,
+              },
+            },
+            area: {
+              select: {
+                nome: true,
+              },
+            },
+            cliente: {
+              select: {
+                nome: true,
+              },
+            },
+            clientesRelacionados: {
+              orderBy: {
+                ordem: "asc",
+              },
+              select: {
+                cliente: {
+                  select: {
+                    nome: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        julgamentos: {
+          orderBy: {
+            dataJulgamento: "desc",
+          },
+          take: 8,
+          select: {
+            id: true,
+            tenantId: true,
+            titulo: true,
+            tipoJulgamento: true,
+            resultado: true,
+            dataJulgamento: true,
+            tenant: {
+              select: {
+                name: true,
+              },
+            },
+            processo: {
+              select: {
+                numero: true,
+              },
+            },
+          },
+        },
+        analises: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 8,
+          select: {
+            id: true,
+            tenantId: true,
+            titulo: true,
+            tipoAnalise: true,
+            isPublico: true,
+            createdAt: true,
+            tenant: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            processos: true,
+            julgamentos: true,
+            analises: true,
+            pacotes: true,
+            tenantUnlocks: true,
+            contribuicoes: true,
+            acessos: true,
+            favoritos: {
+              where: {
+                ativo: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!juiz) {
+      return {
+        success: false,
+        error: "Autoridade nao encontrada",
+      };
+    }
+
+    const converted = convertAllDecimalFields(juiz) as any;
+    const serialized = JSON.parse(
+      JSON.stringify(converted, (key, value) => {
+        if (
+          value &&
+          typeof value === "object" &&
+          value.constructor &&
+          value.constructor.name === "Decimal"
+        ) {
+          return Number(value.toString());
+        }
+
+        return value;
+      }),
+    ) as any;
+
+    const [
+      processosPorTenant,
+      julgamentosPorTenant,
+      analisesPorTenant,
+      contribuicoesPorTenant,
+    ] = await Promise.all([
+      prisma.processo.groupBy({
+        by: ["tenantId"],
+        where: {
+          juizId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.julgamento.groupBy({
+        by: ["tenantId"],
+        where: {
+          juizId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.analiseJuiz.groupBy({
+        by: ["tenantId"],
+        where: {
+          juizId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+      prisma.autoridadeContribuicao.groupBy({
+        by: ["tenantId"],
+        where: {
+          juizId,
+        },
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    const tenantsRelacionados = new Set<string>();
+    for (const unlock of serialized.tenantUnlocks ?? []) {
+      if (unlock?.tenantId) tenantsRelacionados.add(unlock.tenantId);
+    }
+    for (const contribuicao of serialized.contribuicoes ?? []) {
+      if (contribuicao?.tenantId) tenantsRelacionados.add(contribuicao.tenantId);
+    }
+    for (const processo of serialized.processos ?? []) {
+      if (processo?.tenantId) tenantsRelacionados.add(processo.tenantId);
+    }
+    for (const item of processosPorTenant) {
+      if (item.tenantId) tenantsRelacionados.add(item.tenantId);
+    }
+    for (const item of julgamentosPorTenant) {
+      if (item.tenantId) tenantsRelacionados.add(item.tenantId);
+    }
+    for (const item of analisesPorTenant) {
+      if (item.tenantId) tenantsRelacionados.add(item.tenantId);
+    }
+    for (const item of contribuicoesPorTenant) {
+      if (item.tenantId) tenantsRelacionados.add(item.tenantId);
+    }
+
+    const tenantMeta =
+      tenantsRelacionados.size > 0
+        ? await prisma.tenant.findMany({
+            where: {
+              id: {
+                in: [...tenantsRelacionados],
+              },
+            },
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              status: true,
+            },
+          })
+        : [];
+
+    const tenantRelacionamentos = new Map<
+      string,
+      {
+        tenantId: string;
+        tenantNome: string;
+        tenantSlug: string;
+        tenantStatus: string;
+        possuiAcesso: boolean;
+        niveisAcesso: Set<string>;
+        pacotes: Set<string>;
+        totalContribuicoes: number;
+        totalProcessos: number;
+        totalJulgamentos: number;
+        totalAnalises: number;
+      }
+    >();
+
+    for (const tenant of tenantMeta) {
+      tenantRelacionamentos.set(tenant.id, {
+        tenantId: tenant.id,
+        tenantNome: tenant.name,
+        tenantSlug: tenant.slug,
+        tenantStatus: tenant.status,
+        possuiAcesso: false,
+        niveisAcesso: new Set<string>(),
+        pacotes: new Set<string>(),
+        totalContribuicoes: 0,
+        totalProcessos: 0,
+        totalJulgamentos: 0,
+        totalAnalises: 0,
+      });
+    }
+
+    const ensureTenantRelacionamento = (
+      tenantId: string,
+      fallback?: {
+        nome?: string | null;
+        slug?: string | null;
+        status?: string | null;
+      },
+    ) => {
+      const existente = tenantRelacionamentos.get(tenantId);
+      if (existente) {
+        return existente;
+      }
+
+      const criado = {
+        tenantId,
+        tenantNome: fallback?.nome ?? "Tenant",
+        tenantSlug: fallback?.slug ?? "",
+        tenantStatus: fallback?.status ?? "UNKNOWN",
+        possuiAcesso: false,
+        niveisAcesso: new Set<string>(),
+        pacotes: new Set<string>(),
+        totalContribuicoes: 0,
+        totalProcessos: 0,
+        totalJulgamentos: 0,
+        totalAnalises: 0,
+      };
+
+      tenantRelacionamentos.set(tenantId, criado);
+      return criado;
+    };
+
+    for (const unlock of serialized.tenantUnlocks ?? []) {
+      if (!unlock?.tenantId) continue;
+      const tenant = ensureTenantRelacionamento(unlock.tenantId, {
+        nome: unlock.tenant?.name,
+        slug: unlock.tenant?.slug,
+        status: unlock.tenant?.status,
+      });
+      tenant.possuiAcesso = unlock.status === "ATIVO" || tenant.possuiAcesso;
+      if (unlock.nivelAcesso) {
+        tenant.niveisAcesso.add(unlock.nivelAcesso);
+      }
+      if (unlock.assinaturaPacote?.pacote?.nome) {
+        tenant.pacotes.add(unlock.assinaturaPacote.pacote.nome);
+      }
+    }
+
+    for (const item of processosPorTenant) {
+      if (!item.tenantId) continue;
+      const tenant = ensureTenantRelacionamento(item.tenantId);
+      tenant.totalProcessos = item._count._all;
+    }
+
+    for (const item of julgamentosPorTenant) {
+      if (!item.tenantId) continue;
+      const tenant = ensureTenantRelacionamento(item.tenantId);
+      tenant.totalJulgamentos = item._count._all;
+    }
+
+    for (const item of analisesPorTenant) {
+      if (!item.tenantId) continue;
+      const tenant = ensureTenantRelacionamento(item.tenantId);
+      tenant.totalAnalises = item._count._all;
+    }
+
+    for (const item of contribuicoesPorTenant) {
+      if (!item.tenantId) continue;
+      const tenant = ensureTenantRelacionamento(item.tenantId);
+      tenant.totalContribuicoes = item._count._all;
+    }
+
+    const primeiraContribuicao =
+      [...(serialized.contribuicoes ?? [])]
+        .sort(
+          (a, b) =>
+            new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime(),
+        )[0] ?? null;
+
+    const detalhes: JuizAdminDetalhesSerializado = {
+      id: serialized.id,
+      tipoAutoridade: serialized.tipoAutoridade,
+      nome: serialized.nome,
+      nomeCompleto: serialized.nomeCompleto,
+      cpf: serialized.cpf,
+      oab: serialized.oab,
+      email: serialized.email,
+      telefone: serialized.telefone,
+      endereco: serialized.endereco,
+      cidade: serialized.cidade,
+      estado: serialized.estado,
+      cep: serialized.cep,
+      dataNascimento: serialized.dataNascimento,
+      dataPosse: serialized.dataPosse,
+      dataAposentadoria: serialized.dataAposentadoria,
+      status: serialized.status,
+      nivel: serialized.nivel,
+      especialidades: serialized.especialidades ?? [],
+      vara: serialized.vara,
+      comarca: serialized.comarca,
+      biografia: serialized.biografia,
+      formacao: serialized.formacao,
+      experiencia: serialized.experiencia,
+      premios: serialized.premios,
+      publicacoes: serialized.publicacoes,
+      foto: serialized.foto,
+      website: serialized.website,
+      linkedin: serialized.linkedin,
+      twitter: serialized.twitter,
+      instagram: serialized.instagram,
+      observacoes: serialized.observacoes,
+      isPublico: Boolean(serialized.isPublico),
+      isPremium: Boolean(serialized.isPremium),
+      precoAcesso:
+        typeof serialized.precoAcesso === "number"
+          ? serialized.precoAcesso
+          : serialized.precoAcesso == null
+            ? null
+            : Number(serialized.precoAcesso),
+      tribunalId: serialized.tribunalId,
+      tribunal: serialized.tribunal ?? null,
+      _count: serialized._count,
+      superAdminCriador: serialized.superAdmin
+        ? {
+            id: serialized.superAdmin.id,
+            nome:
+              `${serialized.superAdmin.firstName ?? ""} ${serialized.superAdmin.lastName ?? ""}`.trim() ||
+              serialized.superAdmin.email,
+            email: serialized.superAdmin.email,
+          }
+        : null,
+      origemCadastro: serialized.superAdmin
+        ? "SUPER_ADMIN"
+        : primeiraContribuicao
+          ? "TENANT"
+          : "INDEFINIDA",
+      primeiroTenantContribuinte: primeiraContribuicao
+        ? {
+            id: primeiraContribuicao.tenant.id,
+            nome: primeiraContribuicao.tenant.name,
+            slug: primeiraContribuicao.tenant.slug,
+            criadoEm: primeiraContribuicao.criadoEm,
+          }
+        : null,
+      resumoRelacionamentos: {
+        processos: serialized._count?.processos ?? 0,
+        julgamentos: serialized._count?.julgamentos ?? 0,
+        analises: serialized._count?.analises ?? 0,
+        favoritos: serialized._count?.favoritos ?? 0,
+        pacotes: serialized._count?.pacotes ?? 0,
+        tenantsComAcesso: serialized._count?.tenantUnlocks ?? 0,
+        contribuicoes: serialized._count?.contribuicoes ?? 0,
+        acessosRegistrados: serialized._count?.acessos ?? 0,
+        tenantsRelacionados: tenantsRelacionados.size,
+      },
+      processosRecentes: (serialized.processos ?? []).map((processo: any) => ({
+        id: processo.id,
+        tenantId: processo.tenantId,
+        tenantNome: processo.tenant?.name ?? "Tenant",
+        tenantSlug: processo.tenant?.slug ?? "",
+        numero: processo.numero,
+        numeroCnj: processo.numeroCnj ?? null,
+        titulo: processo.titulo ?? null,
+        status: processo.status,
+        fase: processo.fase ?? null,
+        grau: processo.grau ?? null,
+        valorCausa:
+          typeof processo.valorCausa === "number"
+            ? processo.valorCausa
+            : processo.valorCausa == null
+              ? null
+              : Number(processo.valorCausa),
+        dataDistribuicao: processo.dataDistribuicao ?? null,
+        updatedAt: processo.updatedAt,
+        areaNome: processo.area?.nome ?? null,
+        clientePrincipal: processo.cliente?.nome ?? "Sem cliente",
+        clientesRelacionados:
+          processo.clientesRelacionados?.map(
+            (item: any) => item.cliente?.nome,
+          )?.filter(Boolean) ?? [],
+      })),
+      pacotesRelacionados: (serialized.pacotes ?? []).map((item: any) => ({
+        id: item.pacote.id,
+        nome: item.pacote.nome,
+        descricao: item.pacote.descricao ?? null,
+        preco:
+          typeof item.pacote.preco === "number"
+            ? item.pacote.preco
+            : Number(item.pacote.preco ?? 0),
+        moeda: item.pacote.moeda,
+        status: item.pacote.status,
+        isPublico: Boolean(item.pacote.isPublico),
+        ordemExibicao: item.pacote.ordemExibicao ?? 0,
+        totalAssinaturas: item.pacote._count?.assinaturas ?? 0,
+        tenantsAtivos: (serialized.tenantUnlocks ?? []).filter(
+          (unlock: any) =>
+            unlock.status === "ATIVO" &&
+            unlock.assinaturaPacote?.pacoteId === item.pacote.id,
+        ).length,
+        ativoNoPacote: Boolean(item.ativo),
+      })),
+      tenantsComAcesso: (serialized.tenantUnlocks ?? []).map((unlock: any) => ({
+        id: unlock.id,
+        tenantId: unlock.tenantId,
+        tenantNome: unlock.tenant?.name ?? "Tenant",
+        tenantSlug: unlock.tenant?.slug ?? "",
+        tenantStatus: unlock.tenant?.status ?? "UNKNOWN",
+        nivelAcesso: unlock.nivelAcesso,
+        origem: unlock.origem,
+        status: unlock.status,
+        dataInicio: unlock.dataInicio,
+        dataFim: unlock.dataFim ?? null,
+        observacoes: unlock.observacoes ?? null,
+        assinaturaPacoteId: unlock.assinaturaPacoteId ?? null,
+        assinaturaStatus: unlock.assinaturaPacote?.status ?? null,
+        pacoteId: unlock.assinaturaPacote?.pacoteId ?? null,
+        pacoteNome: unlock.assinaturaPacote?.pacote?.nome ?? null,
+        precoPago:
+          typeof unlock.assinaturaPacote?.precoPago === "number"
+            ? unlock.assinaturaPacote.precoPago
+            : unlock.assinaturaPacote?.precoPago == null
+              ? null
+              : Number(unlock.assinaturaPacote.precoPago),
+      })),
+      tenantsRelacionadosDetalhados: [...tenantRelacionamentos.values()]
+        .map((tenant) => ({
+          tenantId: tenant.tenantId,
+          tenantNome: tenant.tenantNome,
+          tenantSlug: tenant.tenantSlug,
+          tenantStatus: tenant.tenantStatus,
+          possuiAcesso: tenant.possuiAcesso,
+          niveisAcesso: [...tenant.niveisAcesso],
+          pacotes: [...tenant.pacotes],
+          totalContribuicoes: tenant.totalContribuicoes,
+          totalProcessos: tenant.totalProcessos,
+          totalJulgamentos: tenant.totalJulgamentos,
+          totalAnalises: tenant.totalAnalises,
+        }))
+        .sort((a, b) => {
+          if (a.possuiAcesso !== b.possuiAcesso) {
+            return a.possuiAcesso ? -1 : 1;
+          }
+          if (a.totalProcessos !== b.totalProcessos) {
+            return b.totalProcessos - a.totalProcessos;
+          }
+          if (a.totalContribuicoes !== b.totalContribuicoes) {
+            return b.totalContribuicoes - a.totalContribuicoes;
+          }
+          return a.tenantNome.localeCompare(b.tenantNome);
+        }),
+      contribuicoesRecentes: (serialized.contribuicoes ?? []).map(
+        (contribuicao: any) => ({
+          id: contribuicao.id,
+          tenantId: contribuicao.tenantId,
+          tenantNome: contribuicao.tenant?.name ?? "Tenant",
+          tenantSlug: contribuicao.tenant?.slug ?? "",
+          origem: contribuicao.origem,
+          status: contribuicao.status,
+          campos: contribuicao.campos ?? [],
+          notaConfianca:
+            typeof contribuicao.notaConfianca === "number"
+              ? contribuicao.notaConfianca
+              : contribuicao.notaConfianca == null
+                ? null
+                : Number(contribuicao.notaConfianca),
+          observacoes: contribuicao.observacoes ?? null,
+          criadoEm: contribuicao.criadoEm,
+          aprovadoEm: contribuicao.aprovadoEm ?? null,
+          criadoPorNome:
+            `${contribuicao.criadoPor?.firstName ?? ""} ${contribuicao.criadoPor?.lastName ?? ""}`.trim() ||
+            contribuicao.criadoPor?.email ||
+            "Usuario",
+          criadoPorEmail: contribuicao.criadoPor?.email ?? "",
+          aprovadoPorNome:
+            `${contribuicao.aprovadoPor?.firstName ?? ""} ${contribuicao.aprovadoPor?.lastName ?? ""}`.trim() ||
+            null,
+        }),
+      ),
+      julgamentosRecentes: (serialized.julgamentos ?? []).map((julgamento: any) => ({
+        id: julgamento.id,
+        tenantId: julgamento.tenantId,
+        tenantNome: julgamento.tenant?.name ?? "Tenant",
+        titulo: julgamento.titulo,
+        tipoJulgamento: julgamento.tipoJulgamento,
+        resultado: julgamento.resultado ?? null,
+        dataJulgamento: julgamento.dataJulgamento,
+        processoNumero: julgamento.processo?.numero ?? null,
+      })),
+      analisesRecentes: (serialized.analises ?? []).map((analise: any) => ({
+        id: analise.id,
+        tenantId: analise.tenantId,
+        tenantNome: analise.tenant?.name ?? "Tenant",
+        titulo: analise.titulo,
+        tipoAnalise: analise.tipoAnalise,
+        isPublico: Boolean(analise.isPublico),
+        createdAt: analise.createdAt,
+      })),
+    };
+
+    return {
+      success: true,
+      data: detalhes,
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar detalhes administrativos da autoridade:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao carregar detalhes da autoridade",
     };
   }
 }

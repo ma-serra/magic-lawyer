@@ -11,6 +11,7 @@ const customJestConfig = {
   testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^workflow/api$': '<rootDir>/test/mocks/workflow-api.js',
   },
   testMatch: [
     '**/__tests__/**/*.[jt]s?(x)',
@@ -27,9 +28,7 @@ const customJestConfig = {
   moduleDirectories: ['node_modules', '<rootDir>/'],
   testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/e2e/'],
   modulePathIgnorePatterns: ['<rootDir>/.next/'],
-  transformIgnorePatterns: [
-    'node_modules/(?!(msgpackr|bullmq)/)',
-  ],
+  transformIgnorePatterns: ['node_modules/(?!(msgpackr|bullmq)/)'],
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async

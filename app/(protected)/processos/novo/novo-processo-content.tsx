@@ -23,11 +23,13 @@ import {
   Landmark,
   Link2,
   Clock,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
 import { Spinner } from "@heroui/spinner";
+import { Chip } from "@heroui/chip";
 import useSWR from "swr";
 
 import { title } from "@/components/primitives";
@@ -38,6 +40,7 @@ import {
 import { listTribunaisParaVinculo } from "@/app/actions/tribunais";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
 import {
+  ProcessoArquivamentoTipo,
   ProcessoStatus,
   ProcessoFase,
   ProcessoGrau,
@@ -61,6 +64,7 @@ export function NovoProcessoContent() {
     titulo: "",
     descricao: "",
     status: ProcessoStatus.RASCUNHO,
+    arquivamentoTipo: null,
     classeProcessual: "",
     orgaoJulgador: "",
     vara: "",
@@ -70,8 +74,10 @@ export function NovoProcessoContent() {
     numeroInterno: "",
     pastaCompartilhadaUrl: "",
     clienteId: clienteIdParam || "",
+    clienteIds: clienteIdParam ? [clienteIdParam] : [],
     segredoJustica: false,
     advogadoResponsavelId: "",
+    advogadoResponsavelIds: [],
     juizId: "",
     tribunalId: "",
   });
@@ -123,15 +129,30 @@ export function NovoProcessoContent() {
     () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
     [juizesDisponiveis],
   );
-  const selectedClienteKeys =
-    formData.clienteId && clienteKeys.has(formData.clienteId)
-      ? [formData.clienteId]
-      : [];
-  const selectedAdvogadoKeys =
-    formData.advogadoResponsavelId &&
-    advogadoKeys.has(formData.advogadoResponsavelId)
-      ? [formData.advogadoResponsavelId]
-      : [];
+  const selectedClienteKeys = useMemo(
+    () =>
+      (formData.clienteIds?.length
+        ? formData.clienteIds
+        : formData.clienteId
+          ? [formData.clienteId]
+          : []
+      ).filter((clienteId) => clienteKeys.has(clienteId)),
+    [clienteKeys, formData.clienteId, formData.clienteIds],
+  );
+  const selectedAdvogadoKeys = useMemo(
+    () =>
+      (formData.advogadoResponsavelIds?.length
+        ? formData.advogadoResponsavelIds
+        : formData.advogadoResponsavelId
+          ? [formData.advogadoResponsavelId]
+          : []
+      ).filter((advogadoId) => advogadoKeys.has(advogadoId)),
+    [
+      advogadoKeys,
+      formData.advogadoResponsavelId,
+      formData.advogadoResponsavelIds,
+    ],
+  );
   const selectedTribunalKeys =
     formData.tribunalId && tribunalKeys.has(formData.tribunalId)
       ? [formData.tribunalId]
@@ -140,6 +161,10 @@ export function NovoProcessoContent() {
     formData.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
   const selectedAreaKeys =
     formData.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const selectedArquivamentoKeys =
+    formData.arquivamentoTipo && formData.status === ProcessoStatus.ARQUIVADO
+      ? [formData.arquivamentoTipo]
+      : [];
   const clienteOptions = useMemo(
     () =>
       (clientes || []).map((cliente) => ({
@@ -251,8 +276,8 @@ export function NovoProcessoContent() {
       return;
     }
 
-    if (!formData.clienteId) {
-      toast.error("Selecione um cliente");
+    if (selectedClienteKeys.length === 0) {
+      toast.error("Selecione pelo menos um cliente");
 
       return;
     }
@@ -274,7 +299,8 @@ export function NovoProcessoContent() {
     try {
       const payload: ProcessoCreateInput = {
         numero: formData.numero.trim(),
-        clienteId: formData.clienteId,
+        clienteId: selectedClienteKeys[0],
+        clienteIds: selectedClienteKeys,
         status: formData.status,
         segredoJustica: formData.segredoJustica,
       };
@@ -308,10 +334,15 @@ export function NovoProcessoContent() {
       if (formData.areaId) payload.areaId = formData.areaId;
       if (formData.fase) payload.fase = formData.fase;
       if (formData.grau) payload.grau = formData.grau;
-      if (formData.advogadoResponsavelId)
-        payload.advogadoResponsavelId = formData.advogadoResponsavelId;
+      if (selectedAdvogadoKeys.length > 0) {
+        payload.advogadoResponsavelId = selectedAdvogadoKeys[0];
+        payload.advogadoResponsavelIds = selectedAdvogadoKeys;
+      }
       if (formData.juizId) payload.juizId = formData.juizId;
       if (formData.tribunalId) payload.tribunalId = formData.tribunalId;
+      if (formData.status === ProcessoStatus.ARQUIVADO) {
+        payload.arquivamentoTipo = formData.arquivamentoTipo ?? null;
+      }
 
       const result = await createProcesso(payload);
 
@@ -334,7 +365,7 @@ export function NovoProcessoContent() {
     }
   };
 
-  if (isLoadingClientes && !clienteIdParam) {
+  if (isLoadingClientes && clientes.length === 0) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Spinner label="Carregando dados..." size="lg" />
@@ -368,7 +399,7 @@ export function NovoProcessoContent() {
           <CardBody className="flex flex-row items-center gap-2">
             <User className="h-5 w-5 text-primary" />
             <p className="text-sm text-primary">
-              Este processo será vinculado ao cliente selecionado
+              Este processo começará com este cliente já vinculado. Você pode adicionar outros abaixo.
             </p>
           </CardBody>
         </Card>
@@ -391,26 +422,57 @@ export function NovoProcessoContent() {
             </h3>
 
             {/* Select de Cliente (se não veio de um cliente) */}
-            {!clienteIdParam && (
-              <SearchableSelect
+            <Select
                 isRequired
-                description="Cliente principal do processo. Ele será incluído automaticamente como parte autora."
-                emptyContent="Nenhum cliente encontrado"
+                description="Selecione um ou mais clientes vinculados a este processo. Todos aparecem no caso."
                 items={clienteOptions}
-                label="Cliente *"
-                placeholder="Selecione um cliente"
-                selectedKey={selectedClienteKeys[0] ?? null}
-                startContent={<User className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(selectedKey) =>
+                label="Clientes vinculados *"
+                placeholder="Selecione um ou mais clientes"
+                selectedKeys={new Set(selectedClienteKeys)}
+                selectionMode="multiple"
+                startContent={<Users className="h-4 w-4 text-default-400" />}
+                onSelectionChange={(keys) => {
+                  const nextKeys = Array.from(keys).map(String);
+
                   setFormData((prev) => ({
                     ...prev,
-                    clienteId: selectedKey || "",
-                  }))
-                }
-              />
-            )}
+                    clienteId: nextKeys[0] || "",
+                    clienteIds: nextKeys,
+                  }));
+                }}
+              >
+                {clienteOptions.map((item) => (
+                  <SelectItem
+                    key={item.key}
+                    textValue={item.textValue ?? item.label}
+                  >
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </Select>
+              {selectedClienteKeys.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedClienteKeys.map((clienteId) => {
+                    const cliente = clientes.find((item) => item.id === clienteId);
 
-            {/* Select de Advogado Responsável */}
+                    if (!cliente) {
+                      return null;
+                    }
+
+                    return (
+                      <Chip
+                        key={clienteId}
+                        color="primary"
+                        size="sm"
+                        variant="flat"
+                      >
+                        {cliente.nome}
+                      </Chip>
+                    );
+                  })}
+                </div>
+              ) : null}
+
             <SearchableSelect
               isRequired
               description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
@@ -429,41 +491,90 @@ export function NovoProcessoContent() {
               }
             />
 
-            <SearchableSelect
+            <div className="-mt-1 flex justify-end">
+              <Button
+                as={Link}
+                color="secondary"
+                href="/juizes"
+                size="sm"
+                variant="light"
+              >
+                Nao encontrou a autoridade? Cadastre em Juizes
+              </Button>
+            </div>
+
+            <Select
               description="Tribunal ao qual o processo está vinculado. Pode ser global (oficial) ou do seu escritório."
-              emptyContent="Nenhum tribunal encontrado"
               items={tribunalOptions}
               isLoading={isLoadingTribunais}
               isRequired
               label="Tribunal *"
               placeholder="Selecione o tribunal do caso"
-              selectedKey={selectedTribunalKeys[0] ?? null}
+              selectedKeys={new Set(selectedTribunalKeys)}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(selectedKey) =>
+              onSelectionChange={(keys) =>
                 setFormData((prev) => ({
                   ...prev,
-                  tribunalId: selectedKey || "",
+                  tribunalId: Array.from(keys)[0]?.toString() || "",
                 }))
               }
-            />
+            >
+              {tribunalOptions.map((item) => (
+                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
 
-            <SearchableSelect
-              description="Pessoa que lidera o caso e recebe a responsabilidade principal."
-              emptyContent="Nenhum advogado encontrado"
+            <Select
+              description="Vincule um ou mais advogados responsáveis a este processo."
               items={advogadoOptions}
               isLoading={isLoadingAdvogados}
-              isClearable
-              label="Advogado Responsável"
-              placeholder="Selecione um advogado (opcional)"
-              selectedKey={selectedAdvogadoKeys[0] ?? null}
+              label="Advogados responsáveis"
+              placeholder="Selecione um ou mais advogados"
+              selectedKeys={new Set(selectedAdvogadoKeys)}
+              selectionMode="multiple"
               startContent={<Scale className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(selectedKey) =>
+              onSelectionChange={(keys) => {
+                const nextKeys = Array.from(keys).map(String);
+
                 setFormData((prev) => ({
                   ...prev,
-                  advogadoResponsavelId: selectedKey || "",
-                }))
-              }
-            />
+                  advogadoResponsavelId: nextKeys[0] || "",
+                  advogadoResponsavelIds: nextKeys,
+                }));
+              }}
+            >
+              {advogadoOptions.map((item) => (
+                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
+            {selectedAdvogadoKeys.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {selectedAdvogadoKeys.map((advogadoId) => {
+                  const advogado = (advogados || []).find(
+                    (item) => item.id === advogadoId,
+                  );
+
+                  if (!advogado) {
+                    return null;
+                  }
+
+                  return (
+                    <Chip
+                      key={advogadoId}
+                      color="secondary"
+                      size="sm"
+                      variant="flat"
+                    >
+                      {advogado.label}
+                    </Chip>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Input
@@ -538,6 +649,10 @@ export function NovoProcessoContent() {
                   setFormData((prev) => ({
                     ...prev,
                     status: Array.from(keys)[0] as ProcessoStatus,
+                    arquivamentoTipo:
+                      Array.from(keys)[0] === ProcessoStatus.ARQUIVADO
+                        ? prev.arquivamentoTipo ?? null
+                        : null,
                   }))
                 }
               >
@@ -553,6 +668,36 @@ export function NovoProcessoContent() {
                   Arquivado
                 </SelectItem>
               </Select>
+
+              {formData.status === ProcessoStatus.ARQUIVADO ? (
+                <Select
+                  description="Classifique se o arquivamento ainda pode ser reaberto ou se ja encerrou definitivamente."
+                  label="Tipo de arquivamento"
+                  placeholder="Selecione o tipo"
+                  selectedKeys={selectedArquivamentoKeys}
+                  onSelectionChange={(keys) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      arquivamentoTipo:
+                        (Array.from(keys)[0] as ProcessoArquivamentoTipo) ??
+                        null,
+                    }))
+                  }
+                >
+                  <SelectItem
+                    key={ProcessoArquivamentoTipo.PROVISORIO}
+                    textValue="Arquivado provisoriamente"
+                  >
+                    Arquivado provisoriamente
+                  </SelectItem>
+                  <SelectItem
+                    key={ProcessoArquivamentoTipo.DEFINITIVO}
+                    textValue="Arquivado definitivamente"
+                  >
+                    Arquivado definitivamente
+                  </SelectItem>
+                </Select>
+              ) : null}
 
               <Input
                 description="Classe jurídica informada no tribunal (ex.: Procedimento Comum)."

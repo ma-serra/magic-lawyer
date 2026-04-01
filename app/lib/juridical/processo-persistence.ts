@@ -2,9 +2,16 @@ import prisma from "@/app/lib/prisma";
 import { syncCapturedProcessDocuments } from "@/app/lib/juridical/process-document-sync";
 import { ensureJusbrasilProcessMonitorBestEffort } from "@/app/lib/juridical/jusbrasil-process-monitoring";
 import {
+  ensureProcessoClientePartes,
+  syncProcessoClientes,
+  syncProcessoResponsaveis,
+  uniqueOrderedProcessoRelationIds,
+} from "@/app/lib/processos/processo-vinculos";
+import {
   inferImportedProcessoStatus,
   mergeImportedProcessoStatus,
 } from "@/app/lib/juridical/processo-status-mapping";
+import { NotificationHelper } from "@/app/lib/notifications/notification-helper";
 import {
   Prisma,
   ProcessoStatus,
@@ -704,6 +711,256 @@ async function ensureCliente(
   });
 }
 
+function collectImportedClientCandidateNames(
+  processo: ProcessoJuridico,
+  options?: {
+    clientePrincipalNome?: string | null;
+    clienteNomeExplicito?: string | null;
+    advogadoResponsavel?: AdvogadoResponsavelContext | null;
+  },
+) {
+  const names: string[] = [];
+  const seen = new Set<string>();
+
+  const addName = (value?: string | null) => {
+    const normalizedValue = value?.trim();
+    if (
+      !normalizedValue ||
+      matchesAdvogadoResponsavelNome(normalizedValue, options?.advogadoResponsavel)
+    ) {
+      return;
+    }
+
+    const key = normalizeCacheKey(normalizedValue);
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    names.push(normalizedValue);
+  };
+
+  addName(options?.clientePrincipalNome);
+  addName(options?.clienteNomeExplicito);
+
+  for (const parte of processo.partes || []) {
+    const representadaPeloResponsavel = (parte.advogados || []).some((advogado) =>
+      matchesAdvogadoResponsavelIdentidade(advogado, options?.advogadoResponsavel),
+    );
+
+    if (representadaPeloResponsavel) {
+      addName(parte.nome);
+    }
+  }
+
+  return names;
+}
+
+async function ensureImportedClientesRelacionados(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    processo: ProcessoJuridico;
+    clientePrincipal: {
+      id: string;
+      nome: string;
+      documento?: string | null;
+      email?: string | null;
+      telefone?: string | null;
+    };
+    clienteNome?: string;
+    advogadoResponsavel?: AdvogadoResponsavelContext | null;
+  },
+) {
+  const clientes = [params.clientePrincipal];
+  const seen = new Set([params.clientePrincipal.id]);
+  const candidateNames = collectImportedClientCandidateNames(params.processo, {
+    clientePrincipalNome: params.clientePrincipal.nome,
+    clienteNomeExplicito: params.clienteNome,
+    advogadoResponsavel: params.advogadoResponsavel,
+  });
+
+  for (const nome of candidateNames) {
+    const cliente = await ensureCliente(
+      tx,
+      params.tenantId,
+      params.processo,
+      nome,
+      params.advogadoResponsavel,
+    );
+
+    if (!seen.has(cliente.id)) {
+      seen.add(cliente.id);
+      clientes.push(cliente);
+    }
+  }
+
+  return clientes;
+}
+
+function shouldFlagImportedClientReview(
+  processo: ProcessoJuridico,
+  options?: {
+    clienteNome?: string | null;
+    advogadoResponsavel?: AdvogadoResponsavelContext | null;
+    clientesRelacionadosCount?: number;
+  },
+) {
+  if ((options?.clientesRelacionadosCount ?? 0) > 1) {
+    return false;
+  }
+
+  const representedCandidates = collectImportedClientCandidateNames(processo, {
+    clienteNomeExplicito: options?.clienteNome,
+    advogadoResponsavel: options?.advogadoResponsavel,
+  });
+
+  if (representedCandidates.length > 0) {
+    return false;
+  }
+
+  const autores = uniqueOrderedProcessoRelationIds(
+    (processo.partes || [])
+      .filter((parte) => parte.tipo === "AUTOR")
+      .map((parte) => parte.nome),
+  );
+
+  return autores.length > 1;
+}
+
+async function ensureImportedClientReviewTasks(params: {
+  tenantId: string;
+  processoId: string;
+  processoNumero: string;
+  clienteId?: string | null;
+}) {
+  const processo = await prisma.processo.findFirst({
+    where: {
+      id: params.processoId,
+      tenantId: params.tenantId,
+    },
+    select: {
+      id: true,
+      responsaveis: {
+        select: {
+          advogado: {
+            select: {
+              usuario: {
+                select: {
+                  id: true,
+                  active: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      advogadoResponsavel: {
+        select: {
+          usuario: {
+            select: {
+              id: true,
+              active: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!processo) {
+    return;
+  }
+
+  const recipientIds = uniqueOrderedProcessoRelationIds([
+    ...processo.responsaveis.map((item) =>
+      item.advogado.usuario?.active ? item.advogado.usuario.id : null,
+    ),
+    processo.advogadoResponsavel?.usuario?.active
+      ? processo.advogadoResponsavel.usuario.id
+      : null,
+  ]);
+
+  const fallbackAdmins =
+    recipientIds.length === 0
+      ? await prisma.usuario.findMany({
+          where: {
+            tenantId: params.tenantId,
+            role: UserRole.ADMIN,
+            active: true,
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : [];
+
+  const finalRecipients = uniqueOrderedProcessoRelationIds([
+    ...recipientIds,
+    ...fallbackAdmins.map((admin) => admin.id),
+  ]);
+
+  for (const userId of finalRecipients) {
+    const existing = await prisma.tarefa.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        processoId: params.processoId,
+        responsavelId: userId,
+        titulo: "Revisar vínculo de cliente importado do Jusbrasil",
+        status: {
+          in: ["PENDENTE", "EM_ANDAMENTO"],
+        },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existing) {
+      continue;
+    }
+
+    const tarefa = await prisma.tarefa.create({
+      data: {
+        tenantId: params.tenantId,
+        titulo: "Revisar vínculo de cliente importado do Jusbrasil",
+        descricao:
+          `O processo ${params.processoNumero} foi importado com múltiplos indícios de cliente e precisa de revisão humana antes de consolidar o vínculo final.`,
+        prioridade: "ALTA",
+        status: "PENDENTE",
+        processoId: params.processoId,
+        clienteId: params.clienteId ?? null,
+        responsavelId: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await NotificationHelper.notifyTarefaCreated(params.tenantId, userId, {
+      tarefaId: tarefa.id,
+      titulo: "Revisar vínculo de cliente importado do Jusbrasil",
+      descricao:
+        `O processo ${params.processoNumero} precisa de revisão para confirmar o cliente correto.`,
+      criadoPor: "Importação Jusbrasil",
+    });
+
+    await NotificationHelper.notifyTarefaAssigned(params.tenantId, userId, {
+      tarefaId: tarefa.id,
+      titulo: "Revisar vínculo de cliente importado do Jusbrasil",
+      atribuidoPara: "Responsável pelo processo",
+      atribuidoPor: "Importação Jusbrasil",
+    });
+  }
+}
+
 async function getAdvogadoResponsavelContext(
   tx: Prisma.TransactionClient,
   advogadoId?: string | null,
@@ -1052,7 +1309,7 @@ export async function upsertProcessoFromCapture(params: {
   }
 
   if (existente && updateIfExists) {
-    await prisma.$transaction(async (tx) => {
+    const updatedResult = await prisma.$transaction(async (tx) => {
       const advogadoResponsavel = await getAdvogadoResponsavelContext(
         tx,
         advogadoId || existente.advogadoResponsavelId,
@@ -1085,6 +1342,20 @@ export async function upsertProcessoFromCapture(params: {
             advogadoResponsavel,
           )
         : clienteAtual;
+      const clientesRelacionados = await ensureImportedClientesRelacionados(tx, {
+        tenantId,
+        processo,
+        clientePrincipal: clienteAlvo,
+        clienteNome,
+        advogadoResponsavel,
+      });
+      const clienteIdsRelacionados = uniqueOrderedProcessoRelationIds(
+        clientesRelacionados.map((cliente) => cliente.id),
+      );
+      const advogadoIdsRelacionados = uniqueOrderedProcessoRelationIds([
+        advogadoId,
+        existente.advogadoResponsavelId,
+      ]);
 
       await tx.processo.update({
         where: { id: existente.id },
@@ -1124,6 +1395,33 @@ export async function upsertProcessoFromCapture(params: {
         advogadoId,
         clienteId: clienteAlvo.id,
       });
+      await syncProcessoClientes(tx, {
+        tenantId,
+        processoId: existente.id,
+        clienteIds: clienteIdsRelacionados,
+      });
+      await syncProcessoResponsaveis(tx, {
+        tenantId,
+        processoId: existente.id,
+        advogadoIds: advogadoIdsRelacionados,
+        advogadoPrincipalId: advogadoId || existente.advogadoResponsavelId,
+      });
+      await ensureProcessoClientePartes(tx, {
+        tenantId,
+        processoId: existente.id,
+        clienteIds: clienteIdsRelacionados,
+      });
+
+      return {
+        processoId: existente.id,
+        clienteId: clienteAlvo.id,
+        clienteIdsRelacionados,
+        needsClientReview: shouldFlagImportedClientReview(processo, {
+          clienteNome,
+          advogadoResponsavel,
+          clientesRelacionadosCount: clienteIdsRelacionados.length,
+        }),
+      };
     }, {
       maxWait: 10_000,
       timeout: 30_000,
@@ -1134,6 +1432,15 @@ export async function upsertProcessoFromCapture(params: {
         tenantId,
         processoId: existente.id,
         numeroProcesso: numero,
+      });
+    }
+
+    if (updatedResult.needsClientReview) {
+      await ensureImportedClientReviewTasks({
+        tenantId,
+        processoId: updatedResult.processoId,
+        processoNumero: numero,
+        clienteId: updatedResult.clienteId,
       });
     }
 
@@ -1152,6 +1459,17 @@ export async function upsertProcessoFromCapture(params: {
       clienteNome,
       advogadoResponsavel,
     );
+    const clientesRelacionados = await ensureImportedClientesRelacionados(tx, {
+      tenantId,
+      processo,
+      clientePrincipal: cliente,
+      clienteNome,
+      advogadoResponsavel,
+    });
+    const clienteIdsRelacionados = uniqueOrderedProcessoRelationIds(
+      clientesRelacionados.map((item) => item.id),
+    );
+    const advogadoIdsRelacionados = uniqueOrderedProcessoRelationIds([advogadoId]);
 
     const processoCriado = await tx.processo.create({
       data: {
@@ -1200,9 +1518,34 @@ export async function upsertProcessoFromCapture(params: {
       tenantId,
       advogadoId,
       clienteId: cliente.id,
-      });
+    });
+    await syncProcessoClientes(tx, {
+      tenantId,
+      processoId: processoCriado.id,
+      clienteIds: clienteIdsRelacionados,
+    });
+    await syncProcessoResponsaveis(tx, {
+      tenantId,
+      processoId: processoCriado.id,
+      advogadoIds: advogadoIdsRelacionados,
+      advogadoPrincipalId: advogadoId || null,
+    });
+    await ensureProcessoClientePartes(tx, {
+      tenantId,
+      processoId: processoCriado.id,
+      clienteIds: clienteIdsRelacionados,
+    });
 
-    return processoCriado;
+    return {
+      ...processoCriado,
+      clienteId: cliente.id,
+      clienteIdsRelacionados,
+      needsClientReview: shouldFlagImportedClientReview(processo, {
+        clienteNome,
+        advogadoResponsavel,
+        clientesRelacionadosCount: clienteIdsRelacionados.length,
+      }),
+    };
   }, {
     maxWait: 10_000,
     timeout: 30_000,
@@ -1213,6 +1556,15 @@ export async function upsertProcessoFromCapture(params: {
       tenantId,
       processoId: criado.id,
       numeroProcesso: numero,
+    });
+  }
+
+  if (criado.needsClientReview) {
+    await ensureImportedClientReviewTasks({
+      tenantId,
+      processoId: criado.id,
+      processoNumero: numero,
+      clienteId: criado.clienteId,
     });
   }
 

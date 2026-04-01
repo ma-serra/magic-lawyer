@@ -1,13 +1,25 @@
 "use client";
 
-import type { JuizSerializado } from "@/app/actions/juizes";
+import type {
+  JuizAdminDetalhesSerializado,
+  JuizSerializado,
+} from "@/app/actions/juizes";
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
+import NextLink from "next/link";
 import { Button } from "@heroui/button";
 import { Card, CardBody } from "@heroui/card";
+import { Divider } from "@heroui/divider";
 import { Input } from "@heroui/input";
 import { Chip } from "@heroui/chip";
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from "@heroui/modal";
 import {
   Table,
   TableHeader,
@@ -28,9 +40,18 @@ import {
   BarChart3,
   MapPin,
   Briefcase,
+  Eye,
+  Building2,
+  Boxes,
+  Gavel,
+  Wallet,
+  Users2,
+  FileSearch,
+  Sparkles,
+  CalendarDays,
 } from "lucide-react";
 
-import { getJuizesAdmin } from "@/app/actions/juizes";
+import { getJuizAdminDetails, getJuizesAdmin } from "@/app/actions/juizes";
 import {
   PeopleMetricCard,
   PeoplePageHeader,
@@ -46,11 +67,40 @@ function formatCurrency(value: number | null) {
   }).format(value);
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "Nao informado";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Nao informado";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "Nao informado";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Nao informado";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(parsed);
+}
+
 export function JuizesContent() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
   const [escopoFilter, setEscopoFilter] = useState("all");
+  const [selectedJuizId, setSelectedJuizId] = useState<string | null>(null);
 
   const { data, error, isLoading, mutate } = useSWR(
     "admin-juizes",
@@ -62,6 +112,23 @@ export function JuizesContent() {
   );
 
   const juizes: JuizSerializado[] = data?.data ?? [];
+
+  const {
+    data: juizDetalheResponse,
+    error: juizDetalheError,
+    isLoading: isLoadingJuizDetalhe,
+    mutate: mutateJuizDetalhe,
+  } = useSWR(
+    selectedJuizId ? ["admin-juiz-detalhe", selectedJuizId] : null,
+    ([, juizId]) => getJuizAdminDetails(juizId),
+    {
+      revalidateOnFocus: false,
+      refreshInterval: 0,
+    },
+  );
+
+  const juizDetalhe: JuizAdminDetalhesSerializado | null =
+    juizDetalheResponse?.data ?? null;
 
   const resumo = useMemo(() => {
     const total = juizes.length;
@@ -116,6 +183,16 @@ export function JuizesContent() {
     error instanceof Error
       ? error.message
       : "Não foi possível carregar os juízes globais.";
+
+  const detalheErrorMessage =
+    juizDetalheError instanceof Error
+      ? juizDetalheError.message
+      : juizDetalheResponse?.error || "Nao foi possivel carregar os detalhes.";
+
+  const juizSelecionadoResumo = useMemo(
+    () => juizes.find((juiz) => juiz.id === selectedJuizId) ?? null,
+    [juizes, selectedJuizId],
+  );
 
   const hasActiveFilters =
     searchTerm.trim().length > 0 ||
@@ -279,7 +356,7 @@ export function JuizesContent() {
             </CardBody>
           </Card>
         ) : filteredJuizes.length === 0 ? (
-          <Card className="border border-white/10 bg-background/55">
+          <Card className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/55 dark:shadow-black/20">
             <CardBody className="py-10 text-center">
               <p className="text-sm text-default-400">
                 Nenhuma autoridade corresponde aos filtros aplicados.
@@ -290,11 +367,14 @@ export function JuizesContent() {
           <>
             <div className="space-y-3 lg:hidden">
               {filteredJuizes.map((juiz) => (
-                <Card key={juiz.id} className="border border-white/10 bg-background/55">
+                <Card
+                  key={juiz.id}
+                  className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/55 dark:shadow-black/20"
+                >
                   <CardBody className="space-y-3 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-white">{juiz.nome}</p>
+                        <p className="text-sm font-semibold text-foreground">{juiz.nome}</p>
                         {juiz.nomeCompleto ? (
                           <p className="text-xs text-default-400">{juiz.nomeCompleto}</p>
                         ) : null}
@@ -338,7 +418,7 @@ export function JuizesContent() {
                         <p className="text-[11px] uppercase tracking-wide text-primary/80">
                           Processos
                         </p>
-                        <p className="text-base font-semibold text-white">
+                        <p className="text-base font-semibold text-foreground">
                           {juiz._count?.processos ?? 0}
                         </p>
                       </div>
@@ -346,7 +426,7 @@ export function JuizesContent() {
                         <p className="text-[11px] uppercase tracking-wide text-secondary/80">
                           Preço
                         </p>
-                        <p className="truncate text-sm font-semibold text-white">
+                        <p className="truncate text-sm font-semibold text-foreground">
                           {formatCurrency(juiz.precoAcesso)}
                         </p>
                       </div>
@@ -369,6 +449,17 @@ export function JuizesContent() {
                         </Chip>
                       ) : null}
                     </div>
+
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        startContent={<Eye className="h-4 w-4" />}
+                        variant="flat"
+                        onPress={() => setSelectedJuizId(juiz.id)}
+                      >
+                        Ver detalhes
+                      </Button>
+                    </div>
                   </CardBody>
                 </Card>
               ))}
@@ -385,13 +476,14 @@ export function JuizesContent() {
                   <TableColumn>ESPECIALIDADES</TableColumn>
                   <TableColumn>PREÇO</TableColumn>
                   <TableColumn>PROCESSOS</TableColumn>
+                  <TableColumn>AÇÕES</TableColumn>
                 </TableHeader>
                 <TableBody emptyContent="Nenhuma autoridade corresponde aos filtros aplicados.">
                   {filteredJuizes.map((juiz) => (
                     <TableRow key={juiz.id}>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium text-white">{juiz.nome}</span>
+                          <span className="text-sm font-medium text-foreground">{juiz.nome}</span>
                           {juiz.nomeCompleto ? (
                             <span className="text-xs text-default-400">{juiz.nomeCompleto}</span>
                           ) : null}
@@ -438,7 +530,7 @@ export function JuizesContent() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="text-sm text-default-200">{juiz.comarca || "-"}</span>
+                          <span className="text-sm text-foreground">{juiz.comarca || "-"}</span>
                           <span className="text-xs text-default-400">{juiz.vara || "-"}</span>
                         </div>
                       </TableCell>
@@ -463,6 +555,16 @@ export function JuizesContent() {
                           {juiz._count?.processos ?? 0}
                         </div>
                       </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          startContent={<Eye className="h-4 w-4" />}
+                          variant="flat"
+                          onPress={() => setSelectedJuizId(juiz.id)}
+                        >
+                          Ver detalhes
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -471,6 +573,617 @@ export function JuizesContent() {
           </>
         )}
       </PeoplePanel>
+
+      <Modal
+        backdrop="blur"
+        isOpen={Boolean(selectedJuizId)}
+        scrollBehavior="inside"
+        size="5xl"
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedJuizId(null);
+          }
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-2 border-b border-default-200/80 pb-4 dark:border-white/10">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                      Autoridade
+                    </p>
+                    <h3 className="text-xl font-semibold text-foreground">
+                      {juizDetalhe?.nome ?? juizSelecionadoResumo?.nome ?? "Carregando detalhes"}
+                    </h3>
+                    <p className="text-sm text-default-400">
+                      {juizDetalhe?.nomeCompleto ||
+                        juizSelecionadoResumo?.nomeCompleto ||
+                        "Relacoes comerciais, uso por tenants e citacoes em processos."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Chip
+                      color={
+                        (juizDetalhe?.tipoAutoridade ?? juizSelecionadoResumo?.tipoAutoridade) ===
+                        "PROMOTOR"
+                          ? "warning"
+                          : "primary"
+                      }
+                      size="sm"
+                      variant="flat"
+                    >
+                      {(juizDetalhe?.tipoAutoridade ?? juizSelecionadoResumo?.tipoAutoridade) ===
+                      "PROMOTOR"
+                        ? "Promotor"
+                        : "Juiz"}
+                    </Chip>
+                    {juizDetalhe?.status ? (
+                      <Chip
+                        color={juizDetalhe.status === "ATIVO" ? "success" : "default"}
+                        size="sm"
+                        variant="flat"
+                      >
+                        {juizDetalhe.status}
+                      </Chip>
+                    ) : null}
+                  </div>
+                </div>
+              </ModalHeader>
+
+              <ModalBody className="space-y-6 py-6">
+                {isLoadingJuizDetalhe && !juizDetalhe ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Spinner size="lg" />
+                  </div>
+                ) : !juizDetalhe ? (
+                  <Card className="border border-danger/40 bg-danger/5">
+                    <CardBody className="space-y-4 py-8 text-center">
+                      <p className="text-sm text-danger">{detalheErrorMessage}</p>
+                      <div className="flex justify-center">
+                        <Button size="sm" variant="flat" onPress={() => mutateJuizDetalhe()}>
+                          Tentar novamente
+                        </Button>
+                      </div>
+                    </CardBody>
+                  </Card>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <PeopleMetricCard
+                        helper="Tenants com qualquer relacao registrada"
+                        icon={<Building2 className="h-4 w-4" />}
+                        label="Tenants relacionados"
+                        tone="primary"
+                        value={juizDetalhe.resumoRelacionamentos.tenantsRelacionados}
+                      />
+                      <PeopleMetricCard
+                        helper="Processos em que a autoridade foi citada"
+                        icon={<Briefcase className="h-4 w-4" />}
+                        label="Processos citados"
+                        tone="success"
+                        value={juizDetalhe.resumoRelacionamentos.processos}
+                      />
+                      <PeopleMetricCard
+                        helper="Pacotes comerciais com esta autoridade"
+                        icon={<Boxes className="h-4 w-4" />}
+                        label="Pacotes relacionados"
+                        tone="warning"
+                        value={juizDetalhe.resumoRelacionamentos.pacotes}
+                      />
+                      <PeopleMetricCard
+                        helper="Preco base de acesso ou venda avulsa"
+                        icon={<Wallet className="h-4 w-4" />}
+                        label="Valor de venda"
+                        tone="secondary"
+                        value={formatCurrency(juizDetalhe.precoAcesso)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                      <Card className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20">
+                        <CardBody className="space-y-3 p-4">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-primary" />
+                            <h4 className="text-sm font-semibold text-foreground">
+                              Origem do cadastro
+                            </h4>
+                          </div>
+                          <div className="space-y-2 text-sm text-default-500">
+                            <p>
+                              <span className="font-medium text-foreground">Origem:</span>{" "}
+                              {juizDetalhe.origemCadastro === "SUPER_ADMIN"
+                                ? "Base global"
+                                : juizDetalhe.origemCadastro === "TENANT"
+                                  ? "Contribuicao de tenant"
+                                  : "Nao identificada"}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Criador global:</span>{" "}
+                              {juizDetalhe.superAdminCriador?.nome ?? "Nao informado"}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Tenant de origem:</span>{" "}
+                              {juizDetalhe.primeiroTenantContribuinte ? (
+                                <NextLink
+                                  className="text-primary hover:underline"
+                                  href={`/admin/tenants/${juizDetalhe.primeiroTenantContribuinte.id}`}
+                                >
+                                  {juizDetalhe.primeiroTenantContribuinte.nome}
+                                </NextLink>
+                              ) : (
+                                "Nao informado"
+                              )}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Primeiro envio:</span>{" "}
+                              {formatDateTime(
+                                juizDetalhe.primeiroTenantContribuinte?.criadoEm ?? null,
+                              )}
+                            </p>
+                          </div>
+                        </CardBody>
+                      </Card>
+
+                      <Card className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20">
+                        <CardBody className="space-y-3 p-4">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-primary" />
+                            <h4 className="text-sm font-semibold text-foreground">
+                              Identificacao institucional
+                            </h4>
+                          </div>
+                          <div className="space-y-2 text-sm text-default-500">
+                            <p>
+                              <span className="font-medium text-foreground">Tribunal:</span>{" "}
+                              {juizDetalhe.tribunal?.sigla || juizDetalhe.tribunal?.nome || "Nao informado"}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Comarca:</span>{" "}
+                              {juizDetalhe.comarca || "Nao informada"}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Vara:</span>{" "}
+                              {juizDetalhe.vara || "Nao informada"}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Especialidades:</span>{" "}
+                              {juizDetalhe.especialidades.length > 0
+                                ? juizDetalhe.especialidades
+                                    .map((item) => item.replace(/_/g, " "))
+                                    .join(", ")
+                                : "Nao informadas"}
+                            </p>
+                          </div>
+                        </CardBody>
+                      </Card>
+
+                      <Card className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20">
+                        <CardBody className="space-y-3 p-4">
+                          <div className="flex items-center gap-2">
+                            <Wallet className="h-4 w-4 text-primary" />
+                            <h4 className="text-sm font-semibold text-foreground">
+                              Comercial e uso
+                            </h4>
+                          </div>
+                          <div className="space-y-2 text-sm text-default-500">
+                            <p>
+                              <span className="font-medium text-foreground">Preco de acesso:</span>{" "}
+                              {formatCurrency(juizDetalhe.precoAcesso)}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Tenants com acesso:</span>{" "}
+                              {juizDetalhe.resumoRelacionamentos.tenantsComAcesso}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Favoritos ativos:</span>{" "}
+                              {juizDetalhe.resumoRelacionamentos.favoritos}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">Acessos registrados:</span>{" "}
+                              {juizDetalhe.resumoRelacionamentos.acessosRegistrados}
+                            </p>
+                          </div>
+                        </CardBody>
+                      </Card>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Users2 className="h-4 w-4 text-primary" />
+                        <h4 className="text-base font-semibold text-foreground">
+                          Tenants relacionados
+                        </h4>
+                      </div>
+                      {juizDetalhe.tenantsRelacionadosDetalhados.length === 0 ? (
+                        <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                          <CardBody className="py-6 text-sm text-default-400">
+                            Nenhum tenant relacionado foi encontrado para esta autoridade.
+                          </CardBody>
+                        </Card>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                          {juizDetalhe.tenantsRelacionadosDetalhados.map((tenant) => (
+                            <Card
+                              key={tenant.tenantId}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-3 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-semibold text-foreground">
+                                        {tenant.tenantNome}
+                                      </p>
+                                      {tenant.possuiAcesso ? (
+                                        <Chip color="success" size="sm" variant="flat">
+                                          Com acesso
+                                        </Chip>
+                                      ) : null}
+                                    </div>
+                                    <p className="text-xs text-default-400">
+                                      Status do tenant: {tenant.tenantStatus}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    as={NextLink}
+                                    href={`/admin/tenants/${tenant.tenantId}`}
+                                    size="sm"
+                                    variant="flat"
+                                  >
+                                    Abrir tenant
+                                  </Button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Processos
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {tenant.totalProcessos}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Contribuicoes
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {tenant.totalContribuicoes}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Julgamentos
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {tenant.totalJulgamentos}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Analises
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {tenant.totalAnalises}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {tenant.niveisAcesso.map((nivel) => (
+                                    <Chip key={`${tenant.tenantId}-${nivel}`} size="sm" variant="flat">
+                                      {nivel}
+                                    </Chip>
+                                  ))}
+                                  {tenant.pacotes.map((pacote) => (
+                                    <Chip
+                                      key={`${tenant.tenantId}-${pacote}`}
+                                      color="warning"
+                                      size="sm"
+                                      variant="flat"
+                                    >
+                                      {pacote}
+                                    </Chip>
+                                  ))}
+                                </div>
+                              </CardBody>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Boxes className="h-4 w-4 text-primary" />
+                          <h4 className="text-base font-semibold text-foreground">
+                            Pacotes relacionados
+                          </h4>
+                        </div>
+                        {juizDetalhe.pacotesRelacionados.length === 0 ? (
+                          <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                            <CardBody className="py-6 text-sm text-default-400">
+                              Esta autoridade ainda nao faz parte de nenhum pacote.
+                            </CardBody>
+                          </Card>
+                        ) : (
+                          juizDetalhe.pacotesRelacionados.map((pacote) => (
+                            <Card
+                              key={pacote.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-3 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-foreground">
+                                      {pacote.nome}
+                                    </p>
+                                    <p className="text-xs text-default-400">
+                                      {pacote.descricao || "Pacote sem descricao detalhada."}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Chip
+                                      color={pacote.ativoNoPacote ? "success" : "default"}
+                                      size="sm"
+                                      variant="flat"
+                                    >
+                                      {pacote.ativoNoPacote ? "Ativo no pacote" : "Inativo"}
+                                    </Chip>
+                                    {pacote.isPublico ? (
+                                      <Chip color="primary" size="sm" variant="flat">
+                                        Publico
+                                      </Chip>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-sm">
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Preco
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {formatCurrency(pacote.preco)}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Assinaturas
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {pacote.totalAssinaturas}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl border border-default-200/80 bg-default-100/60 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-default-500">
+                                      Tenants ativos
+                                    </p>
+                                    <p className="mt-1 font-semibold text-foreground">
+                                      {pacote.tenantsAtivos}
+                                    </p>
+                                  </div>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <FileSearch className="h-4 w-4 text-primary" />
+                          <h4 className="text-base font-semibold text-foreground">
+                            Processos recentes em que foi citada
+                          </h4>
+                        </div>
+                        {juizDetalhe.processosRecentes.length === 0 ? (
+                          <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                            <CardBody className="py-6 text-sm text-default-400">
+                              Nenhum processo vinculado foi encontrado.
+                            </CardBody>
+                          </Card>
+                        ) : (
+                          juizDetalhe.processosRecentes.map((processo) => (
+                            <Card
+                              key={processo.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-3 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-foreground">
+                                      {processo.numero}
+                                    </p>
+                                    <p className="text-xs text-default-400">
+                                      {processo.titulo || processo.areaNome || "Processo sem titulo"}
+                                    </p>
+                                  </div>
+                                  <Chip size="sm" variant="flat">
+                                    {processo.status}
+                                  </Chip>
+                                </div>
+                                <div className="space-y-1 text-sm text-default-500">
+                                  <p>
+                                    <span className="font-medium text-foreground">Tenant:</span>{" "}
+                                    {processo.tenantNome}
+                                  </p>
+                                  <p>
+                                    <span className="font-medium text-foreground">Cliente principal:</span>{" "}
+                                    {processo.clientePrincipal}
+                                  </p>
+                                  {processo.clientesRelacionados.length > 0 ? (
+                                    <p>
+                                      <span className="font-medium text-foreground">Demais clientes:</span>{" "}
+                                      {processo.clientesRelacionados.join(", ")}
+                                    </p>
+                                  ) : null}
+                                  <p>
+                                    <span className="font-medium text-foreground">Atualizado em:</span>{" "}
+                                    {formatDateTime(processo.updatedAt)}
+                                  </p>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-primary" />
+                          <h4 className="text-base font-semibold text-foreground">
+                            Contribuicoes recentes
+                          </h4>
+                        </div>
+                        {juizDetalhe.contribuicoesRecentes.length === 0 ? (
+                          <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                            <CardBody className="py-6 text-sm text-default-400">
+                              Nenhuma contribuicao recente foi encontrada.
+                            </CardBody>
+                          </Card>
+                        ) : (
+                          juizDetalhe.contribuicoesRecentes.map((contribuicao) => (
+                            <Card
+                              key={contribuicao.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-2 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-foreground">
+                                      {contribuicao.tenantNome}
+                                    </p>
+                                    <p className="text-xs text-default-400">
+                                      {contribuicao.criadoPorNome}
+                                    </p>
+                                  </div>
+                                  <Chip size="sm" variant="flat">
+                                    {contribuicao.status}
+                                  </Chip>
+                                </div>
+                                <p className="text-sm text-default-500">
+                                  Campos:{" "}
+                                  {contribuicao.campos.length > 0
+                                    ? contribuicao.campos.join(", ")
+                                    : "Sem campos mapeados"}
+                                </p>
+                                <p className="text-xs text-default-400">
+                                  Criado em {formatDateTime(contribuicao.criadoEm)}
+                                </p>
+                              </CardBody>
+                            </Card>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Gavel className="h-4 w-4 text-primary" />
+                          <h4 className="text-base font-semibold text-foreground">
+                            Julgamentos recentes
+                          </h4>
+                        </div>
+                        {juizDetalhe.julgamentosRecentes.length === 0 ? (
+                          <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                            <CardBody className="py-6 text-sm text-default-400">
+                              Nenhum julgamento recente foi encontrado.
+                            </CardBody>
+                          </Card>
+                        ) : (
+                          juizDetalhe.julgamentosRecentes.map((julgamento) => (
+                            <Card
+                              key={julgamento.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-2 p-4">
+                                <p className="text-sm font-semibold text-foreground">
+                                  {julgamento.titulo}
+                                </p>
+                                <p className="text-sm text-default-500">
+                                  {julgamento.tenantNome}
+                                  {julgamento.processoNumero
+                                    ? ` · Processo ${julgamento.processoNumero}`
+                                    : ""}
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  <Chip size="sm" variant="flat">
+                                    {julgamento.tipoJulgamento}
+                                  </Chip>
+                                  {julgamento.resultado ? (
+                                    <Chip color="primary" size="sm" variant="flat">
+                                      {julgamento.resultado}
+                                    </Chip>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-default-400">
+                                  {formatDate(julgamento.dataJulgamento)}
+                                </p>
+                              </CardBody>
+                            </Card>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-primary" />
+                          <h4 className="text-base font-semibold text-foreground">
+                            Analises recentes
+                          </h4>
+                        </div>
+                        {juizDetalhe.analisesRecentes.length === 0 ? (
+                          <Card className="border border-default-200/80 bg-content1/70 dark:border-white/10 dark:bg-background/50">
+                            <CardBody className="py-6 text-sm text-default-400">
+                              Nenhuma analise recente foi encontrada.
+                            </CardBody>
+                          </Card>
+                        ) : (
+                          juizDetalhe.analisesRecentes.map((analise) => (
+                            <Card
+                              key={analise.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/60 dark:shadow-black/20"
+                            >
+                              <CardBody className="space-y-2 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {analise.titulo}
+                                  </p>
+                                  {analise.isPublico ? (
+                                    <Chip color="success" size="sm" variant="flat">
+                                      Publica
+                                    </Chip>
+                                  ) : null}
+                                </div>
+                                <p className="text-sm text-default-500">
+                                  {analise.tenantNome} · {analise.tipoAnalise}
+                                </p>
+                                <p className="text-xs text-default-400">
+                                  {formatDateTime(analise.createdAt)}
+                                </p>
+                              </CardBody>
+                            </Card>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </ModalBody>
+
+              <ModalFooter className="border-t border-default-200/80 pt-4 dark:border-white/10">
+                <Button variant="flat" onPress={onClose}>
+                  Fechar
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </section>
   );
 }

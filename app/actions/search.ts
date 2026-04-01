@@ -5,6 +5,10 @@ import type { SearchResult } from "@/components/searchbar";
 import prisma from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  buildProcessoClienteMembershipWhere,
+} from "@/app/lib/processos/processo-vinculos";
 import logger from "@/lib/logger";
 import { UserRole, type Prisma } from "@/generated/prisma";
 
@@ -18,11 +22,7 @@ function buildScopedAdvogadoProcessOrConditions(
   userId: string,
 ): Prisma.ProcessoWhereInput[] {
   const conditions: Prisma.ProcessoWhereInput[] = [
-    {
-      advogadoResponsavelId: {
-        in: accessibleAdvogados,
-      },
-    },
+    buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
     {
       procuracoesVinculadas: {
         some: {
@@ -292,7 +292,7 @@ export async function searchContent(
         : [];
 
     const processoScopeFilter: Prisma.ProcessoWhereInput = clienteId
-      ? { clienteId }
+      ? buildProcessoClienteMembershipWhere(clienteId)
       : !isAdmin && advogadoProcessOrConditions.length > 0
         ? { OR: advogadoProcessOrConditions }
         : {};
@@ -326,7 +326,10 @@ export async function searchContent(
 
     const documentoScopeFilter: Prisma.DocumentoWhereInput = clienteId
       ? {
-          OR: [{ clienteId }, { processo: { clienteId } }],
+          OR: [
+            { clienteId },
+            { processo: buildProcessoClienteMembershipWhere(clienteId) },
+          ],
         }
       : !isAdmin && accessibleAdvogados.length > 0
         ? {
@@ -349,9 +352,7 @@ export async function searchContent(
                       tenantId: requestedTenantId,
                       deletedAt: null,
                     },
-                    {
-                      OR: advogadoProcessOrConditions,
-                    },
+                    { OR: advogadoProcessOrConditions },
                   ],
                 },
               },

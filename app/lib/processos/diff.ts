@@ -1,6 +1,7 @@
 import type { Processo } from "@/generated/prisma";
 
 import {
+  ProcessoArquivamentoTipo,
   ProcessoFase,
   ProcessoGrau,
   ProcessoStatus,
@@ -20,6 +21,24 @@ type ProcessoWithRelations = Processo & {
       email: string | null;
     } | null;
   } | null;
+  clientesVinculados?: Array<{
+    id: string;
+    nome: string | null;
+    email?: string | null;
+    telefone?: string | null;
+    tipoPessoa?: string | null;
+  }> | null;
+  advogadosResponsaveis?: Array<{
+    id: string;
+    oabNumero?: string | null;
+    oabUf?: string | null;
+    usuario?: {
+      id?: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      email: string | null;
+    } | null;
+  }> | null;
   area?: {
     id: string;
     nome: string | null;
@@ -61,6 +80,11 @@ const STATUS_LABEL: Record<ProcessoStatus, string> = {
   [ProcessoStatus.SUSPENSO]: "Suspenso",
   [ProcessoStatus.ENCERRADO]: "Encerrado",
   [ProcessoStatus.ARQUIVADO]: "Arquivado",
+};
+
+const ARQUIVAMENTO_LABEL: Record<ProcessoArquivamentoTipo, string> = {
+  [ProcessoArquivamentoTipo.PROVISORIO]: "Arquivado provisoriamente",
+  [ProcessoArquivamentoTipo.DEFINITIVO]: "Arquivado definitivamente",
 };
 
 const FASE_LABEL: Partial<Record<ProcessoFase, string>> = {
@@ -145,6 +169,101 @@ function composeAdvogadoNome(
   return nome.length > 0
     ? nome
     : (advogado?.usuario?.email ?? DEFAULT_NULL_TEXT);
+}
+
+function composeAdvogadosResponsaveisLabel(
+  advogados?: ProcessoWithRelations["advogadosResponsaveis"],
+): string {
+  if (!advogados || advogados.length === 0) {
+    return DEFAULT_NULL_TEXT;
+  }
+
+  return advogados
+    .map((advogado) => composeAdvogadoNome(advogado as any))
+    .join(", ");
+}
+
+function composeClientesVinculadosLabel(
+  clientes?: ProcessoWithRelations["clientesVinculados"],
+): string {
+  if (!clientes || clientes.length === 0) {
+    return DEFAULT_NULL_TEXT;
+  }
+
+  return clientes
+    .map((cliente) => cliente?.nome?.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function compareNamedRelationSets(
+  before:
+    | Array<{
+        id?: string | null;
+        nome?: string | null;
+        usuario?: {
+          id?: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+          email?: string | null;
+        } | null;
+      }>
+    | null
+    | undefined,
+  after:
+    | Array<{
+        id?: string | null;
+        nome?: string | null;
+        usuario?: {
+          id?: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+          email?: string | null;
+        } | null;
+      }>
+    | null
+    | undefined,
+) {
+  const normalize = (
+    items:
+      | Array<{
+          id?: string | null;
+          nome?: string | null;
+          usuario?: {
+            id?: string | null;
+            firstName?: string | null;
+            lastName?: string | null;
+            email?: string | null;
+          } | null;
+        }>
+      | null
+      | undefined,
+  ) =>
+    (items ?? [])
+      .map((item) => {
+        if (item.id) {
+          return item.id;
+        }
+
+        if (item.nome) {
+          return item.nome.trim().toUpperCase();
+        }
+
+        if (item.usuario) {
+          const nome = `${item.usuario.firstName ?? ""} ${item.usuario.lastName ?? ""}`
+            .trim()
+            .toUpperCase();
+
+          return nome || (item.usuario.email ?? "").trim().toUpperCase();
+        }
+
+        return "";
+      })
+      .filter(Boolean)
+      .sort()
+      .join("|");
+
+  return normalize(before) === normalize(after);
 }
 
 type PrismaDecimalLike = {
@@ -244,12 +363,34 @@ function formatCurrencyValue(value: unknown): string {
 
 export function getProcessoStatusLabel(
   status: ProcessoStatus | null | undefined,
+  arquivamentoTipo?: ProcessoArquivamentoTipo | null,
 ): string {
   if (!status) {
     return DEFAULT_NULL_TEXT;
   }
 
+  if (status === ProcessoStatus.ARQUIVADO) {
+    if (arquivamentoTipo) {
+      return ARQUIVAMENTO_LABEL[arquivamentoTipo] ?? STATUS_LABEL[status];
+    }
+
+    return "Arquivado sem classificacao";
+  }
+
   return STATUS_LABEL[status] ?? status.replace(/_/g, " ").toLowerCase();
+}
+
+export function getProcessoArquivamentoTipoLabel(
+  arquivamentoTipo: ProcessoArquivamentoTipo | null | undefined,
+): string {
+  if (!arquivamentoTipo) {
+    return "Sem classificacao";
+  }
+
+  return (
+    ARQUIVAMENTO_LABEL[arquivamentoTipo] ??
+    arquivamentoTipo.replace(/_/g, " ").toLowerCase()
+  );
 }
 
 export function getProcessoFaseLabel(
@@ -316,6 +457,16 @@ const descriptors: DiffDescriptor[] = [
     includeRaw: true,
   },
   {
+    field: "arquivamentoTipo",
+    label: "Tipo de arquivamento",
+    getBefore: (p) => p.arquivamentoTipo,
+    getAfter: (p) => p.arquivamentoTipo,
+    format: (value) =>
+      getProcessoArquivamentoTipoLabel(
+        value as ProcessoArquivamentoTipo | null | undefined,
+      ),
+  },
+  {
     field: "fase",
     label: "Fase",
     getBefore: (p) => p.fase,
@@ -336,10 +487,32 @@ const descriptors: DiffDescriptor[] = [
     getAfter: (p) => p.cliente?.nome ?? null,
   },
   {
+    field: "clientesVinculados",
+    label: "Clientes vinculados",
+    getBefore: (p) => composeClientesVinculadosLabel(p.clientesVinculados),
+    getAfter: (p) => composeClientesVinculadosLabel(p.clientesVinculados),
+    areEqual: (before, after) =>
+      compareNamedRelationSets(
+        before as ProcessoWithRelations["clientesVinculados"],
+        after as ProcessoWithRelations["clientesVinculados"],
+      ),
+  },
+  {
     field: "advogadoResponsavel",
     label: "Advogado responsável",
     getBefore: (p) => composeAdvogadoNome(p.advogadoResponsavel),
     getAfter: (p) => composeAdvogadoNome(p.advogadoResponsavel),
+  },
+  {
+    field: "advogadosResponsaveis",
+    label: "Responsáveis vinculados",
+    getBefore: (p) => composeAdvogadosResponsaveisLabel(p.advogadosResponsaveis),
+    getAfter: (p) => composeAdvogadosResponsaveisLabel(p.advogadosResponsaveis),
+    areEqual: (before, after) =>
+      compareNamedRelationSets(
+        before as ProcessoWithRelations["advogadosResponsaveis"],
+        after as ProcessoWithRelations["advogadosResponsaveis"],
+      ),
   },
   {
     field: "area",

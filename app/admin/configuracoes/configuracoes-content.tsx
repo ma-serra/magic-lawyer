@@ -208,7 +208,7 @@ export function ConfiguracoesContent() {
           ].map((item) => (
             <div
               key={item.href}
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+              className="rounded-2xl ml-admin-surface-muted p-4"
             >
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                 {item.icon}
@@ -292,7 +292,7 @@ export function ConfiguracoesContent() {
           ].map((item) => (
             <div
               key={item.title}
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+              className="rounded-2xl ml-admin-surface-muted p-4"
             >
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                 {item.icon}
@@ -325,14 +325,14 @@ export function ConfiguracoesContent() {
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-2xl border border-success/20 bg-success/10 p-4">
             <p className="text-sm font-semibold text-success">Super admin pode</p>
-            <p className="mt-2 text-sm text-default-200">
+            <p className="mt-2 text-sm text-default-700 dark:text-default-200">
               Gerenciar tenant, plano, módulo, bancos, suporte global e auditoria
               completa da plataforma.
             </p>
           </div>
           <div className="rounded-2xl border border-warning/20 bg-warning/10 p-4">
             <p className="text-sm font-semibold text-warning">Admin de tenant não pode</p>
-            <p className="mt-2 text-sm text-default-200">
+            <p className="mt-2 text-sm text-default-700 dark:text-default-200">
               Alterar configurações globais do SaaS. Ele opera apenas dados internos
               do próprio escritório.
             </p>
@@ -354,7 +354,7 @@ export function ConfiguracoesContent() {
             {statusCore.map((item) => (
               <div
                 key={item.label}
-                className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.02] p-3"
+                className="flex items-center justify-between rounded-2xl ml-admin-surface-subtle p-3"
               >
                 <div>
                   <p className="text-sm font-semibold text-foreground">{item.label}</p>

@@ -17,6 +17,10 @@ import {
   registerOrRefreshJusbrasilMonitor,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
 import { enqueueJusbrasilOabTribprocBackfill } from "@/app/lib/juridical/jusbrasil-oab-tribproc-backfill";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  buildProcessoClienteMembershipWhere,
+} from "@/app/lib/processos/processo-vinculos";
 import prisma from "@/app/lib/prisma";
 import {
   PortalProcessSyncState,
@@ -345,7 +349,7 @@ async function getProcessoScopeForPortal(
       return { id: "__CLIENTE_SEM_ACESSO__" };
     }
 
-    return { clienteId: user.clienteId };
+    return buildProcessoClienteMembershipWhere(user.clienteId);
   }
 
   const { getAccessibleAdvogadoIds } = await import("@/app/lib/advogado-access");
@@ -359,11 +363,7 @@ async function getProcessoScopeForPortal(
     return { id: "__SEM_ACESSO_A_PROCESSOS__" };
   }
 
-  return {
-    advogadoResponsavelId: {
-      in: accessibleAdvogados,
-    },
-  };
+  return buildProcessoAdvogadoMembershipWhere(accessibleAdvogados);
 }
 
 export async function getTribunaisSincronizacaoPortalAdvogado(): Promise<{

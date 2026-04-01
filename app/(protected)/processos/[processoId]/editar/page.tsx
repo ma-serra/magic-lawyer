@@ -10,6 +10,7 @@ import { Textarea } from "@heroui/input";
 import { Checkbox } from "@heroui/checkbox";
 import { Divider } from "@heroui/divider";
 import { Spinner } from "@heroui/spinner";
+import { Chip } from "@heroui/chip";
 import {
   ArrowLeft,
   Save,
@@ -25,6 +26,7 @@ import {
   Landmark,
   Link2,
   Clock,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/lib/toast";
@@ -32,6 +34,7 @@ import useSWR from "swr";
 
 import { title } from "@/components/primitives";
 import { useClientesParaSelect } from "@/app/hooks/use-clientes";
+import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { useJuizes } from "@/app/hooks/use-juizes";
 import { useProcessoDetalhado } from "@/app/hooks/use-processos";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
@@ -42,6 +45,7 @@ import {
   type ProcessoUpdateInput,
 } from "@/app/actions/processos";
 import {
+  ProcessoArquivamentoTipo,
   ProcessoStatus,
   ProcessoFase,
   ProcessoGrau,
@@ -58,6 +62,7 @@ export default function EditarProcessoPage() {
   const { processo, isLoading, isError, mutate } =
     useProcessoDetalhado(processoId);
   const { clientes, isLoading: isLoadingClientes } = useClientesParaSelect();
+  const { advogados, isLoading: isLoadingAdvogados } = useAdvogadosParaSelect();
   const { juizes: juizesDisponiveis, isLoading: isLoadingJuizes } = useJuizes();
   const { data: areasData, isLoading: isLoadingAreas } = useSWR(
     "areas-processo-select",
@@ -89,6 +94,10 @@ export default function EditarProcessoPage() {
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
   );
+  const advogadoKeys = useMemo(
+    () => new Set((advogados || []).map((advogado) => advogado.id)),
+    [advogados],
+  );
   const juizKeys = useMemo(
     () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
     [juizesDisponiveis],
@@ -104,12 +113,38 @@ export default function EditarProcessoPage() {
 
   const fases = useMemo(() => Object.values(ProcessoFase), []);
   const graus = useMemo(() => Object.values(ProcessoGrau), []);
-  const selectedClienteKeys =
-    formData?.clienteId && clienteKeys.has(formData.clienteId)
-      ? [formData.clienteId]
-      : [];
+  const selectedClienteKeys = useMemo(
+    () =>
+      formData
+        ? (
+            formData.clienteIds?.length
+              ? formData.clienteIds
+              : formData.clienteId
+                ? [formData.clienteId]
+                : []
+          ).filter((clienteId) => clienteKeys.has(clienteId))
+        : [],
+    [clienteKeys, formData],
+  );
+  const selectedAdvogadoKeys = useMemo(
+    () =>
+      formData
+        ? (
+            formData.advogadoResponsavelIds?.length
+              ? formData.advogadoResponsavelIds
+              : formData.advogadoResponsavelId
+                ? [formData.advogadoResponsavelId]
+                : []
+          ).filter((advogadoId) => advogadoKeys.has(advogadoId))
+        : [],
+    [advogadoKeys, formData],
+  );
   const selectedAreaKeys =
     formData?.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const selectedArquivamentoKeys =
+    formData?.arquivamentoTipo && formData.status === ProcessoStatus.ARQUIVADO
+      ? [formData.arquivamentoTipo]
+      : [];
   const selectedJuizKeys =
     formData?.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
   const selectedTribunalKeys =
@@ -133,6 +168,17 @@ export default function EditarProcessoPage() {
           ),
       })),
     [clientes],
+  );
+  const advogadoOptions = useMemo(
+    () =>
+      (advogados || []).map((advogado) => ({
+        key: advogado.id,
+        label: advogado.label,
+        textValue: [advogado.label, advogado.oab || ""]
+          .filter(Boolean)
+          .join(" "),
+      })),
+    [advogados],
   );
   const juizOptions = useMemo(
     () =>
@@ -184,6 +230,7 @@ export default function EditarProcessoPage() {
       titulo: processo.titulo || "",
       descricao: processo.descricao || "",
       status: processo.status,
+      arquivamentoTipo: processo.arquivamentoTipo ?? null,
       classeProcessual: processo.classeProcessual || "",
       orgaoJulgador: processo.orgaoJulgador || "",
       vara: processo.vara || "",
@@ -193,7 +240,16 @@ export default function EditarProcessoPage() {
       numeroInterno: processo.numeroInterno || "",
       pastaCompartilhadaUrl: processo.pastaCompartilhadaUrl || "",
       clienteId: processo.cliente.id,
+      clienteIds:
+        processo.clientesVinculados?.map((cliente) => cliente.id) ??
+        [processo.cliente.id],
       segredoJustica: processo.segredoJustica,
+      advogadoResponsavelId: processo.advogadoResponsavel?.id || "",
+      advogadoResponsavelIds:
+        processo.advogadosResponsaveis?.map((advogado) => advogado.id) ??
+        (processo.advogadoResponsavel?.id
+          ? [processo.advogadoResponsavel.id]
+          : []),
       juizId: processo.juiz?.id || "",
       tribunalId: processo.tribunal?.id || "",
     };
@@ -252,8 +308,8 @@ export default function EditarProcessoPage() {
       return;
     }
 
-    if (!formData.clienteId) {
-      toast.error("Selecione um cliente");
+    if (selectedClienteKeys.length === 0) {
+      toast.error("Selecione pelo menos um cliente");
 
       return;
     }
@@ -275,7 +331,8 @@ export default function EditarProcessoPage() {
     try {
       const payload: ProcessoUpdateInput = {
         numero: formData.numero.trim(),
-        clienteId: formData.clienteId,
+        clienteId: selectedClienteKeys[0],
+        clienteIds: selectedClienteKeys,
         status: formData.status,
         segredoJustica: formData.segredoJustica,
       };
@@ -310,10 +367,21 @@ export default function EditarProcessoPage() {
       payload.dataDistribuicao = formData.dataDistribuicao ?? undefined;
       payload.prazoPrincipal = formData.prazoPrincipal ?? undefined;
       payload.areaId = formData.areaId;
+      if (selectedAdvogadoKeys.length > 0) {
+        payload.advogadoResponsavelId = selectedAdvogadoKeys[0];
+        payload.advogadoResponsavelIds = selectedAdvogadoKeys;
+      } else {
+        payload.advogadoResponsavelId = undefined;
+        payload.advogadoResponsavelIds = [];
+      }
       payload.juizId = formData.juizId;
       payload.tribunalId = formData.tribunalId;
       payload.fase = formData.fase;
       payload.grau = formData.grau;
+      payload.arquivamentoTipo =
+        formData.status === ProcessoStatus.ARQUIVADO
+          ? formData.arquivamentoTipo ?? null
+          : null;
       if (
         formData.valorCausa !== undefined &&
         !Number.isNaN(formData.valorCausa)
@@ -341,7 +409,12 @@ export default function EditarProcessoPage() {
     }
   };
 
-  if (isLoading || !formData || (isLoadingClientes && !clientes.length)) {
+  if (
+    isLoading ||
+    !formData ||
+    (isLoadingClientes && !clientes.length) ||
+    (isLoadingAdvogados && !advogados?.length)
+  ) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Spinner label="Carregando dados do processo..." size="lg" />
@@ -408,22 +481,112 @@ export default function EditarProcessoPage() {
               📋 Dados Básicos
             </h3>
 
-            <SearchableSelect
+            <Select
+              description="Vincule um ou mais advogados responsáveis a este processo."
+              items={advogadoOptions}
+              isLoading={isLoadingAdvogados}
+              label="Advogados responsáveis"
+              placeholder="Selecione um ou mais advogados"
+              selectedKeys={new Set(selectedAdvogadoKeys)}
+              selectionMode="multiple"
+              startContent={<Scale className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) => {
+                const nextKeys = Array.from(keys).map(String);
+
+                setFormData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        advogadoResponsavelId: nextKeys[0] || "",
+                        advogadoResponsavelIds: nextKeys,
+                      }
+                    : prev,
+                );
+              }}
+            >
+              {advogadoOptions.map((item) => (
+                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
+            {selectedAdvogadoKeys.length > 0 ? (
+              <div className="flex flex-wrap gap-2 lg:col-span-3">
+                {selectedAdvogadoKeys.map((advogadoId) => {
+                  const advogado = (advogados || []).find(
+                    (item) => item.id === advogadoId,
+                  );
+
+                  if (!advogado) {
+                    return null;
+                  }
+
+                  return (
+                    <Chip
+                      key={advogadoId}
+                      color="secondary"
+                      size="sm"
+                      variant="flat"
+                    >
+                      {advogado.label}
+                    </Chip>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <Select
               isRequired
-              description="Cliente principal do processo. Ele permanece como parte autora."
-              emptyContent="Nenhum cliente encontrado"
+              description="Selecione um ou mais clientes vinculados a este processo."
               items={clienteOptions}
               isLoading={isLoadingClientes}
-              label="Cliente *"
-              placeholder="Selecione um cliente"
-              selectedKey={selectedClienteKeys[0] ?? null}
-              startContent={<User className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(selectedKey) =>
+              label="Clientes vinculados *"
+              placeholder="Selecione um ou mais clientes"
+              selectedKeys={new Set(selectedClienteKeys)}
+              selectionMode="multiple"
+              startContent={<Users className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) => {
+                const nextKeys = Array.from(keys).map(String);
+
                 setFormData((prev) =>
-                  prev ? { ...prev, clienteId: selectedKey || "" } : prev,
-                )
-              }
-            />
+                  prev
+                    ? {
+                        ...prev,
+                        clienteId: nextKeys[0] || "",
+                        clienteIds: nextKeys,
+                      }
+                    : prev,
+                );
+              }}
+            >
+              {clienteOptions.map((item) => (
+                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
+            {selectedClienteKeys.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {selectedClienteKeys.map((clienteId) => {
+                  const cliente = clientes.find((item) => item.id === clienteId);
+
+                  if (!cliente) {
+                    return null;
+                  }
+
+                  return (
+                    <Chip
+                      key={clienteId}
+                      color="primary"
+                      size="sm"
+                      variant="flat"
+                    >
+                      {cliente.nome}
+                    </Chip>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Input
@@ -515,6 +678,18 @@ export default function EditarProcessoPage() {
               }
             />
 
+            <div className="-mt-1 flex justify-end">
+              <Button
+                as={Link}
+                color="secondary"
+                href="/juizes"
+                size="sm"
+                variant="light"
+              >
+                Nao encontrou a autoridade? Cadastre em Juizes
+              </Button>
+            </div>
+
             <SearchableSelect
               description="Tribunal onde o processo tramita."
               emptyContent="Nenhum tribunal encontrado"
@@ -543,6 +718,10 @@ export default function EditarProcessoPage() {
                       ? {
                           ...prev,
                           status: Array.from(keys)[0] as ProcessoStatus,
+                          arquivamentoTipo:
+                            Array.from(keys)[0] === ProcessoStatus.ARQUIVADO
+                              ? prev.arquivamentoTipo ?? null
+                              : null,
                         }
                       : prev,
                   )
@@ -560,6 +739,40 @@ export default function EditarProcessoPage() {
                   Arquivado
                 </SelectItem>
               </Select>
+
+              {formData.status === ProcessoStatus.ARQUIVADO ? (
+                <Select
+                  description="Classifique se o arquivamento ainda pode ser reaberto ou se ja encerrou definitivamente."
+                  label="Tipo de arquivamento"
+                  placeholder="Selecione o tipo"
+                  selectedKeys={selectedArquivamentoKeys}
+                  onSelectionChange={(keys) =>
+                    setFormData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            arquivamentoTipo:
+                              (Array.from(keys)[0] as ProcessoArquivamentoTipo) ??
+                              null,
+                          }
+                        : prev,
+                    )
+                  }
+                >
+                  <SelectItem
+                    key={ProcessoArquivamentoTipo.PROVISORIO}
+                    textValue="Arquivado provisoriamente"
+                  >
+                    Arquivado provisoriamente
+                  </SelectItem>
+                  <SelectItem
+                    key={ProcessoArquivamentoTipo.DEFINITIVO}
+                    textValue="Arquivado definitivamente"
+                  >
+                    Arquivado definitivamente
+                  </SelectItem>
+                </Select>
+              ) : null}
 
               <Input
                 description="Classe jurídica informada no tribunal (ex.: Procedimento Comum)."

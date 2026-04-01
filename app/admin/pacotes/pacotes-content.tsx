@@ -638,7 +638,7 @@ export function PacotesContent() {
         description="Leitura rápida do mix de monetização e das oportunidades abertas no catálogo atual."
       >
         <div className="grid gap-3 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Receita de planos
             </p>
@@ -649,7 +649,7 @@ export function PacotesContent() {
               Base principal do SaaS.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Receita premium
             </p>
@@ -660,7 +660,7 @@ export function PacotesContent() {
               Camada incremental de ticket.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Ofertas inativas
             </p>
@@ -671,7 +671,7 @@ export function PacotesContent() {
               Catálogo parado e sem gerar caixa.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Oportunidade premium
             </p>
@@ -701,7 +701,7 @@ export function PacotesContent() {
         }
       >
         <div className="grid gap-3 xl:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Regra comercial
             </p>
@@ -709,7 +709,7 @@ export function PacotesContent() {
               O pacote só entra na loja do tenant quando estiver marcado como público e com status ativo ou promocional.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Escopo vendido
             </p>
@@ -717,7 +717,7 @@ export function PacotesContent() {
               A compra libera acesso por escritório às autoridades vinculadas ao pacote, com ativação automática após confirmação da cobrança.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
               Controle de operação
             </p>
@@ -751,7 +751,7 @@ export function PacotesContent() {
               {planos.map((plano) => (
                 <div
                   key={plano.id}
-                  className="rounded-3xl border border-white/10 bg-background/30 p-5"
+                  className="rounded-3xl border border-default-200/80 bg-content1/85 p-5 shadow-sm shadow-black/5 dark:border-white/10 dark:bg-background/30 dark:shadow-black/20"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -772,7 +772,7 @@ export function PacotesContent() {
                   </div>
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="rounded-2xl border border-default-200/80 bg-default-100/60 p-3 dark:border-white/10 dark:bg-white/[0.03]">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                         Mensal
                       </p>
@@ -780,7 +780,7 @@ export function PacotesContent() {
                         {formatCurrency(plano.valorMensal, plano.moeda)}
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="rounded-2xl border border-default-200/80 bg-default-100/60 p-3 dark:border-white/10 dark:bg-white/[0.03]">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-default-500">
                         Anual
                       </p>
@@ -844,7 +844,7 @@ export function PacotesContent() {
                 <div
                   key={pacote.id}
                   data-testid="admin-pacote-card"
-                  className="rounded-3xl border border-white/10 bg-background/30 p-4"
+                  className="rounded-3xl ml-admin-surface-soft p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1004,7 +1004,7 @@ export function PacotesContent() {
               {juizesPremium.slice(0, 6).map((juiz) => (
                 <div
                   key={juiz.id}
-                  className="rounded-2xl border border-white/10 bg-background/30 p-4"
+                  className="rounded-2xl ml-admin-surface-soft p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1106,7 +1106,7 @@ export function PacotesContent() {
         description="Próximas decisões para melhorar receita, catálogo e monetização premium."
       >
         <div className="grid gap-3 xl:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <div className="mb-2 flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               <p className="text-sm font-semibold text-foreground">
@@ -1119,7 +1119,7 @@ export function PacotesContent() {
                 : "Sem ofertas ativas, a frente comercial fica travada."}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <div className="mb-2 flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-warning" />
               <p className="text-sm font-semibold text-foreground">
@@ -1132,7 +1132,7 @@ export function PacotesContent() {
                 : "Não há ofertas inativas atrapalhando o catálogo atual."}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-background/30 p-4">
+          <div className="rounded-2xl ml-admin-surface-soft p-4">
             <div className="mb-2 flex items-center gap-2">
               <Users className="h-4 w-4 text-success" />
               <p className="text-sm font-semibold text-foreground">
@@ -1251,7 +1251,7 @@ export function PacotesContent() {
                   }))
                 }
               />
-              <div className="rounded-2xl border border-white/10 bg-background/50 p-4">
+              <div className="rounded-2xl ml-admin-surface-muted p-4">
                 <Switch
                   isSelected={pacoteForm.isPublico}
                   size="sm"
@@ -1270,7 +1270,7 @@ export function PacotesContent() {
               </div>
             </div>
 
-            <Divider className="border-white/10" />
+            <Divider className="ml-admin-divider" />
 
             <div className="space-y-3">
               <div>
@@ -1315,7 +1315,7 @@ export function PacotesContent() {
                     <div
                       key={juiz.id}
                       data-testid="pacote-selected-autoridade"
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-background/50 p-3"
+                      className="flex items-center justify-between gap-3 rounded-2xl ml-admin-surface-muted p-3"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">
@@ -1341,7 +1341,7 @@ export function PacotesContent() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-background/30 p-4 text-sm text-default-500">
+                <div className="rounded-2xl border border-dashed border-default-200/80 bg-default-100/35 p-4 text-sm text-default-500 dark:border-white/10 dark:bg-background/30">
                   Nenhuma autoridade adicionada ainda.
                 </div>
               )}

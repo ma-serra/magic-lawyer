@@ -14,6 +14,12 @@ import {
   getAccessibleAdvogadoIds,
   getAdvogadoIdFromSession,
 } from "@/app/lib/advogado-access";
+import {
+  buildProcessoClienteMembershipWhere,
+  decorateProcessosWithVinculos,
+  processoClientesRelacionadosInclude,
+  processoResponsaveisRelacionadosInclude,
+} from "@/app/lib/processos/processo-vinculos";
 
 // ============================================
 // TYPES
@@ -115,6 +121,7 @@ export interface ClienteComProcessos extends Cliente {
     fase: string | null;
     titulo: string | null;
     status: string;
+    arquivamentoTipo: string | null;
     areaId: string | null;
     valorCausa: number | null;
     dataDistribuicao: Date | null;
@@ -131,6 +138,25 @@ export interface ClienteComProcessos extends Cliente {
         lastName: string | null;
       };
     } | null;
+    clientesVinculados?: Array<{
+      id: string;
+      nome: string;
+      email: string | null;
+      telefone: string | null;
+      tipoPessoa: string;
+    }>;
+    advogadosResponsaveis?: Array<{
+      id: string;
+      oabNumero: string | null;
+      oabUf: string | null;
+      usuario: {
+        id?: string | null;
+        firstName: string | null;
+        lastName: string | null;
+        email?: string | null;
+        avatarUrl?: string | null;
+      } | null;
+    }>;
     _count: {
       documentos: number;
       eventos: number;
@@ -624,6 +650,8 @@ export async function getClienteComProcessos(clienteId: string): Promise<{
                 },
               },
             },
+            ...processoClientesRelacionadosInclude,
+            ...processoResponsaveisRelacionadosInclude,
             _count: {
               select: {
                 documentos: { where: { deletedAt: null } },
@@ -713,10 +741,54 @@ export async function getClienteComProcessos(clienteId: string): Promise<{
       return { success: false, error: "Cliente não encontrado" };
     }
 
+    const processosRaw = await prisma.processo.findMany({
+      where: {
+        tenantId: user.tenantId,
+        deletedAt: null,
+        AND: [buildProcessoClienteMembershipWhere(clienteId)],
+      },
+      include: {
+        area: {
+          select: {
+            nome: true,
+            slug: true,
+          },
+        },
+        advogadoResponsavel: {
+          select: {
+            id: true,
+            usuario: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        ...processoClientesRelacionadosInclude,
+        ...processoResponsaveisRelacionadosInclude,
+        _count: {
+          select: {
+            documentos: { where: { deletedAt: null } },
+            eventos: true,
+            movimentacoes: true,
+            procuracoesVinculadas: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
     // Converter Decimal para number
     const cliente: ClienteComProcessos = {
       ...clienteRaw,
-      processos: clienteRaw.processos.map((p: any) => ({
+      _count: {
+        ...clienteRaw._count,
+        processos: processosRaw.length,
+      },
+      processos: decorateProcessosWithVinculos(processosRaw as any).map((p: any) => ({
         ...p,
         valorCausa: toNumber(p.valorCausa),
       })),

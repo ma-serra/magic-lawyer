@@ -763,8 +763,8 @@ export function AuditoriaContent() {
                   {tabKey === "overview" ? (
                     <>
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                        <Card className="border border-white/10 bg-background/60">
-                          <CardHeader className="border-b border-white/10">
+                        <Card className="ml-admin-surface">
+                          <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                             <div className="flex items-center gap-2">
                               <Globe className="h-4 w-4 text-primary" />
                               <h3 className="text-sm font-semibold text-foreground">
@@ -776,7 +776,7 @@ export function AuditoriaContent() {
                             {categoryStats.map((item) => (
                               <div
                                 key={item.key}
-                                className="rounded-2xl border border-white/10 bg-background/40 p-3"
+                                className="rounded-2xl ml-admin-surface-soft p-3"
                               >
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
@@ -801,8 +801,8 @@ export function AuditoriaContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="border border-white/10 bg-background/60">
-                          <CardHeader className="border-b border-white/10">
+                        <Card className="ml-admin-surface">
+                          <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                             <div className="flex items-center gap-2">
                               <UserRound className="h-4 w-4 text-secondary" />
                               <h3 className="text-sm font-semibold text-foreground">
@@ -815,7 +815,7 @@ export function AuditoriaContent() {
                               topActors.map((actor) => (
                                 <div
                                   key={`${actor.name}-${actor.lastEventAt}`}
-                                  className="rounded-2xl border border-white/10 bg-background/40 p-3"
+                                  className="rounded-2xl ml-admin-surface-soft p-3"
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
@@ -861,7 +861,7 @@ export function AuditoriaContent() {
                               criticalEvents.map((event) => (
                                 <div
                                   key={event.id}
-                                  className="rounded-2xl border border-danger/20 bg-background/50 p-3"
+                                  className="rounded-2xl border border-danger/20 bg-danger/5 p-3 dark:bg-background/50"
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
@@ -893,8 +893,8 @@ export function AuditoriaContent() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
-                        <Card className="border border-white/10 bg-background/60">
-                          <CardHeader className="border-b border-white/10">
+                        <Card className="ml-admin-surface">
+                          <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                             <div className="flex items-center gap-2">
                               <LifeBuoy className="h-4 w-4 text-primary" />
                               <h3 className="text-sm font-semibold text-foreground">
@@ -1010,8 +1010,8 @@ export function AuditoriaContent() {
                           </CardBody>
                         </Card>
 
-                        <Card className="border border-white/10 bg-background/60">
-                          <CardHeader className="border-b border-white/10">
+                        <Card className="ml-admin-surface">
+                          <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                             <div className="flex items-center gap-2">
                               <Building2 className="h-4 w-4 text-primary" />
                               <h3 className="text-sm font-semibold text-foreground">
@@ -1024,7 +1024,7 @@ export function AuditoriaContent() {
                               topTenants.map((tenant) => (
                                 <div
                                   key={`${tenant.name}-${tenant.lastEventAt}`}
-                                  className="rounded-2xl border border-white/10 bg-background/40 p-3"
+                                  className="rounded-2xl ml-admin-surface-soft p-3"
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
@@ -1139,8 +1139,8 @@ export function AuditoriaContent() {
                   ) : (
                     <>
                       {tabKey === "support" && (
-                        <Card className="border border-white/10 bg-background/60">
-                          <CardHeader className="border-b border-white/10">
+                        <Card className="ml-admin-surface">
+                          <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                             <div className="flex items-center gap-2">
                               <LifeBuoy className="h-4 w-4 text-primary" />
                               <h3 className="text-sm font-semibold text-foreground">
@@ -1272,7 +1272,7 @@ export function AuditoriaContent() {
                 {selectedChangeLog ? (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Card className="border border-white/10 bg-background/50">
+                      <Card className="ml-admin-surface-muted">
                         <CardBody className="space-y-2">
                           <p className="text-xs uppercase tracking-widest text-default-500">
                             Origem
@@ -1292,7 +1292,7 @@ export function AuditoriaContent() {
                           </p>
                         </CardBody>
                       </Card>
-                      <Card className="border border-white/10 bg-background/50">
+                      <Card className="ml-admin-surface-muted">
                         <CardBody className="space-y-2">
                           <p className="text-xs uppercase tracking-widest text-default-500">
                             Metadados
@@ -1310,8 +1310,8 @@ export function AuditoriaContent() {
                       </Card>
                     </div>
 
-                    <Card className="border border-white/10 bg-background/50">
-                      <CardHeader className="border-b border-white/10">
+                    <Card className="ml-admin-surface-muted">
+                      <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                         <h3 className="text-sm font-semibold text-foreground">
                           Diff de campos
                         </h3>
@@ -1322,7 +1322,7 @@ export function AuditoriaContent() {
                             {changeDiffEntries.map((entry) => (
                               <div
                                 key={entry.field}
-                                className="grid grid-cols-1 gap-3 rounded-2xl border border-white/10 bg-background/40 p-3 lg:grid-cols-3"
+                                className="grid grid-cols-1 gap-3 rounded-2xl ml-admin-surface-soft p-3 lg:grid-cols-3"
                               >
                                 <div>
                                   <p className="text-xs uppercase tracking-widest text-default-500">
@@ -1361,8 +1361,8 @@ export function AuditoriaContent() {
                       </CardBody>
                     </Card>
 
-                    <Card className="border border-white/10 bg-background/50">
-                      <CardHeader className="border-b border-white/10">
+                    <Card className="ml-admin-surface-muted">
+                      <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                         <h3 className="text-sm font-semibold text-foreground">
                           Contexto da entidade
                         </h3>
@@ -1373,7 +1373,7 @@ export function AuditoriaContent() {
                             Buscando contexto da entidade.
                           </p>
                         ) : (
-                          <pre className="whitespace-pre-wrap rounded-2xl bg-background/40 p-4 text-xs text-default-400">
+                          <pre className="whitespace-pre-wrap rounded-2xl border border-default-200/80 bg-default-100/60 p-4 text-xs text-default-500 dark:border-white/10 dark:bg-background/40 dark:text-default-400">
                             {formatJson(selectedLogContext?.data?.detalhes ?? null)}
                           </pre>
                         )}
@@ -1430,7 +1430,7 @@ export function AuditoriaContent() {
                 {selectedOperationalEvent ? (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Card className="border border-white/10 bg-background/50">
+                      <Card className="ml-admin-surface-muted">
                         <CardBody className="space-y-2">
                           <p className="text-xs uppercase tracking-widest text-default-500">
                             Ator
@@ -1451,7 +1451,7 @@ export function AuditoriaContent() {
                           </p>
                         </CardBody>
                       </Card>
-                      <Card className="border border-white/10 bg-background/50">
+                      <Card className="ml-admin-surface-muted">
                         <CardBody className="space-y-2">
                           <p className="text-xs uppercase tracking-widest text-default-500">
                             Metadados técnicos
@@ -1472,8 +1472,8 @@ export function AuditoriaContent() {
                       </Card>
                     </div>
 
-                    <Card className="border border-white/10 bg-background/50">
-                      <CardHeader className="border-b border-white/10">
+                    <Card className="ml-admin-surface-muted">
+                      <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                         <h3 className="text-sm font-semibold text-foreground">
                           Mensagem operacional
                         </h3>
@@ -1485,14 +1485,14 @@ export function AuditoriaContent() {
                       </CardBody>
                     </Card>
 
-                    <Card className="border border-white/10 bg-background/50">
-                      <CardHeader className="border-b border-white/10">
+                    <Card className="ml-admin-surface-muted">
+                      <CardHeader className="border-b border-default-200/80 dark:border-white/10">
                         <h3 className="text-sm font-semibold text-foreground">
                           Payload bruto
                         </h3>
                       </CardHeader>
                       <CardBody>
-                        <pre className="whitespace-pre-wrap rounded-2xl bg-background/40 p-4 text-xs text-default-400">
+                        <pre className="whitespace-pre-wrap rounded-2xl border border-default-200/80 bg-default-100/60 p-4 text-xs text-default-500 dark:border-white/10 dark:bg-background/40 dark:text-default-400">
                           {formatJson(selectedOperationalEvent.payload ?? null)}
                         </pre>
                       </CardBody>
