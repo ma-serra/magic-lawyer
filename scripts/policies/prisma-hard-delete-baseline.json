@@ -1,6 +1,6 @@
 {
   "entries": [
-    "app\\lib\\processos\\processo-vinculos.ts:156:await tx.processoCliente.deleteMany({",
-    "app\\lib\\processos\\processo-vinculos.ts:222:await tx.processoResponsavel.deleteMany({"
+    "app/lib/processos/processo-vinculos.ts:156:await tx.processoCliente.deleteMany({",
+    "app/lib/processos/processo-vinculos.ts:222:await tx.processoResponsavel.deleteMany({"
   ]
 }

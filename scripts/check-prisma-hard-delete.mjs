@@ -13,12 +13,13 @@ function normalizeEntry(raw) {
   const line = String(raw ?? "").trim();
   const match = line.match(/^(.+?):(\d+):(.*)$/);
   if (!match) {
-    return line.replace(/\s+/g, " ");
+    return line.replace(/\\/g, "/").replace(/\s+/g, " ");
   }
 
   const [, filePath, lineNumber, code] = match;
+  const normalizedFilePath = filePath.replace(/\\/g, "/");
   const normalizedCode = code.trim().replace(/\s+/g, " ");
-  return `${filePath}:${lineNumber}:${normalizedCode}`;
+  return `${normalizedFilePath}:${lineNumber}:${normalizedCode}`;
 }
 
 function readBaseline() {
