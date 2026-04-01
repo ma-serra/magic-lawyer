@@ -51,6 +51,8 @@ import { useJuizes } from "@/app/hooks/use-juizes";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/searchable-select";
+import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
+import type { JuizSerializado } from "@/app/actions/juizes";
 
 export function NovoProcessoContent() {
   const router = useRouter();
@@ -58,6 +60,8 @@ export function NovoProcessoContent() {
   const clienteIdParam = searchParams.get("clienteId");
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
+  const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
   const [formData, setFormData] = useState<ProcessoCreateInput>({
     numero: "",
     numeroCnj: "",
@@ -85,7 +89,24 @@ export function NovoProcessoContent() {
   // Buscar clientes para o select (apenas se não veio de um cliente)
   const { clientes, isLoading: isLoadingClientes } = useClientesParaSelect();
   const { advogados, isLoading: isLoadingAdvogados } = useAdvogadosParaSelect();
-  const { juizes: juizesDisponiveis, isLoading: isLoadingJuizes } = useJuizes();
+  const {
+    juizes: juizesDisponiveis,
+    isLoading: isLoadingJuizes,
+    mutate: mutateJuizes,
+  } = useJuizes();
+  const juizesDoFormulario = useMemo(() => {
+    const byId = new Map<string, JuizSerializado>();
+
+    for (const juiz of inlineJuizes) {
+      byId.set(juiz.id, juiz);
+    }
+
+    for (const juiz of juizesDisponiveis || []) {
+      byId.set(juiz.id, juiz);
+    }
+
+    return Array.from(byId.values());
+  }, [inlineJuizes, juizesDisponiveis]);
   const { data: areasData, isLoading: isLoadingAreas } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
@@ -126,8 +147,8 @@ export function NovoProcessoContent() {
     [tribunais],
   );
   const juizKeys = useMemo(
-    () => new Set((juizesDisponiveis || []).map((juiz) => juiz.id)),
-    [juizesDisponiveis],
+    () => new Set(juizesDoFormulario.map((juiz) => juiz.id)),
+    [juizesDoFormulario],
   );
   const selectedClienteKeys = useMemo(
     () =>
@@ -185,7 +206,7 @@ export function NovoProcessoContent() {
   );
   const juizOptions = useMemo(
     () =>
-      (juizesDisponiveis || []).map((juiz) => ({
+      juizesDoFormulario.map((juiz) => ({
         key: juiz.id,
         label: juiz.nome,
         textValue: [
@@ -200,7 +221,7 @@ export function NovoProcessoContent() {
           [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
           "Sem vara/comarca informada",
       })),
-    [juizesDisponiveis],
+    [juizesDoFormulario],
   );
   const tribunalOptions = useMemo(
     () =>
@@ -493,13 +514,12 @@ export function NovoProcessoContent() {
 
             <div className="-mt-1 flex justify-end">
               <Button
-                as={Link}
                 color="secondary"
-                href="/juizes"
                 size="sm"
                 variant="light"
+                onPress={() => setIsAuthorityModalOpen(true)}
               >
-                Nao encontrou a autoridade? Cadastre em Juizes
+                Nao encontrou a autoridade? Cadastre agora
               </Button>
             </div>
 
@@ -983,6 +1003,24 @@ export function NovoProcessoContent() {
           </div>
         </CardBody>
       </Card>
+
+      <AuthorityQuickCreateModal
+        isOpen={isAuthorityModalOpen}
+        tribunais={tribunais}
+        onClose={() => setIsAuthorityModalOpen(false)}
+        onCreated={async (juiz) => {
+          setInlineJuizes((current) => [
+            juiz,
+            ...current.filter((item) => item.id !== juiz.id),
+          ]);
+          setFormData((prev) => ({
+            ...prev,
+            juizId: juiz.id,
+          }));
+          await mutateJuizes();
+          setIsAuthorityModalOpen(false);
+        }}
+      />
     </div>
   );
 }
