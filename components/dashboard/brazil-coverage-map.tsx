@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Chip,
@@ -89,12 +89,14 @@ interface BrazilCoverageMapProps {
   overview: BrazilCoverageOverview | null | undefined;
   audienceLabel: string;
   showOfficeMetric?: boolean;
+  defaultMetric?: BrazilCoverageMetricKey;
 }
 
 export function BrazilCoverageMap({
   overview,
   audienceLabel,
   showOfficeMetric = true,
+  defaultMetric,
 }: BrazilCoverageMapProps) {
   const totals = overview?.totals;
   const states = overview?.states ?? [];
@@ -123,9 +125,17 @@ export function BrazilCoverageMap({
         ] as BrazilCoverageMetricKey[]);
   }, [showOfficeMetric, totals?.advogados, totals?.escritorios, totals?.processos]);
 
-  const [activeMetric, setActiveMetric] = useState<BrazilCoverageMetricKey>(
-    availableMetrics[0] ?? "processos",
-  );
+  const resolvedDefaultMetric =
+    (defaultMetric && availableMetrics.includes(defaultMetric)
+      ? defaultMetric
+      : null) ??
+    availableMetrics[0] ??
+    "processos";
+
+  const [activeMetric, setActiveMetric] =
+    useState<BrazilCoverageMetricKey>(resolvedDefaultMetric);
+  const previousDefaultMetricRef =
+    useRef<BrazilCoverageMetricKey>(resolvedDefaultMetric);
   const [selectedUf, setSelectedUf] = useState<string | null>(
     states[0]?.uf ?? null,
   );
@@ -136,6 +146,13 @@ export function BrazilCoverageMap({
       setActiveMetric(availableMetrics[0] ?? "processos");
     }
   }, [activeMetric, availableMetrics]);
+
+  useEffect(() => {
+    if (previousDefaultMetricRef.current !== resolvedDefaultMetric) {
+      previousDefaultMetricRef.current = resolvedDefaultMetric;
+      setActiveMetric(resolvedDefaultMetric);
+    }
+  }, [resolvedDefaultMetric]);
 
   const sortedStates = useMemo(() => {
     return [...states].sort((left, right) => {

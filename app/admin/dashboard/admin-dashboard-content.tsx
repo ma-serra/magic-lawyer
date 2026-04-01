@@ -27,6 +27,7 @@ import {
   FileText,
   KeyRound,
   MapPinned,
+  Scale,
   Shield,
   ShieldAlert,
   TrendingUp,
@@ -377,6 +378,21 @@ export function AdminDashboardContent() {
       },
     ];
 
+    const processHotspots = [...data.geographicOverview.states]
+      .filter((state) => state.processos > 0)
+      .sort((left, right) => right.processos - left.processos)
+      .slice(0, 5);
+
+    const topProcessState = processHotspots[0] ?? null;
+    const topProcessStatesTotal = processHotspots.reduce(
+      (sum, state) => sum + state.processos,
+      0,
+    );
+    const topProcessStatesShare =
+      data.totals.totalProcessos > 0
+        ? (topProcessStatesTotal / data.totals.totalProcessos) * 100
+        : 0;
+
     return {
       revenueMoM,
       tenantGrowthMoM,
@@ -388,6 +404,9 @@ export function AdminDashboardContent() {
       topTenantsChart,
       recommendations,
       focusCards,
+      processHotspots,
+      topProcessState,
+      topProcessStatesShare,
     };
   }, [data]);
 
@@ -487,11 +506,46 @@ export function AdminDashboardContent() {
       </div>
 
       <PeoplePanel
-        title="Mapa da base pelo Brasil"
-        description="Onde a plataforma concentra mais processos, advogados internos e escritorios ativos por UF."
+        title="Mapa quente de processos pelo Brasil"
+        description="Leitura territorial da base inteira. O mapa abre em processos para mostrar onde os escritorios ja concentram carteira, com troca opcional para advogados e escritorios."
       >
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <PeopleMetricCard
+            label="Processos mapeados"
+            value={formatNumber(data.totals.totalProcessos)}
+            helper="Base consolidada de todos os escritorios"
+            tone="primary"
+            icon={<Scale className="h-4 w-4" />}
+          />
+          <PeopleMetricCard
+            label="UF lider em processos"
+            value={analytics.topProcessState?.uf ?? "--"}
+            helper={
+              analytics.topProcessState
+                ? `${analytics.topProcessState.stateName} • ${formatNumber(
+                    analytics.topProcessState.processos,
+                  )} processos`
+                : "Ainda sem destaque suficiente"
+            }
+            tone="secondary"
+            icon={<MapPinned className="h-4 w-4" />}
+          />
+          <PeopleMetricCard
+            label="Top 5 UFs"
+            value={`${analytics.topProcessStatesShare.toFixed(1)}%`}
+            helper={`${formatNumber(
+              analytics.processHotspots.reduce(
+                (sum, state) => sum + state.processos,
+                0,
+              ),
+            )} processos concentrados nos 5 maiores polos`}
+            tone="success"
+            icon={<TrendingUp className="h-4 w-4" />}
+          />
+        </div>
         <BrazilCoverageMap
           audienceLabel="a plataforma"
+          defaultMetric="processos"
           overview={data.geographicOverview}
         />
       </PeoplePanel>
