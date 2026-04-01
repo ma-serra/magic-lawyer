@@ -2,6 +2,7 @@ import prisma from "@/app/lib/prisma";
 import { TipoEndereco } from "@/generated/prisma";
 
 import {
+  BRAZIL_STATE_METADATA,
   EMPTY_BRAZIL_COVERAGE_STATE_DETAILS,
   buildBrazilCoverageOverview,
   type BrazilCoverageEntry,
@@ -17,6 +18,71 @@ const PRODUCTION_TENANT_WHERE = {
   },
   isTestEnvironment: false,
 } as const;
+
+const NORMALIZED_STATE_NAME_TO_UF = new Map(
+  Object.entries(BRAZIL_STATE_METADATA).map(([uf, meta]) => [
+    meta.name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase(),
+    uf,
+  ]),
+);
+
+function normalizeFreeText(value?: string | null) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+function extractUfFromText(value?: string | null) {
+  const normalized = normalizeFreeText(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const directMatch =
+    normalized.match(/(?:^|[\s(/-])([A-Z]{2})(?:$|[\s)/-])/)?.[1] ?? null;
+  const directUf = normalizeBrazilUf(directMatch);
+
+  if (directUf) {
+    return directUf;
+  }
+
+  const slashMatch = normalized.match(/\/([A-Z]{2})$/)?.[1] ?? null;
+  const slashUf = normalizeBrazilUf(slashMatch);
+
+  if (slashUf) {
+    return slashUf;
+  }
+
+  for (const [stateName, uf] of NORMALIZED_STATE_NAME_TO_UF.entries()) {
+    if (normalized.includes(stateName)) {
+      return uf;
+    }
+  }
+
+  return null;
+}
+
+function resolveProcessUf(params: {
+  tribunalUf?: string | null;
+  comarca?: string | null;
+  vara?: string | null;
+  foro?: string | null;
+  orgaoJulgador?: string | null;
+}) {
+  return (
+    normalizeBrazilUf(params.tribunalUf) ||
+    extractUfFromText(params.comarca) ||
+    extractUfFromText(params.vara) ||
+    extractUfFromText(params.foro) ||
+    extractUfFromText(params.orgaoJulgador)
+  );
+}
 
 function rowsToUfMap(
   rows: Array<{ uf: string | null; _count: { _all: number } }>,
@@ -37,128 +103,82 @@ function rowsToUfMap(
 }
 
 async function getTenantProcessCountsByUf(tenantId: string) {
-  const processRows = await prisma.processo.groupBy({
-    by: ["tribunalId"],
+  const rows = await prisma.processo.findMany({
     where: {
       tenantId,
       deletedAt: null,
-      tribunalId: {
-        not: null,
-      },
     },
-    _count: {
-      _all: true,
+    select: {
+      comarca: true,
+      foro: true,
+      vara: true,
+      orgaoJulgador: true,
+      tribunal: {
+        select: {
+          uf: true,
+        },
+      },
     },
   });
 
-  const tribunalIds = processRows
-    .map((row) => row.tribunalId)
-    .filter((value): value is string => Boolean(value));
-
-  const tribunais = tribunalIds.length
-    ? await prisma.tribunal.findMany({
-        where: {
-          id: {
-            in: tribunalIds,
-          },
-        },
-        select: {
-          id: true,
-          uf: true,
-        },
-      })
-    : [];
-
-  const tribunalUfMap = new Map(
-    tribunais
-      .map((tribunal) => {
-        const uf = normalizeBrazilUf(tribunal.uf);
-        return uf ? [tribunal.id, uf] : null;
-      })
-      .filter(
-        (entry): entry is [string, string] => Array.isArray(entry),
-      ),
-  );
-
   const totals = new Map<string, number>();
 
-  for (const row of processRows) {
-    if (!row.tribunalId) {
-      continue;
-    }
-
-    const uf = tribunalUfMap.get(row.tribunalId);
+  for (const row of rows) {
+    const uf = resolveProcessUf({
+      tribunalUf: row.tribunal?.uf,
+      comarca: row.comarca,
+      vara: row.vara,
+      foro: row.foro,
+      orgaoJulgador: row.orgaoJulgador,
+    });
 
     if (!uf) {
       continue;
     }
 
-    totals.set(uf, (totals.get(uf) || 0) + row._count._all);
+    totals.set(uf, (totals.get(uf) || 0) + 1);
   }
 
   return totals;
 }
 
 async function getGlobalProcessCountsByUf() {
-  const processRows = await prisma.processo.groupBy({
-    by: ["tribunalId"],
+  const rows = await prisma.processo.findMany({
     where: {
       deletedAt: null,
-      tribunalId: {
-        not: null,
-      },
       tenant: {
         is: PRODUCTION_TENANT_WHERE,
       },
     },
-    _count: {
-      _all: true,
+    select: {
+      comarca: true,
+      foro: true,
+      vara: true,
+      orgaoJulgador: true,
+      tribunal: {
+        select: {
+          uf: true,
+        },
+      },
     },
   });
 
-  const tribunalIds = processRows
-    .map((row) => row.tribunalId)
-    .filter((value): value is string => Boolean(value));
-
-  const tribunais = tribunalIds.length
-    ? await prisma.tribunal.findMany({
-        where: {
-          id: {
-            in: tribunalIds,
-          },
-        },
-        select: {
-          id: true,
-          uf: true,
-        },
-      })
-    : [];
-
-  const tribunalUfMap = new Map(
-    tribunais
-      .map((tribunal) => {
-        const uf = normalizeBrazilUf(tribunal.uf);
-        return uf ? [tribunal.id, uf] : null;
-      })
-      .filter(
-        (entry): entry is [string, string] => Array.isArray(entry),
-      ),
-  );
-
   const totals = new Map<string, number>();
 
-  for (const row of processRows) {
-    if (!row.tribunalId) {
-      continue;
-    }
-
-    const uf = tribunalUfMap.get(row.tribunalId);
+  for (const row of rows) {
+    const uf = resolveProcessUf({
+      tribunalUf: row.tribunal?.uf,
+      comarca: row.comarca,
+      vara: row.vara,
+      foro: row.foro,
+      orgaoJulgador: row.orgaoJulgador,
+    });
 
     if (!uf) {
       continue;
     }
 
-    totals.set(uf, (totals.get(uf) || 0) + row._count._all);
+    totals.set(uf, (totals.get(uf) || 0) + 1);
   }
 
   return totals;
@@ -424,123 +444,143 @@ async function getTenantProcessDetailsByUf(
   tenantId: string,
   ufs: string[],
 ): Promise<Map<string, BrazilCoverageLocationItem[]>> {
-  const entries = await Promise.all(
-    ufs.map(async (uf) => {
-      const rows = await prisma.processo.findMany({
-        where: {
-          tenantId,
-          deletedAt: null,
-          tribunal: {
-            is: {
-              uf,
-            },
-          },
-        },
-        orderBy: [{ updatedAt: "desc" }],
-        take: 6,
+  const rows = await prisma.processo.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    select: {
+      id: true,
+      numero: true,
+      comarca: true,
+      foro: true,
+      vara: true,
+      orgaoJulgador: true,
+      tribunal: {
         select: {
-          id: true,
-          numero: true,
-          comarca: true,
-          vara: true,
-          tribunal: {
-            select: {
-              nome: true,
-            },
-          },
-          cliente: {
-            select: {
-              nome: true,
-            },
-          },
+          nome: true,
+          uf: true,
         },
-      });
+      },
+      cliente: {
+        select: {
+          nome: true,
+        },
+      },
+    },
+  });
 
-      return [
-        uf,
-        rows.map(
-          (row) =>
-            ({
-              id: row.id,
-              title: row.numero,
-              subtitle: compactParts([
-                row.tribunal?.nome,
-                row.comarca,
-                row.vara,
-                row.cliente?.nome,
-              ]),
-              href: `/processos/${row.id}`,
-            }) satisfies BrazilCoverageLocationItem,
-        ),
-      ] as const;
-    }),
-  );
+  const grouped = new Map<string, BrazilCoverageLocationItem[]>();
 
-  return new Map(entries);
+  for (const row of rows) {
+    const uf = resolveProcessUf({
+      tribunalUf: row.tribunal?.uf,
+      comarca: row.comarca,
+      vara: row.vara,
+      foro: row.foro,
+      orgaoJulgador: row.orgaoJulgador,
+    });
+
+    if (!uf || !ufs.includes(uf)) {
+      continue;
+    }
+
+    const current = grouped.get(uf) ?? [];
+
+    if (current.length >= 6) {
+      continue;
+    }
+
+    current.push({
+      id: row.id,
+      title: row.numero,
+      subtitle: compactParts([
+        row.tribunal?.nome,
+        row.orgaoJulgador,
+        row.comarca,
+        row.vara,
+        row.cliente?.nome,
+      ]),
+      href: `/processos/${row.id}`,
+    });
+    grouped.set(uf, current);
+  }
+
+  return grouped;
 }
 
 async function getGlobalProcessDetailsByUf(
   ufs: string[],
 ): Promise<Map<string, BrazilCoverageLocationItem[]>> {
-  const entries = await Promise.all(
-    ufs.map(async (uf) => {
-      const rows = await prisma.processo.findMany({
-        where: {
-          deletedAt: null,
-          tribunal: {
-            is: {
-              uf,
-            },
-          },
-          tenant: {
-            is: PRODUCTION_TENANT_WHERE,
-          },
+  const rows = await prisma.processo.findMany({
+    where: {
+      deletedAt: null,
+      tenant: {
+        is: PRODUCTION_TENANT_WHERE,
+      },
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    select: {
+      id: true,
+      numero: true,
+      comarca: true,
+      foro: true,
+      vara: true,
+      orgaoJulgador: true,
+      tribunal: {
+        select: {
+          nome: true,
+          uf: true,
         },
-        orderBy: [{ updatedAt: "desc" }],
-        take: 6,
+      },
+      tenant: {
         select: {
           id: true,
-          numero: true,
-          comarca: true,
-          vara: true,
-          tribunal: {
-            select: {
-              nome: true,
-            },
-          },
-          tenant: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
+          name: true,
+          slug: true,
         },
-      });
+      },
+    },
+  });
 
-      return [
-        uf,
-        rows.map(
-          (row) =>
-            ({
-              id: row.id,
-              title: row.numero,
-              subtitle: compactParts([
-                row.tenant?.name,
-                row.tribunal?.nome,
-                row.comarca,
-                row.vara,
-              ]),
-              href: row.tenant?.id
-                ? `/admin/tenants/${row.tenant.id}`
-                : undefined,
-            }) satisfies BrazilCoverageLocationItem,
-        ),
-      ] as const;
-    }),
-  );
+  const grouped = new Map<string, BrazilCoverageLocationItem[]>();
 
-  return new Map(entries);
+  for (const row of rows) {
+    const uf = resolveProcessUf({
+      tribunalUf: row.tribunal?.uf,
+      comarca: row.comarca,
+      vara: row.vara,
+      foro: row.foro,
+      orgaoJulgador: row.orgaoJulgador,
+    });
+
+    if (!uf || !ufs.includes(uf)) {
+      continue;
+    }
+
+    const current = grouped.get(uf) ?? [];
+
+    if (current.length >= 6) {
+      continue;
+    }
+
+    current.push({
+      id: row.id,
+      title: row.numero,
+      subtitle: compactParts([
+        row.tenant?.name,
+        row.tribunal?.nome,
+        row.orgaoJulgador,
+        row.comarca,
+        row.vara,
+      ]),
+      href: row.tenant?.id ? `/admin/tenants/${row.tenant.id}` : undefined,
+    });
+    grouped.set(uf, current);
+  }
+
+  return grouped;
 }
 
 async function getTenantLawyerDetailsByUf(
