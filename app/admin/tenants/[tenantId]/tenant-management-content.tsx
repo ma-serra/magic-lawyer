@@ -171,6 +171,7 @@ const TENANT_ADMIN_INTEGRATION_KEYS = [
   "clicksign",
   "certificates",
   "asaas",
+  "jusbrasil",
   "whatsapp",
   "telegram",
   "sms",
@@ -211,6 +212,13 @@ const TENANT_ADMIN_INTEGRATION_OPTIONS: Array<{
     description:
       "Billing e cobrança do escritório com configuração segregada por tenant.",
     icon: <CreditCard className="h-4 w-4" />,
+  },
+  {
+    key: "jusbrasil",
+    label: "Jusbrasil",
+    description:
+      "Leitura administrativa da integracao juridica externa, com elegibilidade por plano e webhook esperado.",
+    icon: <Search className="h-4 w-4" />,
   },
   {
     key: "whatsapp",
@@ -2703,6 +2711,159 @@ function CertificatesAdminPanel({
   );
 }
 
+function JusbrasilAdminPanel({
+  summary,
+}: {
+  summary: TenantManagementData["integrations"]["jusbrasil"];
+}) {
+  const statusLabel = summary.effectiveEnabled
+    ? "Ativo"
+    : !summary.planEligible && summary.integracaoAtiva
+      ? "Bloqueado pelo plano"
+      : !summary.globalConfigured
+        ? "Indisponivel na plataforma"
+        : summary.integracaoAtiva
+          ? "Pendente"
+          : "Desligado";
+
+  const statusTone = summary.effectiveEnabled
+    ? "success"
+    : !summary.planEligible && summary.integracaoAtiva
+      ? "warning"
+      : !summary.globalConfigured
+        ? "danger"
+        : summary.integracaoAtiva
+          ? "primary"
+          : "default";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border border-white/10 bg-background/70 backdrop-blur">
+        <CardHeader className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-foreground">
+            Jusbrasil do tenant
+          </h2>
+          <p className="text-sm text-default-400">
+            Visao administrativa da integracao juridica externa, sem expor
+            segredos e sem depender de abrir o tenant para conferir o estado.
+          </p>
+        </CardHeader>
+        <Divider className="border-white/10" />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <IntegrationStatCard
+              chipColor={statusTone}
+              helper="Estado efetivo considerando plano, credencial global e preferencia do tenant"
+              label="Status"
+              value={statusLabel}
+            />
+            <IntegrationStatCard
+              chipColor={summary.planEligible ? "success" : "warning"}
+              helper="Plano atual do tenant para operacao com Jusbrasil"
+              label="Plano"
+              value={summary.planName ?? "Sem plano"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.globalConfigured ? "success" : "danger"}
+              helper="Disponibilidade da conta global da plataforma"
+              label="Credencial"
+              value={summary.globalConfigured ? "Configurada" : "Ausente"}
+            />
+            <IntegrationStatCard
+              chipColor={summary.lastWebhookAt ? "primary" : "default"}
+              helper="Ultimo webhook observado para este tenant"
+              label="Webhook"
+              value={
+                summary.lastWebhookAt
+                  ? formatDateTime(summary.lastWebhookAt)
+                  : "Sem registro"
+              }
+            />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">
+              Configuracao do tenant
+            </p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Preferencia salva:{" "}
+                <strong>{summary.integracaoAtiva ? "Ativa" : "Desativada"}</strong>
+              </p>
+              <p>
+                Conta usada:{" "}
+                <strong>
+                  {summary.usingGlobalAccount ? "Global da plataforma" : "Tenant"}
+                </strong>
+              </p>
+              <p>
+                Data de configuracao:{" "}
+                <strong>
+                  {summary.dataConfiguracao
+                    ? formatDateTime(summary.dataConfiguracao)
+                    : "Nao informada"}
+                </strong>
+              </p>
+              <p>
+                Ultima validacao:{" "}
+                <strong>
+                  {summary.ultimaValidacao
+                    ? formatDateTime(summary.ultimaValidacao)
+                    : "Nao validada"}
+                </strong>
+              </p>
+              <p>
+                Base da API:{" "}
+                <span className="font-mono text-xs">{summary.baseUrl}</span>
+              </p>
+              <p>
+                Ultimo evento:{" "}
+                <strong>{summary.lastWebhookEvent ?? "Nenhum"}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-default-300">
+            <p className="font-medium text-foreground">Webhook esperado</p>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              <p>
+                Endpoint:{" "}
+                <span className="font-mono text-xs">
+                  {summary.expectedWebhookUrl}
+                </span>
+              </p>
+              <p>
+                Registro salvo: <strong>{summary.id ? "Sim" : "Nao"}</strong>
+              </p>
+            </div>
+          </div>
+
+          {!summary.planEligible ? (
+            <div className="rounded-2xl border border-warning/20 bg-warning/5 p-4 text-sm text-default-300">
+              <p className="font-medium text-foreground">
+                Elegibilidade do plano
+              </p>
+              <p className="mt-2">{summary.planEligibilityReason}</p>
+            </div>
+          ) : null}
+
+          {!summary.globalConfigured ? (
+            <div className="rounded-2xl border border-danger/20 bg-danger/5 p-4 text-sm text-default-300">
+              <p className="font-medium text-foreground">
+                Credencial global indisponivel
+              </p>
+              <p className="mt-2">
+                Enquanto a plataforma estiver sem `JUSBRASIL_API_KEY`, o tenant
+                nao consegue operar com Jusbrasil mesmo com a preferencia ligada.
+              </p>
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
 function IntegrationsTab({
   tenantId,
   integrations,
@@ -2894,6 +3055,10 @@ function IntegrationsTab({
                 summary={integrations.asaas}
                 onTestConnection={handleTestAsaas}
               />
+            ) : null}
+
+            {selectedIntegration === "jusbrasil" ? (
+              <JusbrasilAdminPanel summary={integrations.jusbrasil} />
             ) : null}
 
             {selectedIntegration === "whatsapp" ? (

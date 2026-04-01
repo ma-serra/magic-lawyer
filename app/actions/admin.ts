@@ -41,6 +41,11 @@ import {
   getOnlineCountsByTenant,
   getOnlineUsersByTenant,
 } from "@/app/lib/realtime/session-presence";
+import {
+  buildJusbrasilExpectedWebhookUrl,
+  getTenantJusbrasilIntegrationState,
+} from "@/app/lib/juridical/jusbrasil-oab-sync";
+import { resolveJusbrasilApiBaseUrl } from "@/lib/api/juridical/jusbrasil";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -207,6 +212,23 @@ export interface TenantManagementData {
     clicksign: ReturnType<typeof buildAdminClicksignSummary>;
     asaas: ReturnType<typeof buildAdminAsaasSummary>;
     certificates: ReturnType<typeof buildAdminCertificatesSummary>;
+    jusbrasil: {
+      id: string | null;
+      integracaoAtiva: boolean;
+      dataConfiguracao: string | null;
+      ultimaValidacao: string | null;
+      lastWebhookAt: string | null;
+      lastWebhookEvent: string | null;
+      globalConfigured: boolean;
+      planSlug: string | null;
+      planName: string | null;
+      planEligible: boolean;
+      planEligibilityReason: string;
+      baseUrl: string;
+      expectedWebhookUrl: string;
+      effectiveEnabled: boolean;
+      usingGlobalAccount: boolean;
+    };
     whatsapp: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
     telegram: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
     sms: ReturnType<typeof buildAdminTenantChannelProviderSummary>;
@@ -820,6 +842,7 @@ export async function getTenantManagementData(
       clicksignConfig,
       asaasConfig,
       digitalCertificates,
+      jusbrasilState,
       tenantChannelProviders,
     ] = await Promise.all([
       prisma.plano.findMany({
@@ -899,6 +922,7 @@ export async function getTenantManagementData(
           lastUsedAt: true,
         },
       }),
+      getTenantJusbrasilIntegrationState(tenantId),
       prisma.tenantChannelProvider.findMany({
         where: {
           tenantId,
@@ -1040,6 +1064,25 @@ export async function getTenantManagementData(
             tenant.digitalCertificatePolicy ?? DigitalCertificatePolicy.OFFICE,
           certificates: digitalCertificates,
         }),
+        jusbrasil: {
+          id: jusbrasilState.configId,
+          integracaoAtiva: jusbrasilState.integracaoAtiva,
+          dataConfiguracao: jusbrasilState.dataConfiguracao?.toISOString() ?? null,
+          ultimaValidacao: jusbrasilState.ultimaValidacao?.toISOString() ?? null,
+          lastWebhookAt: jusbrasilState.lastWebhookAt?.toISOString() ?? null,
+          lastWebhookEvent: jusbrasilState.lastWebhookEvent ?? null,
+          globalConfigured: jusbrasilState.globalConfigured,
+          planSlug: jusbrasilState.planSlug,
+          planName: jusbrasilState.planName,
+          planEligible: jusbrasilState.planEligible,
+          planEligibilityReason: jusbrasilState.planEligibilityReason,
+          baseUrl: resolveJusbrasilApiBaseUrl(
+            process.env.JUSBRASIL_API_BASE_URL,
+          ),
+          expectedWebhookUrl: buildJusbrasilExpectedWebhookUrl(),
+          effectiveEnabled: jusbrasilState.enabled,
+          usingGlobalAccount: true,
+        },
         whatsapp: buildAdminTenantChannelProviderSummary(
           "WHATSAPP",
           omnichannelProviders.get("WHATSAPP") ?? null,
