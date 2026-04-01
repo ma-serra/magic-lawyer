@@ -215,7 +215,8 @@ export function TenantCreateContent() {
               />
               <Input
                 label="Domínio personalizado"
-                placeholder="ex.: escritorio.minhaempresa.com"
+                description="Pode informar o host direto ou colar a URL completa. O sistema normaliza antes de salvar."
+                placeholder="ex.: dayane-assis.vercel.app ou escritorio.minhaempresa.com"
                 value={form.domain}
                 onValueChange={(value) => handleChange("domain", value)}
               />

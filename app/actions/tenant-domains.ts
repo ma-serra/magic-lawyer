@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import prisma from "@/app/lib/prisma";
 import { getSession } from "@/app/lib/auth";
-import { getTenantHostHints } from "@/lib/tenant-host";
+import {
+  getTenantHostHints,
+  normalizeTenantDomainInput,
+} from "@/lib/tenant-host";
 
 /**
  * Atualiza o domínio de um tenant
@@ -32,7 +35,9 @@ export async function updateTenantDomain(
   }
 
   // Se domain não é null, verificar se já existe
-  const normalizedDomain = domain?.trim().toLowerCase() || null;
+  const normalizedDomain = domain
+    ? normalizeTenantDomainInput(domain) || null
+    : null;
 
   if (normalizedDomain) {
     const existingTenant = await prisma.tenant.findFirst({
@@ -94,7 +99,7 @@ export async function getTenantDomains() {
  */
 export async function validateDomain(domain: string, excludeTenantId?: string) {
   if (!domain) return { valid: true, message: "" };
-  const normalizedDomain = domain.trim().toLowerCase();
+  const normalizedDomain = normalizeTenantDomainInput(domain);
 
   // Verificar formato básico do domínio
   const domainRegex =

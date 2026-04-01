@@ -46,6 +46,7 @@ import {
   getTenantJusbrasilIntegrationState,
 } from "@/app/lib/juridical/jusbrasil-oab-sync";
 import { resolveJusbrasilApiBaseUrl } from "@/lib/api/juridical/jusbrasil";
+import { normalizeTenantDomainInput } from "@/lib/tenant-host";
 
 // =============================================
 // TENANT MANAGEMENT
@@ -277,9 +278,13 @@ export async function createTenant(
       };
     }
 
-    if (data.domain) {
+    const normalizedCreateDomain = data.domain
+      ? normalizeTenantDomainInput(data.domain)
+      : undefined;
+
+    if (normalizedCreateDomain) {
       const domainConflict = await prisma.tenant.findUnique({
-        where: { domain: data.domain },
+        where: { domain: normalizedCreateDomain },
       });
 
       if (domainConflict) {
@@ -300,7 +305,7 @@ export async function createTenant(
         data: {
           name: data.name,
           slug: data.slug,
-          domain: data.domain,
+          domain: normalizedCreateDomain,
           email: data.email,
           telefone: data.telefone,
           documento: data.documento,
@@ -1156,10 +1161,20 @@ export async function updateTenantDetails(
       }
     }
 
-    if (payload.domain !== undefined && payload.domain !== tenant.domain) {
-      if (payload.domain) {
+    const normalizedPayloadDomain =
+      payload.domain !== undefined
+        ? payload.domain
+          ? normalizeTenantDomainInput(payload.domain)
+          : null
+        : undefined;
+
+    if (
+      normalizedPayloadDomain !== undefined &&
+      normalizedPayloadDomain !== tenant.domain
+    ) {
+      if (normalizedPayloadDomain) {
         const domainConflict = await prisma.tenant.findUnique({
-          where: { domain: payload.domain },
+          where: { domain: normalizedPayloadDomain },
         });
 
         if (domainConflict) {
@@ -1175,7 +1190,8 @@ export async function updateTenantDetails(
 
     if (payload.name !== undefined) updateData.name = payload.name;
     if (payload.slug !== undefined) updateData.slug = payload.slug;
-    if (payload.domain !== undefined) updateData.domain = payload.domain;
+    if (normalizedPayloadDomain !== undefined)
+      updateData.domain = normalizedPayloadDomain;
     if (payload.email !== undefined) updateData.email = payload.email;
     if (payload.telefone !== undefined) updateData.telefone = payload.telefone;
     if (payload.documento !== undefined)

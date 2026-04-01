@@ -12,6 +12,30 @@ export function normalizeHost(host: string): string {
   return host.split(":")[0]?.trim().toLowerCase() ?? "";
 }
 
+export function normalizeTenantDomainInput(domain: string): string {
+  const raw = domain.trim().toLowerCase();
+  if (!raw) {
+    return "";
+  }
+
+  const candidate = raw.startsWith("http://") || raw.startsWith("https://")
+    ? raw
+    : `https://${raw}`;
+
+  try {
+    const parsed = new URL(candidate);
+    return normalizeHost(parsed.host);
+  } catch {
+    return normalizeHost(
+      raw
+        .replace(/^https?:\/\//, "")
+        .split("/")[0]
+        .split("?")[0]
+        .split("#")[0],
+    );
+  }
+}
+
 function getVercelTenantPrefix(): string {
   return process.env.TENANT_VERCEL_SLUG_PREFIX?.trim().toLowerCase() ?? "";
 }
