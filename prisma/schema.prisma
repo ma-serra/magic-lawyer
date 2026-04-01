@@ -971,6 +971,7 @@ model Juiz {
   julgamentos       Julgamento[]
   pacotes           PacoteJuizItem[]         @relation("JuizPacote")
   processos         Processo[]
+  tarefas           Tarefa[]
 
   @@index([nome])
   @@index([superAdminId])
@@ -2080,6 +2081,7 @@ model Tarefa {
   prioridade                TarefaPrioridade       @default(MEDIA)
   processoId                String?
   clienteId                 String?
+  juizId                    String?
   categoriaId               String?
   responsavelId             String?
   criadoPorId               String?
@@ -2099,6 +2101,7 @@ model Tarefa {
   categoria                 CategoriaTarefa?       @relation(fields: [categoriaId], references: [id])
   cliente                   Cliente?               @relation("TarefaCliente", fields: [clienteId], references: [id])
   criadoPor                 Usuario?               @relation("TarefasCriadas", fields: [criadoPorId], references: [id])
+  juiz                      Juiz?                  @relation(fields: [juizId], references: [id])
   processo                  Processo?              @relation(fields: [processoId], references: [id])
   responsavel               Usuario?               @relation("TarefasResponsaveis", fields: [responsavelId], references: [id])
   tenant                    Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -2116,6 +2119,7 @@ model Tarefa {
 
   @@index([tenantId, status])
   @@index([tenantId, responsavelId])
+  @@index([tenantId, juizId, status])
   @@index([tenantId, dataLimite])
   @@index([tenantId, deletedAt])
   @@index([tenantId, boardId, columnId, ordem])

@@ -1,9 +1,18 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { revalidatePath } from "next/cache";
 
 import { getSession } from "@/app/lib/auth";
 import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
+import {
+  buildAuthorityPendingMetadata,
+  getAuthorityPendingTaskMap,
+  reassignAuthorityPendingTask,
+  syncAuthorityPendingTaskForAuthority,
+  type AuthorityPendingMetadata,
+  type AuthorityPendingResponsibleSummary,
+} from "@/app/lib/juizes/authority-profile-pendency";
 import logger from "@/lib/logger";
 import {
   AutoridadeNivelAcesso,
@@ -74,6 +83,10 @@ export interface JuizDetalhado {
     analises: number;
     favoritos: number;
   };
+  cadastroCompleto?: boolean;
+  camposPendentes?: string[];
+  tarefaPendenciaId?: string | null;
+  responsavelPendencia?: AuthorityPendingResponsibleSummary | null;
 }
 
 export interface ProcessoJuiz {
@@ -181,6 +194,10 @@ export interface JuizSerializado {
     analises: number;
     favoritos: number;
   };
+  cadastroCompleto?: boolean;
+  camposPendentes?: string[];
+  tarefaPendenciaId?: string | null;
+  responsavelPendencia?: AuthorityPendingResponsibleSummary | null;
 }
 
 export interface JuizAdminDetalhesProcesso {
@@ -376,6 +393,11 @@ export interface JuizFormOptions {
     sigla: string | null;
     esfera: string | null;
     uf: string | null;
+  }>;
+  usuariosResponsaveis?: Array<{
+    id: string;
+    nome: string;
+    role: string;
   }>;
 }
 
@@ -901,6 +923,47 @@ function withScopedCounts<T extends JuizSerializado | JuizDetalhado>(
   };
 }
 
+function decorateAuthorityPendingMetadata<T extends JuizSerializado | JuizDetalhado>(
+  juiz: T,
+  task?: {
+    id?: string | null;
+    responsavel?: AuthorityPendingResponsibleSummary | null;
+  } | null,
+): T {
+  const metadata = buildAuthorityPendingMetadata(juiz, task);
+
+  return {
+    ...juiz,
+    cadastroCompleto: metadata.cadastroCompleto,
+    camposPendentes: metadata.camposPendentes,
+    tarefaPendenciaId: metadata.tarefaPendenciaId,
+    responsavelPendencia: metadata.responsavelPendencia,
+  };
+}
+
+function buildAuthorityCoreFromJudge(
+  juiz: Pick<
+    JuizSerializado | JuizDetalhado,
+    | "nome"
+    | "tipoAutoridade"
+    | "vara"
+    | "comarca"
+    | "cidade"
+    | "estado"
+    | "tribunalId"
+  >,
+) {
+  return {
+    nome: juiz.nome,
+    tipoAutoridade: juiz.tipoAutoridade,
+    vara: juiz.vara,
+    comarca: juiz.comarca,
+    cidade: juiz.cidade,
+    estado: juiz.estado,
+    tribunalId: juiz.tribunalId,
+  };
+}
+
 async function getTenantJuizCounts(
   tenantId: string,
   juizIds: string[],
@@ -1211,24 +1274,44 @@ export async function getJuizFormData(): Promise<{
       return { success: false, error: "Tenant não encontrado" };
     }
 
-    // Buscar tribunais
-    const tribunais = await prisma.tribunal.findMany({
-      where: isSuperAdmin
-        ? undefined
-        : {
-            OR: [{ tenantId: null }, { tenantId: user.tenantId }],
-          },
-      select: {
-        id: true,
-        nome: true,
-        sigla: true,
-        esfera: true,
-        uf: true,
-      },
-      orderBy: {
-        nome: "asc",
-      },
-    });
+    const [tribunais, usuariosResponsaveis] = await Promise.all([
+      prisma.tribunal.findMany({
+        where: isSuperAdmin
+          ? undefined
+          : {
+              OR: [{ tenantId: null }, { tenantId: user.tenantId }],
+            },
+        select: {
+          id: true,
+          nome: true,
+          sigla: true,
+          esfera: true,
+          uf: true,
+        },
+        orderBy: {
+          nome: "asc",
+        },
+      }),
+      isSuperAdmin
+        ? Promise.resolve([])
+        : prisma.usuario.findMany({
+            where: {
+              tenantId: user.tenantId,
+              active: true,
+              role: {
+                not: "CLIENTE" as any,
+              },
+            },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }, { email: "asc" }],
+          }),
+    ]);
 
     // Definir opções estáticas para especialidades, status e níveis
     const especialidades = [
@@ -1278,6 +1361,13 @@ export async function getJuizFormData(): Promise<{
         status,
         niveis,
         tribunais,
+        usuariosResponsaveis: usuariosResponsaveis.map((item) => ({
+          id: item.id,
+          nome:
+            [item.firstName, item.lastName].filter(Boolean).join(" ").trim() ||
+            item.email,
+          role: item.role,
+        })),
       },
     };
   } catch (error) {
@@ -1430,7 +1520,9 @@ export async function getJuizes(filters: JuizFilters = {}): Promise<{
     if (user.role === "SUPER_ADMIN") {
       return {
         success: true,
-        data: serialized,
+        data: (serialized as JuizSerializado[]).map((juiz) =>
+          decorateAuthorityPendingMetadata(juiz),
+        ),
       };
     }
 
@@ -1479,9 +1571,29 @@ export async function getJuizes(filters: JuizFilters = {}): Promise<{
       return withScopedCounts(withOverlay, tenantCountsByJuizId.get(juiz.id));
     });
 
+    const pendingTaskMap = await getAuthorityPendingTaskMap(user.tenantId, juizIds);
+    const decorated = tenantScoped.map((juiz) => {
+      const task = pendingTaskMap.get(juiz.id);
+      return decorateAuthorityPendingMetadata(juiz, task
+        ? {
+            id: task.id,
+            responsavel: task.responsavel
+              ? {
+                  id: task.responsavel.id,
+                  nome:
+                    [task.responsavel.firstName, task.responsavel.lastName]
+                      .filter(Boolean)
+                      .join(" ")
+                      .trim() || "Responsavel do escritorio",
+                }
+              : null,
+          }
+        : null);
+    });
+
     return {
       success: true,
-      data: tenantScoped,
+      data: decorated,
     };
   } catch (error) {
     logger.error("Erro ao buscar juízes:", error);
@@ -1691,9 +1803,43 @@ export async function getJuizDetalhado(juizId: string): Promise<{
         [juizId],
         { session },
       );
-      const tenantScopedWithCounts = withScopedCounts(
+      const tenantScopedWithCountsBase = withScopedCounts(
         tenantScoped,
         tenantCountsByJuizId.get(juizId),
+      );
+      let pendingTaskMap = await getAuthorityPendingTaskMap(user.tenantId, [juizId]);
+      let task = pendingTaskMap.get(juizId);
+
+      if (!task) {
+        const syncResult = await syncAuthorityPendingTaskForAuthority({
+          tenantId: user.tenantId,
+          juizId,
+          authority: buildAuthorityCoreFromJudge(tenantScopedWithCountsBase),
+        });
+
+        if (syncResult.metadata.tarefaPendenciaId) {
+          pendingTaskMap = await getAuthorityPendingTaskMap(user.tenantId, [juizId]);
+          task = pendingTaskMap.get(juizId);
+        }
+      }
+
+      const tenantScopedWithCounts = decorateAuthorityPendingMetadata(
+        tenantScopedWithCountsBase,
+        task
+          ? {
+              id: task.id,
+              responsavel: task.responsavel
+                ? {
+                    id: task.responsavel.id,
+                    nome:
+                      [task.responsavel.firstName, task.responsavel.lastName]
+                        .filter(Boolean)
+                        .join(" ")
+                        .trim() || "Responsavel do escritorio",
+                  }
+                : null,
+            }
+          : null,
       );
 
       return {
@@ -1704,7 +1850,7 @@ export async function getJuizDetalhado(juizId: string): Promise<{
 
     return {
       success: true,
-      juiz: serialized,
+      juiz: decorateAuthorityPendingMetadata(serialized),
     };
   } catch (error) {
     logger.error("Erro ao buscar detalhes do juiz:", error);
@@ -3340,7 +3486,7 @@ export async function createJuizTenant(data: {
 
       return {
         success: true,
-        juiz: serialized,
+        juiz: decorateAuthorityPendingMetadata(serialized),
       };
     }
 
@@ -3538,10 +3684,28 @@ export async function createJuizTenant(data: {
       { session },
     );
     const judgeWithOverlay = applyTenantOverlay(serialized, overlay);
+    const scopedJudge = withScopedCounts(
+      judgeWithOverlay,
+      tenantCountsByJuizId.get(juizId),
+    );
+    const pendingSync = await syncAuthorityPendingTaskForAuthority({
+      tenantId,
+      juizId,
+      authority: buildAuthorityCoreFromJudge(scopedJudge),
+      createdById: user.id,
+      preferredResponsavelId: user.id,
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/dashboard");
+    revalidatePath("/tarefas");
 
     return {
       success: true,
-      juiz: withScopedCounts(judgeWithOverlay, tenantCountsByJuizId.get(juizId)),
+      juiz: decorateAuthorityPendingMetadata(scopedJudge, {
+        id: pendingSync.metadata.tarefaPendenciaId,
+        responsavel: pendingSync.metadata.responsavelPendencia,
+      }),
     };
   } catch (error) {
     logger.error("Erro ao criar juiz:", error);
@@ -3691,7 +3855,7 @@ export async function updateJuizTenant(
 
       return {
         success: true,
-        juiz: serialized,
+        juiz: decorateAuthorityPendingMetadata(serialized),
       };
     }
 
@@ -3775,10 +3939,28 @@ export async function updateJuizTenant(
       { session },
     );
     const judgeWithOverlay = applyTenantOverlay(serialized, overlay);
+    const scopedJudge = withScopedCounts(
+      judgeWithOverlay,
+      tenantCountsByJuizId.get(juizId),
+    );
+    const pendingSync = await syncAuthorityPendingTaskForAuthority({
+      tenantId,
+      juizId,
+      authority: buildAuthorityCoreFromJudge(scopedJudge),
+      createdById: user.id,
+      preferredResponsavelId: user.id,
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/dashboard");
+    revalidatePath("/tarefas");
 
     return {
       success: true,
-      juiz: withScopedCounts(judgeWithOverlay, tenantCountsByJuizId.get(juizId)),
+      juiz: decorateAuthorityPendingMetadata(scopedJudge, {
+        id: pendingSync.metadata.tarefaPendenciaId,
+        responsavel: pendingSync.metadata.responsavelPendencia,
+      }),
     };
   } catch (error) {
     logger.error("Erro ao atualizar juiz:", error);
@@ -3786,6 +3968,125 @@ export async function updateJuizTenant(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro ao atualizar juiz",
+    };
+  }
+}
+
+export async function reassignAuthorityPendingTaskTenant(
+  juizId: string,
+  responsavelId: string,
+): Promise<{
+  success: boolean;
+  metadata?: AuthorityPendingMetadata;
+  error?: string;
+}> {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Nao autorizado" };
+    }
+
+    const user = session.user as any;
+
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant nao encontrado" };
+    }
+
+    if (!canManageJudgeByRole(user.role)) {
+      const canEdit = await hasJudgePermission("editar");
+      if (!canEdit) {
+        return {
+          success: false,
+          error: "Sem permissao para reatribuir a pendencia da autoridade",
+        };
+      }
+    }
+
+    const existingJuiz = await prisma.juiz.findFirst({
+      where: {
+        id: juizId,
+        ...buildJuizAccessWhere(user.tenantId),
+      },
+      include: {
+        tribunal: {
+          select: {
+            id: true,
+            nome: true,
+            sigla: true,
+            esfera: true,
+            uf: true,
+            siteUrl: true,
+          },
+        },
+      },
+    });
+
+    if (!existingJuiz) {
+      return { success: false, error: "Autoridade nao encontrada ou sem acesso" };
+    }
+
+    const tenantProfile = await prisma.acessoJuiz.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        juizId,
+        tipoAcesso: TENANT_JUDGE_PROFILE_TYPE,
+      },
+      orderBy: {
+        dataAcesso: "desc",
+      },
+      select: {
+        observacoes: true,
+      },
+    });
+
+    const converted = convertAllDecimalFields(existingJuiz) as JuizSerializado;
+    const serialized = JSON.parse(
+      JSON.stringify(converted, (key, value) => {
+        if (
+          value &&
+          typeof value === "object" &&
+          value.constructor &&
+          value.constructor.name === "Decimal"
+        ) {
+          return Number(value.toString());
+        }
+
+        return value;
+      }),
+    ) as JuizSerializado;
+
+    const overlay = parseTenantOverlay(tenantProfile?.observacoes ?? null);
+    const authority = applyTenantOverlay(serialized, overlay);
+    const metadata = await reassignAuthorityPendingTask({
+      tenantId: user.tenantId,
+      juizId,
+      responsavelId,
+      atribuidoPorId: user.id,
+      atribuidoPorNome:
+        [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+        user.email ||
+        "Responsavel do escritorio",
+      authority: buildAuthorityCoreFromJudge(authority),
+    });
+
+    revalidatePath("/juizes");
+    revalidatePath("/dashboard");
+    revalidatePath("/tarefas");
+
+    return {
+      success: true,
+      metadata,
+    };
+  } catch (error) {
+    logger.error("Erro ao reatribuir pendencia da autoridade:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao reatribuir pendencia da autoridade",
     };
   }
 }

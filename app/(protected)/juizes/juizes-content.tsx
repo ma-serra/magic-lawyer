@@ -5,9 +5,10 @@ import type {
   JuizSerializado,
   JuizFormData,
   JuizCatalogoOpcao,
+  JuizDetalhado,
 } from "@/app/actions/juizes";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
 import { Card, CardBody, CardHeader, CardFooter } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -56,6 +57,7 @@ import { PermissionGuard } from "@/components/permission-guard";
 import { CpfInput } from "@/components/cpf-input";
 import {
   useJuizes,
+  useJuizDetalhado,
   useJuizFormData,
   useJuizesCatalogoPorNome,
   useProcessosParaVinculoAutoridade,
@@ -63,6 +65,7 @@ import {
 import {
   deleteJuizTenant,
   createJuizTenant,
+  reassignAuthorityPendingTaskTenant,
   updateJuizTenant,
   vincularAutoridadeAProcessos,
   desvincularAutoridadeDeProcessos,
@@ -98,7 +101,11 @@ export function JuizesContent() {
   const [selectedJuiz, setSelectedJuiz] = useState<JuizSerializado | null>(
     null,
   );
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedResponsavelPendenciaId, setSelectedResponsavelPendenciaId] =
+    useState("");
+  const [isReassigningPendencia, setIsReassigningPendencia] = useState(false);
 
   const formatDateInput = (value?: Date | string | null) => {
     if (!value) return "";
@@ -181,6 +188,15 @@ export function JuizesContent() {
 
   // Buscar juízes com filtros
   const { juizes, isLoading, error, mutate } = useJuizes(filters);
+  const viewedJuizId = isViewModalOpen && selectedJuiz?.id ? selectedJuiz.id : null;
+  const {
+    juiz: juizDetalhado,
+    isLoading: isLoadingJuizDetalhado,
+    mutate: mutateJuizDetalhado,
+  } = useJuizDetalhado(viewedJuizId);
+  const juizEmFoco = (juizDetalhado ?? selectedJuiz) as
+    | (JuizSerializado & Partial<JuizDetalhado>)
+    | null;
   const [isLinkProcessosModalOpen, setIsLinkProcessosModalOpen] =
     useState(false);
   const [isConfirmLinkActionModalOpen, setIsConfirmLinkActionModalOpen] =
@@ -251,6 +267,13 @@ export function JuizesContent() {
     () => new Set((formData?.tribunais || []).map((tribunal) => tribunal.id)),
     [formData?.tribunais],
   );
+  const responsavelPendenciaIds = useMemo(
+    () =>
+      new Set(
+        (formData?.usuariosResponsaveis || []).map((responsavel) => responsavel.id),
+      ),
+    [formData?.usuariosResponsaveis],
+  );
 
   const resumo = useMemo(() => {
     const total = juizes.length;
@@ -259,8 +282,11 @@ export function JuizesContent() {
     const promotores = juizes.filter(
       (juiz) => juiz.tipoAutoridade === "PROMOTOR",
     ).length;
+    const incompletos = juizes.filter(
+      (juiz) => juiz.cadastroCompleto === false,
+    ).length;
 
-    return { total, ativos, premium, promotores };
+    return { total, ativos, premium, promotores, incompletos };
   }, [juizes]);
 
   const errorMessage =
@@ -497,8 +523,20 @@ export function JuizesContent() {
     }
   };
 
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [copiedOab, setCopiedOab] = useState(false);
+
+  useEffect(() => {
+    if (!isViewModalOpen) {
+      setSelectedResponsavelPendenciaId("");
+      return;
+    }
+
+    setSelectedResponsavelPendenciaId(juizEmFoco?.responsavelPendencia?.id ?? "");
+  }, [
+    isViewModalOpen,
+    juizEmFoco?.id,
+    juizEmFoco?.responsavelPendencia?.id,
+  ]);
 
   const handleViewJuiz = (juiz: JuizSerializado) => {
     setSelectedJuiz(juiz);
@@ -518,6 +556,50 @@ export function JuizesContent() {
       }, 2000);
     } catch (error) {
       toast.error("Erro ao copiar OAB");
+    }
+  };
+
+  const handleReassignAuthorityPendingTask = async () => {
+    if (!juizEmFoco?.id || !selectedResponsavelPendenciaId) {
+      toast.error("Selecione um responsavel para a pendencia");
+      return;
+    }
+
+    setIsReassigningPendencia(true);
+
+    try {
+      const result = await reassignAuthorityPendingTaskTenant(
+        juizEmFoco.id,
+        selectedResponsavelPendenciaId,
+      );
+
+      if (!result.success) {
+        toast.error(result.error || "Nao foi possivel reatribuir a pendencia");
+        return;
+      }
+
+      const metadata = result.metadata;
+
+      if (metadata) {
+        setSelectedJuiz((current) =>
+          current && current.id === juizEmFoco.id
+            ? {
+                ...current,
+                cadastroCompleto: metadata.cadastroCompleto,
+                camposPendentes: metadata.camposPendentes,
+                tarefaPendenciaId: metadata.tarefaPendenciaId,
+                responsavelPendencia: metadata.responsavelPendencia,
+              }
+            : current,
+        );
+      }
+
+      toast.success("Pendencia reatribuida com sucesso.");
+      await Promise.all([mutate(), mutateJuizDetalhado()]);
+    } catch (error) {
+      toast.error("Erro ao reatribuir a pendencia");
+    } finally {
+      setIsReassigningPendencia(false);
     }
   };
 
@@ -638,7 +720,12 @@ export function JuizesContent() {
         // Editar juiz existente - Multi-tenant com auditoria
         result = await updateJuizTenant(selectedJuiz.id, juizData);
         if (result.success) {
-          toast.success("Juiz atualizado com sucesso!");
+          toast.success("Autoridade atualizada com sucesso!", {
+            description:
+              result.juiz?.cadastroCompleto === false
+                ? `Abrimos ou mantivemos uma pendencia para completar: ${result.juiz.camposPendentes?.join(", ")}.`
+                : undefined,
+          });
         } else {
           toast.error(result.error || "Erro ao atualizar juiz");
           setIsSaving(false);
@@ -652,7 +739,12 @@ export function JuizesContent() {
           juizBaseId: selectedCatalogJudge?.id,
         });
         if (result.success) {
-          toast.success("Juiz criado com sucesso!");
+          toast.success("Autoridade criada com sucesso!", {
+            description:
+              result.juiz?.cadastroCompleto === false
+                ? `Abrimos uma tarefa para completar: ${result.juiz.camposPendentes?.join(", ")}.`
+                : undefined,
+          });
         } else {
           toast.error(result.error || "Erro ao criar juiz");
           setIsSaving(false);
@@ -1016,6 +1108,19 @@ export function JuizesContent() {
                           ) : null}
                         </DropdownMenu>
                       </Dropdown>
+                      {juiz.cadastroCompleto === false && (
+                        <Chip
+                          classNames={{
+                            base: "font-semibold",
+                          }}
+                          color="warning"
+                          size="sm"
+                          startContent={<AlertCircle className="w-3 h-3" />}
+                          variant="flat"
+                        >
+                          Cadastro incompleto
+                        </Chip>
+                      )}
                     </div>
                     <div className="flex gap-2 flex-wrap">
                       <Chip
@@ -1197,8 +1302,8 @@ export function JuizesContent() {
                   startContent={<Layers className="w-4 h-4" />}
                   variant="flat"
                   onPress={() => {
-                    if (selectedJuiz) {
-                      handleOpenLinkProcessosModal(selectedJuiz);
+                    if (juizEmFoco) {
+                      handleOpenLinkProcessosModal(juizEmFoco);
                     }
                   }}
                 >
@@ -1210,8 +1315,8 @@ export function JuizesContent() {
                 startContent={<Download className="w-4 h-4" />}
                 variant="flat"
                 onPress={() => {
-                  if (selectedJuiz) {
-                    handleDownloadPDF(selectedJuiz);
+                  if (juizEmFoco) {
+                    handleDownloadPDF(juizEmFoco);
                   }
                 }}
               >
@@ -1225,8 +1330,8 @@ export function JuizesContent() {
                   onPress={() => {
                     setIsViewModalOpen(false);
                     // Chamar handleEditJuiz para popular o formulário com os dados
-                    if (selectedJuiz) {
-                      handleEditJuiz(selectedJuiz);
+                    if (juizEmFoco) {
+                      handleEditJuiz(juizEmFoco);
                     }
                   }}
                 >
@@ -1254,8 +1359,19 @@ export function JuizesContent() {
             setSelectedJuiz(null);
           }}
         >
-          {selectedJuiz && (
+          {juizEmFoco && (
             <div className="space-y-6">
+              {(() => {
+                const selectedJuiz = juizEmFoco;
+                const responsaveisPendencia = formData?.usuariosResponsaveis || [];
+                const responsavelSelecionadoValido =
+                  selectedResponsavelPendenciaId &&
+                  responsavelPendenciaIds.has(selectedResponsavelPendenciaId)
+                    ? [selectedResponsavelPendenciaId]
+                    : [];
+
+                return (
+                  <>
               {/* Header com Avatar */}
               <div className="flex items-start gap-4 p-6 rounded-xl bg-linear-to-br from-primary/10 to-secondary/5 border border-primary/20">
                 <Avatar
@@ -1376,6 +1492,105 @@ export function JuizesContent() {
                   </CardBody>
                 </Card>
               </div>
+
+              {selectedJuiz.cadastroCompleto === false && (
+                <Card className="border border-warning/20 bg-warning/5">
+                  <CardHeader className="flex flex-col items-start gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Chip
+                        color="warning"
+                        size="sm"
+                        startContent={<AlertCircle className="w-3 h-3" />}
+                        variant="flat"
+                      >
+                        Cadastro incompleto
+                      </Chip>
+                      {isLoadingJuizDetalhado ? (
+                        <Chip color="default" size="sm" variant="flat">
+                          Atualizando dados
+                        </Chip>
+                      ) : null}
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-warning-700 dark:text-warning-300">
+                        Completar dados mínimos da autoridade
+                      </p>
+                      <p className="text-sm text-default-500">
+                        Falta preencher o mínimo operacional para esse cadastro
+                        ficar completo no escritório.
+                      </p>
+                    </div>
+                  </CardHeader>
+                  <Divider className="bg-warning/20" />
+                  <CardBody className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-default-300">
+                        Campos pendentes
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(selectedJuiz.camposPendentes || []).map((campo) => (
+                          <Chip key={campo} color="warning" size="sm" variant="flat">
+                            {campo}
+                          </Chip>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                      <div className="space-y-3">
+                        <p className="text-sm text-default-400">
+                          Responsável atual:{" "}
+                          <span className="font-medium text-foreground">
+                            {selectedJuiz.responsavelPendencia?.nome ||
+                              "Não definido"}
+                          </span>
+                        </p>
+                        <Select
+                          items={responsaveisPendencia.map((responsavel) => ({
+                            key: responsavel.id,
+                            label: responsavel.nome,
+                          }))}
+                          isDisabled={responsaveisPendencia.length === 0}
+                          label="Reatribuir pendência"
+                          placeholder="Selecione quem vai completar o cadastro"
+                          selectedKeys={responsavelSelecionadoValido}
+                          variant="bordered"
+                          onSelectionChange={(keys) =>
+                            setSelectedResponsavelPendenciaId(
+                              (Array.from(keys)[0] as string) || "",
+                            )
+                          }
+                        >
+                          {(item) => (
+                            <SelectItem key={item.key} textValue={item.label}>
+                              {item.label}
+                            </SelectItem>
+                          )}
+                        </Select>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 md:justify-end">
+                        <Button as={NextLink} href="/tarefas" variant="flat">
+                          Abrir tarefas
+                        </Button>
+                        <Button
+                          color="warning"
+                          isDisabled={
+                            !selectedResponsavelPendenciaId ||
+                            selectedResponsavelPendenciaId ===
+                              selectedJuiz.responsavelPendencia?.id ||
+                            responsaveisPendencia.length === 0
+                          }
+                          isLoading={isReassigningPendencia}
+                          onPress={handleReassignAuthorityPendingTask}
+                        >
+                          Reatribuir
+                        </Button>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+              )}
 
               {/* Informações Principais */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1734,6 +1949,9 @@ export function JuizesContent() {
                   </CardBody>
                 </Card>
               )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </Modal>

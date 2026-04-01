@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
 import { getTenantBrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage-service";
+import { AUTHORITY_PENDING_TASK_TITLE } from "@/app/lib/juizes/authority-profile-pendency";
 import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 import {
   Prisma,
@@ -202,6 +203,74 @@ async function generateMonthlySeries(
 
 function formatCountHelper(value: number, label: string) {
   return value > 0 ? `${value} ${label}` : undefined;
+}
+
+async function getAuthorityPendingDashboardBundle(
+  tenantId: string,
+  userId: string,
+) {
+  const authorityTasks = await prisma.tarefa.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+      titulo: AUTHORITY_PENDING_TASK_TITLE,
+      juizId: {
+        not: null,
+      },
+      responsavelId: userId,
+      status: {
+        in: [TarefaStatus.PENDENTE, TarefaStatus.EM_ANDAMENTO],
+      },
+    },
+    orderBy: [{ lembreteEm: "asc" }, { updatedAt: "desc" }],
+    take: 5,
+    select: {
+      id: true,
+      juizId: true,
+      updatedAt: true,
+      descricao: true,
+      lembreteEm: true,
+      juiz: {
+        select: {
+          id: true,
+          nome: true,
+          vara: true,
+          comarca: true,
+        },
+      },
+    },
+  });
+
+  const pendingItems: DashboardListItem[] = authorityTasks.map((task) => ({
+    id: `authority-${task.id}`,
+    title: task.juiz?.nome || "Autoridade com cadastro incompleto",
+    subtitle: task.juiz?.comarca || task.juiz?.vara || "Complete os dados mínimos",
+    badge: "Cadastro incompleto",
+    tone: "warning",
+    href: "/juizes",
+    date: (task.lembreteEm || task.updatedAt).toISOString(),
+  }));
+
+  const insight: DashboardInsightDto | null =
+    authorityTasks.length > 0
+      ? {
+          id: "authority-profile-pending",
+          title: "Autoridades com cadastro pendente",
+          description:
+            authorityTasks.length === 1
+              ? "1 autoridade exige complementação do cadastro."
+              : `${authorityTasks.length} autoridades exigem complementação do cadastro.`,
+          detail: "Os lembretes aparecem no centro de notificações e na sua fila.",
+          tone: "warning",
+          icon: "⚖️",
+        }
+      : null;
+
+  return {
+    count: authorityTasks.length,
+    insight,
+    pendingItems,
+  };
 }
 
 async function buildSuperAdminDashboard(now: Date): Promise<DashboardData> {
@@ -501,6 +570,7 @@ async function buildSuperAdminDashboard(now: Date): Promise<DashboardData> {
 
 async function buildAdminDashboard(
   tenantId: string,
+  userId: string,
   now: Date,
 ): Promise<DashboardData> {
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -527,6 +597,7 @@ async function buildAdminDashboard(
     recentDocumentos,
     recentMovimentacoes,
     geographicOverview,
+    authorityPendingBundle,
   ] = await Promise.all([
     prisma.processo.count({
       where: { tenantId, deletedAt: null },
@@ -680,6 +751,7 @@ async function buildAdminDashboard(
       },
     }),
     getTenantBrazilCoverageOverview(tenantId),
+    getAuthorityPendingDashboardBundle(tenantId, userId),
   ]);
 
   const stats: DashboardStatDto[] = [
@@ -763,6 +835,10 @@ async function buildAdminDashboard(
       icon: "📁",
     },
   ];
+
+  if (authorityPendingBundle.insight) {
+    insights.push(authorityPendingBundle.insight);
+  }
 
   const processSeries = await generateMonthlySeries(
     6,
@@ -896,6 +972,11 @@ async function buildAdminDashboard(
     href: prazo.processo ? `/processos/${prazo.processo.id}` : undefined,
   }));
 
+  const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
+    0,
+    8,
+  );
+
   const trends = [
     ...processSeries.map((trend, index) => ({
       ...trend,
@@ -914,7 +995,7 @@ async function buildAdminDashboard(
     stats,
     insights,
     highlights,
-    pending,
+    pending: combinedPending,
     trends,
     alerts,
     activity,
@@ -1002,6 +1083,7 @@ async function buildAdvogadoDashboard(
     documentosRecentes,
     movimentacoesRecentes,
     geographicOverview,
+    authorityPendingBundle,
   ] = await Promise.all([
     prisma.processo.count({
       where: {
@@ -1131,6 +1213,7 @@ async function buildAdvogadoDashboard(
       },
     }),
     getTenantBrazilCoverageOverview(tenantId),
+    getAuthorityPendingDashboardBundle(tenantId, userId),
   ]);
 
   const stats: DashboardStatDto[] = [
@@ -1215,6 +1298,10 @@ async function buildAdvogadoDashboard(
       icon: tarefasPendentes > 0 ? "✅" : "🎉",
     },
   ];
+
+  if (authorityPendingBundle.insight) {
+    insights.push(authorityPendingBundle.insight);
+  }
 
   const ownProcessSeries = await generateMonthlySeries(
     6,
@@ -1356,6 +1443,11 @@ async function buildAdvogadoDashboard(
     href: tarefa.processo ? `/processos/${tarefa.processo.id}` : undefined,
   }));
 
+  const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
+    0,
+    8,
+  );
+
   const trends = [
     ...ownProcessSeries.map((trend, index) => ({
       ...trend,
@@ -1374,7 +1466,7 @@ async function buildAdvogadoDashboard(
     stats,
     insights,
     highlights,
-    pending,
+    pending: combinedPending,
     trends,
     alerts,
     activity,
@@ -1384,6 +1476,7 @@ async function buildAdvogadoDashboard(
 
 async function buildFinanceiroDashboard(
   tenantId: string,
+  userId: string,
   now: Date,
 ): Promise<DashboardData> {
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1402,6 +1495,7 @@ async function buildFinanceiroDashboard(
     parcelasPendentesDetalhes,
     pagamentosRecentes,
     faturasRecentes,
+    authorityPendingBundle,
   ] = await Promise.all([
     prisma.pagamento.aggregate({
       where: {
@@ -1516,6 +1610,7 @@ async function buildFinanceiroDashboard(
         createdAt: true,
       },
     }),
+    getAuthorityPendingDashboardBundle(tenantId, userId),
   ]);
 
   const receitaMes = Number(receitaMesAgg._sum.valor || 0);
@@ -1594,6 +1689,10 @@ async function buildFinanceiroDashboard(
       icon: "📈",
     },
   ];
+
+  if (authorityPendingBundle.insight) {
+    insights.push(authorityPendingBundle.insight);
+  }
 
   const receitaSeries = await generateMonthlySeries(
     6,
@@ -1722,6 +1821,11 @@ async function buildFinanceiroDashboard(
     }),
   );
 
+  const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
+    0,
+    8,
+  );
+
   const trends = [
     ...receitaSeries.map((trend, index) => ({
       ...trend,
@@ -1740,7 +1844,7 @@ async function buildFinanceiroDashboard(
     stats,
     insights,
     highlights,
-    pending,
+    pending: combinedPending,
     trends,
     alerts,
     activity,
@@ -1936,6 +2040,7 @@ async function buildSecretariaDashboard(
     eventosProximos,
     documentosPendentesDetalhes,
     tarefasRecentes,
+    authorityPendingBundle,
   ] = await Promise.all([
     prisma.evento.count({
       where: {
@@ -2031,6 +2136,7 @@ async function buildSecretariaDashboard(
         responsavelId: true,
       },
     }),
+    getAuthorityPendingDashboardBundle(tenantId, userId),
   ]);
 
   const stats: DashboardStatDto[] = [
@@ -2096,6 +2202,10 @@ async function buildSecretariaDashboard(
       icon: "🤝",
     },
   ];
+
+  if (authorityPendingBundle.insight) {
+    insights.push(authorityPendingBundle.insight);
+  }
 
   const eventosSeries = await generateMonthlySeries(
     6,
@@ -2213,6 +2323,11 @@ async function buildSecretariaDashboard(
     }),
   );
 
+  const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
+    0,
+    8,
+  );
+
   const trends = [
     ...eventosSeries.map((trend, index) => ({
       ...trend,
@@ -2231,7 +2346,7 @@ async function buildSecretariaDashboard(
     stats,
     insights,
     highlights,
-    pending,
+    pending: combinedPending,
     trends,
     alerts,
     activity,
@@ -2587,7 +2702,7 @@ export async function getDashboardData(): Promise<DashboardResponse> {
         if (!tenantId) {
           throw new Error("Tenant não definido para o usuário administrador");
         }
-        data = await buildAdminDashboard(tenantId, now);
+        data = await buildAdminDashboard(tenantId, session.user.id, now);
         break;
       case UserRole.ADVOGADO:
         if (!tenantId) {
@@ -2599,7 +2714,7 @@ export async function getDashboardData(): Promise<DashboardResponse> {
         if (!tenantId) {
           throw new Error("Tenant não definido para o financeiro");
         }
-        data = await buildFinanceiroDashboard(tenantId, now);
+        data = await buildFinanceiroDashboard(tenantId, session.user.id, now);
         break;
       case UserRole.SECRETARIA:
         if (!tenantId) {

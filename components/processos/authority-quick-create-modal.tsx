@@ -126,7 +126,12 @@ export function AuthorityQuickCreateModal({
       }
 
       await onCreated(result.juiz);
-      toast.success("Autoridade cadastrada com sucesso");
+      toast.success("Autoridade cadastrada com sucesso", {
+        description:
+          result.juiz.cadastroCompleto === false
+            ? `Abrimos uma tarefa para completar: ${result.juiz.camposPendentes?.join(", ")}.`
+            : undefined,
+      });
       setFormState(initialFormState);
       onClose();
     } catch {

@@ -15,6 +15,7 @@ export interface TarefaCreatePayload {
   lembreteEm?: string | null; // ISO string
   processoId?: string | null;
   clienteId?: string | null;
+  juizId?: string | null;
   categoriaId?: string | null;
   responsavelId?: string | null;
   boardId?: string | null;
@@ -34,6 +35,7 @@ export interface TarefaUpdatePayload {
   lembreteEm?: string | null;
   processoId?: string | null;
   clienteId?: string | null;
+  juizId?: string | null;
   responsavelId?: string | null;
   categoriaId?: string | null;
   boardId?: string | null;
@@ -237,6 +239,13 @@ export async function listTarefas(params?: {
           titulo: true,
         },
       },
+      juiz: {
+        select: {
+          id: true,
+          nome: true,
+          tipoAutoridade: true,
+        },
+      },
       cliente: {
         select: {
           id: true,
@@ -340,6 +349,13 @@ export async function getTarefa(id: string) {
             numero: true,
             titulo: true,
             status: true,
+          },
+        },
+        juiz: {
+          select: {
+            id: true,
+            nome: true,
+            tipoAutoridade: true,
           },
         },
         cliente: {
@@ -486,6 +502,42 @@ export async function createTarefa(data: TarefaCreatePayload) {
       }
     }
 
+    if (data.juizId) {
+      const juiz = await prisma.juiz.findFirst({
+        where: {
+          id: data.juizId,
+          OR: [
+            {
+              acessos: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+            {
+              tenantUnlocks: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+            {
+              processos: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (!juiz) {
+        return { success: false, error: "Autoridade nao encontrada" };
+      }
+    }
+
     // Verificar se categoria existe (se fornecida)
     if (data.categoriaId) {
       const categoria = await prisma.categoriaTarefa.findFirst({
@@ -535,6 +587,7 @@ export async function createTarefa(data: TarefaCreatePayload) {
         lembreteEm: data.lembreteEm ? new Date(data.lembreteEm) : null,
         processoId: data.processoId,
         clienteId: data.clienteId,
+        juizId: data.juizId,
         categoriaId: data.categoriaId,
         responsavelId: data.responsavelId,
         boardId: boardColumnResolution.boardId,
@@ -561,6 +614,13 @@ export async function createTarefa(data: TarefaCreatePayload) {
             id: true,
             numero: true,
             titulo: true,
+          },
+        },
+        juiz: {
+          select: {
+            id: true,
+            nome: true,
+            tipoAutoridade: true,
           },
         },
         cliente: {
@@ -659,6 +719,42 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
       }
     }
 
+    if (data.juizId !== undefined && data.juizId !== null) {
+      const juiz = await prisma.juiz.findFirst({
+        where: {
+          id: data.juizId,
+          OR: [
+            {
+              acessos: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+            {
+              tenantUnlocks: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+            {
+              processos: {
+                some: {
+                  tenantId: user.tenantId,
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (!juiz) {
+        return { success: false, error: "Autoridade nao encontrada" };
+      }
+    }
+
     const boardColumnResolution = await resolveBoardAndColumnIds({
       tenantId: user.tenantId,
       boardId:
@@ -692,6 +788,7 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
       updateData.categoriaId = data.categoriaId;
     if (data.processoId !== undefined) updateData.processoId = data.processoId;
     if (data.clienteId !== undefined) updateData.clienteId = data.clienteId;
+    if (data.juizId !== undefined) updateData.juizId = data.juizId;
     updateData.boardId = boardColumnResolution.boardId;
     updateData.columnId = boardColumnResolution.columnId;
     if (data.estimativaHoras !== undefined)
@@ -752,6 +849,13 @@ export async function updateTarefa(id: string, data: TarefaUpdatePayload) {
             id: true,
             numero: true,
             titulo: true,
+          },
+        },
+        juiz: {
+          select: {
+            id: true,
+            nome: true,
+            tipoAutoridade: true,
           },
         },
         cliente: {
