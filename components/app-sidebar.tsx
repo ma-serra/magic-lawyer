@@ -25,6 +25,7 @@ import {
   ModalHeader,
 } from "@heroui/modal";
 import { Button } from "@heroui/button";
+import { Avatar } from "@heroui/avatar";
 import { Tooltip } from "@heroui/react";
 import { useSession } from "next-auth/react";
 
@@ -37,9 +38,38 @@ import { Logo } from "@/components/icons";
 import { DevInfo } from "@/components/dev-info";
 
 const navIconStroke = 1.6;
+const sidebarNameConnectors = new Set(["da", "de", "do", "das", "dos", "e"]);
 type IconProps = {
   size?: number;
 };
+
+function getSidebarDisplayName(name: string): string {
+  const normalized = name.trim().replace(/\s+/g, " ");
+
+  if (normalized.length <= 24) {
+    return normalized;
+  }
+
+  const parts = normalized.split(" ");
+
+  if (parts.length === 1) {
+    return normalized;
+  }
+
+  const firstName = parts[0];
+  const lastName = parts[parts.length - 1];
+  const middleName = parts
+    .slice(1, -1)
+    .find((part) => !sidebarNameConnectors.has(part.toLowerCase()));
+
+  const compactCandidates = [
+    middleName ? `${firstName} ${middleName} ${lastName}` : null,
+    `${firstName} ${lastName}`,
+    normalized,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return compactCandidates.find((candidate) => candidate.length <= 24) ?? compactCandidates[0];
+}
 
 const DashboardIcon = ({ size = 18 }: IconProps) => (
   <svg
@@ -875,6 +905,10 @@ function SidebarContent({
   const { data: session } = useSession();
   const pathname = usePathname();
   const isSuperAdmin = (session?.user as any)?.role === "SUPER_ADMIN";
+  const userName = session?.user?.name?.trim() || "Advogado(a)";
+  const userAvatar =
+    (session?.user as any)?.avatarUrl || session?.user?.image || undefined;
+  const sidebarUserName = useMemo(() => getSidebarDisplayName(userName), [userName]);
   const shouldFetchStatus = isSuperAdmin;
   const showStatusPanel = shouldFetchStatus && !collapsed;
   const [serviceStatus, setServiceStatus] = useState<{
@@ -1070,6 +1104,44 @@ function SidebarContent({
           isDesktop ? "pt-4" : null,
         )}
       >
+        <div
+          className={clsx(
+            "mx-1",
+            collapsed
+              ? "flex items-center justify-center px-1 pb-2"
+              : "px-3 pb-2",
+          )}
+        >
+          <div
+            className={clsx(
+              "flex w-full",
+              collapsed
+                ? "items-center justify-center"
+                : "flex-col items-center justify-center gap-2 text-center",
+            )}
+          >
+            <Avatar
+              className={clsx(
+                "shrink-0 border-2 border-primary/25 text-sm",
+                collapsed ? "h-12 w-12" : "h-16 w-16",
+              )}
+              color="primary"
+              name={userName}
+              showFallback
+              size={collapsed ? "lg" : "md"}
+              src={userAvatar}
+            />
+
+            {!collapsed ? (
+              <div className="w-full max-w-full px-2" title={userName}>
+                <p className="overflow-hidden text-center text-sm font-semibold leading-tight text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] break-words">
+                  {sidebarUserName}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         {sections.map((section, index) => (
           <div key={section.title} className="space-y-1.5">
             {/* Separador visual entre seções (exceto a primeira) */}
