@@ -62,6 +62,7 @@ async function requireActionContext(): Promise<ActionContext> {
 function hasOfficeSettingsPermission(context: ActionContext) {
   return (
     context.role === "SUPER_ADMIN" ||
+    context.role === "ADMIN" ||
     context.permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings)
   );
 }

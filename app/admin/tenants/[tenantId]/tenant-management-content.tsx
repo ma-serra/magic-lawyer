@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
   type Dispatch,
   type SetStateAction,
@@ -67,6 +68,7 @@ import {
   Search,
   Send,
   Smartphone,
+  Upload,
 } from "lucide-react";
 import {
   PeopleMetricCard,
@@ -1223,6 +1225,7 @@ export function TenantManagementContent({
             }
           >
             <BrandingTab
+              tenantId={tenantId}
               brandingForm={brandingForm}
               handleSaveBranding={handleSaveBranding}
               isSavingBranding={isSavingBranding}
@@ -2008,6 +2011,7 @@ function UsersTab({
 }
 
 interface BrandingTabProps {
+  tenantId: string;
   brandingForm: UpdateTenantBrandingInput;
   setBrandingForm: (
     updater: (prev: UpdateTenantBrandingInput) => UpdateTenantBrandingInput,
@@ -2017,11 +2021,86 @@ interface BrandingTabProps {
 }
 
 function BrandingTab({
+  tenantId,
   brandingForm,
   setBrandingForm,
   handleSaveBranding,
   isSavingBranding,
 }: BrandingTabProps) {
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const faviconInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingFavicon, setIsUploadingFavicon] = useState(false);
+
+  const uploadBrandingAsset = async (
+    file: File,
+    kind: "logo" | "favicon",
+  ) => {
+    const formData = new FormData();
+    formData.append("kind", kind);
+    formData.append("file", file);
+
+    const response = await fetch(`/api/admin/tenants/${tenantId}/branding/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data?.success || !data?.data?.url) {
+      throw new Error(data?.error || "Falha ao enviar arquivo.");
+    }
+
+    return data.data.url as string;
+  };
+
+  const handleSelectBrandingFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    kind: "logo" | "favicon",
+  ) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (kind === "logo") {
+      setIsUploadingLogo(true);
+    } else {
+      setIsUploadingFavicon(true);
+    }
+
+    try {
+      const uploadedUrl = await uploadBrandingAsset(file, kind);
+
+      if (kind === "logo") {
+        setBrandingForm((prev) => ({ ...prev, logoUrl: uploadedUrl }));
+      } else {
+        setBrandingForm((prev) => ({ ...prev, faviconUrl: uploadedUrl }));
+      }
+
+      addToast({
+        title: kind === "logo" ? "Logo enviada" : "Favicon enviado",
+        description: "Arquivo anexado ao tenant. Salve o branding para publicar.",
+        color: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Falha no upload",
+        description:
+          error instanceof Error ? error.message : "Erro ao enviar arquivo.",
+        color: "danger",
+      });
+    } finally {
+      if (kind === "logo") {
+        setIsUploadingLogo(false);
+      } else {
+        setIsUploadingFavicon(false);
+      }
+    }
+  };
+
   return (
     <Card className="border border-white/10 bg-background/70 backdrop-blur">
       <CardHeader className="flex flex-col gap-2">
@@ -2086,6 +2165,52 @@ function BrandingTab({
               }))
             }
           />
+          <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <input
+                ref={logoInputRef}
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                className="hidden"
+                type="file"
+                onChange={(event) => handleSelectBrandingFile(event, "logo")}
+              />
+              <p className="text-sm font-medium text-foreground">Logo do escritório</p>
+              <p className="mt-1 text-xs text-default-400">
+                Envie PNG, JPG, WEBP, SVG ou ICO. Limite de 4 MB.
+              </p>
+              <Button
+                className="mt-3"
+                isLoading={isUploadingLogo}
+                startContent={!isUploadingLogo ? <Upload className="h-4 w-4" /> : null}
+                variant="flat"
+                onPress={() => logoInputRef.current?.click()}
+              >
+                {isUploadingLogo ? "Enviando logo..." : "Enviar logo"}
+              </Button>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <input
+                ref={faviconInputRef}
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                className="hidden"
+                type="file"
+                onChange={(event) => handleSelectBrandingFile(event, "favicon")}
+              />
+              <p className="text-sm font-medium text-foreground">Favicon do navegador</p>
+              <p className="mt-1 text-xs text-default-400">
+                Envie PNG, JPG, WEBP, SVG ou ICO. Limite de 1 MB.
+              </p>
+              <Button
+                className="mt-3"
+                isLoading={isUploadingFavicon}
+                startContent={!isUploadingFavicon ? <Upload className="h-4 w-4" /> : null}
+                variant="flat"
+                onPress={() => faviconInputRef.current?.click()}
+              >
+                {isUploadingFavicon ? "Enviando favicon..." : "Enviar favicon"}
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="flex justify-end">
           <Button

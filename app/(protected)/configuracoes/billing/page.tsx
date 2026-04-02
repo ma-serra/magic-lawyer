@@ -23,6 +23,7 @@ export default async function BillingPage() {
   const permissions = ((session.user as any)?.permissions ?? []) as string[];
   const allowed =
     role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
     permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings);
 
   if (!allowed) {

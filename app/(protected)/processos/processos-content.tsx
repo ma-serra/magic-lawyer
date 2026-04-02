@@ -156,15 +156,15 @@ export function ProcessosContent({
     try {
       await navigator.clipboard.writeText(numero);
       addToast({
-        title: "NÃºmero copiado!",
-        description: `O nÃºmero do processo "${numero}" foi copiado para a Ã¡rea de transferÃªncia.`,
+        title: "Número copiado!",
+        description: `O número do processo "${numero}" foi copiado para a área de transferência.`,
         color: "success",
         timeout: 3000,
       });
     } catch (error) {
       addToast({
         title: "Erro ao copiar",
-        description: "NÃ£o foi possÃ­vel copiar o nÃºmero do processo.",
+        description: "Não foi possível copiar o número do processo.",
         color: "danger",
         timeout: 3000,
       });
@@ -268,17 +268,17 @@ export function ProcessosContent({
     if (!fase) return "-";
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "PetiÃ§Ã£o Inicial";
+        return "Petição Inicial";
       case ProcessoFase.CITACAO:
-        return "CitaÃ§Ã£o";
+        return "Citação";
       case ProcessoFase.INSTRUCAO:
-        return "InstruÃ§Ã£o";
+        return "Instrução";
       case ProcessoFase.SENTENCA:
-        return "SentenÃ§a";
+        return "Sentença";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "ExecuÃ§Ã£o";
+        return "Execução";
       default:
         return fase;
     }
@@ -314,7 +314,7 @@ export function ProcessosContent({
     );
   };
 
-  // Extrair dados Ãºnicos para filtros
+  // Extrair dados únicos para filtros
   const areasUnicas = useMemo(() => {
     if (!processos || !Array.isArray(processos)) return [];
     const areas = processos.map((p: any) => p.area?.nome).filter(Boolean);
@@ -438,7 +438,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Ãrea
+      // Área
       if (filtros.areaId && processo.area?.nome !== filtros.areaId) {
         return false;
       }
@@ -468,7 +468,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Segredo de justiÃ§a
+      // Segredo de justiça
       if (
         filtros.segredoJustica !== null &&
         processo.segredoJustica !== filtros.segredoJustica
@@ -494,7 +494,7 @@ export function ProcessosContent({
         return false;
       }
 
-      // Data de distribuiÃ§Ã£o
+      // Data de distribuição
       if (
         filtros.dataDistribuicaoInicio &&
         processo.dataDistribuicao &&
@@ -603,13 +603,13 @@ export function ProcessosContent({
           <h3 className="text-lg font-semibold text-danger mb-2">
             Erro ao carregar processos
           </h3>
-          <p className="text-default-500">Tente recarregar a pÃ¡gina</p>
+          <p className="text-default-500">Tente recarregar a página</p>
         </div>
       </div>
     );
   }
 
-  // Se ainda nÃ£o temos dados, mostrar loading
+  // Se ainda não temos dados, mostrar loading
   if (!processos) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -622,7 +622,7 @@ export function ProcessosContent({
     <div className="space-y-6">
       {/* Header */}
       <PeoplePageHeader
-        tag="Atividades jurÃ­dicas"
+        tag="Atividades jurídicas"
         title="Processos"
         description={`${processosFiltrados.length} de ${processos?.length || 0} processos${temFiltrosAtivos ? " (filtrados)" : ""}`}
         actions={
@@ -716,7 +716,7 @@ export function ProcessosContent({
                 </Button>
               )
             }
-            placeholder="Buscar por nÃºmero, tÃ­tulo, cliente ou advogado..."
+            placeholder="Buscar por número, título, cliente ou advogado..."
             startContent={<Search className="h-4 w-4 text-default-400" />}
             value={filtros.busca}
             onChange={(e) =>
@@ -729,7 +729,7 @@ export function ProcessosContent({
         </CardBody>
       </Card>
 
-      {/* Filtros AvanÃ§ados */}
+      {/* Filtros Avançados */}
       <AnimatePresence initial={false}>
         {mostrarFiltros ? (
           <motion.div
@@ -741,7 +741,7 @@ export function ProcessosContent({
             <Card className="overflow-hidden">
               <CardHeader>
                 <div className="flex items-center justify-between w-full">
-                  <h3 className="text-lg font-semibold">Filtros AvanÃ§ados</h3>
+                  <h3 className="text-lg font-semibold">Filtros Avançados</h3>
                   <Button
                     isDisabled={!temFiltrosAtivos}
                     size="sm"
@@ -851,12 +851,12 @@ export function ProcessosContent({
                 <FilterSection
                   icon={Users}
                   title="Equipe e partes"
-                  description="Refine por Ã¡rea, advogado responsÃ¡vel e cliente impactado."
+                  description="Refine por área, advogado responsável e cliente impactado."
                 >
                   <div className="space-y-3">
                     <Select
-                      label="Ãrea"
-                      placeholder="Todas as Ã¡reas"
+                      label="Área"
+                      placeholder="Todas as áreas"
                       selectedKeys={selectedAreaKeys}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
@@ -877,7 +877,7 @@ export function ProcessosContent({
                     <SearchableSelect
                       emptyContent="Nenhum advogado encontrado"
                       items={advogadoFilterOptions}
-                      label="Advogado responsÃ¡vel"
+                      label="Advogado responsável"
                       placeholder="Todos os advogados"
                       selectedKey={selectedAdvogadoKeys[0] ?? null}
                       onSelectionChange={(selectedKey) => {
@@ -909,8 +909,8 @@ export function ProcessosContent({
               <div className="grid gap-4 lg:grid-cols-2">
                 <FilterSection
                   icon={MapPin}
-                  title="JurisdiÃ§Ã£o e sigilo"
-                  description="Selecione rapidamente a comarca e o nÃ­vel de sigilo."
+                  title="Jurisdição e sigilo"
+                  description="Selecione rapidamente a comarca e o nível de sigilo."
                 >
                   <div className="space-y-3">
                     <Select
@@ -934,7 +934,7 @@ export function ProcessosContent({
                     </Select>
 
                     <Select
-                      label="Segredo de justiÃ§a"
+                      label="Segredo de justiça"
                       placeholder="Todos"
                       selectedKeys={selectedSegredoJusticaKeys}
                       onSelectionChange={(keys) => {
@@ -953,10 +953,10 @@ export function ProcessosContent({
                           <span>Em segredo</span>
                         </div>
                       </SelectItem>
-                      <SelectItem key="false" textValue="PÃºblico">
+                      <SelectItem key="false" textValue="Público">
                         <div className="flex items-center gap-2">
                           <Eye className="h-4 w-4 text-success" />
-                          <span>PÃºblico</span>
+                          <span>Público</span>
                         </div>
                       </SelectItem>
                     </Select>
@@ -966,12 +966,12 @@ export function ProcessosContent({
                 <FilterSection
                   icon={Calendar}
                   title="Valores e datas"
-                  description="Acompanhe valores da causa, distribuiÃ§Ã£o e prazos crÃ­ticos."
+                  description="Acompanhe valores da causa, distribuição e prazos críticos."
                 >
                   <div className="space-y-3">
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Input
-                        label="Valor mÃ­nimo"
+                        label="Valor mínimo"
                         startContent={
                           <DollarSign className="h-4 w-4 text-default-400" />
                         }
@@ -985,7 +985,7 @@ export function ProcessosContent({
                         }
                       />
                       <Input
-                        label="Valor mÃ¡ximo"
+                        label="Valor máximo"
                         startContent={
                           <DollarSign className="h-4 w-4 text-default-400" />
                         }
@@ -1001,7 +1001,7 @@ export function ProcessosContent({
                     </div>
 
                     <DateRangeInput
-                      label="DistribuiÃ§Ã£o (de/atÃ©)"
+                      label="Distribuição (de/até)"
                       startValue={filtros.dataDistribuicaoInicio}
                       endValue={filtros.dataDistribuicaoFim}
                       onRangeChange={({ start, end }) =>
@@ -1141,7 +1141,7 @@ export function ProcessosContent({
                               </p>
                               <Button
                                 isIconOnly
-                                aria-label="Copiar nÃºmero do processo"
+                                aria-label="Copiar número do processo"
                                 className="min-w-6 h-6 w-6"
                                 size="sm"
                                 variant="light"
@@ -1170,7 +1170,7 @@ export function ProcessosContent({
                             {isProcessoOrigemSincronizacaoExterna(processo) && (
                               <div className="mt-2">
                                 <Chip color="warning" size="sm" variant="flat">
-                                  Criado via sincronizaÃ§Ã£o
+                                  Criado via sincronização
                                 </Chip>
                               </div>
                             )}
@@ -1315,7 +1315,7 @@ export function ProcessosContent({
                       Prazos
                     </p>
                     <p className="text-right text-[11px] font-semibold uppercase tracking-[0.18em] text-default-500">
-                      AÃ§Ãµes
+                      Ações
                     </p>
                   </div>
 
@@ -1344,7 +1344,7 @@ export function ProcessosContent({
                                 </p>
                                 <Button
                                   isIconOnly
-                                  aria-label="Copiar nÃºmero do processo"
+                                  aria-label="Copiar número do processo"
                                   className="min-w-6 h-6 w-6"
                                   size="sm"
                                   variant="light"
@@ -1371,13 +1371,13 @@ export function ProcessosContent({
                               {isProcessoOrigemSincronizacaoExterna(processo) ? (
                                 <div className="mt-1">
                                   <Chip color="warning" size="sm" variant="flat">
-                                    Criado via sincronizaÃ§Ã£o
+                                    Criado via sincronização
                                   </Chip>
                                 </div>
                               ) : null}
                               <p className="mt-1 text-xs text-default-400">
-                                {processo.area?.nome ?? "Ãrea nÃ£o informada"}
-                                {processo.comarca ? ` â€¢ ${processo.comarca}` : ""}
+                                {processo.area?.nome ?? "Área não informada"}
+                                {processo.comarca ? ` • ${processo.comarca}` : ""}
                               </p>
                             </div>
 

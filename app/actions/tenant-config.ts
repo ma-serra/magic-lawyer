@@ -1449,6 +1449,7 @@ export async function updateTenantCertificatePolicy({
 
     const hasPermission =
       role === "SUPER_ADMIN" ||
+      role === "ADMIN" ||
       permissions.includes(TENANT_PERMISSIONS.manageOfficeSettings);
 
     if (!hasPermission) {
