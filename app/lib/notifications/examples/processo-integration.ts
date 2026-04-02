@@ -26,7 +26,9 @@ export class ProcessoNotificationIntegration {
       payload: {
         processoId: data.processoId,
         numero: data.numero,
+        cliente: data.clienteNome,
         clienteNome: data.clienteNome,
+        advogado: data.advogadoNome,
         advogadoNome: data.advogadoNome,
         titulo: "Novo Processo Criado",
         mensagem: `Processo ${data.numero} foi criado com sucesso.`,

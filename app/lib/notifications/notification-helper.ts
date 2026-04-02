@@ -21,7 +21,10 @@ export class NotificationHelper {
       type: "processo.created",
       tenantId,
       userId,
-      payload,
+      payload: {
+        ...payload,
+        clienteNome: payload.cliente,
+      },
       urgency: "MEDIUM",
     });
   }

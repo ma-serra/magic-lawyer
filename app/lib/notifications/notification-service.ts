@@ -428,14 +428,46 @@ export class NotificationService {
   ): { title: string; message: string } {
     let title = template.title;
     let message = template.message;
+    const normalizedPayload: Record<string, any> = { ...payload };
+
+    const aliasMap: Array<[string, string[]]> = [
+      ["cliente", ["clienteNome", "cliente"]],
+      ["clienteNome", ["clienteNome", "cliente"]],
+      ["advogado", ["advogadoNome", "advogado"]],
+      ["advogadoNome", ["advogadoNome", "advogado"]],
+      ["processoNumero", ["processoNumero", "numero"]],
+      ["numero", ["numero", "processoNumero"]],
+    ];
+
+    for (const [target, sources] of aliasMap) {
+      if (
+        normalizedPayload[target] !== undefined &&
+        normalizedPayload[target] !== null &&
+        String(normalizedPayload[target]).trim().length > 0
+      ) {
+        continue;
+      }
+
+      const sourceKey = sources.find((key) => {
+        const value = normalizedPayload[key];
+        return value !== undefined && value !== null && String(value).trim().length > 0;
+      });
+
+      if (sourceKey) {
+        normalizedPayload[target] = normalizedPayload[sourceKey];
+      }
+    }
 
     // Substituir variáveis no formato {variavel}
-    Object.entries(payload).forEach(([key, value]) => {
+    Object.entries(normalizedPayload).forEach(([key, value]) => {
       const regex = new RegExp(`{${key}}`, "g");
 
       title = title.replace(regex, String(value));
       message = message.replace(regex, String(value));
     });
+
+    title = title.replace(/\{[^}]+\}/g, "informaÃ§Ã£o nÃ£o disponÃ­vel");
+    message = message.replace(/\{[^}]+\}/g, "informaÃ§Ã£o nÃ£o disponÃ­vel");
 
     return { title, message };
   }
@@ -958,7 +990,7 @@ export class NotificationService {
     return {
       "processo.created": {
         title: "Novo processo criado",
-        message: "Processo {numero} foi criado para {cliente}",
+        message: "Processo {numero} foi criado para {clienteNome}",
       },
       "access.login_new": {
         title: "Novo acesso identificado",
