@@ -357,13 +357,13 @@ export function EnderecoManager({ className, userId }: EnderecoManagerProps) {
                             </h4>
                             {endereco.principal && (
                               <Chip
-                                className="flex items-center gap-1 font-medium"
+                                className="font-medium whitespace-nowrap"
                                 color="primary"
                                 size="sm"
                                 variant="flat"
                               >
-                                <span className="flex items-center gap-1">
-                                  <Star className="w-3 h-3" />
+                                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                  <Star className="h-3 w-3 shrink-0" />
                                   Principal
                                 </span>
                               </Chip>

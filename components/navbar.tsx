@@ -248,8 +248,8 @@ export const Navbar = ({ onOpenSidebar, rightExtras, showAuthenticatedSecondaryN
             </NavbarContent>
 
             {/* Barra de busca apenas em ≥xl (telas largas/PC) */}
-            <NavbarContent className="hidden xl:flex flex-1 min-w-0 px-1 sm:px-3" justify="center">
-              <CentralizedSearchBar className="w-full max-w-[380px] lg:max-w-[640px] xl:max-w-2xl" />
+            <NavbarContent className="hidden xl:flex flex-1 min-w-0 px-1 xl:px-2 2xl:px-3" justify="center">
+              <CentralizedSearchBar className="w-full max-w-[20rem] xl:max-w-[24rem] 2xl:max-w-[30rem]" />
             </NavbarContent>
           </>
         )}
@@ -289,7 +289,7 @@ export const Navbar = ({ onOpenSidebar, rightExtras, showAuthenticatedSecondaryN
               <Dropdown placement="bottom-end">
                 <DropdownTrigger>
                   <Button
-                    className="h-auto max-w-[28rem] min-w-0 gap-2 overflow-hidden border border-divider bg-content1 p-1.5 shadow-sm transition hover:border-primary/40 hover:bg-primary/5 sm:p-2 2xl:max-w-[32rem]"
+                    className="h-auto max-w-[14rem] min-w-0 gap-2 overflow-hidden border border-divider bg-content1 p-1.5 shadow-sm transition hover:border-primary/40 hover:bg-primary/5 sm:p-2 xl:max-w-[16rem] 2xl:max-w-[20rem]"
                     variant="light"
                   >
                     <Badge

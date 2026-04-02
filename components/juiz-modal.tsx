@@ -895,28 +895,35 @@ export default function JuizModal({ juizId, isOpen, onClose }: JuizModalProps) {
                               <div className="flex flex-wrap gap-2 mt-3">
                                 {julgamento.valorCausa && (
                                   <Chip
+                                    className="whitespace-nowrap"
                                     color="default"
                                     size="sm"
                                     variant="flat"
                                   >
-                                    <DollarSign className="h-3 w-3 mr-1" />
-                                    Causa:{" "}
-                                    {Number(
-                                      julgamento.valorCausa,
-                                    ).toLocaleString("pt-BR", {
-                                      style: "currency",
-                                      currency: "BRL",
-                                    })}
+                                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                      <DollarSign className="h-3 w-3 shrink-0" />
+                                      <span>
+                                        Causa:{" "}
+                                        {Number(
+                                          julgamento.valorCausa,
+                                        ).toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </span>
+                                    </span>
                                   </Chip>
                                 )}
 
                                 {julgamento.valorCondenacao && (
                                   <Chip
+                                    className="whitespace-nowrap"
                                     color="success"
                                     size="sm"
                                     variant="flat"
                                   >
-                                    <DollarSign className="h-3 w-3 mr-1" />
+                                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                      <DollarSign className="h-3 w-3 shrink-0" />
                                     Condenação:{" "}
                                     {Number(
                                       julgamento.valorCondenacao,
@@ -924,6 +931,7 @@ export default function JuizModal({ juizId, isOpen, onClose }: JuizModalProps) {
                                       style: "currency",
                                       currency: "BRL",
                                     })}
+                                    </span>
                                   </Chip>
                                 )}
                               </div>

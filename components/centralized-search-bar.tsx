@@ -274,8 +274,8 @@ export function CentralizedSearchBar({ className = "" }: CentralizedSearchBarPro
             inputWrapper: "h-10 bg-background/70 backdrop-blur-xl border border-default-200 hover:border-primary/50 focus-within:border-primary shadow-sm transition-all duration-200",
           }}
           endContent={
-            <div className="flex items-center gap-2">
-              <Kbd className="hidden sm:flex" keys={[isMac ? "command" : "ctrl"]}>
+            <div className="flex items-center gap-1.5">
+              <Kbd className="hidden 2xl:flex" keys={[isMac ? "command" : "ctrl"]}>
                 K
               </Kbd>
               <Button isIconOnly className="text-default-400 hover:text-default-600 min-w-6 w-6 h-6" size="sm" variant="light" onPress={handleSearch}>

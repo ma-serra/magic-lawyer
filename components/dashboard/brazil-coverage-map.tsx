@@ -85,6 +85,22 @@ function getMetricLocations(
   return state.details?.[metric] ?? [];
 }
 
+function getUfBadgePosition(mapX: number, mapY: number) {
+  if (mapY >= 82) {
+    return "bottom-full left-1/2 mb-1 -translate-x-1/2";
+  }
+
+  if (mapX >= 82) {
+    return "right-full top-1/2 mr-1 -translate-y-1/2";
+  }
+
+  if (mapX <= 18) {
+    return "left-full top-1/2 ml-1 -translate-y-1/2";
+  }
+
+  return "top-full left-1/2 mt-1 -translate-x-1/2";
+}
+
 interface BrazilCoverageMapProps {
   overview: BrazilCoverageOverview | null | undefined;
   audienceLabel: string;
@@ -182,18 +198,16 @@ export function BrazilCoverageMap({
       return;
     }
 
-    const currentSelection = selectedUf
-      ? sortedStates.find((state) => state.uf === selectedUf)
-      : null;
-    const shouldResetSelection =
-      !currentSelection ||
-      !sortedStates.some((state) => state.uf === selectedUf) ||
-      (currentSelection[activeMetric] === 0 && sortedStates[0]?.[activeMetric] > 0);
+    setSelectedUf((currentSelection) => {
+      if (!currentSelection) {
+        return sortedStates[0]?.uf ?? null;
+      }
 
-    if (shouldResetSelection) {
-      setSelectedUf(sortedStates[0]?.uf ?? null);
-    }
-  }, [activeMetric, selectedUf, sortedStates]);
+      return sortedStates.some((state) => state.uf === currentSelection)
+        ? currentSelection
+        : (sortedStates[0]?.uf ?? null);
+    });
+  }, [sortedStates]);
 
   const selectedState =
     sortedStates.find((state) => state.uf === selectedUf) ?? sortedStates[0];
@@ -287,10 +301,19 @@ export function BrazilCoverageMap({
                 Distribuicao atual por {metricMeta[activeMetric].shortLabel}.
               </p>
             </div>
-            <Chip color={metricMeta[activeMetric].chipColor} size="sm" variant="flat">
-              <ActiveIcon className="h-3.5 w-3.5" />
-              {formatNumber(selectedState?.[activeMetric] ?? 0)}{" "}
-              {metricMeta[activeMetric].shortLabel}
+            <Chip
+              className="shrink-0 whitespace-nowrap"
+              color={metricMeta[activeMetric].chipColor}
+              size="sm"
+              variant="flat"
+            >
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <ActiveIcon className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {formatNumber(selectedState?.[activeMetric] ?? 0)}{" "}
+                  {metricMeta[activeMetric].shortLabel}
+                </span>
+              </span>
             </Chip>
           </div>
 
@@ -310,14 +333,18 @@ export function BrazilCoverageMap({
                 maxMetricValue > 0
                   ? Math.max(14, Math.min(42, 14 + (value / maxMetricValue) * 28))
                   : 14;
+              const showInlineUf = bubbleSize >= 24;
               const meta = metricMeta[activeMetric];
               const isSelected = selectedState?.uf === state.uf;
+              const ufBadgePosition = getUfBadgePosition(state.mapX, state.mapY);
 
               return (
                 <button
                   key={state.uf}
                   type="button"
+                  aria-label={`Focar ${state.stateName} (${state.uf})`}
                   className="absolute -translate-x-1/2 -translate-y-1/2"
+                  data-testid={`brazil-coverage-map-state-${state.uf}`}
                   style={{
                     left: `${state.mapX}%`,
                     top: `${state.mapY}%`,
@@ -336,8 +363,19 @@ export function BrazilCoverageMap({
                       height: bubbleSize,
                     }}
                   >
-                    {bubbleSize >= 24 ? state.uf : ""}
+                    {showInlineUf ? state.uf : ""}
                   </span>
+                  {!showInlineUf ? (
+                    <span
+                      className={joinClasses(
+                        "pointer-events-none absolute rounded-full border border-default-200/80 bg-white/92 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-foreground shadow-sm dark:border-white/15 dark:bg-background/90",
+                        ufBadgePosition,
+                        isSelected && "border-primary/30 text-primary",
+                      )}
+                    >
+                      {state.uf}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -492,9 +530,16 @@ export function BrazilCoverageMap({
                   <section key={metric} className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <Chip color={meta.chipColor} size="sm" variant="flat">
-                          <Icon className="h-3.5 w-3.5" />
-                          {meta.label}
+                        <Chip
+                          className="shrink-0 whitespace-nowrap"
+                          color={meta.chipColor}
+                          size="sm"
+                          variant="flat"
+                        >
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span>{meta.label}</span>
+                          </span>
                         </Chip>
                         <span className="text-sm text-default-500">
                           {formatNumber(selectedState?.[metric] ?? 0)} no total
