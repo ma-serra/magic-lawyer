@@ -388,9 +388,10 @@ export function AdminDashboardContent() {
       (sum, state) => sum + state.processos,
       0,
     );
+    const mappedProcessCount = data.geographicOverview.totals.processos;
     const topProcessStatesShare =
-      data.totals.totalProcessos > 0
-        ? (topProcessStatesTotal / data.totals.totalProcessos) * 100
+      mappedProcessCount > 0
+        ? (topProcessStatesTotal / mappedProcessCount) * 100
         : 0;
 
     return {
@@ -406,6 +407,7 @@ export function AdminDashboardContent() {
       focusCards,
       processHotspots,
       topProcessState,
+      mappedProcessCount,
       topProcessStatesShare,
     };
   }, [data]);
@@ -512,8 +514,8 @@ export function AdminDashboardContent() {
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <PeopleMetricCard
             label="Processos mapeados"
-            value={formatNumber(data.totals.totalProcessos)}
-            helper="Base consolidada de todos os escritorios"
+            value={formatNumber(analytics.mappedProcessCount)}
+            helper="Processos com UF identificada na base inteira"
             tone="primary"
             icon={<Scale className="h-4 w-4" />}
           />

@@ -15,12 +15,19 @@ import {
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
 
-const PRODUCTION_TENANT_WHERE = {
-  slug: {
-    not: "global",
-  },
-  isTestEnvironment: false,
-} as const;
+const ADMIN_DASHBOARD_TENANT_WHERE =
+  process.env.NODE_ENV === "production"
+    ? ({
+        slug: {
+          not: "global",
+        },
+        isTestEnvironment: false,
+      } as const)
+    : ({
+        slug: {
+          not: "global",
+        },
+      } as const);
 
 type Tone =
   | "primary"
@@ -492,65 +499,65 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       geographicOverview,
     ] = await Promise.all([
       prisma.tenant.count({
-        where: PRODUCTION_TENANT_WHERE,
+        where: ADMIN_DASHBOARD_TENANT_WHERE,
       }),
       prisma.tenant.count({
         where: {
-          ...PRODUCTION_TENANT_WHERE,
+          ...ADMIN_DASHBOARD_TENANT_WHERE,
           status: TenantStatus.ACTIVE,
         },
       }),
       prisma.tenant.count({
         where: {
-          ...PRODUCTION_TENANT_WHERE,
+          ...ADMIN_DASHBOARD_TENANT_WHERE,
           status: TenantStatus.SUSPENDED,
         },
       }),
       prisma.tenant.count({
         where: {
-          ...PRODUCTION_TENANT_WHERE,
+          ...ADMIN_DASHBOARD_TENANT_WHERE,
           status: TenantStatus.CANCELLED,
         },
       }),
       prisma.usuario.count({
         where: {
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.usuario.count({
         where: {
           active: true,
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.processo.count({
         where: {
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.cliente.count({
         where: {
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.fatura.count({
         where: {
           status: { in: [InvoiceStatus.ABERTA, InvoiceStatus.VENCIDA] },
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.pagamento.aggregate({
         _sum: { valor: true },
         where: {
           status: PaymentStatus.PAGO,
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         },
       }),
       prisma.pagamento.aggregate({
         _sum: { valor: true },
         where: {
           status: PaymentStatus.PAGO,
-          tenant: PRODUCTION_TENANT_WHERE,
+          tenant: ADMIN_DASHBOARD_TENANT_WHERE,
           confirmadoEm: {
             gte: thirtyDaysAgo,
           },
@@ -572,7 +579,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
               _sum: { valor: true },
               where: {
                 status: PaymentStatus.PAGO,
-                tenant: PRODUCTION_TENANT_WHERE,
+                tenant: ADMIN_DASHBOARD_TENANT_WHERE,
                 confirmadoEm: {
                   gte: start,
                   lt: end,
@@ -587,7 +594,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
         generateMonthlySeries(6, now, (start, end) =>
           prisma.tenant.count({
             where: {
-              ...PRODUCTION_TENANT_WHERE,
+              ...ADMIN_DASHBOARD_TENANT_WHERE,
               createdAt: {
                 gte: start,
                 lt: end,
@@ -598,7 +605,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
         generateMonthlySeries(6, now, (start, end) =>
           prisma.usuario.count({
             where: {
-              tenant: PRODUCTION_TENANT_WHERE,
+              tenant: ADMIN_DASHBOARD_TENANT_WHERE,
               createdAt: {
                 gte: start,
                 lt: end,
@@ -613,7 +620,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       _sum: { valor: true },
       where: {
         status: PaymentStatus.PAGO,
-        tenant: PRODUCTION_TENANT_WHERE,
+        tenant: ADMIN_DASHBOARD_TENANT_WHERE,
         confirmadoEm: {
           gte: ninetyDaysAgo,
         },
@@ -632,7 +639,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       ? await prisma.tenant.findMany({
           where: {
             id: { in: tenantIds },
-            ...PRODUCTION_TENANT_WHERE,
+            ...ADMIN_DASHBOARD_TENANT_WHERE,
           },
           select: {
             id: true,
@@ -755,7 +762,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
     });
 
     const latestTenantsRaw = await prisma.tenant.findMany({
-      where: PRODUCTION_TENANT_WHERE,
+      where: ADMIN_DASHBOARD_TENANT_WHERE,
       orderBy: { createdAt: "desc" },
       take: 8,
       select: {
@@ -806,7 +813,7 @@ export async function getSuperAdminDashboardData(): Promise<AdminDashboardRespon
       ? await prisma.tenant.findMany({
           where: {
             id: { in: onlineTenantIds },
-            ...PRODUCTION_TENANT_WHERE,
+            ...ADMIN_DASHBOARD_TENANT_WHERE,
           },
           select: {
             id: true,

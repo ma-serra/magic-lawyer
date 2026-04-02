@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -113,7 +113,7 @@ export default function EditarProcessoPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
-  const [, startTransition] = useTransition();
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
   const juizesDoFormulario = useMemo(() => {
     const byId = new Map<string, JuizSerializado>();
@@ -290,6 +290,14 @@ export default function EditarProcessoPage() {
     setFormData(mapped);
   }, [processo, formData]);
 
+  useEffect(() => {
+    if (!redirectTo || typeof window === "undefined") {
+      return;
+    }
+
+    window.location.replace(redirectTo);
+  }, [redirectTo]);
+
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
@@ -417,11 +425,12 @@ export default function EditarProcessoPage() {
       const result = await updateProcesso(processoId, payload);
 
       if (result.success) {
+        const destino = `/processos/${processoId}`;
+
         toast.success("Processo atualizado com sucesso!");
-        startTransition(() => {
-          mutate();
-        });
-        router.push(`/processos/${processoId}`);
+        setRedirectTo(destino);
+        router.replace(destino);
+        router.refresh();
       } else {
         toast.error(result.error || "Erro ao atualizar processo");
       }

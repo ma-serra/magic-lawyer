@@ -370,11 +370,19 @@ export function NovoProcessoContent() {
       if (result.success) {
         toast.success("Processo criado com sucesso!");
 
-        // Redirecionar baseado em onde veio
-        if (clienteIdParam) {
-          router.push(`/clientes/${clienteIdParam}`);
-        } else {
-          router.push("/processos");
+        const destino = clienteIdParam
+          ? `/clientes/${clienteIdParam}`
+          : "/processos";
+
+        router.replace(destino);
+        router.refresh();
+
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => {
+            if (window.location.pathname === "/processos/novo") {
+              window.location.assign(destino);
+            }
+          }, 250);
         }
       } else {
         toast.error(result.error || "Erro ao criar processo");

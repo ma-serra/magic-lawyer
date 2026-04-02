@@ -537,6 +537,135 @@ function haveSameIdMembership(a: string[], b: string[]) {
   return normalize(a) === normalize(b);
 }
 
+type TenantJudgeOverlayForProcess = {
+  nome?: string;
+  nomeCompleto?: string | null;
+  vara?: string | null;
+  comarca?: string | null;
+  nivel?: string | null;
+  status?: string | null;
+  especialidades?: string[];
+  tribunalId?: string | null;
+};
+
+function parseTenantJudgeOverlayForProcess(
+  raw: string | null,
+): TenantJudgeOverlayForProcess {
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const overlay: TenantJudgeOverlayForProcess = {};
+
+    if (typeof parsed.nome === "string") overlay.nome = parsed.nome;
+    if (
+      typeof parsed.nomeCompleto === "string" ||
+      parsed.nomeCompleto === null
+    ) {
+      overlay.nomeCompleto = parsed.nomeCompleto as string | null;
+    }
+    if (typeof parsed.vara === "string" || parsed.vara === null) {
+      overlay.vara = parsed.vara as string | null;
+    }
+    if (typeof parsed.comarca === "string" || parsed.comarca === null) {
+      overlay.comarca = parsed.comarca as string | null;
+    }
+    if (typeof parsed.nivel === "string" || parsed.nivel === null) {
+      overlay.nivel = parsed.nivel as string | null;
+    }
+    if (typeof parsed.status === "string" || parsed.status === null) {
+      overlay.status = parsed.status as string | null;
+    }
+    if (Array.isArray(parsed.especialidades)) {
+      overlay.especialidades = parsed.especialidades.filter(
+        (value): value is string => typeof value === "string",
+      );
+    }
+    if (typeof parsed.tribunalId === "string" || parsed.tribunalId === null) {
+      overlay.tribunalId = parsed.tribunalId as string | null;
+    }
+
+    return overlay;
+  } catch {
+    return {};
+  }
+}
+
+async function applyTenantJudgeOverlayToProcess(
+  tenantId: string,
+  juiz: ProcessoDetalhado["juiz"],
+): Promise<ProcessoDetalhado["juiz"]> {
+  if (!juiz) {
+    return juiz;
+  }
+
+  const tenantProfile = await prisma.acessoJuiz.findFirst({
+    where: {
+      tenantId,
+      juizId: juiz.id,
+      tipoAcesso: "TENANT_PROFILE",
+    },
+    orderBy: {
+      dataAcesso: "desc",
+    },
+    select: {
+      observacoes: true,
+    },
+  });
+
+  const overlay = parseTenantJudgeOverlayForProcess(
+    tenantProfile?.observacoes ?? null,
+  );
+
+  if (Object.keys(overlay).length === 0) {
+    return juiz;
+  }
+
+  const mergedJudge: NonNullable<ProcessoDetalhado["juiz"]> = {
+    ...juiz,
+    nome: overlay.nome ?? juiz.nome,
+    nomeCompleto:
+      overlay.nomeCompleto !== undefined
+        ? overlay.nomeCompleto
+        : juiz.nomeCompleto,
+    vara: overlay.vara !== undefined ? overlay.vara : juiz.vara,
+    comarca: overlay.comarca !== undefined ? overlay.comarca : juiz.comarca,
+    nivel: overlay.nivel !== undefined ? overlay.nivel : juiz.nivel,
+    status: overlay.status !== undefined ? overlay.status : juiz.status,
+    especialidades: overlay.especialidades ?? juiz.especialidades,
+    tribunal: juiz.tribunal,
+  };
+
+  if (overlay.tribunalId !== undefined) {
+    if (!overlay.tribunalId) {
+      mergedJudge.tribunal = null;
+    } else if (overlay.tribunalId !== juiz.tribunal?.id) {
+      mergedJudge.tribunal = await prisma.tribunal.findUnique({
+        where: {
+          id: overlay.tribunalId,
+        },
+        select: {
+          id: true,
+          nome: true,
+          sigla: true,
+          esfera: true,
+          uf: true,
+          siteUrl: true,
+        },
+      });
+    }
+  }
+
+  return mergedJudge;
+}
+
 async function resolveClientesVinculadosValidos(
   tenantId: string,
   clienteIds: string[],
@@ -1947,6 +2076,10 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
       }),
     );
     const serializedDecorated = decorateProcessoWithVinculos(serialized);
+    serializedDecorated.juiz = await applyTenantJudgeOverlayToProcess(
+      user.tenantId,
+      serializedDecorated.juiz,
+    );
 
     return {
       success: true,

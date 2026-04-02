@@ -12,12 +12,19 @@ import {
   normalizeBrazilUf,
 } from "@/app/lib/geo/brazil-coverage";
 
-const PRODUCTION_TENANT_WHERE = {
-  slug: {
-    not: "global",
-  },
-  isTestEnvironment: false,
-} as const;
+const GLOBAL_COVERAGE_TENANT_WHERE =
+  process.env.NODE_ENV === "production"
+    ? ({
+        slug: {
+          not: "global",
+        },
+        isTestEnvironment: false,
+      } as const)
+    : ({
+        slug: {
+          not: "global",
+        },
+      } as const);
 
 const NORMALIZED_STATE_NAME_TO_UF = new Map(
   Object.entries(BRAZIL_STATE_METADATA).map(([uf, meta]) => [
@@ -147,7 +154,7 @@ async function getGlobalProcessCountsByUf() {
     where: {
       deletedAt: null,
       tenant: {
-        is: PRODUCTION_TENANT_WHERE,
+        is: GLOBAL_COVERAGE_TENANT_WHERE,
       },
     },
     select: {
@@ -226,7 +233,7 @@ async function getGlobalLawyerCountsByUf() {
         },
       },
       tenant: {
-        is: PRODUCTION_TENANT_WHERE,
+        is: GLOBAL_COVERAGE_TENANT_WHERE,
       },
     },
     _count: {
@@ -330,7 +337,7 @@ async function getGlobalOfficeCountsByUf() {
         clienteId: null,
         tipo: TipoEndereco.ESCRITORIO,
         tenant: {
-          is: PRODUCTION_TENANT_WHERE,
+          is: GLOBAL_COVERAGE_TENANT_WHERE,
         },
       },
       _count: {
@@ -341,7 +348,7 @@ async function getGlobalOfficeCountsByUf() {
       by: ["tenantId", "estado"],
       where: {
         tenant: {
-          is: PRODUCTION_TENANT_WHERE,
+          is: GLOBAL_COVERAGE_TENANT_WHERE,
         },
       },
       _count: {
@@ -517,7 +524,7 @@ async function getGlobalProcessDetailsByUf(
     where: {
       deletedAt: null,
       tenant: {
-        is: PRODUCTION_TENANT_WHERE,
+        is: GLOBAL_COVERAGE_TENANT_WHERE,
       },
     },
     orderBy: [{ updatedAt: "desc" }],
@@ -657,7 +664,7 @@ async function getGlobalLawyerDetailsByUf(
             },
           },
           tenant: {
-            is: PRODUCTION_TENANT_WHERE,
+            is: GLOBAL_COVERAGE_TENANT_WHERE,
           },
         },
         orderBy: [{ updatedAt: "desc" }],
@@ -806,7 +813,7 @@ async function getGlobalOfficeDetailsByUf(
             tipo: TipoEndereco.ESCRITORIO,
             estado: uf,
             tenant: {
-              is: PRODUCTION_TENANT_WHERE,
+              is: GLOBAL_COVERAGE_TENANT_WHERE,
             },
           },
           orderBy: [{ principal: "desc" }, { updatedAt: "desc" }],
@@ -830,7 +837,7 @@ async function getGlobalOfficeDetailsByUf(
           where: {
             estado: uf,
             tenant: {
-              is: PRODUCTION_TENANT_WHERE,
+              is: GLOBAL_COVERAGE_TENANT_WHERE,
             },
           },
           orderBy: [{ principal: "desc" }, { updatedAt: "desc" }],
