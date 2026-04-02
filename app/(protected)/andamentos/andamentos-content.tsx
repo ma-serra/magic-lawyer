@@ -51,8 +51,13 @@ import {
   reabrirAndamento,
   getDashboardAndamentos,
   getTiposMovimentacao,
+  previewAndamentosReport,
+  generateAndamentosReportPdf,
+  sendAndamentosReportByEmail,
   type AndamentoFilters,
   type AndamentoCreateInput,
+  type AndamentoReportPeriodPreset,
+  type AndamentosReportRequest,
 } from "@/app/actions/andamentos";
 import { getAllProcessos } from "@/app/actions/processos";
 import { usePermissionsCheck } from "@/app/hooks/use-permission-check";
@@ -205,6 +210,27 @@ const REOPEN_STATUS_OPTIONS: MovimentacaoStatusOperacional[] = [
   "BLOQUEADO",
 ];
 
+function getMovimentacaoTipoLabel(tipo: MovimentacaoTipo | null) {
+  switch (tipo) {
+    case "ANDAMENTO":
+      return "Andamento";
+    case "PRAZO":
+      return "Prazo";
+    case "INTIMACAO":
+      return "Intimacao";
+    case "AUDIENCIA":
+      return "Audiencia";
+    case "SOLICITACAO":
+      return "Solicitacao";
+    case "ANEXO":
+      return "Anexo";
+    case "OUTRO":
+      return "Outro";
+    default:
+      return "Nao definido";
+  }
+}
+
 // ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
@@ -241,6 +267,7 @@ export default function AndamentosPage() {
     !isClient && (isAdminLike || hasPermissionFor("processos", "editar"));
   const canDeleteAndamento =
     !isClient && (isAdminLike || hasPermissionFor("processos", "excluir"));
+  const canSendAndamentoReport = !isClient;
   // Estado dos filtros
   const [filters, setFilters] = useState<AndamentoFilters>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -256,6 +283,7 @@ export default function AndamentosPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit" | "view">(
     "create",
   );
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedAndamento, setSelectedAndamento] = useState<Andamento | null>(
     null,
   );
@@ -504,6 +532,19 @@ export default function AndamentosPage() {
     setSelectedAndamento(null);
   };
 
+  const openReportModal = () => {
+    if (!canSendAndamentoReport) {
+      toast.error("Voce nao tem permissao para enviar relatorios");
+      return;
+    }
+
+    setReportModalOpen(true);
+  };
+
+  const closeReportModal = () => {
+    setReportModalOpen(false);
+  };
+
   const openResolveModal = (andamento: Andamento) => {
     if (!canEditAndamento) {
       toast.error("Você não tem permissão para resolver andamentos");
@@ -578,6 +619,8 @@ export default function AndamentosPage() {
         return "danger";
       case "AUDIENCIA":
         return "secondary";
+      case "SOLICITACAO":
+        return "success";
       case "ANEXO":
         return "success";
       case "OUTRO":
@@ -605,6 +648,13 @@ export default function AndamentosPage() {
         return (
           <CalendarDays
             className="text-purple-600 dark:text-purple-400"
+            size={16}
+          />
+        );
+      case "SOLICITACAO":
+        return (
+          <MessageSquare
+            className="text-emerald-600 dark:text-emerald-400"
             size={16}
           />
         );
@@ -970,16 +1020,29 @@ export default function AndamentosPage() {
         title="Andamentos"
         description={`${pagination.total} andamento(s)${hasActiveFilters ? " no resultado filtrado" : " registrados na timeline"}`}
         actions={
-          canCreateAndamento ? (
-            <Button
-              color="primary"
-              size="sm"
-              startContent={<Plus className="h-4 w-4" />}
-              onPress={openCreateModal}
-            >
-              Novo andamento
-            </Button>
-          ) : undefined
+          <>
+            {canSendAndamentoReport ? (
+              <Button
+                color="secondary"
+                size="sm"
+                startContent={<Mail className="h-4 w-4" />}
+                variant="flat"
+                onPress={openReportModal}
+              >
+                Enviar relatorio
+              </Button>
+            ) : null}
+            {canCreateAndamento ? (
+              <Button
+                color="primary"
+                size="sm"
+                startContent={<Plus className="h-4 w-4" />}
+                onPress={openCreateModal}
+              >
+                Novo andamento
+              </Button>
+            ) : null}
+          </>
         }
       />
 
@@ -1467,6 +1530,8 @@ export default function AndamentosPage() {
                                 ? "border-red-500/60"
                                 : andamento.tipo === "AUDIENCIA"
                                   ? "border-purple-500/60"
+                                  : andamento.tipo === "SOLICITACAO"
+                                    ? "border-emerald-500/60"
                                   : andamento.tipo === "ANEXO"
                                     ? "border-green-500/60"
                                     : "border-default-400/60"
@@ -1485,6 +1550,8 @@ export default function AndamentosPage() {
                                 ? "border-l-4 border-l-red-500"
                                 : andamento.tipo === "AUDIENCIA"
                                   ? "border-l-4 border-l-purple-500"
+                                  : andamento.tipo === "SOLICITACAO"
+                                    ? "border-l-4 border-l-emerald-500"
                                   : andamento.tipo === "ANEXO"
                                     ? "border-l-4 border-l-green-500"
                                     : "border-l-4 border-l-default-400"
@@ -1506,7 +1573,7 @@ export default function AndamentosPage() {
                                     size="sm"
                                     variant="flat"
                                   >
-                                    {andamento.tipo}
+                                    {getMovimentacaoTipoLabel(andamento.tipo)}
                                   </Chip>
                                 ) : null}
                                 <Chip
@@ -1761,6 +1828,12 @@ export default function AndamentosPage() {
         onSuccess={mutateAndamentos}
       />
 
+      <AndamentosReportModal
+        clientes={clientesDisponiveis}
+        isOpen={reportModalOpen}
+        onClose={closeReportModal}
+      />
+
       <ResolveAndamentoModal
         andamento={resolvingAndamento}
         isOpen={resolveModalOpen}
@@ -1783,6 +1856,433 @@ export default function AndamentosPage() {
         onStatusChange={setReopenStatus}
       />
     </div>
+  );
+}
+
+// ============================================
+// MODAL DE RELATORIO
+// ============================================
+
+interface AndamentosReportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  clientes: ClienteDisponivel[];
+}
+
+type AndamentosReportPreview = {
+  cliente: {
+    id: string;
+    nome: string;
+    email: string | null;
+    responsavelEmail: string | null;
+  };
+  periodoLabel: string;
+  resumoLabel: string;
+  somenteCriadosPorMim: boolean;
+  total: number;
+  itens: Array<{
+    id: string;
+    titulo: string;
+    dataMovimentacao: Date | string;
+    processoNumero: string;
+    processoTitulo: string | null;
+    tipo: MovimentacaoTipo | null;
+    statusOperacional: MovimentacaoStatusOperacional;
+    prioridade: MovimentacaoPrioridade;
+  }>;
+};
+
+const REPORT_PERIOD_OPTIONS: Array<{
+  key: AndamentoReportPeriodPreset;
+  label: string;
+}> = [
+  { key: "15_DIAS", label: "Ultimos 15 dias" },
+  { key: "30_DIAS", label: "Ultimos 30 dias" },
+  { key: "60_DIAS", label: "Ultimos 60 dias" },
+  { key: "HISTORICO_COMPLETO", label: "Todo o historico" },
+  { key: "PERSONALIZADO", label: "Outro periodo" },
+];
+
+function downloadBase64Pdf(
+  base64: string,
+  fileName: string,
+  mimeType = "application/pdf",
+) {
+  const bytes = Uint8Array.from(window.atob(base64), (char) =>
+    char.charCodeAt(0),
+  );
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function AndamentosReportModal({
+  isOpen,
+  onClose,
+  clientes,
+}: AndamentosReportModalProps) {
+  const [clienteId, setClienteId] = useState("");
+  const [periodo, setPeriodo] =
+    useState<AndamentoReportPeriodPreset>("30_DIAS");
+  const [somenteCriadosPorMim, setSomenteCriadosPorMim] = useState(true);
+  const [somenteSolicitacoes, setSomenteSolicitacoes] = useState(false);
+  const [customRange, setCustomRange] = useState({
+    start: "",
+    end: "",
+  });
+  const [preview, setPreview] = useState<AndamentosReportPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const clienteOptions = useMemo(
+    () =>
+      clientes
+        .map((cliente) => ({
+          key: cliente.id,
+          label: cliente.nome,
+          textValue: [cliente.nome, cliente.documento || ""]
+            .filter(Boolean)
+            .join(" "),
+          description: cliente.documento || undefined,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
+    [clientes],
+  );
+  const clienteIds = useMemo(
+    () => new Set(clienteOptions.map((cliente) => cliente.key)),
+    [clienteOptions],
+  );
+  const selectedClienteKeys =
+    clienteId && clienteIds.has(clienteId) ? [clienteId] : [];
+  const canRunReport =
+    Boolean(clienteId) &&
+    (periodo !== "PERSONALIZADO" ||
+      Boolean(customRange.start && customRange.end));
+
+  const buildRequest = (): AndamentosReportRequest => ({
+    clienteId,
+    periodo,
+    somenteCriadosPorMim,
+    tipo: somenteSolicitacoes ? "SOLICITACAO" : undefined,
+    dataInicio: customRange.start
+      ? new Date(`${customRange.start}T00:00:00`)
+      : undefined,
+    dataFim: customRange.end
+      ? new Date(`${customRange.end}T23:59:59`)
+      : undefined,
+  });
+
+  useEffect(() => {
+    if (!isOpen) {
+      setClienteId("");
+      setPeriodo("30_DIAS");
+      setSomenteCriadosPorMim(true);
+      setSomenteSolicitacoes(false);
+      setCustomRange({ start: "", end: "" });
+      setPreview(null);
+      setLoadingPreview(false);
+      setGeneratingPdf(false);
+      setSendingEmail(false);
+      return;
+    }
+
+    if (!canRunReport) {
+      setPreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPreview(true);
+
+    previewAndamentosReport(buildRequest()).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (result.success && result.data) {
+        setPreview(result.data);
+      } else {
+        setPreview(null);
+        toast.error(result.error || "Nao foi possivel preparar o relatorio");
+      }
+
+      setLoadingPreview(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    canRunReport,
+    clienteId,
+    periodo,
+    customRange.start,
+    customRange.end,
+    somenteCriadosPorMim,
+    somenteSolicitacoes,
+  ]);
+
+  const handleGeneratePdf = async () => {
+    if (!canRunReport) {
+      toast.error("Selecione cliente e periodo para gerar o relatorio");
+      return;
+    }
+
+    setGeneratingPdf(true);
+    const result = await generateAndamentosReportPdf(buildRequest());
+    setGeneratingPdf(false);
+
+    if (!result.success || !result.data) {
+      toast.error(result.error || "Nao foi possivel gerar o PDF");
+      return;
+    }
+
+    downloadBase64Pdf(result.data.data, result.data.fileName, result.data.mimeType);
+    toast.success("PDF gerado com sucesso");
+  };
+
+  const handleSendEmail = async () => {
+    if (!canRunReport) {
+      toast.error("Selecione cliente e periodo para enviar o relatorio");
+      return;
+    }
+
+    setSendingEmail(true);
+    const result = await sendAndamentosReportByEmail(buildRequest());
+    setSendingEmail(false);
+
+    if (!result.success || !result.data) {
+      toast.error(result.error || "Nao foi possivel enviar o relatorio");
+      return;
+    }
+
+    toast.success(`Relatorio enviado para ${result.data.to}`);
+  };
+
+  return (
+    <Modal isOpen={isOpen} scrollBehavior="inside" size="2xl" onClose={onClose}>
+      <ModalContent>
+        <ModalHeader className="flex flex-col gap-1">
+          <span className="text-xl font-semibold">Enviar relatorio</span>
+          <span className="text-sm text-default-500">
+            Gere um PDF dos andamentos por cliente e envie por email quando fizer sentido.
+          </span>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                Cliente
+              </label>
+              <SearchableSelect
+                isRequired
+                emptyContent="Nenhum cliente encontrado"
+                items={clienteOptions}
+                placeholder="Selecione o cliente"
+                selectedKey={selectedClienteKeys[0] ?? null}
+                onSelectionChange={(selectedKey) => {
+                  setClienteId(selectedKey || "");
+                }}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  Periodo do relatorio
+                </label>
+                <Select
+                  placeholder="Selecione o periodo"
+                  selectedKeys={[periodo]}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0] as AndamentoReportPeriodPreset;
+                    setPeriodo(value);
+                  }}
+                >
+                  {REPORT_PERIOD_OPTIONS.map((option) => (
+                    <SelectItem key={option.key} textValue={option.label}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  Escopo
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    color={somenteCriadosPorMim ? "primary" : "default"}
+                    size="sm"
+                    variant={somenteCriadosPorMim ? "solid" : "flat"}
+                    onPress={() => setSomenteCriadosPorMim(true)}
+                  >
+                    Somente o que eu criei
+                  </Button>
+                  <Button
+                    color={!somenteCriadosPorMim ? "secondary" : "default"}
+                    size="sm"
+                    variant={!somenteCriadosPorMim ? "solid" : "flat"}
+                    onPress={() => setSomenteCriadosPorMim(false)}
+                  >
+                    Todo o escritorio
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                Recorte do relatorio
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  color={!somenteSolicitacoes ? "primary" : "default"}
+                  size="sm"
+                  variant={!somenteSolicitacoes ? "solid" : "flat"}
+                  onPress={() => setSomenteSolicitacoes(false)}
+                >
+                  Todos os tipos
+                </Button>
+                <Button
+                  color={somenteSolicitacoes ? "success" : "default"}
+                  size="sm"
+                  variant={somenteSolicitacoes ? "solid" : "flat"}
+                  onPress={() => setSomenteSolicitacoes(true)}
+                >
+                  Somente solicitacoes ao cliente
+                </Button>
+              </div>
+            </div>
+
+            {periodo === "PERSONALIZADO" ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  Outro periodo
+                </label>
+                <DateRangeInput
+                  endValue={customRange.end}
+                  startValue={customRange.start}
+                  onChange={(value) => setCustomRange(value)}
+                />
+              </div>
+            ) : null}
+
+            <Card className="border border-default-200/80 bg-content1/80 dark:border-white/10 dark:bg-background/60">
+              <CardBody className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      Resumo do envio
+                    </p>
+                    <p className="text-xs text-default-500">
+                      O PDF inclui {somenteSolicitacoes ? "apenas as solicitacoes" : "todos os andamentos"} encontrados no periodo e filtros escolhidos.
+                    </p>
+                  </div>
+                  {loadingPreview ? (
+                    <Chip color="primary" size="sm" variant="flat">
+                      Atualizando...
+                    </Chip>
+                  ) : preview ? (
+                    <Chip color="primary" size="sm" variant="flat">
+                      {preview.total} item(ns)
+                    </Chip>
+                  ) : null}
+                </div>
+
+                {!clienteId ? (
+                  <p className="text-sm text-default-500">
+                    Selecione um cliente para carregar a previa do relatorio.
+                  </p>
+                ) : !canRunReport ? (
+                  <p className="text-sm text-warning">
+                    Informe o periodo completo para montar o relatorio.
+                  </p>
+                ) : preview ? (
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-default-200/80 bg-default-100/50 p-3 dark:border-white/10 dark:bg-white/5">
+                      <p className="text-sm font-medium text-foreground">
+                        {preview.resumoLabel}
+                      </p>
+                      <p className="mt-1 text-xs text-default-500">
+                        Destino do envio:{" "}
+                        {preview.cliente.email ||
+                          preview.cliente.responsavelEmail ||
+                          "cliente sem email cadastrado"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      {preview.itens.slice(0, 6).map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-xl border border-default-200/80 px-3 py-2 text-sm dark:border-white/10"
+                        >
+                          <p className="font-medium text-foreground">{item.titulo}</p>
+                          <p className="text-xs text-default-500">
+                            {item.processoNumero}
+                            {item.processoTitulo ? ` - ${item.processoTitulo}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                      {preview.total > 6 ? (
+                        <p className="text-xs text-default-500">
+                          ...e mais {preview.total - 6} andamento(s) no PDF.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : canRunReport && !loadingPreview ? (
+                  <p className="text-sm text-danger">
+                    Nao foi possivel montar a previa do relatorio.
+                  </p>
+                ) : null}
+              </CardBody>
+            </Card>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="light" onPress={onClose}>
+            Fechar
+          </Button>
+          <Button
+            isDisabled={!preview || preview.total === 0}
+            isLoading={generatingPdf}
+            startContent={!generatingPdf ? <FileText className="h-4 w-4" /> : null}
+            variant="flat"
+            onPress={handleGeneratePdf}
+          >
+            Gerar PDF
+          </Button>
+          <Button
+            color="primary"
+            isDisabled={
+              !preview ||
+              preview.total === 0 ||
+              !(
+                preview.cliente.email?.trim() ||
+                preview.cliente.responsavelEmail?.trim()
+              )
+            }
+            isLoading={sendingEmail}
+            startContent={!sendingEmail ? <Mail className="h-4 w-4" /> : null}
+            onPress={handleSendEmail}
+          >
+            Enviar por email
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -1973,6 +2473,11 @@ interface AndamentoModalProps {
   onSuccess: () => void;
 }
 
+interface ClienteModalOption {
+  id: string;
+  nome: string;
+}
+
 function AndamentoModal({
   isOpen,
   onClose,
@@ -1985,10 +2490,55 @@ function AndamentoModal({
 }: AndamentoModalProps) {
   const isReadOnly = mode === "view";
 
+  const extractClientesFromProcesso = (proc: any): ClienteModalOption[] => {
+    const entries = new Map<string, ClienteModalOption>();
+
+    const pushEntry = (id: unknown, nome: unknown) => {
+      if (typeof id !== "string" || !id.trim()) {
+        return;
+      }
+
+      const normalizedName =
+        typeof nome === "string" && nome.trim()
+          ? nome.trim()
+          : "Cliente sem nome";
+
+      if (!entries.has(id)) {
+        entries.set(id, { id, nome: normalizedName });
+      }
+    };
+
+    pushEntry(proc?.clienteId, proc?.clienteNome ?? proc?.cliente?.nome);
+
+    if (Array.isArray(proc?.clientesVinculados)) {
+      proc.clientesVinculados.forEach((cliente: any) => {
+        pushEntry(cliente?.id, cliente?.nome);
+      });
+    }
+
+    if (Array.isArray(proc?.clientesRelacionados)) {
+      proc.clientesRelacionados.forEach((item: any) => {
+        pushEntry(item?.cliente?.id, item?.cliente?.nome);
+      });
+    }
+
+    if (Array.isArray(proc?.partes)) {
+      proc.partes.forEach((parte: any) => {
+        pushEntry(parte?.clienteId, parte?.cliente?.nome ?? parte?.nome);
+      });
+    }
+
+    return Array.from(entries.values());
+  };
+
+  const resolvePreferredClienteId = (proc: any) =>
+    extractClientesFromProcesso(proc)[0]?.id || "";
+
   // Calcular dados iniciais do formulário
   const initialFormData = useMemo(() => {
     if (mode === "create") {
       return {
+        clienteId: "",
         processoId: "",
         titulo: "",
         descricao: "",
@@ -2010,6 +2560,7 @@ function AndamentoModal({
       };
     } else if (andamento) {
       return {
+        clienteId: "",
         processoId: andamento.processo.id,
         titulo: andamento.titulo,
         descricao: andamento.descricao || "",
@@ -2040,6 +2591,7 @@ function AndamentoModal({
     }
 
     return {
+      clienteId: "",
       processoId: "",
       titulo: "",
       descricao: "",
@@ -2085,15 +2637,49 @@ function AndamentoModal({
     return fullName || responsavel.email;
   };
 
-  const processIds = useMemo(
-    () => new Set((processos || []).map((proc: any) => proc.id)),
-    [processos],
-  );
   const responsavelIds = useMemo(
     () => new Set((responsaveis || []).map((responsavel) => responsavel.id)),
     [responsaveis],
   );
+  const clientesDisponiveisModal = useMemo(() => {
+    const entries = new Map<string, ClienteModalOption>();
 
+    (processos || []).forEach((proc: any) => {
+      extractClientesFromProcesso(proc).forEach((cliente) => {
+        if (!entries.has(cliente.id)) {
+          entries.set(cliente.id, cliente);
+        }
+      });
+    });
+
+    return Array.from(entries.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+  }, [processos]);
+  const clienteIds = useMemo(
+    () => new Set(clientesDisponiveisModal.map((cliente) => cliente.id)),
+    [clientesDisponiveisModal],
+  );
+  const filteredProcessos = useMemo(() => {
+    if (!formData.clienteId) {
+      return [];
+    }
+
+    return (processos || []).filter((proc: any) =>
+      extractClientesFromProcesso(proc).some(
+        (cliente) => cliente.id === formData.clienteId,
+      ),
+    );
+  }, [processos, formData.clienteId]);
+  const processIds = useMemo(
+    () => new Set((filteredProcessos || []).map((proc: any) => proc.id)),
+    [filteredProcessos],
+  );
+
+  const selectedClienteKeys =
+    formData.clienteId && clienteIds.has(formData.clienteId)
+      ? [formData.clienteId]
+      : [];
   const selectedProcessKeys =
     formData.processoId && processIds.has(formData.processoId)
       ? [formData.processoId]
@@ -2102,9 +2688,18 @@ function AndamentoModal({
     formData.responsavelId && responsavelIds.has(formData.responsavelId)
       ? [formData.responsavelId]
       : [UNASSIGNED_RESPONSAVEL_KEY];
+  const clienteModalOptions = useMemo(
+    () =>
+      clientesDisponiveisModal.map((cliente) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: cliente.nome,
+      })),
+    [clientesDisponiveisModal],
+  );
   const processoModalOptions = useMemo(
     () =>
-      processos.map((proc: any) => {
+      filteredProcessos.map((proc: any) => {
         const processLabel = getProcessLabel(proc);
 
         return {
@@ -2117,7 +2712,7 @@ function AndamentoModal({
           description: String(proc?.titulo ?? "").trim() || undefined,
         };
       }),
-    [processos],
+    [filteredProcessos],
   );
   const responsavelModalOptions = useMemo(
     () => [
@@ -2146,6 +2741,33 @@ function AndamentoModal({
   useEffect(() => {
     setFormData(initialFormData);
   }, [initialFormData]);
+
+  useEffect(() => {
+    if (!processos?.length) {
+      return;
+    }
+
+    if (mode === "create" && !formData.processoId) {
+      return;
+    }
+
+    const processoAtual = processos.find(
+      (proc: any) => proc.id === formData.processoId,
+    );
+
+    if (!processoAtual) {
+      return;
+    }
+
+    const preferredClienteId = resolvePreferredClienteId(processoAtual);
+
+    if (preferredClienteId && formData.clienteId !== preferredClienteId) {
+      setFormData((prev: any) => ({
+        ...prev,
+        clienteId: preferredClienteId,
+      }));
+    }
+  }, [processos, formData.processoId, formData.clienteId, mode]);
 
   const handleSubmit = async () => {
     if (!formData.processoId || !formData.titulo) {
@@ -2247,6 +2869,33 @@ function AndamentoModal({
               <div className="space-y-2">
                 <label
                   className="text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center gap-2"
+                  htmlFor="modal-cliente"
+                >
+                  <FolderOpen className="text-emerald-500" size={16} />
+                  Cliente
+                </label>
+                <SearchableSelect
+                  isRequired
+                  id="modal-cliente"
+                  emptyContent="Nenhum cliente encontrado"
+                  items={clienteModalOptions}
+                  isDisabled={isReadOnly || mode === "edit"}
+                  placeholder="Selecione o cliente antes do processo"
+                  selectedKey={selectedClienteKeys[0] ?? null}
+                  onSelectionChange={(selectedKey) => {
+                    setFormData((prev: any) => ({
+                      ...prev,
+                      clienteId: selectedKey || "",
+                      processoId:
+                        prev.clienteId === selectedKey ? prev.processoId : "",
+                    }));
+                  }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center gap-2"
                   htmlFor="modal-processo"
                 >
                   <FileText className="text-blue-500" size={16} />
@@ -2255,9 +2904,16 @@ function AndamentoModal({
                 <SearchableSelect
                   isRequired
                   id="modal-processo"
+                  description={
+                    !formData.clienteId
+                      ? "Selecione um cliente para listar apenas os processos dele."
+                      : undefined
+                  }
                   emptyContent="Nenhum processo encontrado"
                   items={processoModalOptions}
-                  isDisabled={isReadOnly || mode === "edit"}
+                  isDisabled={
+                    isReadOnly || mode === "edit" || !formData.clienteId
+                  }
                   placeholder="Selecione o processo"
                   selectedKey={selectedProcessKeys[0] ?? null}
                   onSelectionChange={(selectedKey) => {
@@ -2336,8 +2992,11 @@ function AndamentoModal({
                   }}
                 >
                   {tipos.map((tipo) => (
-                    <SelectItem key={tipo} textValue={tipo}>
-                      {tipo}
+                    <SelectItem
+                      key={tipo}
+                      textValue={getMovimentacaoTipoLabel(tipo)}
+                    >
+                      {getMovimentacaoTipoLabel(tipo)}
                     </SelectItem>
                   ))}
                 </Select>

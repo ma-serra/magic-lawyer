@@ -878,6 +878,135 @@ export async function listTribunaisParaVinculo() {
   }
 }
 
+function normalizeCatalogValue(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function sortCatalogValues(values: string[]) {
+  return values.sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export async function listComarcasPorTribunal(tribunalId?: string) {
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado", comarcas: [] };
+    }
+
+    const user = session.user as any;
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado", comarcas: [] };
+    }
+
+    if (!tribunalId) {
+      return { success: true, comarcas: [] };
+    }
+
+    const [processos, juizes] = await Promise.all([
+      prisma.processo.findMany({
+        where: {
+          tenantId: user.tenantId,
+          tribunalId,
+          deletedAt: null,
+          comarca: { not: null },
+        },
+        select: { comarca: true },
+        distinct: ["comarca"],
+      }),
+      prisma.juiz.findMany({
+        where: {
+          tribunalId,
+          comarca: { not: null },
+        },
+        select: { comarca: true },
+        distinct: ["comarca"],
+      }),
+    ]);
+
+    const values = sortCatalogValues(
+      Array.from(
+        new Set(
+          [...processos, ...juizes]
+            .map((item) => normalizeCatalogValue(item.comarca))
+            .filter((item): item is string => Boolean(item)),
+        ),
+      ),
+    );
+
+    return { success: true, comarcas: values };
+  } catch (error) {
+    logger.error("Erro ao listar comarcas por tribunal:", error);
+    return { success: false, error: "Erro ao listar comarcas", comarcas: [] };
+  }
+}
+
+export async function listVarasPorTribunal(params: {
+  tribunalId?: string;
+  comarca?: string;
+}) {
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado", varas: [] };
+    }
+
+    const user = session.user as any;
+    if (!user.tenantId) {
+      return { success: false, error: "Tenant não encontrado", varas: [] };
+    }
+
+    if (!params.tribunalId) {
+      return { success: true, varas: [] };
+    }
+
+    const comarca = normalizeCatalogValue(params.comarca);
+    const juizWhere: any = {
+      tribunalId: params.tribunalId,
+      vara: { not: null },
+    };
+    const processoWhere: any = {
+      tenantId: user.tenantId,
+      tribunalId: params.tribunalId,
+      deletedAt: null,
+      vara: { not: null },
+    };
+
+    if (comarca) {
+      juizWhere.comarca = comarca;
+      processoWhere.comarca = comarca;
+    }
+
+    const [processos, juizes] = await Promise.all([
+      prisma.processo.findMany({
+        where: processoWhere,
+        select: { vara: true },
+        distinct: ["vara"],
+      }),
+      prisma.juiz.findMany({
+        where: juizWhere,
+        select: { vara: true },
+        distinct: ["vara"],
+      }),
+    ]);
+
+    const values = sortCatalogValues(
+      Array.from(
+        new Set(
+          [...processos, ...juizes]
+            .map((item) => normalizeCatalogValue(item.vara))
+            .filter((item): item is string => Boolean(item)),
+        ),
+      ),
+    );
+
+    return { success: true, varas: values };
+  } catch (error) {
+    logger.error("Erro ao listar varas por tribunal:", error);
+    return { success: false, error: "Erro ao listar varas", varas: [] };
+  }
+}
+
 export async function listTribunais(params?: { uf?: string; esfera?: string }) {
   try {
     const session = await getSession();

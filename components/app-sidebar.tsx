@@ -20,12 +20,28 @@ import { Button } from "@heroui/button";
 import { Avatar } from "@heroui/avatar";
 import { Tooltip } from "@heroui/react";
 import { useSession } from "next-auth/react";
+import useSWR from "swr";
 
 import type { AuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
 import { AppNavLink } from "@/components/app-nav-link";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { Logo } from "@/components/icons";
 import { DevInfo } from "@/components/dev-info";
+import { useAvatar } from "@/app/hooks/use-avatar";
+
+async function fetchDevWorkbenchAccess() {
+  const response = await fetch("/api/internal/dev-workbench-access", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    return { enabled: false };
+  }
+
+  return (await response.json()) as { enabled?: boolean };
+}
 
 const navIconStroke = 1.6;
 const sidebarNameConnectors = new Set(["da", "de", "do", "das", "dos", "e"]);
@@ -893,13 +909,38 @@ function SidebarContent({
   onCloseMobile?: () => void;
 }) {
   const { data: session } = useSession();
+  const { avatarUrl, mutate: mutateAvatar } = useAvatar();
   const pathname = usePathname();
   const isSuperAdmin = (session?.user as any)?.role === "SUPER_ADMIN";
   const userName = session?.user?.name?.trim() || "Advogado(a)";
   const userAvatar =
-    (session?.user as any)?.avatarUrl || session?.user?.image || undefined;
+    avatarUrl ||
+    (session?.user as any)?.avatarUrl ||
+    session?.user?.image ||
+    undefined;
   const sidebarUserName = useMemo(() => getSidebarDisplayName(userName), [userName]);
-  const showDevWorkbench = process.env.NODE_ENV === "development" && !collapsed;
+  const { data: devWorkbenchAccess } = useSWR(
+    "dev-workbench-access",
+    fetchDevWorkbenchAccess,
+    {
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    },
+  );
+  const showDevWorkbench = !collapsed && Boolean(devWorkbenchAccess?.enabled);
+
+  useEffect(() => {
+    const handleAvatarUpdate = () => {
+      mutateAvatar();
+    };
+
+    window.addEventListener("avatarUpdated", handleAvatarUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("avatarUpdated", handleAvatarUpdate as EventListener);
+    };
+  }, [mutateAvatar]);
+
   const sections = useMemo(() => {
     const groupedItems = navItems.reduce(
       (acc, item) => {

@@ -64,6 +64,13 @@ const AreasProcessoSettingsTab = dynamic(() => import("./areas-processo/page"), 
   ssr: false,
   loading: () => <SettingsTabLoader />,
 });
+const ClassesProcessuaisSettingsTab = dynamic(
+  () => import("./classes-processuais/page"),
+  {
+    ssr: false,
+    loading: () => <SettingsTabLoader />,
+  },
+);
 const AsaasSettingsTab = dynamic(() => import("./asaas/page"), {
   ssr: false,
   loading: () => <SettingsTabLoader />,
@@ -87,6 +94,7 @@ const SETTINGS_TAB_KEYS = [
   "tipos-peticao",
   "tipos-contrato",
   "areas-processo",
+  "classes-processuais",
 ] as const;
 
 type SettingsTabKey = (typeof SETTINGS_TAB_KEYS)[number];
@@ -1097,6 +1105,20 @@ export function ConfiguracoesTabs({
       >
         <EmbeddedSettingsPanel>
           <AreasProcessoSettingsTab />
+        </EmbeddedSettingsPanel>
+      </Tab>
+
+      <Tab
+        key="classes-processuais"
+        title={
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            <span>Classes processuais</span>
+          </div>
+        }
+      >
+        <EmbeddedSettingsPanel>
+          <ClassesProcessuaisSettingsTab />
         </EmbeddedSettingsPanel>
       </Tab>
 

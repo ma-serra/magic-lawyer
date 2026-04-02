@@ -35,7 +35,7 @@ import {
   deleteFeriado,
   getDashboardFeriados,
   getTiposFeriado,
-  importarFeriadosNacionais,
+  importarFeriadosOficiais,
   listFeriados,
   type FeriadoCreateInput,
   type FeriadoFilters,
@@ -292,7 +292,11 @@ export default function FeriadosContent() {
     const ano = filters.ano || currentYear;
     setIsSyncingOfficial(true);
     try {
-      const result = await importarFeriadosNacionais(ano);
+      const result = await importarFeriadosOficiais({
+        ano,
+        uf: filters.uf,
+        municipio: filters.municipio,
+      });
 
       if (!result.success) {
         toast.error(result.error || "Falha ao sincronizar feriados oficiais");
@@ -302,10 +306,21 @@ export default function FeriadosContent() {
       const created = result.data?.created ?? 0;
       const updated = result.data?.updated ?? 0;
       const ignored = result.data?.ignored ?? 0;
+      const scopeLabel = filters.municipio?.trim()
+        ? `${filters.municipio.trim()}/${filters.uf || ""}`
+        : filters.uf?.trim()
+          ? filters.uf.trim()
+          : "base nacional";
 
       toast.success("Sincronização concluída", {
-        description: `${created} novo(s), ${updated} atualizado(s), ${ignored} reaproveitado(s) na base compartilhada.`,
+        description: `${created} novo(s), ${updated} atualizado(s), ${ignored} reaproveitado(s) para ${scopeLabel}.`,
       });
+
+      if (result.data?.warning) {
+        toast.warning("Sincronizacao parcial", {
+          description: result.data.warning,
+        });
+      }
 
       await refreshAll();
     } catch {
@@ -320,7 +335,7 @@ export default function FeriadosContent() {
       <PeoplePageHeader
         tag="Operacional"
         title="Feriados"
-        description="Calendário jurídico centralizado para cálculo de prazos. Inclui feriados oficiais compartilhados e regras locais do escritório."
+        description="Calendário jurídico centralizado para cálculo de prazos. A integração oficial usa a Feriados API: no plano free, cobrimos feriados nacionais, estaduais e municipais das 27 capitais."
         actions={
           <>
             <Button
@@ -376,7 +391,7 @@ export default function FeriadosContent() {
 
       <PeoplePanel
         title="Feriados de hoje"
-        description="Ao abrir esta aba, o sistema verifica e atualiza automaticamente os feriados oficiais do ano de forma compartilhada."
+        description="Ao abrir esta aba, o sistema verifica e atualiza automaticamente os feriados oficiais do ano de forma compartilhada. Municípios do interior seguem por cadastro manual ou plano pago."
       >
         {isLoadingDashboard ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

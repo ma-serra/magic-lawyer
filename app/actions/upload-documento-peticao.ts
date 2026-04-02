@@ -9,6 +9,7 @@ import { HybridNotificationService } from "@/app/lib/notifications/hybrid-notifi
 import { DocumentNotifier } from "@/app/lib/notifications/document-notifier";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
+import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 
 const uploadService = UploadService.getInstance();
 
@@ -94,9 +95,7 @@ export async function uploadDocumentoPeticao(
         where: {
           id: peticao.processoId,
           tenantId,
-          advogadoResponsavelId: {
-            in: accessibleAdvogados,
-          },
+          ...buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
         },
         select: { id: true },
       });
@@ -292,9 +291,7 @@ export async function removerDocumentoPeticao(peticaoId: string) {
         where: {
           id: peticao.processoId,
           tenantId,
-          advogadoResponsavelId: {
-            in: accessibleAdvogados,
-          },
+          ...buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
         },
         select: { id: true },
       });

@@ -41,6 +41,7 @@ type SearchableSelectProps = {
   isDisabled?: boolean;
   isLoading?: boolean;
   isClearable?: boolean;
+  isVirtualized?: boolean;
   ariaLabel?: string;
   ariaLabelledby?: string;
   testId?: string;
@@ -93,6 +94,7 @@ export function SearchableSelect({
   isDisabled = false,
   isLoading = false,
   isClearable = true,
+  isVirtualized,
   ariaLabel,
   ariaLabelledby,
   testId,
@@ -169,7 +171,7 @@ export function SearchableSelect({
       isDisabled={isDisabled}
       isLoading={isLoading}
       isRequired={isRequired}
-      isVirtualized={filteredItems.length > 50}
+      isVirtualized={isVirtualized ?? filteredItems.length > 50}
       items={filteredItems}
       label={label}
       listboxProps={{

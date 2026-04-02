@@ -21,6 +21,8 @@ import {
   notifyLawyersAboutProcessMovement,
   publishProcessNotificationToLawyers,
 } from "@/app/lib/juridical/process-movement-sync";
+import { emailService } from "@/app/lib/email-service";
+import { gerarPdfRelatorioAndamentosBuffer } from "@/app/lib/andamentos/report-pdf";
 import {
   buildProcessoAdvogadoMembershipWhere,
   buildProcessoClienteMembershipWhere,
@@ -135,6 +137,65 @@ interface AndamentosSummary {
   semResponsavel: number;
 }
 
+export type AndamentoReportPeriodPreset =
+  | "15_DIAS"
+  | "30_DIAS"
+  | "60_DIAS"
+  | "HISTORICO_COMPLETO"
+  | "PERSONALIZADO";
+
+export interface AndamentosReportRequest {
+  clienteId: string;
+  periodo: AndamentoReportPeriodPreset;
+  dataInicio?: Date;
+  dataFim?: Date;
+  somenteCriadosPorMim?: boolean;
+  tipo?: MovimentacaoTipo;
+}
+
+interface AndamentoReportItem {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  tipo: MovimentacaoTipo | null;
+  statusOperacional: MovimentacaoStatusOperacional;
+  prioridade: MovimentacaoPrioridade;
+  dataMovimentacao: Date;
+  prazo: Date | null;
+  slaEm: Date | null;
+  processo: {
+    id: string;
+    numero: string;
+    titulo: string | null;
+  };
+  criadoPor: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  } | null;
+  responsavel: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  } | null;
+}
+
+interface AndamentosReportPayload {
+  cliente: {
+    id: string;
+    nome: string;
+    email: string | null;
+    responsavelEmail: string | null;
+  };
+  periodoLabel: string;
+  resumoLabel: string;
+  somenteCriadosPorMim: boolean;
+  total: number;
+  itens: AndamentoReportItem[];
+}
+
 // ============================================
 // VALIDAÇÃO DE TENANT
 // ============================================
@@ -186,6 +247,208 @@ const REOPEN_STATUS_OPTIONS: MovimentacaoStatusOperacional[] = [
   "EM_EXECUCAO",
   "BLOQUEADO",
 ];
+
+function formatPersonName(person?: {
+  firstName: string | null;
+  lastName: string | null;
+  email?: string | null;
+} | null) {
+  if (!person) {
+    return "Nao informado";
+  }
+
+  const fullName = `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+  return fullName || person.email || "Nao informado";
+}
+
+function normalizeReportDate(value?: Date | null) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function resolveAndamentosReportDateRange(
+  input: AndamentosReportRequest,
+): {
+  inicio?: Date;
+  fim?: Date;
+  periodoLabel: string;
+} {
+  if (input.periodo === "HISTORICO_COMPLETO") {
+    return {
+      periodoLabel: "Historico completo",
+    };
+  }
+
+  if (input.periodo === "PERSONALIZADO") {
+    const inicio = normalizeReportDate(input.dataInicio);
+    const fim = normalizeReportDate(input.dataFim);
+
+    if (!inicio || !fim) {
+      throw new Error("Informe a data inicial e final para o periodo personalizado");
+    }
+
+    const inicioNormalizado = new Date(inicio);
+    inicioNormalizado.setHours(0, 0, 0, 0);
+    const fimNormalizado = new Date(fim);
+    fimNormalizado.setHours(23, 59, 59, 999);
+
+    return {
+      inicio: inicioNormalizado,
+      fim: fimNormalizado,
+      periodoLabel: `${inicioNormalizado.toLocaleDateString("pt-BR")} ate ${fimNormalizado.toLocaleDateString("pt-BR")}`,
+    };
+  }
+
+  const dias =
+    input.periodo === "15_DIAS"
+      ? 15
+      : input.periodo === "30_DIAS"
+        ? 30
+        : 60;
+
+  const fim = new Date();
+  fim.setHours(23, 59, 59, 999);
+  const inicio = new Date();
+  inicio.setHours(0, 0, 0, 0);
+  inicio.setDate(inicio.getDate() - (dias - 1));
+
+  return {
+    inicio,
+    fim,
+    periodoLabel: `Ultimos ${dias} dias`,
+  };
+}
+
+async function buildAndamentosReportPayload(
+  input: AndamentosReportRequest,
+): Promise<AndamentosReportPayload> {
+  await ensurePermissionOrThrow("visualizar");
+
+  const session = await getSession();
+  const tenantId = await getTenantId();
+  const userId = await getUserId();
+
+  if ((session?.user as any)?.role === "CLIENTE") {
+    throw new Error("Clientes nao podem enviar relatorios de andamentos");
+  }
+
+  const cliente = await prisma.cliente.findFirst({
+    where: {
+      tenantId,
+      id: input.clienteId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      nome: true,
+      email: true,
+      responsavelEmail: true,
+    },
+  });
+
+  if (!cliente) {
+    throw new Error("Cliente nao encontrado para este tenant");
+  }
+
+  const dateRange = resolveAndamentosReportDateRange(input);
+  const sessionProcessoScope = await getProcessoScopeForSession(session);
+  const clientProcessoScope = buildProcessoClienteMembershipWhere(input.clienteId);
+
+  const where: any = {
+    tenantId,
+    deletedAt: null,
+    processo: sessionProcessoScope
+      ? {
+          AND: [clientProcessoScope, sessionProcessoScope],
+        }
+      : clientProcessoScope,
+  };
+
+  if (input.somenteCriadosPorMim ?? true) {
+    where.criadoPorId = userId;
+  }
+
+  if (input.tipo) {
+    where.tipo = input.tipo;
+  }
+
+  if (dateRange.inicio || dateRange.fim) {
+    where.dataMovimentacao = {
+      ...(dateRange.inicio ? { gte: dateRange.inicio } : {}),
+      ...(dateRange.fim ? { lte: dateRange.fim } : {}),
+    };
+  }
+
+  const itens = (await prisma.movimentacaoProcesso.findMany({
+    where,
+    include: {
+      criadoPor: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      processo: {
+        select: {
+          id: true,
+          numero: true,
+          titulo: true,
+        },
+      },
+      responsavel: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: {
+      dataMovimentacao: "desc",
+    },
+  })) as AndamentoReportItem[];
+
+  const tipoLabel =
+    input.tipo === "SOLICITACAO"
+      ? "solicitacao(oes)"
+      : "andamento(s)";
+  const resumoLabel =
+    input.somenteCriadosPorMim ?? true
+      ? `Neste periodo, voce criou ${itens.length} ${tipoLabel} para ${cliente.nome}.`
+      : `Neste periodo, o escritorio registrou ${itens.length} ${tipoLabel} para ${cliente.nome}.`;
+
+  return {
+    cliente,
+    periodoLabel: dateRange.periodoLabel,
+    resumoLabel,
+    somenteCriadosPorMim: input.somenteCriadosPorMim ?? true,
+    total: itens.length,
+    itens,
+  };
+}
+
+function buildAndamentosReportPdfFileName(clienteNome: string, periodo: string) {
+  const safeCliente = clienteNome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  const safePeriodo = periodo
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  return `relatorio-andamentos-${safeCliente || "cliente"}-${safePeriodo || "periodo"}.pdf`;
+}
 
 async function getProcessoScopeForSession(
   session: Awaited<ReturnType<typeof getSession>>,
@@ -1834,6 +2097,194 @@ export async function reabrirAndamento(
 // DASHBOARD/MÉTRICAS
 // ============================================
 
+export async function previewAndamentosReport(
+  input: AndamentosReportRequest,
+): Promise<
+  ActionResponse<{
+    cliente: {
+      id: string;
+      nome: string;
+      email: string | null;
+      responsavelEmail: string | null;
+    };
+    periodoLabel: string;
+    resumoLabel: string;
+    somenteCriadosPorMim: boolean;
+    total: number;
+    itens: Array<{
+      id: string;
+      titulo: string;
+      dataMovimentacao: Date;
+      processoNumero: string;
+      processoTitulo: string | null;
+      tipo: MovimentacaoTipo | null;
+      statusOperacional: MovimentacaoStatusOperacional;
+      prioridade: MovimentacaoPrioridade;
+    }>;
+  }>
+> {
+  try {
+    const payload = await buildAndamentosReportPayload(input);
+
+    return {
+      success: true,
+      data: {
+        cliente: payload.cliente,
+        periodoLabel: payload.periodoLabel,
+        resumoLabel: payload.resumoLabel,
+        somenteCriadosPorMim: payload.somenteCriadosPorMim,
+        total: payload.total,
+        itens: payload.itens.map((item) => ({
+          id: item.id,
+          titulo: item.titulo,
+          dataMovimentacao: item.dataMovimentacao,
+          processoNumero: item.processo.numero,
+          processoTitulo: item.processo.titulo,
+          tipo: item.tipo,
+          statusOperacional: item.statusOperacional,
+          prioridade: item.prioridade,
+        })),
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || "Erro ao montar o relatorio de andamentos",
+    };
+  }
+}
+
+export async function generateAndamentosReportPdf(
+  input: AndamentosReportRequest,
+): Promise<
+  ActionResponse<{
+    fileName: string;
+    data: string;
+    mimeType: "application/pdf";
+  }>
+> {
+  try {
+    const payload = await buildAndamentosReportPayload(input);
+    const buffer = gerarPdfRelatorioAndamentosBuffer({
+      clienteNome: payload.cliente.nome,
+      periodoLabel: payload.periodoLabel,
+      resumoLabel: payload.resumoLabel,
+      itens: payload.itens.map((item) => ({
+        titulo: item.titulo,
+        descricao: item.descricao,
+        tipo: item.tipo,
+        statusOperacional: item.statusOperacional,
+        prioridade: item.prioridade,
+        dataMovimentacao: item.dataMovimentacao,
+        prazo: item.prazo,
+        slaEm: item.slaEm,
+        processoNumero: item.processo.numero,
+        processoTitulo: item.processo.titulo,
+        criadoPorNome: formatPersonName(item.criadoPor),
+        responsavelNome: formatPersonName(item.responsavel),
+      })),
+    });
+
+    return {
+      success: true,
+      data: {
+        fileName: buildAndamentosReportPdfFileName(
+          payload.cliente.nome,
+          payload.periodoLabel,
+        ),
+        data: buffer.toString("base64"),
+        mimeType: "application/pdf",
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || "Erro ao gerar o PDF do relatorio de andamentos",
+    };
+  }
+}
+
+export async function sendAndamentosReportByEmail(
+  input: AndamentosReportRequest,
+): Promise<ActionResponse<{ to: string; total: number }>> {
+  try {
+    const tenantId = await getTenantId();
+    const payload = await buildAndamentosReportPayload(input);
+    const emailDestino =
+      payload.cliente.email?.trim() || payload.cliente.responsavelEmail?.trim();
+
+    if (!emailDestino) {
+      throw new Error("Este cliente nao possui email cadastrado para receber o relatorio");
+    }
+
+    const buffer = gerarPdfRelatorioAndamentosBuffer({
+      clienteNome: payload.cliente.nome,
+      periodoLabel: payload.periodoLabel,
+      resumoLabel: payload.resumoLabel,
+      itens: payload.itens.map((item) => ({
+        titulo: item.titulo,
+        descricao: item.descricao,
+        tipo: item.tipo,
+        statusOperacional: item.statusOperacional,
+        prioridade: item.prioridade,
+        dataMovimentacao: item.dataMovimentacao,
+        prazo: item.prazo,
+        slaEm: item.slaEm,
+        processoNumero: item.processo.numero,
+        processoTitulo: item.processo.titulo,
+        criadoPorNome: formatPersonName(item.criadoPor),
+        responsavelNome: formatPersonName(item.responsavel),
+      })),
+    });
+
+    const fileName = buildAndamentosReportPdfFileName(
+      payload.cliente.nome,
+      payload.periodoLabel,
+    );
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+        <h2 style="margin-bottom: 8px;">Relatorio de andamentos</h2>
+        <p style="margin: 0 0 8px;">Cliente: <strong>${payload.cliente.nome}</strong></p>
+        <p style="margin: 0 0 8px;">Periodo: <strong>${payload.periodoLabel}</strong></p>
+        <p style="margin: 0 0 16px;">${payload.resumoLabel}</p>
+        <p style="margin: 0;">O PDF completo segue em anexo.</p>
+      </div>
+    `;
+
+    const envio = await emailService.sendEmailPerTenant(tenantId, {
+      to: emailDestino,
+      subject: `Relatorio de andamentos - ${payload.cliente.nome}`,
+      html,
+      text: `Relatorio de andamentos\nCliente: ${payload.cliente.nome}\nPeriodo: ${payload.periodoLabel}\n${payload.resumoLabel}\nO PDF completo segue em anexo.`,
+      attachments: [
+        {
+          filename: fileName,
+          content: buffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    if (!envio.success) {
+      throw new Error(envio.error || "Falha ao enviar o relatorio por email");
+    }
+
+    return {
+      success: true,
+      data: {
+        to: emailDestino,
+        total: payload.total,
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || "Erro ao enviar o relatorio de andamentos",
+    };
+  }
+}
+
 export async function getDashboardAndamentos(
   processoId?: string,
 ): Promise<ActionResponse<any>> {
@@ -1960,6 +2411,7 @@ export async function getTiposMovimentacao(): Promise<
       "PRAZO",
       "INTIMACAO",
       "AUDIENCIA",
+      "SOLICITACAO",
       "ANEXO",
       "OUTRO",
     ];

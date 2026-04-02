@@ -1051,6 +1051,10 @@ export class NotificationService {
         title: "Lembrete de evento",
         message: "Evento {titulo} em 1 hora",
       },
+      "evento.reminder_custom": {
+        title: "Lembrete de evento",
+        message: "Evento {titulo} em {reminderLabel}",
+      },
       "equipe.user_invited": {
         title: "Novo convite de equipe",
         message: "Convite enviado para {email}",

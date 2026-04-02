@@ -6,9 +6,11 @@ import { getSession } from "@/app/lib/auth";
 import prisma from "@/app/lib/prisma";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import { Prisma, TipoFeriado } from "@/generated/prisma";
-import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
-import { getRedisInstance } from "@/app/lib/notifications/redis-singleton";
+import {
+  ensureSharedNationalHolidays,
+  ensureSharedOfficialHolidaysForScope,
+} from "@/app/lib/feriados/sync";
 
 // ============================================
 // TIPOS
@@ -51,8 +53,6 @@ export interface ActionResponse<T> {
   error?: string;
 }
 
-const HOLIDAY_SYNC_LOCK_TTL_SECONDS = 90;
-const HOLIDAY_SYNC_CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 // ============================================
 // VALIDAÇÃO DE TENANT
@@ -70,14 +70,6 @@ function getYearRangeUtc(ano: number) {
     start: new Date(Date.UTC(ano, 0, 1)),
     end: new Date(Date.UTC(ano, 11, 31, 23, 59, 59, 999)),
   };
-}
-
-async function tryGetRedis() {
-  try {
-    return getRedisInstance();
-  } catch {
-    return null;
-  }
 }
 
 function normalizeTextKey(value?: string | null): string {
@@ -143,176 +135,6 @@ function dedupeHolidaysByScope<
   );
 }
 
-async function ensureSharedNationalHolidays(
-  ano: number,
-): Promise<{
-  seeded: boolean;
-  reason?:
-    | "invalid_year"
-    | "cache_hit"
-    | "already_seeded"
-    | "lock_busy"
-    | "source_unavailable";
-  source?: string;
-  created?: number;
-  updated?: number;
-  ignored?: number;
-}> {
-  if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) {
-    return { seeded: false, reason: "invalid_year" };
-  }
-
-  const { start, end } = getYearRangeUtc(ano);
-  const redis = await tryGetRedis();
-  const doneKey = `feriados:nacionais:${ano}:seeded`;
-  const lockKey = `feriados:nacionais:${ano}:seed-lock`;
-
-  if (redis) {
-    try {
-      const cachedSeed = await redis.get(doneKey);
-      if (cachedSeed) {
-        return { seeded: false, reason: "cache_hit" };
-      }
-    } catch {
-      // sem bloqueio por falha de redis
-    }
-  }
-
-  const globalCount = await prisma.feriado.count({
-    where: {
-      tenantId: null,
-      deletedAt: null,
-      tipo: "NACIONAL",
-      data: {
-        gte: start,
-        lte: end,
-      },
-    },
-  });
-
-  if (globalCount > 0) {
-    if (redis) {
-      try {
-        await redis.set(
-          doneKey,
-          String(Date.now()),
-          "EX",
-          HOLIDAY_SYNC_CACHE_TTL_SECONDS,
-        );
-      } catch {
-        // sem bloqueio por falha de redis
-      }
-    }
-
-    return { seeded: false, reason: "already_seeded" };
-  }
-
-  let canSync = true;
-  if (redis) {
-    try {
-      const lock = await redis.set(
-        lockKey,
-        String(Date.now()),
-        "EX",
-        HOLIDAY_SYNC_LOCK_TTL_SECONDS,
-        "NX",
-      );
-      canSync = lock === "OK";
-    } catch {
-      canSync = true;
-    }
-  }
-
-  if (!canSync) {
-    return { seeded: false, reason: "lock_busy" };
-  }
-
-  const sourceResult = await fetchOfficialNationalHolidays(ano);
-  if (!sourceResult.success) {
-    return {
-      seeded: false,
-      reason: "source_unavailable",
-      source: sourceResult.source,
-    };
-  }
-
-  let created = 0;
-  let updated = 0;
-  let ignored = 0;
-
-  for (const feriado of sourceResult.holidays) {
-    const existente = await prisma.feriado.findFirst({
-      where: {
-        tenantId: null,
-        deletedAt: null,
-        tipo: "NACIONAL",
-        data: feriado.date,
-      },
-      select: {
-        id: true,
-        nome: true,
-        descricao: true,
-      },
-    });
-
-    if (!existente) {
-      await prisma.feriado.create({
-        data: {
-          tenantId: null,
-          nome: feriado.name,
-          data: feriado.date,
-          tipo: "NACIONAL",
-          recorrente: false,
-          descricao:
-            "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).",
-        },
-      });
-      created += 1;
-      continue;
-    }
-
-    const shouldUpdate =
-      existente.nome !== feriado.name ||
-      existente.descricao !==
-        "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).";
-
-    if (shouldUpdate) {
-      await prisma.feriado.update({
-        where: { id: existente.id },
-        data: {
-          nome: feriado.name,
-          descricao:
-            "Feriado nacional sincronizado automaticamente da fonte oficial (BrasilAPI).",
-        },
-      });
-      updated += 1;
-    } else {
-      ignored += 1;
-    }
-  }
-
-  if (redis) {
-    try {
-      await redis.set(
-        doneKey,
-        String(Date.now()),
-        "EX",
-        HOLIDAY_SYNC_CACHE_TTL_SECONDS,
-      );
-    } catch {
-      // sem bloqueio por falha de redis
-    }
-  }
-
-  return {
-    seeded: true,
-    source: sourceResult.source,
-    created,
-    updated,
-    ignored,
-  };
-}
-
 // ============================================
 // LISTAGEM
 // ============================================
@@ -322,6 +144,13 @@ export async function listFeriados(
 ): Promise<ActionResponse<any[]>> {
   try {
     const tenantId = await getTenantId();
+
+    if (filters.ano) {
+      await ensureSharedOfficialHolidaysForScope(filters.ano, {
+        uf: filters.uf,
+        municipio: filters.municipio,
+      });
+    }
 
     const andConditions: Prisma.FeriadoWhereInput[] = [
       {
@@ -791,6 +620,11 @@ export async function isDiaFeriado(
   try {
     const tenantId = await getTenantId();
 
+    await ensureSharedOfficialHolidaysForScope(data.getUTCFullYear(), {
+      uf,
+      municipio,
+    });
+
     const andConditions: Prisma.FeriadoWhereInput[] = [
       {
         OR: [{ tenantId }, { tenantId: null }],
@@ -847,6 +681,148 @@ export async function isDiaFeriado(
 // ============================================
 // IMPORTAR FERIADOS NACIONAIS
 // ============================================
+
+export async function importarFeriadosOficiais(input: {
+  ano: number;
+  uf?: string;
+  municipio?: string;
+}): Promise<ActionResponse<any>> {
+  try {
+    const tenantId = await getTenantId();
+    const ano = input.ano;
+    const normalizedUf = input.uf?.trim().toUpperCase() || undefined;
+    const normalizedMunicipio = input.municipio?.trim() || undefined;
+    const { start, end } = getYearRangeUtc(ano);
+
+    const summary = await ensureSharedOfficialHolidaysForScope(ano, {
+      uf: normalizedUf,
+      municipio: normalizedMunicipio,
+    });
+
+    const scopeWhere: Prisma.FeriadoWhereInput[] = [{ tipo: "NACIONAL" }];
+
+    if (normalizedUf) {
+      scopeWhere.push({ tipo: "ESTADUAL", uf: normalizedUf });
+    }
+
+    if (normalizedUf && normalizedMunicipio) {
+      scopeWhere.push({
+        tipo: "MUNICIPAL",
+        uf: normalizedUf,
+        municipio: normalizedMunicipio,
+      });
+    }
+
+    const globalCount = await prisma.feriado.count({
+      where: {
+        tenantId: null,
+        deletedAt: null,
+        data: {
+          gte: start,
+          lte: end,
+        },
+        OR: scopeWhere,
+      },
+    });
+
+    const blockingError = [
+      summary.national,
+      summary.state,
+      summary.municipal,
+    ].find((result) => {
+      if (!result) return false;
+
+      return (
+        !result.seeded &&
+        result.reason !== "cache_hit" &&
+        result.reason !== "already_seeded" &&
+        result.reason !== "provider_not_configured" &&
+        result.reason !== "capital_only_scope"
+      );
+    });
+
+    if (blockingError && globalCount <= 0) {
+      if (blockingError.reason === "lock_busy") {
+        return {
+          success: false,
+          error:
+            "Sincronizacao ja esta em andamento por outro usuario. Aguarde alguns segundos e tente novamente.",
+        };
+      }
+
+      return {
+        success: false,
+        error:
+          blockingError.error ||
+          "Fonte oficial indisponivel no momento. Tente novamente em alguns instantes.",
+      };
+    }
+
+    revalidatePath("/regimes-prazo");
+
+    try {
+      const session = await getSession();
+      const user = session?.user as any;
+      if (tenantId) {
+        await logAudit({
+          tenantId,
+          usuarioId: user?.id ?? null,
+          acao: "FERIADO_OFICIAL_SYNC_EXECUTADO",
+          entidade: "Feriado",
+          dados: toAuditJson({
+            ano,
+            created: summary.created,
+            updated: summary.updated,
+            ignored: summary.ignored || globalCount,
+            escopo: {
+              nacional: true,
+              uf: normalizedUf ?? null,
+              municipio: normalizedMunicipio ?? null,
+            },
+            source: {
+              nacional: summary.national.source ?? "cache_local",
+              estadual: summary.state?.source ?? null,
+              municipal: summary.municipal?.source ?? null,
+            },
+            warnings: summary.warnings,
+          }),
+          changedFields: ["created", "updated", "ignored"],
+        });
+      }
+    } catch (auditError) {
+      console.warn("Falha ao registrar auditoria de sincronizacao de feriados oficiais:", auditError);
+    }
+
+    return {
+      success: true,
+      data: {
+        total: summary.created + summary.updated,
+        created: summary.created,
+        updated: summary.updated,
+        ignored: summary.ignored || globalCount,
+        sharedCatalog: true,
+        warning: summary.warnings[0] || null,
+        warnings: summary.warnings,
+        escopo: {
+          uf: normalizedUf ?? null,
+          municipio: normalizedMunicipio ?? null,
+        },
+        sources: {
+          nacional: summary.national.source ?? "cache_local",
+          estadual: summary.state?.source ?? null,
+          municipal: summary.municipal?.source ?? null,
+        },
+      },
+    };
+  } catch (error: any) {
+    console.error("Erro ao importar feriados oficiais:", error);
+
+    return {
+      success: false,
+      error: error.message || "Erro ao importar feriados oficiais",
+    };
+  }
+}
 
 export async function importarFeriadosNacionais(
   ano: number,

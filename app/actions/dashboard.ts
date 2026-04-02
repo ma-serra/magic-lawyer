@@ -649,7 +649,11 @@ async function buildAdminDashboard(
     prisma.processoPrazo.count({
       where: {
         tenantId,
+        deletedAt: null,
         status: "ABERTO",
+        processo: {
+          deletedAt: null,
+        },
         dataVencimento: {
           gte: now,
           lte: threeDaysAhead,
@@ -697,7 +701,11 @@ async function buildAdminDashboard(
     prisma.processoPrazo.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         status: "ABERTO",
+        processo: {
+          deletedAt: null,
+        },
       },
       orderBy: { dataVencimento: "asc" },
       take: 5,
@@ -1133,8 +1141,12 @@ async function buildAdvogadoDashboard(
     prisma.processoPrazo.count({
       where: {
         tenantId,
+        deletedAt: null,
         responsavelId: userId,
         status: "ABERTO",
+        processo: {
+          deletedAt: null,
+        },
         dataVencimento: {
           gte: now,
           lte: tomorrow,
@@ -2070,20 +2082,21 @@ async function buildSecretariaDashboard(
     prisma.processoPrazo.count({
       where: {
         tenantId,
+        deletedAt: null,
         status: "ABERTO",
+        processo: {
+          tenantId,
+          deletedAt: null,
+          ...(isAdmin
+            ? {}
+            : {
+                ...(whereProcessos.OR ? { OR: whereProcessos.OR } : {}),
+              }),
+        },
         dataVencimento: {
           gte: now,
           lte: tresDias,
         },
-        ...(isAdmin
-          ? {}
-          : {
-              processo: {
-                tenantId,
-                deletedAt: null,
-                ...(whereProcessos.OR ? { OR: whereProcessos.OR } : {}),
-              },
-            }),
       },
     }),
     prisma.cliente.count({

@@ -1,5 +1,6 @@
 import prisma from "@/app/lib/prisma";
 import { TipoFeriado } from "@/generated/prisma";
+import { ensureSharedOfficialHolidaysForScope } from "@/app/lib/feriados/sync";
 import {
   holidayMatchesScope,
   isSameDateOrRecurringMatch,
@@ -74,6 +75,11 @@ export async function validateDeadlineWithRegime({
       error: `A data ${formatPtBrDate(data)} cai em final de semana e o regime "${regime.nome}" exige dias úteis.`,
     };
   }
+
+  await ensureSharedOfficialHolidaysForScope(data.getUTCFullYear(), {
+    uf: scope.uf,
+    municipio: scope.municipio,
+  });
 
   const feriados = await prisma.feriado.findMany({
     where: {

@@ -184,7 +184,11 @@ export class DeadlineSchedulerService {
 
     const expiringPrazos = await prisma.processoPrazo.findMany({
       where: {
+        deletedAt: null,
         status: "ABERTO",
+        processo: {
+          deletedAt: null,
+        },
         dataVencimento: {
           gte: rangeStart,
           lte: rangeEnd,
@@ -393,7 +397,11 @@ export class DeadlineSchedulerService {
 
     const expiringPrazos = await prisma.processoPrazo.findMany({
       where: {
+        deletedAt: null,
         status: "ABERTO", // Apenas prazos ainda abertos
+        processo: {
+          deletedAt: null,
+        },
         dataVencimento: {
           gte: rangeStart,
           lte: rangeEnd,
@@ -576,6 +584,10 @@ export class DeadlineSchedulerService {
 
     const expiredPrazos = await prisma.processoPrazo.findMany({
       where: {
+        deletedAt: null,
+        processo: {
+          deletedAt: null,
+        },
         status: "ABERTO", // Apenas prazos ainda marcados como abertos (não tratados)
         dataVencimento: {
           lt: now, // Vencido

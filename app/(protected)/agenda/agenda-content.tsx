@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import {
-  Calendar, Plus, Clock, MapPin, Users, Edit, Trash2, CheckCircle, MoreVertical, Check, X, HelpCircle, AlertCircle, Info, Filter, Search, CalendarDays, User, Building, Scale, FileText, MapPin as LocationIcon, XCircle, RotateCcw, } from "lucide-react";
+  Calendar, Plus, Clock, MapPin, Users, Edit, Trash2, CheckCircle, MoreVertical, Check, X, HelpCircle, AlertCircle, Info, Filter, Search, CalendarDays, User, Building, Scale, FileText, MapPin as LocationIcon, XCircle, RotateCcw, Video, ExternalLink, } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -202,6 +202,21 @@ export default function AgendaPage() {
     pageSize: listPageSize,
     enabled: viewMode === "list",
   });
+  const {
+    meta: clienteCalendarMeta,
+    isLoading: isLoadingClienteCalendarMeta,
+  } = useEventos(
+    filtroCliente
+      ? {
+          clienteId: filtroCliente,
+        }
+      : undefined,
+    {
+      page: 1,
+      pageSize: 1,
+      enabled: viewMode === "calendar" && Boolean(filtroCliente),
+    },
+  );
 
   const isLoading = viewMode === "calendar" ? isLoadingDia : isLoadingLista;
   const error = (viewMode === "calendar" ? errorDia : errorLista) as
@@ -280,6 +295,11 @@ export default function AgendaPage() {
   const clientesFiltro = useMemo(
     () => eventoFormData?.clientes || [],
     [eventoFormData?.clientes],
+  );
+  const clienteSelecionado = useMemo(
+    () =>
+      clientesFiltro.find((cliente) => cliente.id === filtroCliente) ?? null,
+    [clientesFiltro, filtroCliente],
   );
   const processosFiltro = useMemo(() => {
     const todosProcessos = eventoFormData?.processos || [];
@@ -506,6 +526,11 @@ export default function AgendaPage() {
     filtroGoogle,
     filtroDataRange,
   ].filter(Boolean).length;
+  const shouldShowClienteCalendarMetric =
+    viewMode === "calendar" && Boolean(filtroCliente);
+  const metricsGridClassName = shouldShowClienteCalendarMetric
+    ? "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
+    : "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4";
 
   const handleConfirmarParticipacao = async (
     eventoId: string,
@@ -751,7 +776,7 @@ export default function AgendaPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={metricsGridClassName}>
         <PeopleMetricCard
           helper="Compromissos no dia selecionado"
           icon={<Calendar className="h-4 w-4" />}
@@ -780,6 +805,21 @@ export default function AgendaPage() {
           tone="secondary"
           value={confirmacoesVisiveis}
         />
+        {shouldShowClienteCalendarMetric ? (
+          <PeopleMetricCard
+            helper={
+              clienteSelecionado
+                ? `Total consolidado de eventos de ${clienteSelecionado.nome}`
+                : "Total consolidado do cliente selecionado"
+            }
+            icon={<Building className="h-4 w-4" />}
+            label="Eventos do cliente"
+            tone="danger"
+            value={
+              isLoadingClienteCalendarMeta ? 0 : clienteCalendarMeta.total
+            }
+          />
+        ) : null}
       </div>
 
       {/* Legenda de Confirmações */}
@@ -1572,6 +1612,20 @@ export default function AgendaPage() {
                                       {evento.local}
                                     </div>
                                   )}
+                                  {evento.isOnline && evento.linkAcesso && (
+                                    <div className="flex items-center gap-2">
+                                      <Video className="w-3 h-3" />
+                                      <a
+                                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                                        href={evento.linkAcesso}
+                                        rel="noreferrer"
+                                        target="_blank"
+                                      >
+                                        Abrir link do evento
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    </div>
+                                  )}
                                   {evento.participantes.length > 0 && (
                                     <div className="flex items-center gap-1">
                                       <Users className="w-3 h-3" />
@@ -1661,28 +1715,30 @@ export default function AgendaPage() {
                     <AnimatePresence>
                       {eventosListaFiltrados.map((evento, index) => (
                         <motion.div
+                          className="min-w-0"
                           key={evento.id}
                           layout
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -20 }}
                           initial={{ opacity: 0, y: 20 }}
                           transition={{ duration: 0.4, delay: index * 0.1 }}
-                          whileHover={{ scale: 1.02, y: -2 }}
+                          whileHover={{ y: -2 }}
                         >
-                          <Card className="border-l-4 border-l-primary">
+                          <Card className="min-w-0 overflow-hidden border-l-4 border-l-primary">
                             <CardBody className="p-6">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3 mb-2">
-                                    <h4 className="font-semibold text-lg flex items-center gap-2">
+                              <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="min-w-0 flex-1">
+                                  <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                                    <h4 className="min-w-0 break-words text-lg font-semibold">
                                       {evento.titulo}
-                                      {evento.googleEventId && (
-                                        <Tooltip content="Evento do Google Calendar">
-                                          <FaGoogle className="w-4 h-4 text-blue-500" />
-                                        </Tooltip>
-                                      )}
                                     </h4>
+                                    {evento.googleEventId && (
+                                      <Tooltip content="Evento do Google Calendar">
+                                        <FaGoogle className="h-4 w-4 shrink-0 text-blue-500" />
+                                      </Tooltip>
+                                    )}
                                     <Chip
+                                      className="shrink-0"
                                       color={
                                         tiposEvento[
                                           evento.tipo as keyof typeof tiposEvento
@@ -1696,6 +1752,7 @@ export default function AgendaPage() {
                                       ]?.label || evento.tipo}
                                     </Chip>
                                     <Chip
+                                      className="shrink-0"
                                       color={
                                         statusEvento[
                                           evento.status as keyof typeof statusEvento
@@ -1711,23 +1768,23 @@ export default function AgendaPage() {
                                   </div>
 
                                   {evento.descricao && (
-                                    <p className="text-default-600 mb-3">
+                                    <p className="mb-3 break-words text-default-600">
                                       {evento.descricao}
                                     </p>
                                   )}
 
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-default-400" />
-                                      <span>
+                                  <div className="grid min-w-0 grid-cols-1 gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+                                    <div className="flex min-w-0 items-start gap-2">
+                                      <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-default-400" />
+                                      <span className="min-w-0 break-words">
                                         {formatarData(
                                           evento.dataInicio.toString(),
                                         )}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <Clock className="w-4 h-4 text-default-400" />
-                                      <span>
+                                    <div className="flex min-w-0 items-start gap-2">
+                                      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-default-400" />
+                                      <span className="min-w-0 break-words">
                                         {formatarHora(
                                           evento.dataInicio.toString(),
                                         )}{" "}
@@ -1738,15 +1795,29 @@ export default function AgendaPage() {
                                       </span>
                                     </div>
                                     {evento.local && (
-                                      <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4 text-default-400" />
-                                        <span>{evento.local}</span>
+                                      <div className="flex min-w-0 items-start gap-2">
+                                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-default-400" />
+                                        <span className="min-w-0 break-words">{evento.local}</span>
+                                      </div>
+                                    )}
+                                    {evento.isOnline && evento.linkAcesso && (
+                                      <div className="flex min-w-0 items-start gap-2">
+                                        <Video className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                        <a
+                                          className="inline-flex min-w-0 flex-wrap items-center gap-1 break-all font-medium text-primary hover:underline"
+                                          href={evento.linkAcesso}
+                                          rel="noreferrer"
+                                          target="_blank"
+                                        >
+                                          Abrir link do evento
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                        </a>
                                       </div>
                                     )}
                                     {evento.participantes.length > 0 && (
-                                      <div className="flex items-center gap-2">
-                                        <Users className="w-4 h-4 text-default-400" />
-                                        <span>
+                                      <div className="flex min-w-0 items-start gap-2">
+                                        <Users className="mt-0.5 h-4 w-4 shrink-0 text-default-400" />
+                                        <span className="min-w-0 break-words">
                                           {evento.participantes.length}{" "}
                                           participante(s)
                                         </span>
@@ -1756,19 +1827,40 @@ export default function AgendaPage() {
 
                                   {(evento as any).cliente && (
                                     <div className="mt-3">
-                                      <span className="text-xs text-default-500">
+                                      <span className="break-words text-xs text-default-500">
                                         Cliente: {(evento as any).cliente?.nome}
                                       </span>
                                     </div>
                                   )}
 
                                   {renderConfirmacoes(evento)}
+
+                                  {permissions.canEditAllEvents &&
+                                  !isCliente &&
+                                  evento.status !== "REALIZADO" ? (
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      <Button
+                                        color="success"
+                                        size="sm"
+                                        startContent={
+                                          <CheckCircle className="h-4 w-4" />
+                                        }
+                                        variant="flat"
+                                        onPress={() =>
+                                          handleMarcarComoRealizado(evento.id)
+                                        }
+                                      >
+                                        Marcar como realizado
+                                      </Button>
+                                    </div>
+                                  ) : null}
                                 </div>
 
                                 <Dropdown>
                                   <DropdownTrigger>
                                     <Button
                                       isIconOnly
+                                      className="self-start"
                                       size="sm"
                                       variant="light"
                                     >

@@ -5,6 +5,7 @@ import { ProcessosContent } from "./processos-content";
 
 import { getSession } from "@/app/lib/auth";
 import { checkPermission } from "@/app/actions/equipe";
+import { isJusbrasilIntegrationEnabledForTenant } from "@/app/lib/juridical/jusbrasil-oab-sync";
 import { UserRole } from "@/generated/prisma";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default async function ProcessosPage() {
   }
 
   const user = session.user as any;
+  const tenantId = typeof user.tenantId === "string" ? user.tenantId : null;
 
   // SuperAdmin vai para dashboard admin
   if (user.role === "SUPER_ADMIN") {
@@ -28,7 +30,11 @@ export default async function ProcessosPage() {
 
   // Admin sempre tem acesso
   if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-    return <ProcessosContent canCreateProcesso canSyncOab />;
+    const canSyncOab = tenantId
+      ? await isJusbrasilIntegrationEnabledForTenant(tenantId)
+      : false;
+
+    return <ProcessosContent canCreateProcesso canSyncOab={canSyncOab} />;
   }
 
   // Para outros roles, verificar permissão processos.visualizar
@@ -39,15 +45,18 @@ export default async function ProcessosPage() {
       redirect("/dashboard");
     }
 
-    const [canCreateProcesso, canSyncOab] = await Promise.all([
+    const [canCreateProcesso, canEditProcesso, jusbrasilEnabled] = await Promise.all([
       checkPermission("processos", "criar"),
       checkPermission("processos", "editar"),
+      tenantId
+        ? isJusbrasilIntegrationEnabledForTenant(tenantId)
+        : Promise.resolve(false),
     ]);
 
     return (
       <ProcessosContent
         canCreateProcesso={canCreateProcesso}
-        canSyncOab={canSyncOab}
+        canSyncOab={canEditProcesso && jusbrasilEnabled}
       />
     );
   } catch (error) {

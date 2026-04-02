@@ -7,21 +7,34 @@ import prisma from "@/app/lib/prisma";
 import { Prisma, PeticaoStatus } from "@/generated/prisma";
 import { checkPermission } from "@/app/actions/equipe";
 import { getAccessibleAdvogadoIds } from "@/app/lib/advogado-access";
-import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
+import {
+  buildProcessoAdvogadoMembershipWhere,
+  processoClientesRelacionadosInclude,
+  processoClienteResumoSelect,
+} from "@/app/lib/processos/processo-vinculos";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 
 // ============================================
 // TIPOS
 // ============================================
 
+export type PeticaoSort =
+  | "RECENTES"
+  | "ANTIGAS"
+  | "MAIORES"
+  | "MENORES";
+
 export interface PeticaoFilters {
   status?: PeticaoStatus;
   processoId?: string;
+  clienteId?: string;
   causaId?: string;
   tipo?: string;
   search?: string;
-  dataInicio?: Date;
-  dataFim?: Date;
+  ano?: number | string;
+  sort?: PeticaoSort;
+  dataInicio?: Date | string;
+  dataFim?: Date | string;
   page?: number;
   perPage?: number;
 }
@@ -33,6 +46,7 @@ export interface PeticaoCreateInput {
   tipo?: string;
   status?: PeticaoStatus;
   descricao?: string;
+  conteudo?: string;
   documentoId?: string;
   protocoloNumero?: string;
   protocoladoEm?: Date;
@@ -46,6 +60,7 @@ export interface PeticaoUpdateInput {
   tipo?: string;
   status?: PeticaoStatus;
   descricao?: string;
+  conteudo?: string;
   documentoId?: string;
   protocoloNumero?: string;
   protocoladoEm?: Date;
@@ -78,6 +93,98 @@ async function getUserId(): Promise<string> {
 
 function isAdminRole(role?: string | null): boolean {
   return role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
+function normalizePeticaoLongText(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function getPeticaoConteudoTamanho(value?: string | null) {
+  return normalizePeticaoLongText(value)?.length ?? 0;
+}
+
+function buildInitialPeticaoConteudo(input: {
+  titulo: string;
+  tipo?: string | null;
+  descricao?: string | null;
+  observacoes?: string | null;
+  processoNumero?: string | null;
+}) {
+  const sections = [
+    `# ${input.titulo.trim() || "Petição"}`,
+    input.processoNumero ? `Processo: ${input.processoNumero}` : null,
+    input.tipo ? `Tipo: ${input.tipo}` : null,
+    "",
+    "## Objeto",
+    input.descricao?.trim() || "Descreva o objetivo principal desta peça.",
+    "",
+    "## Fundamentação",
+    "",
+    "## Pedidos",
+    "",
+    input.observacoes?.trim()
+      ? `## Observações internas\n${input.observacoes.trim()}`
+      : null,
+  ];
+
+  return sections.filter((section) => section !== null).join("\n");
+}
+
+function normalizeDateFilter(value?: Date | string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(normalized.getTime()) ? null : normalized;
+}
+
+function buildPeticaoCreatedAtFilter(
+  filters?: Pick<PeticaoFilters, "ano" | "dataInicio" | "dataFim">,
+) {
+  const start = normalizeDateFilter(filters?.dataInicio);
+  const end = normalizeDateFilter(filters?.dataFim);
+  const yearValue =
+    typeof filters?.ano === "string"
+      ? Number(filters.ano)
+      : (filters?.ano ?? null);
+
+  let gte = start;
+  let lte = end;
+
+  if (yearValue && Number.isFinite(yearValue) && yearValue > 1900) {
+    const yearStart = new Date(yearValue, 0, 1, 0, 0, 0, 0);
+    const yearEnd = new Date(yearValue, 11, 31, 23, 59, 59, 999);
+
+    gte = !gte || yearStart > gte ? yearStart : gte;
+    lte = !lte || yearEnd < lte ? yearEnd : lte;
+  }
+
+  if (!gte && !lte) {
+    return undefined;
+  }
+
+  return {
+    ...(gte ? { gte } : {}),
+    ...(lte ? { lte } : {}),
+  };
+}
+
+function buildPeticaoOrderBy(
+  sort?: PeticaoSort,
+): Prisma.PeticaoOrderByWithRelationInput[] {
+  switch (sort) {
+    case "ANTIGAS":
+      return [{ createdAt: "asc" }, { updatedAt: "asc" }];
+    case "MAIORES":
+      return [{ conteudoTamanho: "desc" }, { createdAt: "desc" }];
+    case "MENORES":
+      return [{ conteudoTamanho: "asc" }, { createdAt: "desc" }];
+    case "RECENTES":
+    default:
+      return [{ createdAt: "desc" }, { updatedAt: "desc" }];
+  }
 }
 
 async function withStaffScope(
@@ -130,31 +237,103 @@ export async function listPeticoes(filters?: PeticaoFilters) {
 
     const page = Math.max(1, Number(filters?.page || 1));
     const perPage = Math.min(100, Math.max(1, Number(filters?.perPage || 12)));
+    const searchTokens =
+      filters?.search
+        ?.trim()
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean) ?? [];
+    const createdAtFilter = buildPeticaoCreatedAtFilter(filters);
+    const whereClauses: Prisma.PeticaoWhereInput[] = [
+      {
+        tenantId,
+        deletedAt: null,
+        ...(filters?.status && { status: filters.status }),
+        ...(filters?.processoId && { processoId: filters.processoId }),
+        ...(filters?.causaId && { causaId: filters.causaId }),
+        ...(filters?.tipo && { tipo: filters.tipo }),
+        ...(createdAtFilter && {
+          createdAt: createdAtFilter,
+        }),
+      },
+    ];
 
-    let where: Prisma.PeticaoWhereInput = {
-      tenantId,
-      deletedAt: null,
-      ...(filters?.status && { status: filters.status }),
-      ...(filters?.processoId && { processoId: filters.processoId }),
-      ...(filters?.causaId && { causaId: filters.causaId }),
-      ...(filters?.tipo && { tipo: filters.tipo }),
-      ...(filters?.search && {
+    if (filters?.clienteId) {
+      whereClauses.push({
+        processo: {
+          OR: [
+            { clienteId: filters.clienteId },
+            {
+              clientesRelacionados: {
+                some: {
+                  clienteId: filters.clienteId,
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    for (const token of searchTokens) {
+      whereClauses.push({
         OR: [
-          { titulo: { contains: filters.search, mode: "insensitive" } },
-          { descricao: { contains: filters.search, mode: "insensitive" } },
+          { titulo: { contains: token, mode: "insensitive" } },
+          { descricao: { contains: token, mode: "insensitive" } },
+          { conteudo: { contains: token, mode: "insensitive" } },
+          { observacoes: { contains: token, mode: "insensitive" } },
+          { tipo: { contains: token, mode: "insensitive" } },
           {
-            protocoloNumero: { contains: filters.search, mode: "insensitive" },
+            protocoloNumero: { contains: token, mode: "insensitive" },
+          },
+          {
+            documento: {
+              nome: { contains: token, mode: "insensitive" },
+            },
+          },
+          {
+            causa: {
+              nome: { contains: token, mode: "insensitive" },
+            },
+          },
+          {
+            criadoPor: {
+              OR: [
+                { firstName: { contains: token, mode: "insensitive" } },
+                { lastName: { contains: token, mode: "insensitive" } },
+                { email: { contains: token, mode: "insensitive" } },
+              ],
+            },
+          },
+          {
+            processo: {
+              OR: [
+                { numero: { contains: token, mode: "insensitive" } },
+                { numeroCnj: { contains: token, mode: "insensitive" } },
+                { titulo: { contains: token, mode: "insensitive" } },
+                {
+                  cliente: {
+                    nome: { contains: token, mode: "insensitive" },
+                  },
+                },
+                {
+                  clientesRelacionados: {
+                    some: {
+                      cliente: {
+                        nome: { contains: token, mode: "insensitive" },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
           },
         ],
-      }),
-      ...(filters?.dataInicio &&
-        filters?.dataFim && {
-          createdAt: {
-            gte: filters.dataInicio,
-            lte: filters.dataFim,
-          },
-        }),
-    };
+      });
+    }
+
+    let where: Prisma.PeticaoWhereInput =
+      whereClauses.length === 1 ? whereClauses[0] : { AND: whereClauses };
 
     where = await withStaffScope(where, session);
 
@@ -169,8 +348,13 @@ export async function listPeticoes(filters?: PeticaoFilters) {
           select: {
             id: true,
             numero: true,
+            numeroCnj: true,
             titulo: true,
             status: true,
+            cliente: {
+              select: processoClienteResumoSelect,
+            },
+            ...processoClientesRelacionadosInclude,
           },
         },
         causa: {
@@ -197,9 +381,7 @@ export async function listPeticoes(filters?: PeticaoFilters) {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: buildPeticaoOrderBy(filters?.sort),
       skip: (safePage - 1) * perPage,
       take: perPage,
     });
@@ -263,12 +445,9 @@ export async function getPeticao(id: string) {
             titulo: true,
             status: true,
             cliente: {
-              select: {
-                id: true,
-                nome: true,
-                tipoPessoa: true,
-              },
+              select: processoClienteResumoSelect,
             },
+            ...processoClientesRelacionadosInclude,
           },
         },
         causa: {
@@ -376,8 +555,14 @@ export async function createPeticao(input: PeticaoCreateInput) {
 
     if (!isAdminRole(user?.role)) {
       const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-      processoAccessWhere.advogadoResponsavelId = { in: accessibleAdvogados };
+      processoAccessWhere.AND = [
+        ...((Array.isArray(processoAccessWhere.AND)
+          ? processoAccessWhere.AND
+          : processoAccessWhere.AND
+            ? [processoAccessWhere.AND]
+            : []) as Prisma.ProcessoWhereInput[]),
+        buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
+      ];
     }
 
     // Validar se o processo existe e pertence ao tenant
@@ -426,6 +611,16 @@ export async function createPeticao(input: PeticaoCreateInput) {
       }
     }
 
+    const conteudoNormalizado =
+      normalizePeticaoLongText(input.conteudo) ??
+      buildInitialPeticaoConteudo({
+        titulo: input.titulo,
+        tipo: input.tipo,
+        descricao: input.descricao,
+        observacoes: input.observacoes,
+        processoNumero: processo.numeroCnj || processo.numero,
+      });
+
     const peticao = await prisma.peticao.create({
       data: {
         tenantId,
@@ -435,6 +630,8 @@ export async function createPeticao(input: PeticaoCreateInput) {
         tipo: input.tipo,
         status: input.status || PeticaoStatus.RASCUNHO,
         descricao: input.descricao,
+        conteudo: conteudoNormalizado,
+        conteudoTamanho: getPeticaoConteudoTamanho(conteudoNormalizado),
         documentoId: input.documentoId,
         protocoloNumero: input.protocoloNumero,
         protocoladoEm: input.protocoladoEm,
@@ -541,10 +738,14 @@ export async function updatePeticao(id: string, input: PeticaoUpdateInput) {
 
       if (!isAdminRole(user?.role)) {
         const accessibleAdvogados = await getAccessibleAdvogadoIds(session);
-
-        processoAccessWhere.advogadoResponsavelId = {
-          in: accessibleAdvogados,
-        };
+        processoAccessWhere.AND = [
+          ...((Array.isArray(processoAccessWhere.AND)
+            ? processoAccessWhere.AND
+            : processoAccessWhere.AND
+              ? [processoAccessWhere.AND]
+              : []) as Prisma.ProcessoWhereInput[]),
+          buildProcessoAdvogadoMembershipWhere(accessibleAdvogados),
+        ];
       }
 
       const processo = await prisma.processo.findFirst({
@@ -593,6 +794,11 @@ export async function updatePeticao(id: string, input: PeticaoUpdateInput) {
       }
     }
 
+    const conteudoNormalizado =
+      input.conteudo !== undefined
+        ? normalizePeticaoLongText(input.conteudo)
+        : undefined;
+
     const peticao = await prisma.peticao.update({
       where: { id },
       data: {
@@ -602,6 +808,10 @@ export async function updatePeticao(id: string, input: PeticaoUpdateInput) {
         ...(input.tipo !== undefined && { tipo: input.tipo }),
         ...(input.status && { status: input.status }),
         ...(input.descricao !== undefined && { descricao: input.descricao }),
+        ...(conteudoNormalizado !== undefined && {
+          conteudo: conteudoNormalizado,
+          conteudoTamanho: getPeticaoConteudoTamanho(conteudoNormalizado),
+        }),
         ...(input.documentoId !== undefined && {
           documentoId: input.documentoId,
         }),

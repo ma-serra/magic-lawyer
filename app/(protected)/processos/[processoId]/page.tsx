@@ -18,6 +18,7 @@ import { Spinner } from "@heroui/spinner";
 import { Tabs, Tab } from "@heroui/tabs";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
+import { Checkbox } from "@heroui/checkbox";
 
 import {
   ArrowLeft,
@@ -45,8 +46,10 @@ import {
   Flag,
   Landmark,
   Link2,
+  ExternalLink,
   Info,
   Users,
+  Video,
   FileSignature,
   UploadCloud,
   UserPlus,
@@ -61,6 +64,7 @@ import {
   useProcessoDetalhado,
   useDocumentosProcesso,
   useEventosProcesso,
+  useMovimentacoesProcesso,
 } from "@/app/hooks/use-processos";
 import { useJuizes, useJuizesCatalogoPorNome } from "@/app/hooks/use-juizes";
 import { usePermissionCheck } from "@/app/hooks/use-permission-check";
@@ -97,6 +101,7 @@ import {
   setProcessDeadlineNotificationMute,
 } from "@/app/actions/processo-deadline-preferences";
 import JuizModal from "@/components/juiz-modal";
+import { Modal } from "@/components/ui/modal";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import {
@@ -135,6 +140,8 @@ const prazoFormInitial = {
   fundamentoLegal: "",
   regimePrazoId: "",
   responsavelId: "",
+  origemMovimentacaoId: "",
+  origemEventoId: "",
 };
 
 interface RegimePrazoOption {
@@ -152,8 +159,16 @@ interface ResponsavelOption {
   role: string;
 }
 
+interface ProcessoDocumentoPreviewState {
+  id: string;
+  nome: string;
+  contentType?: string | null;
+  viewUrl: string;
+}
+
 type RegimePrazoSelectItem = SearchableSelectOption;
 type ResponsavelPrazoSelectItem = SearchableSelectOption;
+type PrazoOrigemSelectItem = SearchableSelectOption;
 
 const MAX_PROCESSO_DOCUMENTOS_UPLOAD = 10;
 const PROCESSO_UPLOAD_LIMIT_BYTES = {
@@ -201,6 +216,28 @@ const PROCESSO_ALLOWED_UPLOAD_EXTENSIONS = [
   ...Array.from(AUDIO_EXTENSIONS),
   ...Array.from(VIDEO_EXTENSIONS),
 ];
+
+const PROCESSO_DOCUMENT_TYPE_OPTIONS = [
+  { key: "documento_geral", label: "Documento geral" },
+  { key: "procuracao", label: "Procuracao" },
+  { key: "peticao", label: "Peticao" },
+  { key: "contrato", label: "Contrato" },
+  { key: "comprovante", label: "Comprovante" },
+  { key: "decisao", label: "Decisao" },
+  { key: "sentenca", label: "Sentenca" },
+  { key: "outros", label: "Outros" },
+] as const;
+
+type ProcessoDocumentoClassificacao =
+  (typeof PROCESSO_DOCUMENT_TYPE_OPTIONS)[number]["key"];
+
+type ProcessoDocumentoUploadDraft = {
+  id: string;
+  file: File;
+  descricao: string;
+  tipo: ProcessoDocumentoClassificacao;
+  visivelParaCliente: boolean;
+};
 const PROCESSO_TAB_KEYS = new Set([
   "informacoes",
   "partes",
@@ -241,6 +278,26 @@ function resolveProcessoUploadType(file: File): ProcessoUploadFileType | null {
 
 function formatMegabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+function getDocumentoTipoLabel(tipo?: string | null) {
+  const normalizedTipo = (tipo || "").trim().toLowerCase();
+  const matched = PROCESSO_DOCUMENT_TYPE_OPTIONS.find(
+    (option) => option.key === normalizedTipo,
+  );
+
+  if (matched) {
+    return matched.label;
+  }
+
+  if (!normalizedTipo) {
+    return "Documento";
+  }
+
+  return normalizedTipo
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }
 
 interface InfoItemProps {
@@ -479,6 +536,8 @@ export default function ProcessoDetalhesPage() {
     useDocumentosProcesso(processoId);
   const { eventos, isLoading: isLoadingEventos } =
     useEventosProcesso(processoId);
+  const { movimentacoes, isLoading: isLoadingMovimentacoes } =
+    useMovimentacoesProcesso(processoId);
   const { juizes: autoridadesVisiveis, isLoading: isLoadingAutoridades } =
     useJuizes({
       search: "",
@@ -563,13 +622,15 @@ export default function ProcessoDetalhesPage() {
   const [selectedCatalogoJuizId, setSelectedCatalogoJuizId] = useState("");
   const [isAssigningAutoridade, setIsAssigningAutoridade] = useState(false);
   const [isCreatingAutoridade, setIsCreatingAutoridade] = useState(false);
-  const [documentoDescricao, setDocumentoDescricao] = useState("");
-  const [documentoVisivelCliente, setDocumentoVisivelCliente] = useState(true);
-  const [documentoFiles, setDocumentoFiles] = useState<File[]>([]);
+  const [documentoUploads, setDocumentoUploads] = useState<
+    ProcessoDocumentoUploadDraft[]
+  >([]);
   const [isUploadingDocumento, setIsUploadingDocumento] = useState(false);
   const [isSolicitandoAtualizacaoJusbrasil, setIsSolicitandoAtualizacaoJusbrasil] =
     useState(false);
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
+  const [documentoPreview, setDocumentoPreview] =
+    useState<ProcessoDocumentoPreviewState | null>(null);
   const documentoInputRef = useRef<HTMLInputElement | null>(null);
   const [, startTransition] = useTransition();
   const { hasPermission: canUploadProcessoDocumentos } = usePermissionCheck(
@@ -697,6 +758,36 @@ export default function ProcessoDetalhesPage() {
     ],
     [responsaveisPrazo],
   );
+  const andamentoPrazoItems = useMemo<PrazoOrigemSelectItem[]>(
+    () => [
+      {
+        key: "__none__",
+        label: "Sem andamento vinculado",
+      },
+      ...movimentacoes.map((movimentacao) => ({
+        key: movimentacao.id,
+        label: movimentacao.titulo,
+        textValue: `${movimentacao.titulo} ${movimentacao.tipo ?? ""} ${movimentacao.prioridade ?? ""}`,
+        description: DateUtils.formatDate(movimentacao.dataMovimentacao),
+      })),
+    ],
+    [movimentacoes],
+  );
+  const eventoPrazoItems = useMemo<PrazoOrigemSelectItem[]>(
+    () => [
+      {
+        key: "__none__",
+        label: "Sem evento vinculado",
+      },
+      ...eventos.map((evento) => ({
+        key: evento.id,
+        label: evento.titulo,
+        textValue: `${evento.titulo} ${evento.tipo ?? ""} ${evento.local ?? ""}`,
+        description: DateUtils.formatDate(evento.dataInicio),
+      })),
+    ],
+    [eventos],
+  );
   const prazosSummary = useMemo(
     () => buildPrazoWorkspaceSummary(prazosOrdenados),
     [prazosOrdenados],
@@ -722,6 +813,7 @@ export default function ProcessoDetalhesPage() {
           prazo.responsavel?.lastName ?? "",
           prazo.regimePrazo?.nome ?? "",
           prazo.origemMovimentacao?.titulo ?? "",
+          prazo.origemEvento?.titulo ?? "",
         ].join(" "),
       );
 
@@ -903,6 +995,40 @@ export default function ProcessoDetalhesPage() {
       mutate();
     });
 
+  const isDocumentoPreviewInline = (
+    nome?: string | null,
+    contentType?: string | null,
+  ) => {
+    const normalizedContentType = (contentType || "").toLowerCase();
+
+    if (
+      normalizedContentType.startsWith("image/") ||
+      normalizedContentType === "application/pdf" ||
+      normalizedContentType.startsWith("text/")
+    ) {
+      return true;
+    }
+
+    const normalizedName = (nome || "").toLowerCase();
+
+    return [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".txt"].some(
+      (extension) => normalizedName.endsWith(extension),
+    );
+  };
+
+  const handleOpenDocumentoPreview = (doc: {
+    id: string;
+    nome: string;
+    contentType?: string | null;
+  }) => {
+    setDocumentoPreview({
+      id: doc.id,
+      nome: doc.nome,
+      contentType: doc.contentType ?? null,
+      viewUrl: `/api/documentos/${doc.id}/view`,
+    });
+  };
+
   const handleSolicitarAtualizacaoJusbrasil = async () => {
     setIsSolicitandoAtualizacaoJusbrasil(true);
     try {
@@ -999,6 +1125,8 @@ export default function ProcessoDetalhesPage() {
         fundamentoLegal: prazoForm.fundamentoLegal.trim() || undefined,
         regimePrazoId: prazoForm.regimePrazoId || null,
         responsavelId: prazoForm.responsavelId || null,
+        origemMovimentacaoId: prazoForm.origemMovimentacaoId || null,
+        origemEventoId: prazoForm.origemEventoId || null,
       });
 
       if (result.success) {
@@ -1229,7 +1357,7 @@ export default function ProcessoDetalhesPage() {
       return;
     }
 
-    if (!documentoFiles.length) {
+    if (!documentoUploads.length) {
       toast.error("Selecione ao menos um arquivo para anexar ao processo");
 
       return;
@@ -1244,12 +1372,16 @@ export default function ProcessoDetalhesPage() {
     setIsUploadingDocumento(true);
     try {
       let successCount = 0;
-      const failedUploads: Array<{ file: File; reason: string }> = [];
+      let procuracoesCriadas = 0;
+      const failedUploads: Array<{
+        draft: ProcessoDocumentoUploadDraft;
+        reason: string;
+      }> = [];
 
-      for (const file of documentoFiles) {
+      for (const draft of documentoUploads) {
         const formData = new FormData();
 
-        formData.append("file", file);
+        formData.append("file", draft.file);
         formData.append("processoIds", processoId);
 
         const result = await uploadDocumentoExplorer(
@@ -1257,38 +1389,44 @@ export default function ProcessoDetalhesPage() {
           processoId,
           formData,
           {
-            description: documentoDescricao.trim() || undefined,
-            visivelParaCliente: documentoVisivelCliente,
+            description: draft.descricao.trim() || undefined,
+            visivelParaCliente: draft.visivelParaCliente,
+            tipo: draft.tipo,
+            autoCreateLinkedProcuracao: draft.tipo === "procuracao",
             allowedExtensions: PROCESSO_ALLOWED_UPLOAD_EXTENSIONS,
           },
         );
 
         if (result.success) {
           successCount += 1;
+          if (result.procuracaoId) {
+            procuracoesCriadas += 1;
+          }
           continue;
         }
 
         failedUploads.push({
-          file,
+          draft,
           reason: result.error || "Falha no upload",
         });
       }
 
       if (successCount > 0) {
-        toast.success(
-          `${successCount} documento(s) anexado(s) ao processo com sucesso`,
-        );
+        const uploadSummary =
+          procuracoesCriadas > 0
+            ? `${successCount} documento(s) anexado(s) e ${procuracoesCriadas} procuracao(oes) vinculada(s)`
+            : `${successCount} documento(s) anexado(s) ao processo com sucesso`;
+
+        toast.success(uploadSummary);
       }
 
       if (failedUploads.length > 0) {
         toast.error(
-          `Falha em ${failedUploads.length} arquivo(s). Exemplo: ${failedUploads[0].file.name} (${failedUploads[0].reason})`,
+          `Falha em ${failedUploads.length} arquivo(s). Exemplo: ${failedUploads[0].draft.file.name} (${failedUploads[0].reason})`,
         );
       }
 
-      setDocumentoFiles(failedUploads.map((item) => item.file));
-      setDocumentoDescricao("");
-      setDocumentoVisivelCliente(true);
+      setDocumentoUploads(failedUploads.map((item) => item.draft));
       if (documentoInputRef.current && failedUploads.length === 0) {
         documentoInputRef.current.value = "";
       }
@@ -1307,7 +1445,7 @@ export default function ProcessoDetalhesPage() {
     const selectedFiles = Array.from(files ?? []);
 
     if (selectedFiles.length === 0) {
-      setDocumentoFiles([]);
+      setDocumentoUploads([]);
       return;
     }
 
@@ -1350,7 +1488,43 @@ export default function ProcessoDetalhesPage() {
       );
     }
 
-    setDocumentoFiles(validFiles);
+    setDocumentoUploads(
+      validFiles.map((file, index) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+        file,
+        descricao: "",
+        tipo: "documento_geral",
+        visivelParaCliente: true,
+      })),
+    );
+  };
+
+  const handleUpdateDocumentoUpload = (
+    uploadId: string,
+    patch: Partial<ProcessoDocumentoUploadDraft>,
+  ) => {
+    setDocumentoUploads((current) =>
+      current.map((item) =>
+        item.id === uploadId
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const handleRemoveDocumentoUpload = (uploadId: string) => {
+    setDocumentoUploads((current) => {
+      const next = current.filter((item) => item.id !== uploadId);
+
+      if (documentoInputRef.current && next.length === 0) {
+        documentoInputRef.current.value = "";
+      }
+
+      return next;
+    });
   };
 
   return (
@@ -2219,6 +2393,9 @@ export default function ProcessoDetalhesPage() {
                       setParteForm((prev) => ({ ...prev, papel: value }))
                     }
                   />
+
+
+
                   <Textarea
                     label="Observações"
                     minRows={2}
@@ -2227,6 +2404,8 @@ export default function ProcessoDetalhesPage() {
                       setParteForm((prev) => ({ ...prev, observacoes: value }))
                     }
                   />
+
+
 
                   <div className="flex justify-end">
                     <Button
@@ -2471,6 +2650,15 @@ export default function ProcessoDetalhesPage() {
                                   )}
                                 </p>
                               )}
+                              {prazo.origemEvento && (
+                                <p className="text-xs text-default-500">
+                                  <strong>Origem do evento:</strong>{" "}
+                                  {prazo.origemEvento.titulo} em{" "}
+                                  {DateUtils.formatDate(
+                                    prazo.origemEvento.dataInicio,
+                                  )}
+                                </p>
+                              )}
                             </div>
                             {!isCliente && (
                               <div className="flex gap-2">
@@ -2597,6 +2785,48 @@ export default function ProcessoDetalhesPage() {
                     />
                   </div>
 
+
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SearchableSelect
+                      items={andamentoPrazoItems}
+                      isLoading={isLoadingMovimentacoes}
+                      label="Vincular a andamento"
+                      placeholder="Opcional"
+                      selectedKey={prazoForm.origemMovimentacaoId || "__none__"}
+                      onSelectionChange={(value) => {
+                        setPrazoForm((prev) => ({
+                          ...prev,
+                          origemMovimentacaoId:
+                            value && value !== "__none__" ? value : "",
+                          origemEventoId:
+                            value && value !== "__none__"
+                              ? ""
+                              : prev.origemEventoId,
+                        }));
+                      }}
+                    />
+
+                    <SearchableSelect
+                      items={eventoPrazoItems}
+                      isLoading={isLoadingEventos}
+                      label="Vincular a evento da agenda"
+                      placeholder="Opcional"
+                      selectedKey={prazoForm.origemEventoId || "__none__"}
+                      onSelectionChange={(value) => {
+                        setPrazoForm((prev) => ({
+                          ...prev,
+                          origemEventoId:
+                            value && value !== "__none__" ? value : "",
+                          origemMovimentacaoId:
+                            value && value !== "__none__"
+                              ? ""
+                              : prev.origemMovimentacaoId,
+                        }));
+                      }}
+                    />
+                  </div>
+
                   <Textarea
                     label="Descrição"
                     minRows={2}
@@ -2688,7 +2918,7 @@ export default function ProcessoDetalhesPage() {
                       variant="bordered"
                       onPress={() => documentoInputRef.current?.click()}
                     >
-                      {documentoFiles.length
+                      {documentoUploads.length
                         ? "Alterar seleção"
                         : "Selecionar arquivos"}
                     </Button>
@@ -2697,58 +2927,107 @@ export default function ProcessoDetalhesPage() {
                       label="Arquivos selecionados"
                       placeholder="Nenhum arquivo selecionado"
                       value={
-                        documentoFiles.length === 0
+                        documentoUploads.length === 0
                           ? ""
-                          : documentoFiles.length === 1
-                            ? documentoFiles[0].name
-                            : `${documentoFiles.length} arquivos selecionados`
+                          : documentoUploads.length === 1
+                            ? documentoUploads[0].file.name
+                            : `${documentoUploads.length} arquivos selecionados`
                       }
                     />
                   </div>
 
-                  {documentoFiles.length > 0 ? (
+                  {documentoUploads.length > 0 ? (
                     <div className="rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
-                        Prévia da seleção
+                        Organizacao por arquivo
                       </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {documentoFiles.slice(0, 8).map((file) => (
-                          <Chip key={`${file.name}-${file.size}`} size="sm" variant="flat">
-                            {file.name}
-                          </Chip>
+                      <p className="mt-2 text-xs text-default-500">
+                        Classifique cada documento antes do envio. Se o tipo for
+                        Procuracao, o sistema cria uma procuracao basica e a
+                        vincula neste processo.
+                      </p>
+                      <div className="mt-4 space-y-3">
+                        {documentoUploads.map((upload, index) => (
+                          <Card
+                            key={upload.id}
+                            className="border border-default-200/80 bg-content1/80 shadow-none"
+                          >
+                            <CardBody className="space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold">
+                                    {index + 1}. {upload.file.name}
+                                  </p>
+                                  <p className="text-xs text-default-500">
+                                    {(upload.file.size / 1024 / 1024).toFixed(2)} MB
+                                  </p>
+                                </div>
+                                <Button
+                                  isIconOnly
+                                  color="danger"
+                                  size="sm"
+                                  variant="light"
+                                  onPress={() => handleRemoveDocumentoUpload(upload.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <Select
+                                  label="Tipo do documento"
+                                  selectedKeys={[upload.tipo]}
+                                  onSelectionChange={(keys) => {
+                                    const selected = Array.from(keys)[0] as
+                                      | ProcessoDocumentoClassificacao
+                                      | undefined;
+                                    if (!selected) return;
+                                    handleUpdateDocumentoUpload(upload.id, {
+                                      tipo: selected,
+                                    });
+                                  }}
+                                >
+                                  {PROCESSO_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                                    <SelectItem
+                                      key={option.key}
+                                      textValue={option.label}
+                                    >
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </Select>
+
+                                <div className="flex items-center rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
+                                  <Checkbox
+                                    isSelected={!upload.visivelParaCliente}
+                                    onValueChange={(checked) =>
+                                      handleUpdateDocumentoUpload(upload.id, {
+                                        visivelParaCliente: !checked,
+                                      })
+                                    }
+                                  >
+                                    Ocultar do cliente
+                                  </Checkbox>
+                                </div>
+                              </div>
+
+                              <Textarea
+                                label="Descricao interna"
+                                minRows={2}
+                                placeholder="Opcional: observacao da equipe sobre este anexo"
+                                value={upload.descricao}
+                                onValueChange={(value) =>
+                                  handleUpdateDocumentoUpload(upload.id, {
+                                    descricao: value,
+                                  })
+                                }
+                              />
+                            </CardBody>
+                          </Card>
                         ))}
-                        {documentoFiles.length > 8 ? (
-                          <Chip size="sm" variant="flat">
-                            +{documentoFiles.length - 8} arquivo(s)
-                          </Chip>
-                        ) : null}
                       </div>
                     </div>
                   ) : null}
-
-                  <Textarea
-                    label="Descrição interna"
-                    minRows={2}
-                    placeholder="Opcional: observação para equipe sobre este anexo"
-                    value={documentoDescricao}
-                    onValueChange={setDocumentoDescricao}
-                  />
-
-                  <Select
-                    label="Visibilidade no portal do cliente"
-                    selectedKeys={[documentoVisivelCliente ? "SIM" : "NAO"]}
-                    onSelectionChange={(keys) => {
-                      const selected = Array.from(keys)[0] as string | undefined;
-                      setDocumentoVisivelCliente(selected !== "NAO");
-                    }}
-                  >
-                    <SelectItem key="SIM" textValue="Visível para cliente">
-                      Visível para cliente
-                    </SelectItem>
-                    <SelectItem key="NAO" textValue="Somente equipe">
-                      Somente equipe interna
-                    </SelectItem>
-                  </Select>
 
                   <div className="rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-500">
@@ -2776,7 +3055,7 @@ export default function ProcessoDetalhesPage() {
                     <Button
                       color="primary"
                       isLoading={isUploadingDocumento}
-                      isDisabled={documentoFiles.length === 0}
+                      isDisabled={documentoUploads.length === 0}
                       startContent={<UploadCloud className="h-4 w-4" />}
                       onPress={handleUploadDocumento}
                     >
@@ -2830,17 +3109,39 @@ export default function ProcessoDetalhesPage() {
                           {doc.descricao}
                         </p>
                       )}
+                      <div className="flex flex-wrap gap-2">
+                        <Chip size="sm" variant="flat">
+                          {getDocumentoTipoLabel(doc.tipo)}
+                        </Chip>
+                        <Chip
+                          color={doc.visivelParaCliente ? "success" : "default"}
+                          size="sm"
+                          variant="flat"
+                        >
+                          {doc.visivelParaCliente
+                            ? "Visivel no portal do cliente"
+                            : "Oculto do cliente"}
+                        </Chip>
+                        {doc.metadados?.procuracaoId ? (
+                          <Button
+                            as={Link}
+                            href={`/procuracoes/${doc.metadados.procuracaoId}`}
+                            size="sm"
+                            startContent={<FileSignature className="h-3 w-3" />}
+                            variant="light"
+                          >
+                            Abrir procuracao
+                          </Button>
+                        ) : null}
+                      </div>
                       {doc.url && (
                         <div className="flex flex-wrap gap-2">
                           <Button
-                            as="a"
                             color="primary"
-                            href={`/api/documentos/${doc.id}/view`}
-                            rel="noopener noreferrer"
                             size="sm"
                             startContent={<Eye className="h-3 w-3" />}
-                            target="_blank"
                             variant="flat"
+                            onPress={() => handleOpenDocumentoPreview(doc)}
                           >
                             Visualizar
                           </Button>
@@ -2883,6 +3184,26 @@ export default function ProcessoDetalhesPage() {
             className="mt-4 space-y-4 scroll-mt-24"
             id="processo-eventos"
           >
+            <Card className="border border-default-200">
+              <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Agenda do processo
+                  </p>
+                  <p className="text-xs text-default-500">
+                    Use a agenda para criar ou acompanhar compromissos e eventos relacionados a este processo.
+                  </p>
+                </div>
+                <Button
+                  color="primary"
+                  variant="flat"
+                  onPress={() => router.push(`/agenda?processoId=${encodeURIComponent(processoId)}`)}
+                >
+                  Abrir agenda
+                </Button>
+              </CardBody>
+            </Card>
+
             {isLoadingEventos ? (
               <div className="flex justify-center py-8">
                 <Spinner />
@@ -2933,6 +3254,20 @@ export default function ProcessoDetalhesPage() {
                         <div className="flex items-center gap-1 text-xs text-default-400">
                           <MapPin className="h-3 w-3" />
                           <span>{evento.local}</span>
+                        </div>
+                      )}
+                      {evento.isOnline && evento.linkAcesso && (
+                        <div className="flex items-center gap-1 text-xs">
+                          <Video className="h-3 w-3 text-primary" />
+                          <a
+                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                            href={evento.linkAcesso}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            Abrir link do evento
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
                         </div>
                       )}
                     </CardBody>
@@ -3130,6 +3465,61 @@ export default function ProcessoDetalhesPage() {
         </Tab>
       </Tabs>
 
+      <Modal
+        bodyClassName="px-0 pb-0 pt-2"
+        className="max-w-6xl"
+        footer={
+          documentoPreview ? (
+            <>
+              <Button
+                as="a"
+                href={documentoPreview.viewUrl}
+                rel="noopener noreferrer"
+                startContent={<Link2 className="h-4 w-4" />}
+                target="_blank"
+                variant="bordered"
+              >
+                Abrir em nova aba
+              </Button>
+              <Button variant="light" onPress={() => setDocumentoPreview(null)}>
+                Fechar
+              </Button>
+            </>
+          ) : null
+        }
+        isOpen={Boolean(documentoPreview)}
+        size="full"
+        title={documentoPreview?.nome || "Visualizar documento"}
+        onClose={() => setDocumentoPreview(null)}
+      >
+        {documentoPreview ? (
+          isDocumentoPreviewInline(
+            documentoPreview.nome,
+            documentoPreview.contentType,
+          ) ? (
+            <iframe
+              className="h-[78vh] w-full rounded-b-xl border-0 bg-default-50"
+              src={documentoPreview.viewUrl}
+              title={documentoPreview.nome}
+            />
+          ) : (
+            <div className="flex min-h-[48vh] flex-col items-center justify-center gap-4 px-6 pb-8 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-warning/30 bg-warning/10 text-warning">
+                <FileWarning className="h-6 w-6" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-base font-semibold text-foreground">
+                  Visualizacao inline indisponivel para este tipo de arquivo
+                </p>
+                <p className="text-sm text-default-500">
+                  Use o botao abaixo para abrir o documento em uma nova aba.
+                </p>
+              </div>
+            </div>
+          )
+        ) : null}
+      </Modal>
+
       {/* Modal do Juiz */}
       {processo.juiz && (
         <JuizModal
@@ -3141,3 +3531,4 @@ export default function ProcessoDetalhesPage() {
     </div>
   );
 }
+

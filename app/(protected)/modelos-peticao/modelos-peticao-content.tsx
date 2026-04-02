@@ -57,6 +57,11 @@ import {
   useTiposModeloPeticao,
 } from "@/app/hooks/use-modelos-peticao";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
+import {
+  mergeModeloPeticaoVariaveisWithConteudo,
+  normalizeModeloPeticaoVariaveis,
+  type ModeloPeticaoVariavel,
+} from "@/components/modelos-peticao/modelo-peticao-document-workspace";
 
 type ModeloPeticaoCardItem = ModeloPeticaoListItem & {
   conteudo?: string;
@@ -136,6 +141,7 @@ export default function ModelosPeticaoPage() {
     null,
   );
   const [editForm, setEditForm] = useState<EditModeloFormState>(EMPTY_EDIT_FORM);
+  const [editVariaveis, setEditVariaveis] = useState<ModeloPeticaoVariavel[]>([]);
 
   const { modelos, isLoading, isError, error, mutate } = useModelosPeticao(filtros);
   const { categorias } = useCategoriasModeloPeticao();
@@ -224,6 +230,7 @@ export default function ModelosPeticaoPage() {
       ativo: Boolean(modelo.ativo),
       publico: Boolean(modelo.publico),
     });
+    setEditVariaveis(normalizeModeloPeticaoVariaveis(modelo.variaveis));
     setEditModalOpen(true);
   };
 
@@ -288,12 +295,18 @@ export default function ModelosPeticaoPage() {
     }
 
     startTransition(async () => {
+      const mergedVariaveis = mergeModeloPeticaoVariaveisWithConteudo(
+        editVariaveis,
+        editForm.conteudo,
+      );
+
       const result = await updateModeloPeticao(selectedModelo.id, {
         nome: editForm.nome.trim(),
         descricao: editForm.descricao.trim() || null,
         categoria: editForm.categoria.trim() || null,
         tipo: editForm.tipo.trim() || null,
         conteudo: editForm.conteudo,
+        variaveis: mergedVariaveis,
         ativo: editForm.ativo,
         publico: editForm.publico,
       });
@@ -302,6 +315,7 @@ export default function ModelosPeticaoPage() {
         toast.success("Modelo atualizado com sucesso!");
         setEditModalOpen(false);
         setSelectedModelo(null);
+        setEditVariaveis([]);
         mutate();
       } else {
         toast.error(result.error || "Erro ao atualizar modelo");
@@ -798,7 +812,12 @@ export default function ModelosPeticaoPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={editModalOpen} size="4xl" onOpenChange={setEditModalOpen}>
+      <Modal
+        isOpen={editModalOpen}
+        scrollBehavior="inside"
+        size="5xl"
+        onOpenChange={setEditModalOpen}
+      >
         <ModalContent>
           {(onClose) => (
             <>

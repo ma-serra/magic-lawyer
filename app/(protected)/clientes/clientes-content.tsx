@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { CepData, CnpjData } from "@/types/brazil";
 
@@ -81,8 +81,8 @@ import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { fadeInUp } from "@/components/ui/motion-presets";
 import { ModalHeaderGradient } from "@/components/ui/modal-header-gradient";
 import { ModalSectionCard } from "@/components/ui/modal-section-card";
+import { ClienteCreateModal } from "@/components/clientes/cliente-create-modal";
 import {
-  createCliente,
   updateCliente,
   deleteCliente,
   resetarSenhaCliente,
@@ -369,7 +369,7 @@ const ClientesListSection = memo(function ClientesListSection({
             </div>
             <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
               <Select
-                aria-label="Itens por página na lista de clientes"
+                aria-label="Itens por pÃ¡gina na lista de clientes"
                 className="w-full sm:w-[170px]"
                 selectedKeys={[String(itemsPerPage)]}
                 size="sm"
@@ -379,9 +379,9 @@ const ClientesListSection = memo(function ClientesListSection({
                 {[12, 24, 48].map((value) => (
                   <SelectItem
                     key={String(value)}
-                    textValue={`${value} por página`}
+                    textValue={`${value} por pÃ¡gina`}
                   >
-                    {`${value} por página`}
+                    {`${value} por pÃ¡gina`}
                   </SelectItem>
                 ))}
               </Select>
@@ -487,7 +487,7 @@ const ClientesListSection = memo(function ClientesListSection({
                                 {cliente.usuarioId && (
                                   <Badge
                                     color="success"
-                                    content="✓"
+                                    content="âœ“"
                                     size="sm"
                                     variant="shadow"
                                   >
@@ -523,8 +523,8 @@ const ClientesListSection = memo(function ClientesListSection({
                                   variant="flat"
                                 >
                                   {cliente.tipoPessoa === TipoPessoa.FISICA
-                                    ? "Pessoa Física"
-                                    : "Pessoa Jurídica"}
+                                    ? "Pessoa FÃ­sica"
+                                    : "Pessoa JurÃ­dica"}
                                 </Chip>
                               </div>
                             </div>
@@ -540,7 +540,7 @@ const ClientesListSection = memo(function ClientesListSection({
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownTrigger>
-                              <DropdownMenu aria-label="Ações do cliente">
+                              <DropdownMenu aria-label="AÃ§Ãµes do cliente">
                                 <DropdownItem
                                   key="view"
                                   as={Link}
@@ -701,7 +701,6 @@ export function ClientesContent() {
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSearchingCep, setIsSearchingCep] = useState(false);
-  const [criarUsuario, setCriarUsuario] = useState(true); // Criar usuário por padrão
   const [credenciaisModal, setCredenciaisModal] = useState<{
     email: string;
     maskedEmail: string;
@@ -766,7 +765,7 @@ export function ClientesContent() {
     [clientes, searchTerm, selectedTipoPessoa],
   );
 
-  // Calcular métricas
+  // Calcular mÃ©tricas
   const metrics = useMemo(() => {
     if (!clientes)
       return {
@@ -792,7 +791,7 @@ export function ClientesContent() {
     return { total, comAcesso, fisica, juridica, comProcessos };
   }, [clientes]);
 
-  // Verificar se há filtros ativos
+  // Verificar se hÃ¡ filtros ativos
   const hasActiveFilters =
     searchTerm.trim().length > 0 || selectedTipoPessoa !== "all";
   const taxaAcesso = metrics.total
@@ -833,7 +832,7 @@ export function ClientesContent() {
         const result = await deleteCliente(clienteId);
 
         if (result.success) {
-          toast.success("Cliente excluído com sucesso!");
+          toast.success("Cliente excluÃ­do com sucesso!");
           mutate();
         } else {
           toast.error(result.error || "Erro ao excluir cliente");
@@ -845,90 +844,12 @@ export function ClientesContent() {
     [mutate],
   );
 
-  const handleCreateCliente = async () => {
-    if (!formState.nome) {
-      toast.error("Nome é obrigatório");
-
-      return;
-    }
-
-    if (criarUsuario && !formState.email) {
-      toast.error("Email é obrigatório para criar usuário de acesso");
-
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const payload: ClienteCreateInput = {
-        ...formState,
-        criarUsuario,
-        dataNascimento:
-          formState.tipoPessoa === TipoPessoa.FISICA
-            ? formState.dataNascimento || undefined
-            : undefined,
-        inscricaoEstadual:
-          formState.tipoPessoa === TipoPessoa.JURIDICA
-            ? formState.inscricaoEstadual || undefined
-            : undefined,
-        nomePai:
-          formState.tipoPessoa === TipoPessoa.FISICA
-            ? formState.nomePai || undefined
-            : undefined,
-        documentoPai:
-          formState.tipoPessoa === TipoPessoa.FISICA
-            ? formState.documentoPai || undefined
-            : undefined,
-        nomeMae:
-          formState.tipoPessoa === TipoPessoa.FISICA
-            ? formState.nomeMae || undefined
-            : undefined,
-        documentoMae:
-          formState.tipoPessoa === TipoPessoa.FISICA
-            ? formState.documentoMae || undefined
-            : undefined,
-        enderecoPrincipal: normalizeEnderecoPrincipalForPayload(
-          formState.enderecoPrincipal,
-        ),
-        advogadosIds:
-          canManageAllClients && (formState.advogadosIds || []).length > 0
-            ? formState.advogadosIds
-            : undefined,
-      };
-
-      const result = await createCliente(payload);
-
-      if (result.success) {
-        toast.success("Cliente criado com sucesso!");
-        setIsCreateModalOpen(false);
-        setFormState(INITIAL_CLIENTE_FORM_STATE);
-        setCriarUsuario(true);
-        mutate();
-
-        // Se criou usuário, mostrar status do primeiro acesso
-        if (result.usuario) {
-          setCredenciaisModal(result.usuario);
-          if (!result.usuario.primeiroAcessoEnviado) {
-            toast.warning(
-              "Cliente criado, mas o e-mail de primeiro acesso não foi enviado automaticamente.",
-            );
-          }
-        }
-      } else {
-        toast.error(result.error || "Erro ao criar cliente");
-      }
-    } catch (error) {
-      toast.error("Erro ao criar cliente");
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleUpdateCliente = async () => {
     if (!selectedCliente?.id) return;
 
     if (!formState.nome) {
-      toast.error("Nome é obrigatório");
+      toast.error("Nome Ã© obrigatÃ³rio");
 
       return;
     }
@@ -1118,7 +1039,7 @@ export function ClientesContent() {
     }
 
     if (cepNumerico.length !== 8) {
-      toast.error("CEP deve ter 8 dígitos");
+      toast.error("CEP deve ter 8 dÃ­gitos");
 
       return;
     }
@@ -1130,7 +1051,7 @@ export function ClientesContent() {
       if (result.success && result.cepData) {
         handleCepFound(result.cepData);
       } else {
-        toast.error(result.error || "CEP não encontrado");
+        toast.error(result.error || "CEP nÃ£o encontrado");
       }
     } catch (error) {
       toast.error("Erro ao buscar CEP");
@@ -1141,7 +1062,7 @@ export function ClientesContent() {
 
   const handleOpenResetModal = useCallback((cliente: Cliente) => {
     if (!cliente.usuarioId) {
-      toast.error("Este cliente não possui usuário de acesso");
+      toast.error("Este cliente nÃ£o possui usuÃ¡rio de acesso");
 
       return;
     }
@@ -1150,7 +1071,6 @@ export function ClientesContent() {
 
   const handleOpenCreateModal = useCallback(() => {
     setFormState(INITIAL_CLIENTE_FORM_STATE);
-    setCriarUsuario(true);
     setIsCreateModalOpen(true);
   }, []);
 
@@ -1253,22 +1173,22 @@ export function ClientesContent() {
 
   const tipoPessoaOptions = [
     { key: "all", label: "Todos" },
-    { key: TipoPessoa.FISICA, label: "Pessoa Física" },
-    { key: TipoPessoa.JURIDICA, label: "Pessoa Jurídica" },
+    { key: TipoPessoa.FISICA, label: "Pessoa FÃ­sica" },
+    { key: TipoPessoa.JURIDICA, label: "Pessoa JurÃ­dica" },
   ];
 
   const clienteImportFields = [
     {
       label: "nome",
-      description: "Nome principal do cliente (também aceitamos nomeCompleto).",
+      description: "Nome principal do cliente (tambÃ©m aceitamos nomeCompleto).",
     },
     {
       label: "email",
-      description: "Usado para login e notificações automáticas.",
+      description: "Usado para login e notificaÃ§Ãµes automÃ¡ticas.",
     },
     {
       label: "telefone",
-      description: "Aceita DDD + número (com ou sem máscara).",
+      description: "Aceita DDD + nÃºmero (com ou sem mÃ¡scara).",
     },
     {
       label: "tipoPessoa",
@@ -1276,7 +1196,7 @@ export function ClientesContent() {
     },
     {
       label: "documento",
-      description: "CPF/CNPJ somente números para validação.",
+      description: "CPF/CNPJ somente nÃºmeros para validaÃ§Ã£o.",
     },
     {
       label: "dataNascimento",
@@ -1284,28 +1204,28 @@ export function ClientesContent() {
     },
     {
       label: "inscricaoEstadual",
-      description: "Opcional para pessoa jurídica.",
+      description: "Opcional para pessoa jurÃ­dica.",
     },
     {
       label: "nomePai / documentoPai / nomeMae / documentoMae",
-      description: "Dados de genitores para pessoa física (opcional).",
+      description: "Dados de genitores para pessoa fÃ­sica (opcional).",
     },
     {
       label: "observacoes",
-      description: "Observações internas do cadastro (opcional).",
+      description: "ObservaÃ§Ãµes internas do cadastro (opcional).",
     },
     {
       label: "responsavelNome / responsavelEmail / responsavelTelefone",
-      description: "Contato do responsável do cliente (opcional).",
+      description: "Contato do responsÃ¡vel do cliente (opcional).",
     },
     {
       label: "cep / logradouro / numero / bairro / cidade / estado",
       description:
-        "Para importar endereço, informe ao menos logradouro, cidade e estado.",
+        "Para importar endereÃ§o, informe ao menos logradouro, cidade e estado.",
     },
     {
       label: "criarUsuario",
-      description: "Use sim/nao para criação automática de acesso.",
+      description: "Use sim/nao para criaÃ§Ã£o automÃ¡tica de acesso.",
     },
   ];
 
@@ -1313,7 +1233,7 @@ export function ClientesContent() {
     <div className="container mx-auto p-6 space-y-8">
       <motion.div animate="visible" initial="hidden" variants={fadeInUp}>
         <PeoplePageHeader
-          description="Centralize cadastro, relacionamento e acesso dos clientes com o mesmo padrão visual usado em todo o módulo."
+          description="Centralize cadastro, relacionamento e acesso dos clientes com o mesmo padrÃ£o visual usado em todo o mÃ³dulo."
           title="Clientes"
           actions={
             permissions.canViewAllClients ? (
@@ -1410,7 +1330,7 @@ export function ClientesContent() {
         </div>
       )}
 
-      {/* Filtros Avançados Melhorados */}
+      {/* Filtros AvanÃ§ados Melhorados */}
       <motion.div
         animate={{ opacity: 1, y: 0 }}
         initial={{ opacity: 0, y: -20 }}
@@ -1649,522 +1569,14 @@ export function ClientesContent() {
         onViewCliente={handleViewCliente}
       />
 
-      {/* Modal Criar Cliente */}
-      <HeroUIModal
+      <ClienteCreateModal
         isOpen={isCreateModalOpen}
-        scrollBehavior="inside"
-        size="5xl"
+        onCreated={async () => {
+          await mutate();
+        }}
         onOpenChange={setIsCreateModalOpen}
-      >
-        <ModalContent>
-          <ModalHeaderGradient
-            description="Complete as informações para cadastrar um novo cliente"
-            icon={Building2}
-            title="Novo Cliente"
-          />
-          <ModalBody className="px-0">
-            <Tabs
-              aria-label="Formulário do cliente"
-              classNames={{
-                tabList:
-                  "gap-6 w-full relative rounded-none px-6 pt-6 pb-0 border-b border-divider",
-                cursor: "w-full bg-primary",
-                tab: "max-w-fit px-0 h-12",
-                tabContent:
-                  "group-data-[selected=true]:text-primary font-medium text-sm tracking-wide",
-                panel: "px-6 pb-6 pt-4",
-              }}
-              color="primary"
-              variant="underlined"
-            >
-              <Tab
-                key="dados-gerais"
-                title={
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded-md bg-blue-100 dark:bg-blue-900">
-                      <User className="text-blue-600 dark:text-blue-300 w-4 h-4" />
-                    </div>
-                    <span>Dados Gerais</span>
-                  </div>
-                }
-              >
-                <div className="space-y-6">
-                  <ModalSectionCard
-                    description="Informações básicas do cliente"
-                    title="Identificação"
-                  >
-                    <div className="space-y-4">
-                      <Select
-                        popoverProps={{
-                          classNames: {
-                            base: "z-[10000]",
-                            content: "z-[10000]",
-                          },
-                        }}
-                        label="Tipo de Pessoa"
-                        placeholder="Selecione"
-                        selectedKeys={new Set([formState.tipoPessoa])}
-                        onSelectionChange={handleTipoPessoaSelectionChange}
-                      >
-                        <SelectItem
-                          key={TipoPessoa.FISICA}
-                          textValue="Pessoa Física"
-                        >
-                          Pessoa Física
-                        </SelectItem>
-                        <SelectItem
-                          key={TipoPessoa.JURIDICA}
-                          textValue="Pessoa Jurídica"
-                        >
-                          Pessoa Jurídica
-                        </SelectItem>
-                      </Select>
+      />
 
-                      <Input
-                        isRequired
-                        label={
-                          formState.tipoPessoa === TipoPessoa.FISICA
-                            ? "Nome Completo"
-                            : "Razão Social"
-                        }
-                        placeholder={
-                          formState.tipoPessoa === TipoPessoa.FISICA
-                            ? "Nome completo"
-                            : "Razão Social"
-                        }
-                        startContent={
-                          formState.tipoPessoa === TipoPessoa.FISICA ? (
-                            <User className="h-4 w-4 text-default-400" />
-                          ) : (
-                            <Building2 className="h-4 w-4 text-default-400" />
-                          )
-                        }
-                        value={formState.nome}
-                        onValueChange={(value) =>
-                          setFormState({ ...formState, nome: value })
-                        }
-                      />
-
-                      {formState.tipoPessoa === TipoPessoa.FISICA ? (
-                        <CpfInput
-                          value={formState.documento}
-                          onChange={(value) =>
-                            setFormState({ ...formState, documento: value })
-                          }
-                        />
-                      ) : (
-                        <CnpjInput
-                          value={formState.documento}
-                          onChange={(value) =>
-                            setFormState({ ...formState, documento: value })
-                          }
-                          onCnpjFound={handleCnpjFound}
-                        />
-                      )}
-
-                      {formState.tipoPessoa === TipoPessoa.FISICA ? (
-                        <DateInput
-                          label="Data de Nascimento"
-                          value={formatDateToInput(formState.dataNascimento)}
-                          onValueChange={(value) =>
-                            setFormState({
-                              ...formState,
-                              dataNascimento: parseDateFromInput(value),
-                            })
-                          }
-                        />
-                      ) : (
-                        <Input
-                          label="Inscrição Estadual"
-                          placeholder="Informe a inscrição estadual"
-                          value={formState.inscricaoEstadual}
-                          onValueChange={(value) =>
-                            setFormState({
-                              ...formState,
-                              inscricaoEstadual: value,
-                            })
-                          }
-                        />
-                      )}
-                    </div>
-                  </ModalSectionCard>
-
-                  <ModalSectionCard
-                    description="Cadastro do endereço principal para comunicação e cobranças."
-                    title="Endereço Principal"
-                  >
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        <Input
-                          endContent={
-                            isSearchingCep ? <Spinner size="sm" /> : null
-                          }
-                          label="CEP"
-                          placeholder="00000-000"
-                          value={formState.enderecoPrincipal?.cep || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("cep", value)
-                          }
-                          onBlur={handleEnderecoCepBlur}
-                        />
-                        <Input
-                          label="Logradouro"
-                          placeholder="Rua, avenida, etc."
-                          value={formState.enderecoPrincipal?.logradouro || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("logradouro", value)
-                          }
-                        />
-                        <Input
-                          label="Número"
-                          placeholder="123"
-                          value={formState.enderecoPrincipal?.numero || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("numero", value)
-                          }
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        <Input
-                          label="Complemento"
-                          placeholder="Apto, sala, bloco..."
-                          value={formState.enderecoPrincipal?.complemento || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("complemento", value)
-                          }
-                        />
-                        <Input
-                          label="Bairro"
-                          placeholder="Bairro"
-                          value={formState.enderecoPrincipal?.bairro || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("bairro", value)
-                          }
-                        />
-                        <Input
-                          label="Cidade"
-                          placeholder="Cidade"
-                          value={formState.enderecoPrincipal?.cidade || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("cidade", value)
-                          }
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <Input
-                          label="UF"
-                          maxLength={2}
-                          placeholder="SP"
-                          value={formState.enderecoPrincipal?.estado || ""}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange(
-                              "estado",
-                              value.toUpperCase(),
-                            )
-                          }
-                        />
-                        <Input
-                          label="País"
-                          placeholder="Brasil"
-                          value={formState.enderecoPrincipal?.pais || "Brasil"}
-                          onValueChange={(value) =>
-                            handleEnderecoPrincipalChange("pais", value)
-                          }
-                        />
-                      </div>
-                    </div>
-                  </ModalSectionCard>
-
-                  {formState.tipoPessoa === TipoPessoa.FISICA && (
-                    <ModalSectionCard
-                      description="Dados de filiação importantes para qualificação completa do cliente."
-                      title="Genitores"
-                    >
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <Input
-                          label="Nome do Pai"
-                          placeholder="Informe o nome do pai"
-                          startContent={
-                            <User className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.nomePai}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, nomePai: value })
-                          }
-                        />
-                        <Input
-                          label="Documento do Pai"
-                          placeholder="CPF ou outro documento"
-                          startContent={
-                            <FileText className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.documentoPai}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, documentoPai: value })
-                          }
-                        />
-                        <Input
-                          label="Nome da Mãe"
-                          placeholder="Informe o nome da mãe"
-                          startContent={
-                            <User className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.nomeMae}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, nomeMae: value })
-                          }
-                        />
-                        <Input
-                          label="Documento da Mãe"
-                          placeholder="CPF ou outro documento"
-                          startContent={
-                            <FileText className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.documentoMae}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, documentoMae: value })
-                          }
-                        />
-                      </div>
-                    </ModalSectionCard>
-                  )}
-
-                  {(isAdmin || isSuperAdmin) && (
-                    <ModalSectionCard
-                      description="Defina quais advogados terão gestão direta deste cliente."
-                      title="Vínculo de Advogados"
-                    >
-                      <Select
-                        className="w-full"
-                        popoverProps={{
-                          classNames: {
-                            base: "z-[10000]",
-                            content: "z-[10000]",
-                          },
-                        }}
-                        isLoading={isLoadingAdvogados}
-                        label="Advogados vinculados"
-                        placeholder="Selecione um ou mais advogados"
-                        selectedKeys={selectedAdvogadosKeys}
-                        selectionMode="multiple"
-                        onSelectionChange={handleAdvogadosSelectionChange}
-                      >
-                        {(advogados || []).map((advogado) => (
-                          <SelectItem
-                            key={advogado.id}
-                            textValue={`${advogado.label} ${advogado.oab || ""}`.trim()}
-                          >
-                            {advogado.label}
-                            {advogado.oab ? ` (${advogado.oab})` : ""}
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    </ModalSectionCard>
-                  )}
-                </div>
-              </Tab>
-
-              <Tab
-                key="contato"
-                title={
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded-md bg-green-100 dark:bg-green-900">
-                      <Phone className="text-green-600 dark:text-green-300 w-4 h-4" />
-                    </div>
-                    <span>Contato</span>
-                  </div>
-                }
-              >
-                <div className="space-y-6">
-                  <ModalSectionCard
-                    description="Telefones e email do cliente"
-                    title="Informações de Contato"
-                  >
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <Input
-                          description={
-                            criarUsuario
-                              ? "Obrigatório para criar usuário"
-                              : undefined
-                          }
-                          isRequired={criarUsuario}
-                          label="Email"
-                          placeholder="email@exemplo.com"
-                          startContent={
-                            <Mail className="h-4 w-4 text-default-400" />
-                          }
-                          type="email"
-                          value={formState.email}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, email: value })
-                          }
-                        />
-                        <Input
-                          label="Telefone"
-                          placeholder="(00) 0000-0000"
-                          startContent={
-                            <Phone className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.telefone}
-                          onValueChange={(value) =>
-                            setFormState({ ...formState, telefone: value })
-                          }
-                        />
-                      </div>
-
-                      <Input
-                        label="Celular/WhatsApp"
-                        placeholder="(00) 00000-0000"
-                        startContent={
-                          <Phone className="h-4 w-4 text-default-400" />
-                        }
-                        value={formState.celular}
-                        onValueChange={(value) =>
-                          setFormState({ ...formState, celular: value })
-                        }
-                      />
-                    </div>
-                  </ModalSectionCard>
-
-                  {formState.tipoPessoa === TipoPessoa.JURIDICA && (
-                    <ModalSectionCard
-                      description="Dados do responsável legal"
-                      title="Responsável pela Empresa"
-                    >
-                      <div className="space-y-4">
-                        <Input
-                          label="Nome do Responsável"
-                          placeholder="Nome completo"
-                          startContent={
-                            <User className="h-4 w-4 text-default-400" />
-                          }
-                          value={formState.responsavelNome}
-                          onValueChange={(value) =>
-                            setFormState({
-                              ...formState,
-                              responsavelNome: value,
-                            })
-                          }
-                        />
-                        <div className="grid grid-cols-2 gap-4">
-                          <Input
-                            label="Email do Responsável"
-                            placeholder="email@exemplo.com"
-                            startContent={
-                              <Mail className="h-4 w-4 text-default-400" />
-                            }
-                            type="email"
-                            value={formState.responsavelEmail}
-                            onValueChange={(value) =>
-                              setFormState({
-                                ...formState,
-                                responsavelEmail: value,
-                              })
-                            }
-                          />
-                          <Input
-                            label="Telefone do Responsável"
-                            placeholder="(00) 00000-0000"
-                            startContent={
-                              <Phone className="h-4 w-4 text-default-400" />
-                            }
-                            value={formState.responsavelTelefone}
-                            onValueChange={(value) =>
-                              setFormState({
-                                ...formState,
-                                responsavelTelefone: value,
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-                    </ModalSectionCard>
-                  )}
-                </div>
-              </Tab>
-
-              <Tab
-                key="acesso"
-                title={
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded-md bg-purple-100 dark:bg-purple-900">
-                      <KeyIcon className="text-purple-600 dark:text-purple-300 w-4 h-4" />
-                    </div>
-                    <span>Acesso</span>
-                  </div>
-                }
-              >
-                <div className="space-y-6">
-                  <ModalSectionCard
-                    description="Configure se o cliente terá acesso ao sistema"
-                    title="Usuário de Acesso"
-                  >
-                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
-                      <Checkbox
-                        isSelected={criarUsuario}
-                        onValueChange={setCriarUsuario}
-                      >
-                        <div>
-                          <p className="font-semibold text-sm">
-                            Criar usuário de acesso ao sistema
-                          </p>
-                          <p className="text-xs text-default-500 mt-1">
-                            {criarUsuario
-                              ? "Um usuário será criado e receberá link de primeiro acesso por email"
-                              : "O cliente não terá acesso ao sistema"}
-                          </p>
-                        </div>
-                      </Checkbox>
-                    </div>
-                  </ModalSectionCard>
-                </div>
-              </Tab>
-
-              <Tab
-                key="observacoes"
-                title={
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded-md bg-amber-100 dark:bg-amber-900">
-                      <FileText className="text-amber-600 dark:text-amber-300 w-4 h-4" />
-                    </div>
-                    <span>Observações</span>
-                  </div>
-                }
-              >
-                <div className="space-y-6">
-                  <ModalSectionCard
-                    description="Anotações e observações sobre o cliente"
-                    title="Informações Adicionais"
-                  >
-                    <Textarea
-                      label="Observações"
-                      minRows={4}
-                      placeholder="Informações adicionais sobre o cliente..."
-                      value={formState.observacoes}
-                      onValueChange={(value) =>
-                        setFormState({ ...formState, observacoes: value })
-                      }
-                    />
-                  </ModalSectionCard>
-                </div>
-              </Tab>
-            </Tabs>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={() => setIsCreateModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              color="primary"
-              isLoading={isSaving}
-              onPress={handleCreateCliente}
-            >
-              Criar Cliente
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </HeroUIModal>
 
       {/* Modal Editar Cliente */}
       <HeroUIModal
@@ -2175,13 +1587,13 @@ export function ClientesContent() {
       >
         <ModalContent>
           <ModalHeaderGradient
-            description="Atualize as informações do cliente"
+            description="Atualize as informaÃ§Ãµes do cliente"
             icon={Edit}
             title="Editar Cliente"
           />
           <ModalBody className="px-0">
             <Tabs
-              aria-label="Formulário de edição do cliente"
+              aria-label="FormulÃ¡rio de ediÃ§Ã£o do cliente"
               classNames={{
                 tabList:
                   "gap-6 w-full relative rounded-none px-6 pt-6 pb-0 border-b border-divider",
@@ -2207,8 +1619,8 @@ export function ClientesContent() {
               >
                 <div className="space-y-6">
                   <ModalSectionCard
-                    description="Informações básicas do cliente"
-                    title="Identificação"
+                    description="InformaÃ§Ãµes bÃ¡sicas do cliente"
+                    title="IdentificaÃ§Ã£o"
                   >
                     <div className="space-y-4">
                       <Select
@@ -2225,15 +1637,15 @@ export function ClientesContent() {
                       >
                         <SelectItem
                           key={TipoPessoa.FISICA}
-                          textValue="Pessoa Física"
+                          textValue="Pessoa FÃ­sica"
                         >
-                          Pessoa Física
+                          Pessoa FÃ­sica
                         </SelectItem>
                         <SelectItem
                           key={TipoPessoa.JURIDICA}
-                          textValue="Pessoa Jurídica"
+                          textValue="Pessoa JurÃ­dica"
                         >
-                          Pessoa Jurídica
+                          Pessoa JurÃ­dica
                         </SelectItem>
                       </Select>
 
@@ -2242,12 +1654,12 @@ export function ClientesContent() {
                         label={
                           formState.tipoPessoa === TipoPessoa.FISICA
                             ? "Nome Completo"
-                            : "Razão Social"
+                            : "RazÃ£o Social"
                         }
                         placeholder={
                           formState.tipoPessoa === TipoPessoa.FISICA
                             ? "Nome completo"
-                            : "Razão Social"
+                            : "RazÃ£o Social"
                         }
                         startContent={
                           formState.tipoPessoa === TipoPessoa.FISICA ? (
@@ -2292,8 +1704,8 @@ export function ClientesContent() {
                         />
                       ) : (
                         <Input
-                          label="Inscrição Estadual"
-                          placeholder="Informe a inscrição estadual"
+                          label="InscriÃ§Ã£o Estadual"
+                          placeholder="Informe a inscriÃ§Ã£o estadual"
                           value={formState.inscricaoEstadual}
                           onValueChange={(value) =>
                             setFormState({
@@ -2307,8 +1719,8 @@ export function ClientesContent() {
                   </ModalSectionCard>
 
                   <ModalSectionCard
-                    description="Cadastro do endereço principal para comunicação e cobranças."
-                    title="Endereço Principal"
+                    description="Cadastro do endereÃ§o principal para comunicaÃ§Ã£o e cobranÃ§as."
+                    title="EndereÃ§o Principal"
                   >
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -2333,7 +1745,7 @@ export function ClientesContent() {
                           }
                         />
                         <Input
-                          label="Número"
+                          label="NÃºmero"
                           placeholder="123"
                           value={formState.enderecoPrincipal?.numero || ""}
                           onValueChange={(value) =>
@@ -2381,7 +1793,7 @@ export function ClientesContent() {
                           }
                         />
                         <Input
-                          label="País"
+                          label="PaÃ­s"
                           placeholder="Brasil"
                           value={formState.enderecoPrincipal?.pais || "Brasil"}
                           onValueChange={(value) =>
@@ -2394,7 +1806,7 @@ export function ClientesContent() {
 
                   {formState.tipoPessoa === TipoPessoa.FISICA && (
                     <ModalSectionCard
-                      description="Dados de filiação importantes para qualificação completa do cliente."
+                      description="Dados de filiaÃ§Ã£o importantes para qualificaÃ§Ã£o completa do cliente."
                       title="Genitores"
                     >
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -2421,8 +1833,8 @@ export function ClientesContent() {
                           }
                         />
                         <Input
-                          label="Nome da Mãe"
-                          placeholder="Informe o nome da mãe"
+                          label="Nome da MÃ£e"
+                          placeholder="Informe o nome da mÃ£e"
                           startContent={
                             <User className="h-4 w-4 text-default-400" />
                           }
@@ -2432,7 +1844,7 @@ export function ClientesContent() {
                           }
                         />
                         <Input
-                          label="Documento da Mãe"
+                          label="Documento da MÃ£e"
                           placeholder="CPF ou outro documento"
                           startContent={
                             <FileText className="h-4 w-4 text-default-400" />
@@ -2448,8 +1860,8 @@ export function ClientesContent() {
 
                   {(isAdmin || isSuperAdmin) && (
                     <ModalSectionCard
-                      description="Ajuste os advogados responsáveis por este cliente."
-                      title="Vínculo de Advogados"
+                      description="Ajuste os advogados responsÃ¡veis por este cliente."
+                      title="VÃ­nculo de Advogados"
                     >
                       <Select
                         className="w-full"
@@ -2495,7 +1907,7 @@ export function ClientesContent() {
                 <div className="space-y-6">
                   <ModalSectionCard
                     description="Telefones e email do cliente"
-                    title="Informações de Contato"
+                    title="InformaÃ§Ãµes de Contato"
                   >
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -2540,12 +1952,12 @@ export function ClientesContent() {
 
                   {formState.tipoPessoa === TipoPessoa.JURIDICA && (
                     <ModalSectionCard
-                      description="Dados do responsável legal"
-                      title="Responsável pela Empresa"
+                      description="Dados do responsÃ¡vel legal"
+                      title="ResponsÃ¡vel pela Empresa"
                     >
                       <div className="space-y-4">
                         <Input
-                          label="Nome do Responsável"
+                          label="Nome do ResponsÃ¡vel"
                           placeholder="Nome completo"
                           startContent={
                             <User className="h-4 w-4 text-default-400" />
@@ -2560,7 +1972,7 @@ export function ClientesContent() {
                         />
                         <div className="grid grid-cols-2 gap-4">
                           <Input
-                            label="Email do Responsável"
+                            label="Email do ResponsÃ¡vel"
                             placeholder="email@exemplo.com"
                             startContent={
                               <Mail className="h-4 w-4 text-default-400" />
@@ -2575,7 +1987,7 @@ export function ClientesContent() {
                             }
                           />
                           <Input
-                            label="Telefone do Responsável"
+                            label="Telefone do ResponsÃ¡vel"
                             placeholder="(00) 00000-0000"
                             startContent={
                               <Phone className="h-4 w-4 text-default-400" />
@@ -2602,19 +2014,19 @@ export function ClientesContent() {
                     <div className="p-1 rounded-md bg-amber-100 dark:bg-amber-900">
                       <FileText className="text-amber-600 dark:text-amber-300 w-4 h-4" />
                     </div>
-                    <span>Observações</span>
+                    <span>ObservaÃ§Ãµes</span>
                   </div>
                 }
               >
                 <div className="space-y-6">
                   <ModalSectionCard
-                    description="Anotações e observações sobre o cliente"
-                    title="Informações Adicionais"
+                    description="AnotaÃ§Ãµes e observaÃ§Ãµes sobre o cliente"
+                    title="InformaÃ§Ãµes Adicionais"
                   >
                     <Textarea
-                      label="Observações"
+                      label="ObservaÃ§Ãµes"
                       minRows={4}
-                      placeholder="Informações adicionais sobre o cliente..."
+                      placeholder="InformaÃ§Ãµes adicionais sobre o cliente..."
                       value={formState.observacoes}
                       onValueChange={(value) =>
                         setFormState({ ...formState, observacoes: value })
@@ -2634,7 +2046,7 @@ export function ClientesContent() {
               isLoading={isSaving}
               onPress={handleUpdateCliente}
             >
-              Salvar Alterações
+              Salvar AlteraÃ§Ãµes
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -2655,7 +2067,7 @@ export function ClientesContent() {
         }
         isOpen={!!credenciaisModal}
         size="lg"
-        title={credenciaisModal ? "🔐 Primeiro acesso do cliente" : ""}
+        title={credenciaisModal ? "ðŸ” Primeiro acesso do cliente" : ""}
         onOpenChange={() => setCredenciaisModal(null)}
       >
         {credenciaisModal && (
@@ -2665,10 +2077,10 @@ export function ClientesContent() {
                 <KeyIcon className="h-5 w-5 text-success mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-success">
-                    Usuário de acesso criado
+                    UsuÃ¡rio de acesso criado
                   </p>
                   <p className="text-xs text-default-600 mt-1">
-                    O cliente deve definir a própria senha pelo link de primeiro
+                    O cliente deve definir a prÃ³pria senha pelo link de primeiro
                     acesso enviado por e-mail.
                   </p>
                 </div>
@@ -2713,14 +2125,14 @@ export function ClientesContent() {
             {credenciaisModal.primeiroAcessoEnviado ? (
               <div className="rounded-lg bg-primary/10 border border-primary/20 p-3">
                 <p className="text-xs text-primary-700 dark:text-primary-300">
-                  ✅ Link de primeiro acesso enviado para{" "}
+                  âœ… Link de primeiro acesso enviado para{" "}
                   {credenciaisModal.maskedEmail}.
                 </p>
               </div>
             ) : (
               <div className="rounded-lg bg-warning/10 border border-warning/20 p-3">
                 <p className="text-xs text-warning-700 dark:text-warning-300">
-                  ⚠️ Cliente criado, mas o e-mail de primeiro acesso não foi
+                  âš ï¸ Cliente criado, mas o e-mail de primeiro acesso nÃ£o foi
                   enviado automaticamente.
                   {credenciaisModal.erroEnvio
                     ? ` Motivo: ${credenciaisModal.erroEnvio}`
@@ -2732,7 +2144,7 @@ export function ClientesContent() {
         )}
       </Modal>
 
-      {/* Modal de Confirmação de Redefinição de Acesso */}
+      {/* Modal de ConfirmaÃ§Ã£o de RedefiniÃ§Ã£o de Acesso */}
       <Modal
         footer={
           <div className="flex gap-2">
@@ -2758,7 +2170,7 @@ export function ClientesContent() {
         }
         isOpen={!!clienteParaResetarSenha}
         size="md"
-        title="⚠️ Redefinir acesso do cliente"
+        title="âš ï¸ Redefinir acesso do cliente"
         onOpenChange={() => setClienteParaResetarSenha(null)}
       >
         {clienteParaResetarSenha && (
@@ -2767,9 +2179,9 @@ export function ClientesContent() {
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-warning mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-warning">Atenção</p>
+                  <p className="text-sm font-semibold text-warning">AtenÃ§Ã£o</p>
                   <p className="text-xs text-default-600 mt-1">
-                    Esta ação vai invalidar a senha atual e reenviar o link de
+                    Esta aÃ§Ã£o vai invalidar a senha atual e reenviar o link de
                     primeiro acesso ao cliente.
                   </p>
                 </div>
@@ -2799,7 +2211,7 @@ export function ClientesContent() {
 
             <div className="rounded-lg bg-primary/5 border border-primary/20 p-3">
               <p className="text-xs text-primary-600">
-                💡 O cliente definirá uma nova senha pelo link recebido por
+                ðŸ’¡ O cliente definirÃ¡ uma nova senha pelo link recebido por
                 e-mail.
               </p>
             </div>
@@ -2807,7 +2219,7 @@ export function ClientesContent() {
         )}
       </Modal>
 
-      {/* Modal de Visualização do Cliente */}
+      {/* Modal de VisualizaÃ§Ã£o do Cliente */}
       <HeroUIModal
         isOpen={isViewModalOpen}
         scrollBehavior="inside"
@@ -2853,8 +2265,8 @@ export function ClientesContent() {
                 >
                   <div className="space-y-6">
                     <ModalSectionCard
-                      description="Dados de identificação do cliente"
-                      title="Informações Básicas"
+                      description="Dados de identificaÃ§Ã£o do cliente"
+                      title="InformaÃ§Ãµes BÃ¡sicas"
                     >
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="flex items-center gap-3 p-3 bg-default-50 rounded-lg">
@@ -2889,8 +2301,8 @@ export function ClientesContent() {
                           >
                             {clienteParaVisualizar.tipoPessoa ===
                             TipoPessoa.FISICA
-                              ? "Pessoa Física"
-                              : "Pessoa Jurídica"}
+                              ? "Pessoa FÃ­sica"
+                              : "Pessoa JurÃ­dica"}
                           </Chip>
                           {clienteParaVisualizar.usuarioId && (
                             <Chip
@@ -2907,8 +2319,8 @@ export function ClientesContent() {
                     </ModalSectionCard>
 
                     <ModalSectionCard
-                      description="Métricas do cliente"
-                      title="Estatísticas"
+                      description="MÃ©tricas do cliente"
+                      title="EstatÃ­sticas"
                     >
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
@@ -2958,7 +2370,7 @@ export function ClientesContent() {
                   <div className="space-y-6">
                     <ModalSectionCard
                       description="Telefones e email do cliente"
-                      title="Informações de Contato"
+                      title="InformaÃ§Ãµes de Contato"
                     >
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {clienteParaVisualizar.email && (
@@ -3007,7 +2419,7 @@ export function ClientesContent() {
                         clienteParaVisualizar.nomeMae ||
                         clienteParaVisualizar.documentoMae) && (
                         <ModalSectionCard
-                          description="Dados de filiação armazenados no cadastro."
+                          description="Dados de filiaÃ§Ã£o armazenados no cadastro."
                           title="Genitores"
                         >
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3042,7 +2454,7 @@ export function ClientesContent() {
                                 <User className="h-4 w-4 text-warning" />
                                 <div>
                                   <p className="text-xs text-default-500">
-                                    Nome da Mãe
+                                    Nome da MÃ£e
                                   </p>
                                   <p className="text-sm font-medium">
                                     {clienteParaVisualizar.nomeMae}
@@ -3055,7 +2467,7 @@ export function ClientesContent() {
                                 <FileText className="h-4 w-4 text-success" />
                                 <div>
                                   <p className="text-xs text-default-500">
-                                    Documento da Mãe
+                                    Documento da MÃ£e
                                   </p>
                                   <p className="text-sm font-medium">
                                     {clienteParaVisualizar.documentoMae}
@@ -3072,8 +2484,8 @@ export function ClientesContent() {
                         clienteParaVisualizar.responsavelEmail ||
                         clienteParaVisualizar.responsavelTelefone) && (
                         <ModalSectionCard
-                          description="Dados do responsável legal"
-                          title="Responsável pela Empresa"
+                          description="Dados do responsÃ¡vel legal"
+                          title="ResponsÃ¡vel pela Empresa"
                         >
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {clienteParaVisualizar.responsavelNome && (
@@ -3141,8 +2553,8 @@ export function ClientesContent() {
                         <FileText className="mx-auto mb-2 h-12 w-12 text-default-300" />
                         <p className="text-default-500">
                           {clienteParaVisualizar._count?.processos === 0
-                            ? "Este cliente ainda não possui processos vinculados."
-                            : "Abra a página completa para visualizar processos, contratos, procurações e demais relações."}
+                            ? "Este cliente ainda nÃ£o possui processos vinculados."
+                            : "Abra a pÃ¡gina completa para visualizar processos, contratos, procuraÃ§Ãµes e demais relaÃ§Ãµes."}
                         </p>
                         <Button
                           as={Link}
@@ -3152,7 +2564,7 @@ export function ClientesContent() {
                           startContent={<Eye className="h-4 w-4" />}
                           variant="flat"
                         >
-                          Abrir página completa
+                          Abrir pÃ¡gina completa
                         </Button>
                       </div>
                     </ModalSectionCard>

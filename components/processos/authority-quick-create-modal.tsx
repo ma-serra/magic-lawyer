@@ -7,6 +7,7 @@ import { Select, SelectItem } from "@heroui/react";
 
 import { createJuizTenant, type JuizSerializado } from "@/app/actions/juizes";
 import { Modal } from "@/components/ui/modal";
+import { SearchableSelect } from "@/components/searchable-select";
 import { toast } from "@/lib/toast";
 import { JuizNivel, JuizStatus, JuizTipoAutoridade } from "@/generated/prisma";
 
@@ -61,12 +62,27 @@ export function AuthorityQuickCreateModal({
 
   const tribunalOptions = useMemo(
     () => [
-      { key: "NONE", label: "Sem tribunal definido" },
+      {
+        key: "NONE",
+        label: "Sem tribunal definido",
+        textValue: "Sem tribunal definido",
+      },
       ...tribunais.map((tribunal) => ({
         key: tribunal.id,
         label: tribunal.sigla
           ? `${tribunal.sigla} - ${tribunal.nome}`
           : tribunal.nome,
+        textValue: [
+          tribunal.sigla || "",
+          tribunal.nome,
+          tribunal.esfera || "",
+          tribunal.uf || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+          "Sem esfera/UF",
       })),
     ],
     [tribunais],
@@ -252,24 +268,21 @@ export function AuthorityQuickCreateModal({
             }
           />
 
-          <Select
+          <SearchableSelect
+            description="Digite para buscar o tribunal"
+            emptyContent="Nenhum tribunal encontrado"
             items={tribunalOptions}
+            isVirtualized={false}
             label="Tribunal"
-            selectedKeys={[formState.tribunalId || "NONE"]}
-            variant="bordered"
-            onSelectionChange={(keys) =>
+            placeholder="Digite para buscar o tribunal"
+            selectedKey={formState.tribunalId || "NONE"}
+            onSelectionChange={(selectedKey) =>
               setFormState((prev) => ({
                 ...prev,
-                tribunalId: ((Array.from(keys)[0] as string) || "").trim(),
+                tribunalId: (selectedKey || "NONE").trim(),
               }))
             }
-          >
-            {(item) => (
-              <SelectItem key={item.key} textValue={item.label}>
-                {item.label}
-              </SelectItem>
-            )}
-          </Select>
+          />
 
           <Input
             label="Email"

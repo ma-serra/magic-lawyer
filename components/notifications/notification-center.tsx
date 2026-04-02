@@ -45,6 +45,7 @@ import {
   subscribePollingControl,
   tracePollingAttempt,
 } from "@/app/lib/realtime/polling-telemetry";
+import { NOTIFICATION_CENTER_OPEN_EVENT } from "@/app/lib/notifications/ui-events";
 import { BellIcon } from "@/components/icons";
 
 const statusCopy: Record<NotificationStatus, string> = {
@@ -60,6 +61,31 @@ const statusColor: Record<
   NAO_LIDA: "primary",
   LIDA: "success",
   ARQUIVADA: "default",
+};
+
+type NotificationCategory =
+  | "GERAL"
+  | "PRAZOS"
+  | "PROCESSOS"
+  | "ACESSOS"
+  | "ADMINISTRACAO"
+  | "OUTROS";
+
+type NotificationViewFilter = "TODAS" | "NAO_LIDAS" | "LIDAS";
+
+const categoryCopy: Record<NotificationCategory, string> = {
+  GERAL: "Geral",
+  PRAZOS: "Prazos",
+  PROCESSOS: "Processos",
+  ACESSOS: "Acessos",
+  ADMINISTRACAO: "Administracao",
+  OUTROS: "Outros",
+};
+
+const viewFilterCopy: Record<NotificationViewFilter, string> = {
+  TODAS: "Todas",
+  NAO_LIDAS: "Nao lidas",
+  LIDAS: "Lidas",
 };
 
 function formatDate(dateIso: string) {
@@ -99,6 +125,52 @@ function asStringArray(value: unknown): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function resolveNotificationCategory(
+  item: Pick<NotificationItem, "tipo" | "referenciaTipo">,
+): NotificationCategory {
+  const normalizedType = (item.tipo || "").toLowerCase().trim();
+  const normalizedReferenceType = (item.referenciaTipo || "")
+    .toLowerCase()
+    .trim();
+
+  if (
+    normalizedType.startsWith("prazo.") ||
+    normalizedReferenceType === "prazo"
+  ) {
+    return "PRAZOS";
+  }
+
+  if (
+    normalizedType.startsWith("processo.") ||
+    normalizedReferenceType === "processo"
+  ) {
+    return "PROCESSOS";
+  }
+
+  if (
+    normalizedType.startsWith("access.") ||
+    normalizedType.startsWith("account.") ||
+    normalizedType.startsWith("security.") ||
+    normalizedType.startsWith("login.") ||
+    normalizedType === "access.login_new"
+  ) {
+    return "ACESSOS";
+  }
+
+  if (
+    normalizedType.startsWith("tenant.") ||
+    normalizedType.startsWith("admin.") ||
+    normalizedType.startsWith("usuario.") ||
+    normalizedType.startsWith("cargo.") ||
+    normalizedType.startsWith("plan.") ||
+    normalizedType.startsWith("autoridade.")
+  ) {
+    return "ADMINISTRACAO";
+  }
+
+  return "OUTROS";
+}
+
 function getSecurityActionUrl(notification?: NotificationItem | null) {
   if (!notification) {
     return null;
@@ -107,11 +179,29 @@ function getSecurityActionUrl(notification?: NotificationItem | null) {
   return asNonEmptyString(asPayloadRecord(notification.dados).securityActionUrl);
 }
 
+function getEventMeetingUrl(notification?: NotificationItem | null) {
+  if (!notification) {
+    return null;
+  }
+
+  const payload = asPayloadRecord(notification.dados);
+
+  return (
+    asNonEmptyString(payload.linkAcesso) ||
+    asNonEmptyString(payload.meetingUrl) ||
+    null
+  );
+}
+
 export const NotificationCenter = () => {
   const disclosure = useDisclosure();
   const detailDisclosure = useDisclosure();
   const [selectedNotification, setSelectedNotification] =
     useState<NotificationItem | null>(null);
+  const [activeCategory, setActiveCategory] =
+    useState<NotificationCategory>("GERAL");
+  const [activeViewFilter, setActiveViewFilter] =
+    useState<NotificationViewFilter>("TODAS");
   const router = useRouter();
   const {
     notifications,
@@ -285,6 +375,56 @@ export const NotificationCenter = () => {
     );
   }, [totalUnreadCount]);
 
+  const categoryCounts = useMemo(() => {
+    const counts: Record<NotificationCategory, number> = {
+      GERAL: notifications.length,
+      PRAZOS: 0,
+      PROCESSOS: 0,
+      ACESSOS: 0,
+      ADMINISTRACAO: 0,
+      OUTROS: 0,
+    };
+
+    notifications.forEach((item) => {
+      const category = resolveNotificationCategory(item);
+
+      counts[category] += 1;
+    });
+
+    return counts;
+  }, [notifications]);
+
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((item) => {
+      const matchesCategory =
+        activeCategory === "GERAL" ||
+        resolveNotificationCategory(item) === activeCategory;
+
+      if (!matchesCategory) {
+        return false;
+      }
+
+      if (activeViewFilter === "NAO_LIDAS") {
+        return item.status === "NAO_LIDA";
+      }
+
+      if (activeViewFilter === "LIDAS") {
+        return item.status === "LIDA";
+      }
+
+      return true;
+    });
+  }, [activeCategory, activeViewFilter, notifications]);
+
+  const filteredUnreadCount = useMemo(
+    () => filteredNotifications.filter((item) => item.status === "NAO_LIDA").length,
+    [filteredNotifications],
+  );
+  const filteredReadCount = useMemo(
+    () => filteredNotifications.filter((item) => item.status === "LIDA").length,
+    [filteredNotifications],
+  );
+
   // Realtime: invalidar quando chegar notification.new para o usuário atual
   useEffect(() => {
     const unsubscribe = subscribe("notification.new", () => {
@@ -294,6 +434,28 @@ export const NotificationCenter = () => {
 
     return unsubscribe;
   }, [subscribe, mutateNotifications]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleOpen = () => {
+      disclosure.onOpen();
+    };
+
+    window.addEventListener(
+      NOTIFICATION_CENTER_OPEN_EVENT,
+      handleOpen as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        NOTIFICATION_CENTER_OPEN_EVENT,
+        handleOpen as EventListener,
+      );
+    };
+  }, [disclosure]);
 
   useEffect(() => {
     return subscribePollingControl(setIsPollingEnabled);
@@ -453,6 +615,7 @@ export const NotificationCenter = () => {
   };
 
   const hasNotifications = notifications.length > 0;
+  const hasFilteredNotifications = filteredNotifications.length > 0;
 
   return (
     <div className="relative">
@@ -521,10 +684,66 @@ export const NotificationCenter = () => {
                       ? "Atualizando"
                       : `${totalUnreadCount} não lida(s)`}
                   </Chip>
+                  <Chip className="text-xs" variant="flat">
+                    {filteredNotifications.length} exibida(s)
+                  </Chip>
                 </div>
               </DrawerHeader>
 
               <DrawerBody className="px-0 pb-0">
+                <div className="px-6 pb-4">
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {(
+                      [
+                        "GERAL",
+                        "PRAZOS",
+                        "PROCESSOS",
+                        "ACESSOS",
+                        "ADMINISTRACAO",
+                        "OUTROS",
+                      ] as NotificationCategory[]
+                    ).map((category) => (
+                      <Button
+                        key={category}
+                        className="shrink-0"
+                        color={activeCategory === category ? "primary" : "default"}
+                        size="sm"
+                        variant={activeCategory === category ? "flat" : "bordered"}
+                        onPress={() => setActiveCategory(category)}
+                      >
+                        {categoryCopy[category]} ({categoryCounts[category]})
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(
+                      ["TODAS", "NAO_LIDAS", "LIDAS"] as NotificationViewFilter[]
+                    ).map((filter) => (
+                      <Button
+                        key={filter}
+                        className="shrink-0"
+                        color={
+                          activeViewFilter === filter
+                            ? filter === "NAO_LIDAS"
+                              ? "primary"
+                              : "success"
+                            : "default"
+                        }
+                        size="sm"
+                        variant={activeViewFilter === filter ? "flat" : "bordered"}
+                        onPress={() => setActiveViewFilter(filter)}
+                      >
+                        {viewFilterCopy[filter]}
+                        {filter === "NAO_LIDAS"
+                          ? ` (${filteredUnreadCount})`
+                          : filter === "LIDAS"
+                            ? ` (${filteredReadCount})`
+                            : ""}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
                 {hasPortalSyncAttention ? (
                   <div className="mx-6 mb-4 rounded-2xl border border-primary/30 bg-primary/5 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -576,10 +795,22 @@ export const NotificationCenter = () => {
                   </div>
                 ) : null}
 
-                {hasNotifications ? (
+                {hasNotifications && !hasFilteredNotifications ? (
+                  <div className="flex h-40 flex-col items-center justify-center gap-2 px-6 text-center text-default-400">
+                    <BellIcon className="h-10 w-10 text-default-200" />
+                    <p className="text-sm font-medium text-white">
+                      Nenhuma notificação nesta visão
+                    </p>
+                    <p className="text-xs text-default-400">
+                      Ajuste as abas ou filtros para ver outros registros.
+                    </p>
+                  </div>
+                ) : null}
+
+                {hasFilteredNotifications ? (
                   <ScrollShadow className="max-h-[60vh] px-6 pb-6">
                     <ul className="space-y-4">
-                      {notifications.map((item) => {
+                      {filteredNotifications.map((item) => {
                         const isUnread = item.status === "NAO_LIDA";
                         const securityActionUrl = getSecurityActionUrl(item);
 
@@ -687,7 +918,7 @@ export const NotificationCenter = () => {
               <DrawerFooter className="flex flex-col gap-2 border-t border-white/10 bg-background/60">
                 <div className="flex w-full items-center justify-between text-xs text-default-400">
                   <span>Sistema de notificações ativo</span>
-                  <span>{notifications.length} registro(s)</span>
+                  <span>{filteredNotifications.length} registro(s) nesta visão</span>
                 </div>
                 <div className="flex w-full flex-wrap gap-3">
                   <Button
@@ -739,6 +970,8 @@ export const NotificationCenter = () => {
                 : undefined);
             const additionalSummary =
               detailPayload?.additionalChangesSummary as string | undefined;
+            const eventMeetingUrl = getEventMeetingUrl(notification);
+            const isOnlineEvent = detailPayload?.isOnline === true;
 
             return (
               <>
@@ -774,6 +1007,24 @@ export const NotificationCenter = () => {
                     <p className="whitespace-pre-wrap text-sm text-default-700 dark:text-default-300">
                       {notification.mensagem}
                     </p>
+                  ) : null}
+
+                  {isOnlineEvent || eventMeetingUrl ? (
+                    <div className="rounded-lg border border-primary/20 bg-primary-50 p-3 text-sm text-primary-700 dark:border-primary/40 dark:bg-primary/10 dark:text-primary-100">
+                      <p className="font-medium">
+                        {isOnlineEvent ? "Evento online" : "Link do evento disponível"}
+                      </p>
+                      {eventMeetingUrl ? (
+                        <a
+                          className="mt-2 inline-flex text-xs font-semibold underline underline-offset-4"
+                          href={eventMeetingUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          Abrir link do evento
+                        </a>
+                      ) : null}
+                    </div>
                   ) : null}
 
                   {statusSummary ? (
@@ -855,6 +1106,18 @@ export const NotificationCenter = () => {
                       }}
                     >
                       Nao fui eu
+                    </Button>
+                  ) : null}
+                  {eventMeetingUrl ? (
+                    <Button
+                      as="a"
+                      color="primary"
+                      href={eventMeetingUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                      variant="flat"
+                    >
+                      Abrir link do evento
                     </Button>
                   ) : null}
                   <Button variant="light" onPress={handleCloseDetails}>

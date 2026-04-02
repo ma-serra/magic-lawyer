@@ -15,6 +15,8 @@ export interface CreateEventoData {
   dataInicio: Date;
   dataFim: Date;
   local?: string;
+  isOnline?: boolean;
+  linkAcesso?: string;
   participantes: string[];
   processoId?: string;
   clienteId?: string;
@@ -23,6 +25,7 @@ export interface CreateEventoData {
   recorrencia?: "NENHUMA" | "DIARIA" | "SEMANAL" | "MENSAL" | "ANUAL";
   recorrenciaFim?: Date;
   lembreteMinutos?: number;
+  lembretesMinutos?: number[];
   observacoes?: string;
   syncWithGoogle?: boolean;
   googleTokens?: {
@@ -39,6 +42,18 @@ export interface UpdateEventoData extends Partial<CreateEventoData> {
 // Função para criar evento
 export const createEvento = async (data: CreateEventoData) => {
   try {
+    const lembretesMinutos = Array.from(
+      new Set(
+        ((data.lembretesMinutos?.length
+          ? data.lembretesMinutos
+          : data.lembreteMinutos && data.lembreteMinutos > 0
+            ? [data.lembreteMinutos]
+            : []) as number[])
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    ).sort((a, b) => b - a);
+
     const evento = await prisma.evento.create({
       data: {
         tenantId: data.tenantId,
@@ -48,6 +63,8 @@ export const createEvento = async (data: CreateEventoData) => {
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
         local: data.local,
+        isOnline: data.isOnline ?? false,
+        linkAcesso: data.linkAcesso,
         participantes: data.participantes,
         processoId: data.processoId,
         clienteId: data.clienteId,
@@ -55,7 +72,11 @@ export const createEvento = async (data: CreateEventoData) => {
         criadoPorId: data.criadoPorId,
         recorrencia: data.recorrencia || "NENHUMA",
         recorrenciaFim: data.recorrenciaFim,
-        lembreteMinutos: data.lembreteMinutos,
+        lembreteMinutos:
+          lembretesMinutos.length > 0
+            ? Math.min(...lembretesMinutos)
+            : data.lembreteMinutos || null,
+        lembretesMinutos,
         observacoes: data.observacoes,
       },
       include: {
@@ -81,8 +102,12 @@ export const createEvento = async (data: CreateEventoData) => {
             dataInicio: evento.dataInicio,
             dataFim: evento.dataFim,
             local: evento.local || undefined,
+            isOnline: (evento as typeof evento & { isOnline?: boolean }).isOnline,
+            linkAcesso: (evento as typeof evento & { linkAcesso?: string | null }).linkAcesso || undefined,
             participantes: evento.participantes,
             lembreteMinutos: evento.lembreteMinutos || undefined,
+            lembretesMinutos:
+              (evento as typeof evento & { lembretesMinutos?: number[] }).lembretesMinutos,
           },
           data.googleTokens,
         );
@@ -109,6 +134,9 @@ export const createEvento = async (data: CreateEventoData) => {
             titulo: evento.titulo,
             dataInicio: evento.dataInicio.toLocaleString("pt-BR"),
             local: evento.local || undefined,
+            linkAcesso:
+              (evento as typeof evento & { linkAcesso?: string | null }).linkAcesso ||
+              undefined,
             descricao: evento.descricao || undefined,
           });
 
@@ -158,6 +186,8 @@ export const updateEvento = async (data: UpdateEventoData) => {
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
         local: data.local,
+        isOnline: data.isOnline,
+        linkAcesso: data.linkAcesso,
         participantes: data.participantes,
         processoId: data.processoId,
         clienteId: data.clienteId,
@@ -190,6 +220,8 @@ export const updateEvento = async (data: UpdateEventoData) => {
             dataInicio: evento.dataInicio,
             dataFim: evento.dataFim,
             local: evento.local || undefined,
+            isOnline: (evento as typeof evento & { isOnline?: boolean }).isOnline,
+            linkAcesso: (evento as typeof evento & { linkAcesso?: string | null }).linkAcesso || undefined,
             participantes: evento.participantes,
             lembreteMinutos: evento.lembreteMinutos || undefined,
           },
@@ -384,9 +416,18 @@ export const enviarLembretesEventos = async () => {
         status: {
           in: ["AGENDADO", "CONFIRMADO"],
         },
-        lembreteMinutos: {
-          not: null,
-        },
+        OR: [
+          {
+            lembretesMinutos: {
+              isEmpty: false,
+            },
+          },
+          {
+            lembreteMinutos: {
+              not: null,
+            },
+          },
+        ],
         // Verificar se o lembrete já foi enviado (poderia adicionar um campo para isso)
       },
       include: {
@@ -408,15 +449,28 @@ export const enviarLembretesEventos = async () => {
       );
 
       // Verificar se está na hora de enviar o lembrete
-      if (
-        evento.lembreteMinutos &&
-        minutosRestantes <= evento.lembreteMinutos
-      ) {
+      const lembretesConfigurados = Array.from(
+        new Set(
+          (((evento as typeof evento & { lembretesMinutos?: number[] }).lembretesMinutos
+            ?.length
+            ? (evento as typeof evento & { lembretesMinutos?: number[] }).lembretesMinutos
+            : evento.lembreteMinutos && evento.lembreteMinutos > 0
+              ? [evento.lembreteMinutos]
+              : []) as number[])
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0),
+        ),
+      );
+
+      if (lembretesConfigurados.some((value) => minutosRestantes <= value)) {
         try {
           const template = emailTemplates.lembreteEvento({
             titulo: evento.titulo,
             dataInicio: evento.dataInicio.toLocaleString("pt-BR"),
             local: evento.local ?? undefined,
+            linkAcesso:
+              (evento as typeof evento & { linkAcesso?: string | null }).linkAcesso ||
+              undefined,
             minutosRestantes,
           });
 

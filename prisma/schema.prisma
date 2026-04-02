@@ -83,6 +83,30 @@ model CategoriaTarefa {
   @@schema("magiclawyer")
 }
 
+model ClasseProcessual {
+  id                 String    @id @default(cuid())
+  tenantId           String?
+  slug               String
+  nome               String
+  descricao          String?
+  ordem              Int?
+  ativo              Boolean   @default(true)
+  global             Boolean   @default(false)
+  deletedAt          DateTime?
+  deletedByActorType String?
+  deletedByActorId   String?
+  deleteReason       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tenant             Tenant?   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([nome])
+  @@schema("magiclawyer")
+}
+
 model Tenant {
   id                        String                     @id @default(cuid())
   name                      String
@@ -118,6 +142,7 @@ model Tenant {
   assinaturasPacoteJuiz     AssinaturaPacoteJuiz[]     @relation("TenantAssinaturaPacote")
   auditLogs                 AuditLog[]
   categoriasTarefa          CategoriaTarefa[]
+  classesProcessuais        ClasseProcessual[]
   clientes                  Cliente[]
   contratos                 Contrato[]
   contratoDocumentos        ContratoDocumento[]
@@ -1218,6 +1243,7 @@ model ProcessoPrazo {
   prorrogadoPara       DateTime?
   responsavelId        String?
   origemMovimentacaoId String?
+  origemEventoId       String?
   regimePrazoId        String?
   causaId              String?
   diligenciaId         String?
@@ -1231,6 +1257,7 @@ model ProcessoPrazo {
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   responsavel          Usuario?              @relation("ProcessoPrazoResponsavel", fields: [responsavelId], references: [id])
   origemMovimentacao   MovimentacaoProcesso? @relation(fields: [origemMovimentacaoId], references: [id])
+  origemEvento         Evento?               @relation("ProcessoPrazoOrigemEvento", fields: [origemEventoId], references: [id])
   regimePrazo          RegimePrazo?          @relation(fields: [regimePrazoId], references: [id])
   causa                Causa?                @relation(fields: [causaId], references: [id])
   diligencia           Diligencia?           @relation("DiligenciaPrazos", fields: [diligenciaId], references: [id], onDelete: SetNull)
@@ -1240,6 +1267,7 @@ model ProcessoPrazo {
   @@index([tenantId, deletedAt])
   @@index([tenantId, dataVencimento])
   @@index([regimePrazoId])
+  @@index([origemEventoId])
   @@index([causaId])
   @@index([diligenciaId])
   @@schema("magiclawyer")
@@ -1723,6 +1751,8 @@ model Peticao {
   tipo               String?
   status             PeticaoStatus       @default(RASCUNHO)
   descricao          String?
+  conteudo           String?             @db.Text
+  conteudoTamanho    Int                 @default(0)
   documentoId        String?
   protocoloNumero    String?
   protocoladoEm      DateTime?
@@ -1744,6 +1774,8 @@ model Peticao {
   assinaturas        AssinaturaPeticao[]
 
   @@index([tenantId, processoId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, conteudoTamanho])
   @@index([tenantId, deletedAt])
   @@index([causaId])
   @@index([modeloId])
@@ -2708,9 +2740,12 @@ model Evento {
   criadoPorId           String?
   recorrencia           EventoRecorrencia    @default(NENHUMA)
   recorrenciaFim        DateTime?
+  isOnline              Boolean              @default(false)
+  linkAcesso            String?
   googleEventId         String?
   googleCalendarId      String?
   lembreteMinutos       Int?
+  lembretesMinutos      Int[]                @default([])
   observacoes           String?
   deletedAt             DateTime?
   deletedByActorType    String?
@@ -2724,6 +2759,7 @@ model Evento {
   processo              Processo?            @relation(fields: [processoId], references: [id])
   tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   confirmacoes          EventoParticipante[]
+  prazosOriginados      ProcessoPrazo[]      @relation("ProcessoPrazoOrigemEvento")
 
   @@index([tenantId, dataInicio])
   @@index([tenantId, deletedAt])
@@ -3337,6 +3373,7 @@ enum MovimentacaoTipo {
   PRAZO
   INTIMACAO
   AUDIENCIA
+  SOLICITACAO
   ANEXO
   OUTRO
 

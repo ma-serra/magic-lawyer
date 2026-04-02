@@ -136,6 +136,7 @@ export const emailTemplates = {
     titulo: string;
     dataInicio: string;
     local?: string;
+    linkAcesso?: string;
     descricao?: string;
   }) => ({
     subject: `Novo evento agendado: ${evento.titulo}`,
@@ -146,6 +147,7 @@ export const emailTemplates = {
           <h3 style="margin-top: 0; color: #2c3e50;">${evento.titulo}</h3>
           <p><strong>Data/Hora:</strong> ${evento.dataInicio}</p>
           ${evento.local ? `<p><strong>Local:</strong> ${evento.local}</p>` : ""}
+          ${evento.linkAcesso ? `<p><strong>Link do evento:</strong> <a href="${evento.linkAcesso}">${evento.linkAcesso}</a></p>` : ""}
           ${evento.descricao ? `<p><strong>Descrição:</strong> ${evento.descricao}</p>` : ""}
         </div>
         <p style="color: #666; font-size: 14px; margin-top: 20px;">
@@ -160,6 +162,7 @@ export const emailTemplates = {
     titulo: string;
     dataInicio: string;
     local?: string;
+    linkAcesso?: string;
     minutosRestantes: number;
   }) => ({
     subject: `Lembrete: ${evento.titulo} em ${evento.minutosRestantes} minutos`,
@@ -170,6 +173,7 @@ export const emailTemplates = {
           <h3 style="margin-top: 0; color: #856404;">${evento.titulo}</h3>
           <p><strong>Data/Hora:</strong> ${evento.dataInicio}</p>
           ${evento.local ? `<p><strong>Local:</strong> ${evento.local}</p>` : ""}
+          ${evento.linkAcesso ? `<p><strong>Link do evento:</strong> <a href="${evento.linkAcesso}">${evento.linkAcesso}</a></p>` : ""}
           <p style="color: #856404; font-weight: bold;">
             ⏰ Evento em ${evento.minutosRestantes} minutos
           </p>

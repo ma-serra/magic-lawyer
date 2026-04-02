@@ -75,6 +75,7 @@ export async function ensurePrazoFromMovimentacao(params: {
     where: {
       tenantId: params.tenantId,
       origemMovimentacaoId: params.movement.id,
+      deletedAt: null,
     },
     select: {
       id: true,

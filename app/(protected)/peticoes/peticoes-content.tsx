@@ -53,12 +53,14 @@ import {
   listTiposPeticao,
   type PeticaoFilters,
   type PeticaoCreateInput,
+  type PeticaoSort,
 } from "@/app/actions/peticoes";
 import {
   uploadDocumentoPeticao,
   removerDocumentoPeticao,
 } from "@/app/actions/upload-documento-peticao";
 import { getAllProcessos } from "@/app/actions/processos";
+import { useClientesParaSelect } from "@/app/hooks/use-clientes";
 import { PeticaoStatus } from "@/generated/prisma";
 import { useModelosPeticaoAtivos } from "@/app/hooks/use-modelos-peticao";
 import { processarTemplate } from "@/app/actions/modelos-peticao";
@@ -79,6 +81,8 @@ interface Peticao {
   tipo: string | null;
   status: PeticaoStatus;
   descricao: string | null;
+  conteudo: string | null;
+  conteudoTamanho: number;
   protocoloNumero: string | null;
   protocoladoEm: Date | null;
   observacoes: string | null;
@@ -87,8 +91,25 @@ interface Peticao {
   processo: {
     id: string;
     numero: string;
+    numeroCnj?: string | null;
     titulo: string | null;
     status: string;
+    cliente?: {
+      id: string;
+      nome: string;
+      email?: string | null;
+      telefone?: string | null;
+      tipoPessoa?: string;
+    } | null;
+    clientesRelacionados?: Array<{
+      cliente: {
+        id: string;
+        nome: string;
+        email?: string | null;
+        telefone?: string | null;
+        tipoPessoa?: string;
+      };
+    }>;
   };
   causa: {
     id: string;
@@ -133,6 +154,50 @@ interface PeticoesContentProps {
   canDeletePeticao?: boolean;
 }
 
+function getPeticaoClientes(processo: Peticao["processo"]) {
+  const vinculados = Array.isArray(processo?.clientesRelacionados)
+    ? processo.clientesRelacionados.map((item) => item.cliente).filter(Boolean)
+    : [];
+
+  if (vinculados.length > 0) {
+    return vinculados;
+  }
+
+  return processo?.cliente ? [processo.cliente] : [];
+}
+
+function getPeticaoClientesLabel(processo: Peticao["processo"]) {
+  const clientes = getPeticaoClientes(processo).map((cliente) => cliente.nome);
+
+  if (clientes.length === 0) {
+    return "Cliente não informado";
+  }
+
+  if (clientes.length <= 2) {
+    return clientes.join(", ");
+  }
+
+  return `${clientes.slice(0, 2).join(", ")} +${clientes.length - 2}`;
+}
+
+function toPlainTextExcerpt(value?: string | null, maxLength = 240) {
+  const plainText = (value || "")
+    .replace(/[#>*_`~-]/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!plainText) {
+    return "";
+  }
+
+  if (plainText.length <= maxLength) {
+    return plainText;
+  }
+
+  return `${plainText.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
 // ============================================
 // COMPONENTE PRINCIPAL
 // ============================================
@@ -143,7 +208,9 @@ export default function PeticoesPage({
   canDeletePeticao = true,
 }: PeticoesContentProps) {
   // Estado dos filtros
-  const [filters, setFilters] = useState<PeticaoFilters>({});
+  const [filters, setFilters] = useState<PeticaoFilters>({
+    sort: "RECENTES",
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -184,6 +251,7 @@ export default function PeticoesPage({
   );
 
   const { data: processosData } = useSWR("processos-list", getAllProcessos);
+  const { clientes } = useClientesParaSelect();
 
   const { data: tiposData } = useSWR("tipos-peticao", listTiposPeticao);
 
@@ -191,16 +259,67 @@ export default function PeticoesPage({
   const dashboard = dashboardData?.data as DashboardData | undefined;
   const processos = processosData?.processos || [];
   const tipos = tiposData?.data || [];
+  const clientOptions = useMemo(
+    () =>
+      (clientes || []).map((cliente: any) => ({
+        key: cliente.id,
+        label: cliente.nome,
+        textValue: [cliente.nome, cliente.documento || "", cliente.email || ""]
+          .filter(Boolean)
+          .join(" "),
+        description: cliente.documento || cliente.email || undefined,
+      })),
+    [clientes],
+  );
+  const processosFiltradosPorCliente = useMemo(() => {
+    if (!filters.clienteId) {
+      return processos;
+    }
+
+    return processos.filter((processo: any) => {
+      const clientesProcesso =
+        Array.isArray(processo?.clientesVinculados) &&
+        processo.clientesVinculados.length > 0
+          ? processo.clientesVinculados
+          : processo?.cliente
+            ? [processo.cliente]
+            : [];
+
+      return clientesProcesso.some(
+        (cliente: any) => cliente?.id === filters.clienteId,
+      );
+    });
+  }, [filters.clienteId, processos]);
   const processoOptions = useMemo(
     () =>
-      processos.map((proc: any) => ({
+      processosFiltradosPorCliente.map((proc: any) => ({
         key: proc.id,
         label: proc.numero,
-        textValue: [proc.numero, proc.titulo || ""].filter(Boolean).join(" "),
-        description: proc.titulo || undefined,
+        textValue: [
+          proc.numero,
+          proc.numeroCnj || "",
+          proc.titulo || "",
+          ...(Array.isArray(proc?.clientesVinculados)
+            ? proc.clientesVinculados.map((cliente: any) => cliente?.nome || "")
+            : []),
+          proc?.cliente?.nome || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          proc.titulo ||
+          (Array.isArray(proc?.clientesVinculados) &&
+          proc.clientesVinculados.length > 0
+            ? proc.clientesVinculados.map((cliente: any) => cliente?.nome).join(", ")
+            : proc?.cliente?.nome) ||
+          undefined,
       })),
-    [processos],
+    [processosFiltradosPorCliente],
   );
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 12 }, (_, index) => currentYear - index);
+  }, []);
   const pagination = peticoesData?.pagination || {
     page: currentPage,
     perPage: itemsPerPage,
@@ -226,9 +345,7 @@ export default function PeticoesPage({
   const handleSearch = (value: string) => {
     setSearchTerm(value);
     setCurrentPage(1);
-    if (value.length >= 2 || value.length === 0) {
-      setFilters((prev) => ({ ...prev, search: value || undefined }));
-    }
+    setFilters((prev) => ({ ...prev, search: value || undefined }));
   };
 
   const handleStatusFilter = (status: string) => {
@@ -239,8 +356,77 @@ export default function PeticoesPage({
     }));
   };
 
+  const handleSortFilter = (sort: string) => {
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      sort: sort ? (sort as PeticaoSort) : "RECENTES",
+    }));
+  };
+
+  const handleClienteFilter = (clienteId: string | null) => {
+    const processoAtualPertenceAoCliente =
+      !clienteId ||
+      processos.some((processo: any) => {
+        const clientesProcesso =
+          Array.isArray(processo?.clientesVinculados) &&
+          processo.clientesVinculados.length > 0
+            ? processo.clientesVinculados
+            : processo?.cliente
+              ? [processo.cliente]
+              : [];
+
+        return (
+          processo.id === filters.processoId &&
+          clientesProcesso.some((cliente: any) => cliente?.id === clienteId)
+        );
+      });
+
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      clienteId: clienteId || undefined,
+      processoId: processoAtualPertenceAoCliente ? prev.processoId : undefined,
+    }));
+  };
+
+  const handleProcessoFilter = (processoId: string | null) => {
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      processoId: processoId || undefined,
+    }));
+  };
+
+  const handleTipoFilter = (tipo: string) => {
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      tipo: tipo || undefined,
+    }));
+  };
+
+  const handleAnoFilter = (ano: string) => {
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      ano: ano ? Number(ano) : undefined,
+    }));
+  };
+
+  const handleDateFilter = (
+    key: "dataInicio" | "dataFim",
+    value: string,
+  ) => {
+    setCurrentPage(1);
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value || undefined,
+    }));
+  };
+
   const clearFilters = () => {
-    setFilters({});
+    setFilters({ sort: "RECENTES" });
     setSearchTerm("");
     setCurrentPage(1);
   };
@@ -381,8 +567,19 @@ export default function PeticoesPage({
     );
   };
 
-  const hasActiveFilters = Boolean(filters.status || filters.search);
+  const hasActiveFilters = Boolean(
+    filters.status ||
+      filters.search ||
+      filters.clienteId ||
+      filters.processoId ||
+      filters.tipo ||
+      filters.ano ||
+      filters.dataInicio ||
+      filters.dataFim ||
+      (filters.sort && filters.sort !== "RECENTES"),
+  );
   const selectedStatusKey = filters.status || "all";
+  const selectedSortKey = filters.sort || "RECENTES";
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-6">
@@ -464,7 +661,8 @@ export default function PeticoesPage({
           <div className="flex flex-wrap items-center gap-2">
             <Input
               isClearable
-              className="min-w-[260px] flex-1"
+              className="min-w-[320px] flex-1"
+              description="Busca ampla em título, cliente, processo, protocolo e conteúdo da petição."
               placeholder="Buscar por título, descrição ou protocolo..."
               startContent={
                 <MagnifyingGlassIcon className="text-default-400" size={16} />
@@ -497,7 +695,7 @@ export default function PeticoesPage({
           </div>
 
           {showFilters ? (
-            <div className="grid gap-3 pt-1 sm:max-w-xs">
+            <div className="grid gap-3 pt-1 md:grid-cols-2 xl:grid-cols-4">
               <Select
                 className="w-full"
                 label="Status da petição"
@@ -535,6 +733,115 @@ export default function PeticoesPage({
                   Arquivada
                 </SelectItem>
               </Select>
+
+              <SearchableSelect
+                emptyContent="Nenhum cliente encontrado"
+                items={clientOptions}
+                label="Cliente"
+                placeholder="Todos os clientes"
+                selectedKey={filters.clienteId || null}
+                onSelectionChange={handleClienteFilter}
+              />
+
+              <SearchableSelect
+                emptyContent="Nenhum processo encontrado"
+                items={processoOptions}
+                isDisabled={
+                  Boolean(filters.clienteId) && processoOptions.length === 0
+                }
+                label="Processo"
+                placeholder="Todos os processos"
+                selectedKey={filters.processoId || null}
+                onSelectionChange={handleProcessoFilter}
+              />
+
+              <Autocomplete
+                allowsCustomValue
+                inputValue={filters.tipo || ""}
+                label="Tipo de petição"
+                placeholder="Todos os tipos"
+                selectedKey={
+                  filters.tipo && tipos.includes(filters.tipo)
+                    ? filters.tipo
+                    : null
+                }
+                onInputChange={handleTipoFilter}
+                onSelectionChange={(key) =>
+                  handleTipoFilter(key ? String(key) : "")
+                }
+              >
+                {tipos.map((tipo) => (
+                  <AutocompleteItem key={tipo} textValue={tipo}>
+                    {tipo}
+                  </AutocompleteItem>
+                ))}
+              </Autocomplete>
+
+              <Select
+                className="w-full"
+                label="Ordenar por"
+                selectedKeys={[selectedSortKey]}
+                onSelectionChange={(keys) => {
+                  const value = String(Array.from(keys)[0] || "RECENTES");
+                  handleSortFilter(value);
+                }}
+              >
+                <SelectItem key="RECENTES" textValue="Mais novas">
+                  Mais novas
+                </SelectItem>
+                <SelectItem key="ANTIGAS" textValue="Mais antigas">
+                  Mais antigas
+                </SelectItem>
+                <SelectItem key="MAIORES" textValue="Maior peça">
+                  Maior peça
+                </SelectItem>
+                <SelectItem key="MENORES" textValue="Menor peça">
+                  Menor peça
+                </SelectItem>
+              </Select>
+
+              <Select
+                className="w-full"
+                items={[
+                  { key: "all", label: "Todos" },
+                  ...availableYears.map((year) => ({
+                    key: String(year),
+                    label: String(year),
+                  })),
+                ]}
+                label="Ano"
+                selectedKeys={[filters.ano ? String(filters.ano) : "all"]}
+                onSelectionChange={(keys) => {
+                  const value = String(Array.from(keys)[0] || "all");
+                  handleAnoFilter(value === "all" ? "" : value);
+                }}
+              >
+                {(item) => (
+                  <SelectItem key={item.key} textValue={item.label}>
+                    {item.label}
+                  </SelectItem>
+                )}
+              </Select>
+
+              <Input
+                label="Data inicial"
+                type="date"
+                value={
+                  typeof filters.dataInicio === "string"
+                    ? filters.dataInicio
+                    : ""
+                }
+                onValueChange={(value) => handleDateFilter("dataInicio", value)}
+              />
+
+              <Input
+                label="Data final"
+                type="date"
+                value={
+                  typeof filters.dataFim === "string" ? filters.dataFim : ""
+                }
+                onValueChange={(value) => handleDateFilter("dataFim", value)}
+              />
             </div>
           ) : null}
         </CardBody>
@@ -596,6 +903,11 @@ export default function PeticoesPage({
                             {peticao.tipo}
                           </Chip>
                         )}
+                        {peticao.conteudoTamanho > 0 ? (
+                          <Chip color="primary" size="sm" variant="flat">
+                            Documento interno
+                          </Chip>
+                        ) : null}
                       </div>
 
                       <div className="space-y-1 text-sm text-default-500">
@@ -607,6 +919,11 @@ export default function PeticoesPage({
                               • {peticao.processo.titulo}
                             </span>
                           )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">Cliente:</span>
+                          <span>{getPeticaoClientesLabel(peticao.processo)}</span>
                         </div>
 
                         {peticao.protocoloNumero && (
@@ -624,8 +941,20 @@ export default function PeticoesPage({
                           </div>
                         )}
 
-                        {peticao.descricao && (
-                          <p className="line-clamp-2">{peticao.descricao}</p>
+                        {(peticao.conteudo || peticao.descricao) && (
+                          <p className="line-clamp-3">
+                            {toPlainTextExcerpt(
+                              peticao.conteudo || peticao.descricao,
+                              280,
+                            )}
+                          </p>
+                        )}
+
+                        {peticao.conteudoTamanho > 0 && (
+                          <div className="flex items-center gap-2 text-default-400">
+                            <DocumentTextIcon size={14} />
+                            <span>{peticao.conteudoTamanho} caracteres indexados</span>
+                          </div>
                         )}
 
                         {peticao.documento && (
@@ -803,6 +1132,7 @@ function PeticaoModal({
     tipo: "",
     status: PeticaoStatus.RASCUNHO,
     descricao: "",
+    conteudo: "",
     observacoes: "",
   });
 
@@ -822,8 +1152,24 @@ function PeticaoModal({
       processos.map((proc: any) => ({
         key: proc.id,
         label: proc.numero,
-        textValue: [proc.numero, proc.titulo || ""].filter(Boolean).join(" "),
-        description: proc.titulo || undefined,
+        textValue: [
+          proc.numero,
+          proc.numeroCnj || "",
+          proc.titulo || "",
+          ...(Array.isArray(proc?.clientesVinculados)
+            ? proc.clientesVinculados.map((cliente: any) => cliente?.nome || "")
+            : []),
+          proc?.cliente?.nome || "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        description:
+          proc.titulo ||
+          (Array.isArray(proc?.clientesVinculados) &&
+          proc.clientesVinculados.length > 0
+            ? proc.clientesVinculados.map((cliente: any) => cliente?.nome).join(", ")
+            : proc?.cliente?.nome) ||
+          undefined,
       })),
     [processos],
   );
@@ -836,6 +1182,7 @@ function PeticaoModal({
         tipo: "",
         status: PeticaoStatus.RASCUNHO,
         descricao: "",
+        conteudo: "",
         observacoes: "",
       });
       setSelectedFile(null);
@@ -847,6 +1194,7 @@ function PeticaoModal({
         tipo: peticao.tipo || "",
         status: peticao.status,
         descricao: peticao.descricao || "",
+        conteudo: peticao.conteudo || "",
         observacoes: peticao.observacoes || "",
       });
       setSelectedFile(null);
@@ -924,7 +1272,9 @@ function PeticaoModal({
           ...formData,
           titulo: modeloInfo?.nome || formData.titulo,
           tipo: modeloInfo?.tipo || formData.tipo,
-          descricao: resultado.data,
+          descricao:
+            formData.descricao || toPlainTextExcerpt(resultado.data, 240),
+          conteudo: resultado.data,
         });
 
         toast.success("Modelo aplicado com sucesso!");
@@ -1023,9 +1373,13 @@ function PeticaoModal({
       : mode === "edit"
         ? canEditPeticao
         : false;
+  const conteudoAtual = formData.conteudo || "";
+  const conteudoPalavras = conteudoAtual.trim()
+    ? conteudoAtual.trim().split(/\s+/).length
+    : 0;
 
   return (
-    <Modal isOpen={isOpen} scrollBehavior="inside" size="3xl" onClose={onClose}>
+    <Modal isOpen={isOpen} scrollBehavior="inside" size="5xl" onClose={onClose}>
       <ModalContent>
         <ModalHeader>
           {mode === "create" && "Nova Petição"}
@@ -1169,6 +1523,30 @@ function PeticaoModal({
               setFormData({ ...formData, descricao: value })
             }
           />
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium">Documento editável da petição</p>
+                <p className="text-xs text-default-400">
+                  O conteúdo salvo aqui fica pesquisável dentro da aplicação.
+                </p>
+              </div>
+              <Chip size="sm" variant="flat">
+                {conteudoAtual.length} caracteres • {conteudoPalavras} palavras
+              </Chip>
+            </div>
+            <Textarea
+              isReadOnly={isReadOnly}
+              label="Conteúdo da peça"
+              minRows={16}
+              placeholder="Escreva ou cole aqui o texto completo da petição."
+              value={conteudoAtual}
+              onValueChange={(value) =>
+                setFormData({ ...formData, conteudo: value })
+              }
+            />
+          </div>
 
           <Textarea
             isReadOnly={isReadOnly}

@@ -815,6 +815,7 @@ export async function getAdminCausasLinkageSnapshot(): Promise<AdminCausasLinkag
       prisma.processoPrazo.groupBy({
         by: ["tenantId"],
         where: {
+          deletedAt: null,
           causaId: {
             not: null,
           },

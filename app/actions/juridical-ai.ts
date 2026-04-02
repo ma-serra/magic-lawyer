@@ -1160,6 +1160,8 @@ export async function createJuridicalAiPeticaoFromDraft(
           draft.summary ??
           toPlainTextExcerpt(draft.contentMarkdown, 360) ??
           "Petição originada de rascunho auditável do Magic AI.",
+        conteudo: draft.contentMarkdown,
+        conteudoTamanho: draft.contentMarkdown.length,
         documentoId: draft.sourceDocumentoId ?? undefined,
         observacoes: [
           "Origem: Magic AI",

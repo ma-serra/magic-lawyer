@@ -9,6 +9,7 @@ import {
   buildProcessoAdvogadoMembershipWhere,
   buildProcessoClienteMembershipWhere,
 } from "@/app/lib/processos/processo-vinculos";
+import { backfillManagedPrazoPrincipalForWhere } from "@/app/lib/processos/prazo-principal-sync";
 import { Prisma, ProcessoPrazoStatus, UserRole } from "@/generated/prisma";
 
 type PrazoWorkspaceHorizon =
@@ -409,8 +410,13 @@ export async function getPrazosWorkspace(
     const search = filters.search?.trim();
     const horizon = filters.horizon ?? "all";
     const processWhere = await buildAccessibleProcessWhere(session as any);
+    await backfillManagedPrazoPrincipalForWhere({
+      tenantId: user.tenantId,
+      processWhere,
+    });
     const baseWhere: Prisma.ProcessoPrazoWhereInput = {
       tenantId: user.tenantId,
+      deletedAt: null,
       processo: processWhere,
     };
 
@@ -552,6 +558,7 @@ export async function getPrazosWorkspace(
             prazos: {
               some: {
                 tenantId: user.tenantId,
+                deletedAt: null,
               },
             },
           },

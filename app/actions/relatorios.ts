@@ -267,7 +267,11 @@ export async function getRelatoriosData(
       prisma.processoPrazo.count({
         where: {
           tenantId,
+          deletedAt: null,
           status: ProcessoPrazoStatus.ABERTO,
+          processo: {
+            deletedAt: null,
+          },
           dataVencimento: {
             gte: now,
             lte: seteDias,
@@ -511,7 +515,11 @@ export async function getRelatoriosData(
       prisma.processoPrazo.findMany({
         where: {
           tenantId,
+          deletedAt: null,
           status: ProcessoPrazoStatus.ABERTO,
+          processo: {
+            deletedAt: null,
+          },
           dataVencimento: {
             gte: startOfDay(now),
             lte: addDays(now, 15),

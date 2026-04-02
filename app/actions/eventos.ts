@@ -107,6 +107,31 @@ function normalizeParticipantes(participantes: string[] | null | undefined) {
   return Array.from(unique.values());
 }
 
+function normalizeEventAccessLink(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidate =
+    trimmed.startsWith("http://") || trimmed.startsWith("https://")
+      ? trimmed
+      : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(candidate);
+
+    return parsed.hostname ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizePage(page?: number) {
   if (!page || !Number.isFinite(page) || page < 1) {
     return 1;
@@ -158,6 +183,7 @@ export type EventoFormData = Omit<
 > & {
   dataInicio: string; // String para o formulário, será convertido para Date
   dataFim: string; // String para o formulário, será convertido para Date
+  lembretesMinutos?: number[];
 };
 
 // Função de validação simples usando tipos do Prisma
@@ -209,6 +235,14 @@ function validateEvento(data: EventoFormData): {
       ) {
         errors.push("Data final da recorrência deve ser posterior ao início");
       }
+    }
+  }
+
+  if (data.isOnline) {
+    if (!data.linkAcesso?.trim()) {
+      errors.push("Informe o link do evento online");
+    } else if (!normalizeEventAccessLink(data.linkAcesso)) {
+      errors.push("Link do evento online inválido");
     }
   }
 
@@ -664,11 +698,22 @@ function getEventoFormDataFromEvento(evento: Evento): EventoFormData {
     processoId: evento.processoId,
     clienteId: evento.clienteId,
     advogadoResponsavelId: evento.advogadoResponsavelId,
+    isOnline: evento.isOnline,
+    linkAcesso: evento.linkAcesso,
     recorrencia: evento.recorrencia,
     recorrenciaFim: evento.recorrenciaFim,
     googleEventId: evento.googleEventId,
     googleCalendarId: evento.googleCalendarId,
     lembreteMinutos: evento.lembreteMinutos,
+    lembretesMinutos:
+      (evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos
+        ?.length
+        ? [...(evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos]
+        : evento.lembreteMinutos !== null &&
+            evento.lembreteMinutos !== undefined &&
+            evento.lembreteMinutos > 0
+          ? [evento.lembreteMinutos]
+          : [],
     observacoes: evento.observacoes,
   };
 }
@@ -1071,6 +1116,8 @@ export async function createEvento(formData: EventoFormData) {
       titulo: formData.titulo?.trim() ?? "",
       descricao: formData.descricao?.trim() || null,
       local: formData.local?.trim() || null,
+      isOnline: Boolean(formData.isOnline),
+      linkAcesso: normalizeEventAccessLink(formData.linkAcesso),
       observacoes: formData.observacoes?.trim() || null,
       participantes: normalizedParticipantes,
     };
@@ -1142,6 +1189,19 @@ export async function createEvento(formData: EventoFormData) {
 
     const recorrenciaTipo = (normalizedFormData.recorrencia ||
       "NENHUMA") as EventoRecorrenciaTipo;
+    const lembretesMinutosNormalizados = Array.from(
+      new Set(
+        (normalizedFormData.lembretesMinutos || [])
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    ).sort((a, b) => b - a);
+    const lembreteMinutosFallback =
+      normalizedFormData.lembreteMinutos && normalizedFormData.lembreteMinutos > 0
+        ? normalizedFormData.lembreteMinutos
+        : lembretesMinutosNormalizados.length > 0
+          ? Math.min(...lembretesMinutosNormalizados)
+          : 0;
     const recorrenciaFimDate = normalizedFormData.recorrenciaFim
       ? new Date(normalizedFormData.recorrenciaFim)
       : null;
@@ -1210,11 +1270,15 @@ export async function createEvento(formData: EventoFormData) {
             processoId: normalizedFormData.processoId,
             clienteId: relationshipsValidation.inferredClienteId,
             advogadoResponsavelId: normalizedFormData.advogadoResponsavelId,
+            isOnline: normalizedFormData.isOnline,
+            linkAcesso: normalizedFormData.linkAcesso,
             recorrencia: recorrenciaTipo,
             recorrenciaFim: recorrenciaTipo === "NENHUMA" ? null : recorrenciaFimDate,
             googleEventId: normalizedFormData.googleEventId,
             googleCalendarId: normalizedFormData.googleCalendarId,
-            lembreteMinutos: normalizedFormData.lembreteMinutos,
+            lembreteMinutos:
+              lembreteMinutosFallback > 0 ? lembreteMinutosFallback : null,
+            lembretesMinutos: lembretesMinutosNormalizados,
             observacoes: normalizedFormData.observacoes,
           },
           select: {
@@ -1329,6 +1393,16 @@ export async function createEvento(formData: EventoFormData) {
               eventoTitulo: eventoPrincipal.titulo,
               eventoData: eventoPrincipal.dataInicio,
               eventoLocal: eventoPrincipal.local,
+              isOnline: eventoPrincipal.isOnline,
+              linkAcesso: eventoPrincipal.linkAcesso,
+              detailLines: eventoPrincipal.isOnline
+                ? [
+                    "Evento online",
+                    ...(eventoPrincipal.linkAcesso
+                      ? [`Link: ${eventoPrincipal.linkAcesso}`]
+                      : []),
+                  ]
+                : [],
             },
             referenciaTipo: "evento",
             referenciaId: eventoPrincipal.id,
@@ -1432,6 +1506,12 @@ export async function updateEvento(
           ? formData.descricao?.trim() || null
           : undefined,
       local: formData.local !== undefined ? formData.local?.trim() || null : undefined,
+      isOnline:
+        formData.isOnline !== undefined ? Boolean(formData.isOnline) : undefined,
+      linkAcesso:
+        formData.linkAcesso !== undefined
+          ? normalizeEventAccessLink(formData.linkAcesso)
+          : undefined,
       observacoes:
         formData.observacoes !== undefined
           ? formData.observacoes?.trim() || null
@@ -1439,6 +1519,16 @@ export async function updateEvento(
       participantes:
         formData.participantes !== undefined
           ? normalizeParticipantes(formData.participantes)
+          : undefined,
+      lembretesMinutos:
+        formData.lembretesMinutos !== undefined
+          ? Array.from(
+              new Set(
+                formData.lembretesMinutos
+                  .map((value) => Number(value))
+                  .filter((value) => Number.isFinite(value) && value > 0),
+              ),
+            ).sort((a, b) => b - a)
           : undefined,
     };
 
@@ -1558,8 +1648,26 @@ export async function updateEvento(
       updateData.googleCalendarId = normalizedPatch.googleCalendarId;
     }
 
+    if (normalizedPatch.isOnline !== undefined) {
+      updateData.isOnline = normalizedPatch.isOnline;
+    }
+
+    if (normalizedPatch.linkAcesso !== undefined) {
+      updateData.linkAcesso = normalizedPatch.linkAcesso;
+    }
+
     if (normalizedPatch.lembreteMinutos !== undefined) {
       updateData.lembreteMinutos = normalizedPatch.lembreteMinutos;
+    }
+
+    if (normalizedPatch.lembretesMinutos !== undefined) {
+      updateData.lembretesMinutos = normalizedPatch.lembretesMinutos;
+
+      if (normalizedPatch.lembretesMinutos.length > 0) {
+        updateData.lembreteMinutos = Math.min(...normalizedPatch.lembretesMinutos);
+      } else if (normalizedPatch.lembreteMinutos === undefined) {
+        updateData.lembreteMinutos = null;
+      }
     }
 
     if (normalizedPatch.observacoes !== undefined) {
@@ -1722,6 +1830,8 @@ export async function updateEvento(
                 eventoTitulo: eventoExistente.titulo,
                 eventoData: evento.dataInicio,
                 eventoLocal: evento.local,
+                isOnline: evento.isOnline,
+                linkAcesso: evento.linkAcesso,
               },
               referenciaTipo: "evento",
               referenciaId: evento.id,
@@ -1973,6 +2083,8 @@ export async function confirmarParticipacaoEvento(
               status,
               tipoConfirmacao: "RESPONSE",
               destinatarioEmail: email,
+              isOnline: evento.isOnline,
+              linkAcesso: evento.linkAcesso,
             },
             referenciaTipo: "evento",
             referenciaId: eventoId,

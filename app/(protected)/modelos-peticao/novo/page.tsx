@@ -2,26 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Input, Textarea } from "@heroui/input";
-
-import { Checkbox } from "@heroui/checkbox";
-import { Divider } from "@heroui/divider";
-import { Chip } from "@heroui/chip";
-import {
-  ArrowLeft,
-  Save,
-  FileText,
-  Plus,
-  Trash2,
-  Info,
-  Code,
-} from "lucide-react";
-import { toast } from "@/lib/toast";
 import Link from "next/link";
+import useSWR from "swr";
+import { Button, Card, CardBody, CardHeader, Checkbox, Input, Select, SelectItem, Textarea } from "@heroui/react";
+import { ArrowLeft, Save, Settings2 } from "lucide-react";
 
 import { title } from "@/components/primitives";
+import { toast } from "@/lib/toast";
+import { fetchTenantBrandingFromDomain } from "@/lib/fetchers/tenant-branding";
 import {
   createModeloPeticao,
   type ModeloPeticaoCreateInput,
@@ -30,9 +18,13 @@ import {
   useCategoriasModeloPeticao,
   useTiposModeloPeticao,
 } from "@/app/hooks/use-modelos-peticao";
-import { Select, SelectItem } from "@heroui/react";
+import {
+  mergeModeloPeticaoVariaveisWithConteudo,
+  ModeloPeticaoDocumentWorkspace,
+  normalizeModeloPeticaoVariaveis,
+  type ModeloPeticaoVariavel,
+} from "@/components/modelos-peticao/modelo-peticao-document-workspace";
 
-// Categorias padrão sugeridas
 const CATEGORIAS_PADRAO = [
   "INICIAL",
   "CONTESTACAO",
@@ -44,45 +36,30 @@ const CATEGORIAS_PADRAO = [
   "PETICAO_SIMPLES",
 ];
 
-// Tipos padrão sugeridos
 const TIPOS_PADRAO = [
   "CIVEL",
   "TRABALHISTA",
   "CRIMINAL",
   "TRIBUTARIO",
   "FAMILIA",
+  "PREVIDENCIARIO",
+  "EMPRESARIAL",
 ];
-
-// Variáveis padrão disponíveis
-const VARIAVEIS_PADRAO = [
-  { nome: "processo_numero", tipo: "texto", descricao: "Número do processo" },
-  { nome: "processo_titulo", tipo: "texto", descricao: "Título do processo" },
-  { nome: "cliente_nome", tipo: "texto", descricao: "Nome do cliente" },
-  {
-    nome: "cliente_documento",
-    tipo: "texto",
-    descricao: "CPF/CNPJ do cliente",
-  },
-  { nome: "advogado_nome", tipo: "texto", descricao: "Nome do advogado" },
-  { nome: "advogado_oab", tipo: "texto", descricao: "OAB do advogado" },
-  { nome: "tribunal_nome", tipo: "texto", descricao: "Nome do tribunal" },
-  { nome: "data_atual", tipo: "data", descricao: "Data atual" },
-  { nome: "valor", tipo: "numero", descricao: "Valor da causa" },
-];
-
-interface Variavel {
-  nome: string;
-  tipo: string;
-  descricao: string;
-  obrigatorio: boolean;
-}
 
 export default function NovoModeloPeticaoPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-
   const { categorias: categoriasExistentes } = useCategoriasModeloPeticao();
   const { tipos: tiposExistentes } = useTiposModeloPeticao();
+  const { data: tenantBranding } = useSWR(
+    "tenant-branding-from-domain",
+    fetchTenantBrandingFromDomain,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+    },
+  );
 
   const [formData, setFormData] = useState<ModeloPeticaoCreateInput>({
     nome: "",
@@ -93,8 +70,7 @@ export default function NovoModeloPeticaoPage() {
     publico: false,
     ativo: true,
   });
-
-  const [variaveis, setVariaveis] = useState<Variavel[]>([]);
+  const [variaveis, setVariaveis] = useState<ModeloPeticaoVariavel[]>([]);
   const [novaCategoria, setNovaCategoria] = useState("");
   const [novoTipo, setNovoTipo] = useState("");
 
@@ -102,83 +78,51 @@ export default function NovoModeloPeticaoPage() {
     new Set([...CATEGORIAS_PADRAO, ...categoriasExistentes]),
   );
   const todosTipos = Array.from(new Set([...TIPOS_PADRAO, ...tiposExistentes]));
-
-  const handleAdicionarVariavel = (variavel: (typeof VARIAVEIS_PADRAO)[0]) => {
-    if (variaveis.some((v) => v.nome === variavel.nome)) {
-      toast.warning("Esta variável já foi adicionada");
-
-      return;
-    }
-
-    setVariaveis([
-      ...variaveis,
-      {
-        ...variavel,
-        obrigatorio: false,
-      },
-    ]);
-
-    // Adicionar placeholder no conteúdo
-    setFormData((prev) => ({
-      ...prev,
-      conteudo: prev.conteudo + `{{${variavel.nome}}} `,
-    }));
-
-    toast.success(`Variável {{${variavel.nome}}} adicionada`);
-  };
-
-  const handleRemoverVariavel = (nome: string) => {
-    setVariaveis(variaveis.filter((v) => v.nome !== nome));
-  };
-
-  const handleToggleObrigatorio = (nome: string) => {
-    setVariaveis(
-      variaveis.map((v) =>
-        v.nome === nome ? { ...v, obrigatorio: !v.obrigatorio } : v,
-      ),
-    );
-  };
+  const branding = tenantBranding?.success ? tenantBranding.data : null;
 
   const handleSubmit = async () => {
     if (!formData.nome.trim()) {
-      toast.error("Nome do modelo é obrigatório");
-
+      toast.error("Nome do modelo e obrigatorio");
       return;
     }
 
     if (!formData.conteudo.trim()) {
-      toast.error("Conteúdo do modelo é obrigatório");
-
+      toast.error("Conteudo do modelo e obrigatorio");
       return;
     }
 
     startTransition(async () => {
+      const mergedVariaveis = mergeModeloPeticaoVariaveisWithConteudo(
+        normalizeModeloPeticaoVariaveis(variaveis),
+        formData.conteudo,
+      );
+
       const payload: ModeloPeticaoCreateInput = {
         ...formData,
-        categoria: novaCategoria || formData.categoria || undefined,
-        tipo: novoTipo || formData.tipo || undefined,
-        variaveis: variaveis.length > 0 ? variaveis : undefined,
+        categoria: novaCategoria.trim() || formData.categoria || undefined,
+        tipo: novoTipo.trim() || formData.tipo || undefined,
+        variaveis: mergedVariaveis.length > 0 ? mergedVariaveis : undefined,
       };
 
       const result = await createModeloPeticao(payload);
 
-      if (result.success) {
-        toast.success("Modelo criado com sucesso!");
-        router.push("/modelos-peticao");
-      } else {
+      if (!result.success) {
         toast.error(result.error || "Erro ao criar modelo");
+        return;
       }
+
+      toast.success("Modelo criado com sucesso");
+      router.push("/modelos-peticao");
     });
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className={title()}>Novo Modelo de Petição</h1>
-          <p className="text-sm text-default-500 mt-1">
-            Crie um modelo reutilizável com variáveis dinâmicas
+          <h1 className={title()}>Novo Modelo de Peticao</h1>
+          <p className="mt-1 text-sm text-default-500">
+            Monte um documento reutilizavel com variaveis, preview e identidade do escritorio.
           </p>
         </div>
         <Button
@@ -191,55 +135,55 @@ export default function NovoModeloPeticaoPage() {
         </Button>
       </div>
 
-      {/* Informações Básicas */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Informações Básicas</h2>
+      <Card className="border border-default-200/80 bg-content1/90 dark:border-white/10 dark:bg-background/60">
+        <CardHeader className="flex items-center gap-2">
+          <Settings2 className="h-5 w-5 text-primary" />
+          <div>
+            <p className="text-lg font-semibold">Configuracao do modelo</p>
+            <p className="text-sm text-default-500">
+              Defina nome, classificacao e regras de uso antes de montar o documento.
+            </p>
           </div>
         </CardHeader>
-        <Divider />
         <CardBody className="space-y-4">
           <Input
             isRequired
-            label="Nome do Modelo"
-            placeholder="Ex: Petição Inicial - Ação de Cobrança"
+            label="Nome do modelo"
+            placeholder="Ex: Contestacao trabalhista padrao"
             value={formData.nome}
-            onValueChange={(value) => setFormData({ ...formData, nome: value })}
+            onValueChange={(value) => setFormData((prev) => ({ ...prev, nome: value }))}
           />
 
           <Textarea
-            label="Descrição"
-            minRows={3}
-            placeholder="Descreva o propósito e uso deste modelo..."
+            label="Descricao"
+            minRows={2}
+            placeholder="Quando usar este modelo e qual estrategia ele cobre."
             value={formData.descricao}
             onValueChange={(value) =>
-              setFormData({ ...formData, descricao: value })
+              setFormData((prev) => ({ ...prev, descricao: value }))
             }
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Select
                 label="Categoria"
-                placeholder="Selecione ou digite nova"
+                placeholder="Selecione uma categoria"
                 selectedKeys={formData.categoria ? [formData.categoria] : []}
                 onSelectionChange={(keys) => {
                   const value = Array.from(keys)[0] as string;
-
-                  setFormData({ ...formData, categoria: value });
+                  setFormData((prev) => ({ ...prev, categoria: value }));
                   setNovaCategoria("");
                 }}
               >
-                {todasCategorias.map((cat) => (
-                  <SelectItem key={cat} textValue={cat}>
-                    {cat}
+                {todasCategorias.map((categoria) => (
+                  <SelectItem key={categoria} textValue={categoria}>
+                    {categoria}
                   </SelectItem>
                 ))}
               </Select>
               <Input
-                placeholder="Ou digite nova categoria"
+                placeholder="Ou digite uma nova categoria"
                 size="sm"
                 value={novaCategoria}
                 onValueChange={setNovaCategoria}
@@ -249,12 +193,11 @@ export default function NovoModeloPeticaoPage() {
             <div className="space-y-2">
               <Select
                 label="Tipo"
-                placeholder="Selecione ou digite novo"
+                placeholder="Selecione uma area ou rito"
                 selectedKeys={formData.tipo ? [formData.tipo] : []}
                 onSelectionChange={(keys) => {
                   const value = Array.from(keys)[0] as string;
-
-                  setFormData({ ...formData, tipo: value });
+                  setFormData((prev) => ({ ...prev, tipo: value }));
                   setNovoTipo("");
                 }}
               >
@@ -265,7 +208,7 @@ export default function NovoModeloPeticaoPage() {
                 ))}
               </Select>
               <Input
-                placeholder="Ou digite novo tipo"
+                placeholder="Ou digite um novo tipo"
                 size="sm"
                 value={novoTipo}
                 onValueChange={setNovoTipo}
@@ -273,11 +216,11 @@ export default function NovoModeloPeticaoPage() {
             </div>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-5">
             <Checkbox
               isSelected={formData.ativo}
               onValueChange={(checked) =>
-                setFormData({ ...formData, ativo: checked })
+                setFormData((prev) => ({ ...prev, ativo: checked }))
               }
             >
               Modelo ativo
@@ -285,144 +228,33 @@ export default function NovoModeloPeticaoPage() {
             <Checkbox
               isSelected={formData.publico}
               onValueChange={(checked) =>
-                setFormData({ ...formData, publico: checked })
+                setFormData((prev) => ({ ...prev, publico: checked }))
               }
             >
-              Modelo público (compartilhado)
+              Modelo publico do escritorio
             </Checkbox>
           </div>
         </CardBody>
       </Card>
 
-      {/* Variáveis Disponíveis */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Code className="h-5 w-5 text-secondary" />
-            <h2 className="text-lg font-semibold">Variáveis Disponíveis</h2>
-          </div>
-        </CardHeader>
-        <Divider />
-        <CardBody className="space-y-4">
-          <div className="flex items-start gap-2 p-3 bg-primary/5 rounded-lg">
-            <Info className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <p className="font-medium text-primary mb-1">
-                Como usar variáveis
-              </p>
-              <p className="text-default-600">
-                Clique nas variáveis abaixo para adicioná-las ao template. Elas
-                serão substituídas automaticamente ao gerar uma petição. Use o
-                formato{" "}
-                <code className="bg-default-100 px-1 rounded">
-                  {"{{"} variavel {"}}"}
-                </code>
-              </p>
-            </div>
-          </div>
+      <ModeloPeticaoDocumentWorkspace
+        branding={
+          branding
+            ? {
+                name: branding.name,
+                logoUrl: branding.logoUrl,
+                primaryColor: branding.primaryColor,
+                secondaryColor: branding.secondaryColor,
+                accentColor: branding.accentColor,
+              }
+            : null
+        }
+        value={formData.conteudo}
+        variaveis={variaveis}
+        onChange={(conteudo) => setFormData((prev) => ({ ...prev, conteudo }))}
+        onVariaveisChange={setVariaveis}
+      />
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Variáveis Padrão:</p>
-            <div className="flex flex-wrap gap-2">
-              {VARIAVEIS_PADRAO.map((variavel) => (
-                <Chip
-                  key={variavel.nome}
-                  color={
-                    variaveis.some((v) => v.nome === variavel.nome)
-                      ? "success"
-                      : "default"
-                  }
-                  startContent={
-                    variaveis.some((v) => v.nome === variavel.nome) ? (
-                      <span>✓</span>
-                    ) : (
-                      <Plus className="h-3 w-3" />
-                    )
-                  }
-                  variant="flat"
-                  onClick={() => handleAdicionarVariavel(variavel)}
-                >
-                  {variavel.nome}
-                </Chip>
-              ))}
-            </div>
-          </div>
-
-          {variaveis.length > 0 && (
-            <>
-              <Divider />
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Variáveis Adicionadas:</p>
-                <div className="space-y-2">
-                  {variaveis.map((variavel) => (
-                    <div
-                      key={variavel.nome}
-                      className="flex items-center justify-between p-3 bg-default-50 rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">
-                          {"{{"} {variavel.nome} {"}}"}
-                        </p>
-                        <p className="text-xs text-default-500">
-                          {variavel.descricao}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          isSelected={variavel.obrigatorio}
-                          size="sm"
-                          onValueChange={() =>
-                            handleToggleObrigatorio(variavel.nome)
-                          }
-                        >
-                          <span className="text-xs">Obrigatório</span>
-                        </Checkbox>
-                        <Button
-                          isIconOnly
-                          color="danger"
-                          size="sm"
-                          variant="light"
-                          onPress={() => handleRemoverVariavel(variavel.nome)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Conteúdo do Template */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-warning" />
-            <h2 className="text-lg font-semibold">Conteúdo do Template</h2>
-          </div>
-        </CardHeader>
-        <Divider />
-        <CardBody>
-          <Textarea
-            isRequired
-            classNames={{
-              input: "font-mono text-sm",
-            }}
-            label="Template"
-            minRows={15}
-            placeholder="Digite o conteúdo do modelo aqui. Use {{variavel}} para inserir variáveis dinâmicas."
-            value={formData.conteudo}
-            onValueChange={(value) =>
-              setFormData({ ...formData, conteudo: value })
-            }
-          />
-        </CardBody>
-      </Card>
-
-      {/* Ações */}
       <div className="flex justify-end gap-3">
         <Button variant="light" onPress={() => router.push("/modelos-peticao")}>
           Cancelar
@@ -433,7 +265,7 @@ export default function NovoModeloPeticaoPage() {
           startContent={<Save className="h-4 w-4" />}
           onPress={handleSubmit}
         >
-          Criar Modelo
+          Criar modelo
         </Button>
       </div>
     </div>

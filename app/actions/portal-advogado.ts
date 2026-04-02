@@ -1111,6 +1111,7 @@ export async function getPainelOperacionalPortalAdvogado(params?: {
 
     const prazoWhereBase: Prisma.ProcessoPrazoWhereInput = {
       tenantId,
+      deletedAt: null,
       status: "ABERTO",
       processo: baseProcessoWhere,
     };

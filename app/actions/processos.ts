@@ -42,6 +42,10 @@ import {
   syncProcessoResponsaveis,
   uniqueOrderedProcessoRelationIds,
 } from "@/app/lib/processos/processo-vinculos";
+import {
+  backfillManagedPrazoPrincipalForWhere,
+  syncManagedPrazoPrincipalForProcess,
+} from "@/app/lib/processos/prazo-principal-sync";
 import { checkPermission } from "@/app/actions/equipe";
 import {
   getAccessibleAdvogadoIds,
@@ -146,6 +150,9 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
         },
       },
       partes: {
+        where: {
+          deletedAt: null,
+        },
         select: {
           id: true,
           tenantId: true,
@@ -184,6 +191,9 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
         },
       },
       prazos: {
+        where: {
+          deletedAt: null,
+        },
         include: {
           responsavel: {
             select: {
@@ -198,6 +208,14 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
               id: true,
               titulo: true,
               dataMovimentacao: true,
+            },
+          },
+          origemEvento: {
+            select: {
+              id: true,
+              titulo: true,
+              tipo: true,
+              dataInicio: true,
             },
           },
           regimePrazo: {
@@ -379,6 +397,12 @@ export interface ProcessoPrazo {
     id: string;
     titulo: string;
     dataMovimentacao: Date;
+  } | null;
+  origemEvento?: {
+    id: string;
+    titulo: string;
+    tipo: string;
+    dataInicio: Date;
   } | null;
   regimePrazo?: {
     id: string;
@@ -1122,6 +1146,14 @@ const processoPrazoInclude = {
       dataMovimentacao: true,
     },
   },
+  origemEvento: {
+    select: {
+      id: true,
+      titulo: true,
+      tipo: true,
+      dataInicio: true,
+    },
+  },
   regimePrazo: {
     select: {
       id: true,
@@ -1264,6 +1296,7 @@ function buildPrazoAuditSnapshot(prazo: {
   dataCumprimento?: Date | string | null;
   responsavelId?: string | null;
   origemMovimentacaoId?: string | null;
+  origemEventoId?: string | null;
   regimePrazoId?: string | null;
 }): Record<string, string | null> {
   return {
@@ -1276,6 +1309,7 @@ function buildPrazoAuditSnapshot(prazo: {
     dataCumprimento: normalizeAuditDate(prazo.dataCumprimento ?? null),
     responsavelId: prazo.responsavelId ?? null,
     origemMovimentacaoId: prazo.origemMovimentacaoId ?? null,
+    origemEventoId: prazo.origemEventoId ?? null,
     regimePrazoId: prazo.regimePrazoId ?? null,
   };
 }
@@ -1968,6 +2002,10 @@ export async function getProcessoDetalhado(processoId: string): Promise<{
       session,
       processoId,
     );
+    await backfillManagedPrazoPrincipalForWhere({
+      tenantId: user.tenantId,
+      processWhere: whereClause,
+    });
     // Se for cliente, só pode ver seus próprios processos
 
     // Se for advogado (não admin), verificar acesso
@@ -2694,6 +2732,7 @@ export interface ProcessoPrazoInput {
   status?: ProcessoPrazoStatus;
   responsavelId?: string | null;
   origemMovimentacaoId?: string | null;
+  origemEventoId?: string | null;
   regimePrazoId?: string | null;
 }
 
@@ -2946,6 +2985,12 @@ export async function createProcesso(data: ProcessoCreateInput) {
         tenantId: user.tenantId,
         processoId: criado.id,
         clienteIds: normalizedLinks.clienteIds,
+      });
+      await syncManagedPrazoPrincipalForProcess(tx, {
+        tenantId: user.tenantId,
+        processoId: criado.id,
+        prazoPrincipal,
+        actorUserId: user.id,
       });
 
       return criado;
@@ -3347,6 +3392,10 @@ export async function updateProcesso(
         ? new Date(data.prazoPrincipal)
         : null;
     }
+    const nextPrazoPrincipal =
+      updatePayload.prazoPrincipal !== undefined
+        ? ((updatePayload.prazoPrincipal as Date | null) ?? null)
+        : (processo.prazoPrincipal ?? null);
 
     const atualizado = await prisma.$transaction(async (tx) => {
       const processoAtualizado = await tx.processo.update({
@@ -3389,6 +3438,12 @@ export async function updateProcesso(
         tenantId,
         processoId,
         clienteIds: normalizedLinks.clienteIds,
+      });
+      await syncManagedPrazoPrincipalForProcess(tx, {
+        tenantId,
+        processoId,
+        prazoPrincipal: nextPrazoPrincipal,
+        actorUserId: user.id,
       });
 
       if (novoCliente) {
@@ -4010,6 +4065,32 @@ export async function createProcessoPrazo(
       }
     }
 
+    if (input.origemMovimentacaoId && input.origemEventoId) {
+      return {
+        success: false,
+        error: "Vincule o prazo a um andamento ou a um evento, nao aos dois",
+      };
+    }
+
+    if (input.origemEventoId) {
+      const evento = await prisma.evento.findFirst({
+        where: {
+          id: input.origemEventoId,
+          tenantId,
+          processoId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!evento) {
+        return {
+          success: false,
+          error: "Evento de origem nao encontrado para este processo",
+        };
+      }
+    }
+
     const regimePrazoId = input.regimePrazoId ?? null;
 
     if (regimePrazoId) {
@@ -4056,6 +4137,7 @@ export async function createProcessoPrazo(
         dataCumprimento: parsedDataCumprimento.date,
         responsavelId,
         origemMovimentacaoId: input.origemMovimentacaoId ?? null,
+        origemEventoId: input.origemEventoId ?? null,
         regimePrazoId,
       },
       include: processoPrazoInclude,
@@ -4247,6 +4329,18 @@ export async function updateProcessoPrazo(
       }
     }
 
+    if (
+      input.origemMovimentacaoId !== undefined &&
+      input.origemEventoId !== undefined &&
+      input.origemMovimentacaoId !== null &&
+      input.origemEventoId !== null
+    ) {
+      return {
+        success: false,
+        error: "Vincule o prazo a um andamento ou a um evento, nao aos dois",
+      };
+    }
+
     if (input.origemMovimentacaoId !== undefined) {
       if (input.origemMovimentacaoId === null) {
         updateData.origemMovimentacao = { disconnect: true };
@@ -4269,6 +4363,37 @@ export async function updateProcessoPrazo(
         updateData.origemMovimentacao = {
           connect: { id: input.origemMovimentacaoId },
         };
+
+        updateData.origemEvento = { disconnect: true };
+      }
+    }
+
+    if (input.origemEventoId !== undefined) {
+      if (input.origemEventoId === null) {
+        updateData.origemEvento = { disconnect: true };
+      } else {
+        const evento = await prisma.evento.findFirst({
+          where: {
+            id: input.origemEventoId,
+            tenantId,
+            processoId: prazo.processoId,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+
+        if (!evento) {
+          return {
+            success: false,
+            error: "Evento de origem nao encontrado para este processo",
+          };
+        }
+
+        updateData.origemEvento = {
+          connect: { id: input.origemEventoId },
+        };
+
+        updateData.origemMovimentacao = { disconnect: true };
       }
     }
 

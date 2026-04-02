@@ -9,6 +9,7 @@ import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assistant-dock";
 import { CriticalDeadlinePopup } from "@/components/notifications/critical-deadline-popup";
+import { InAppNotificationAnnouncer } from "@/components/notifications/in-app-notification-announcer";
 import { WebPushRuntime } from "@/components/notifications/web-push-runtime";
 import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
 import { TenantFloatingChatDock } from "@/components/support/tenant-floating-chat-dock";
@@ -87,6 +88,7 @@ export function AppShell({ children }: AppShellProps) {
           onOpenSidebar={openSidebarMobile}
         />
         <WebPushRuntime />
+        <InAppNotificationAnnouncer />
         <BreadcrumbNav />
         <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-10 pt-3 sm:px-5 sm:pt-6 md:px-8 md:pt-8">
           <div className="mx-auto w-full max-w-[1600px] space-y-6">

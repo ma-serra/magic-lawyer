@@ -38,7 +38,12 @@ import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { useJuizes } from "@/app/hooks/use-juizes";
 import { useProcessoDetalhado } from "@/app/hooks/use-processos";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
-import { listTribunaisParaVinculo } from "@/app/actions/tribunais";
+import {
+  listComarcasPorTribunal,
+  listTribunaisParaVinculo,
+  listVarasPorTribunal,
+} from "@/app/actions/tribunais";
+import { listClassesProcessuais } from "@/app/actions/classes-processuais";
 import {
   updateProcesso,
   type ProcessoCreateInput,
@@ -56,6 +61,17 @@ import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
 
+function buildTribunalLabel(tribunal?: {
+  sigla?: string | null;
+  nome: string;
+}) {
+  if (!tribunal) {
+    return "";
+  }
+
+  return tribunal.sigla ? `${tribunal.sigla} - ${tribunal.nome}` : tribunal.nome;
+}
+
 export default function EditarProcessoPage() {
   const params = useParams();
   const router = useRouter();
@@ -70,6 +86,11 @@ export default function EditarProcessoPage() {
     isLoading: isLoadingJuizes,
     mutate: mutateJuizes,
   } = useJuizes();
+  const [formData, setFormData] = useState<ProcessoCreateInput | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
+  const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
   const { data: areasData, isLoading: isLoadingAreas } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
@@ -77,6 +98,28 @@ export default function EditarProcessoPage() {
   const { data: tribunaisData, isLoading: isLoadingTribunais } = useSWR(
     "tribunais-vinculo-processos-editar",
     () => listTribunaisParaVinculo(),
+  );
+  const { data: comarcasData, isLoading: isLoadingComarcas } = useSWR(
+    formData?.tribunalId
+      ? ["comarcas-processo-editar", formData.tribunalId]
+      : null,
+    ([, tribunalId]) => listComarcasPorTribunal(tribunalId),
+  );
+  const { data: varasData, isLoading: isLoadingVaras } = useSWR(
+    formData?.tribunalId
+      ? ["varas-processo-editar", formData.tribunalId, formData.comarca || ""]
+      : null,
+    ([, tribunalId, comarca]) =>
+      listVarasPorTribunal({
+        tribunalId,
+        comarca: typeof comarca === "string" ? comarca : undefined,
+      }),
+  );
+  const {
+    data: classesProcessuaisData,
+    isLoading: isLoadingClassesProcessuais,
+  } = useSWR("classes-processuais-select", () =>
+    listClassesProcessuais({ ativo: true }),
   );
   const areas = useMemo(() => {
     if (!areasData?.success) {
@@ -92,6 +135,27 @@ export default function EditarProcessoPage() {
 
     return tribunaisData.tribunais ?? [];
   }, [tribunaisData]);
+  const comarcas = useMemo(() => {
+    if (!comarcasData?.success) {
+      return [];
+    }
+
+    return comarcasData.comarcas ?? [];
+  }, [comarcasData]);
+  const varas = useMemo(() => {
+    if (!varasData?.success) {
+      return [];
+    }
+
+    return varasData.varas ?? [];
+  }, [varasData]);
+  const classesProcessuais = useMemo(() => {
+    if (!classesProcessuaisData?.success) {
+      return [];
+    }
+
+    return classesProcessuaisData.classes ?? [];
+  }, [classesProcessuaisData]);
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente) => cliente.id)),
     [clientes],
@@ -100,6 +164,59 @@ export default function EditarProcessoPage() {
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
   );
+  const classProcessualOptions = useMemo(() => {
+    const baseOptions = classesProcessuais.map((classe) => ({
+      key: classe.slug,
+      label: classe.nome,
+      textValue: [classe.nome, classe.slug, classe.descricao || ""]
+        .filter(Boolean)
+        .join(" "),
+      description: classe.descricao || undefined,
+    }));
+
+    const currentValue = formData?.classeProcessual?.trim();
+
+    if (!currentValue) {
+      return baseOptions;
+    }
+
+    const exists = baseOptions.some(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    if (exists) {
+      return baseOptions;
+    }
+
+    return [
+      {
+        key: `legacy:${currentValue}`,
+        label: currentValue,
+        textValue: currentValue,
+        description: "Classe legada jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ informada neste processo",
+      },
+      ...baseOptions,
+    ];
+  }, [classesProcessuais, formData?.classeProcessual]);
+  const selectedClasseProcessualKey = useMemo(() => {
+    const currentValue = formData?.classeProcessual?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    const matched = classProcessualOptions.find(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    return matched?.key ?? null;
+  }, [classProcessualOptions, formData?.classeProcessual]);
   const advogadoKeys = useMemo(
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
@@ -108,12 +225,6 @@ export default function EditarProcessoPage() {
     () => new Set((tribunais || []).map((tribunal) => tribunal.id)),
     [tribunais],
   );
-
-  const [formData, setFormData] = useState<ProcessoCreateInput | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
-  const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
-  const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
   const juizesDoFormulario = useMemo(() => {
     const byId = new Map<string, JuizSerializado>();
@@ -217,7 +328,7 @@ export default function EditarProcessoPage() {
           .filter(Boolean)
           .join(" "),
         description:
-          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ") ||
           "Sem vara/comarca informada",
       })),
     [juizesDoFormulario],
@@ -238,14 +349,121 @@ export default function EditarProcessoPage() {
           .filter(Boolean)
           .join(" "),
         description:
-          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ") ||
           "Sem esfera/UF",
       })),
     [tribunais],
   );
+  const comarcaOptions = useMemo(
+    () => {
+      const baseOptions = comarcas.map((comarca) => ({
+        key: comarca,
+        label: comarca,
+        textValue: comarca,
+      }));
+      const currentValue = formData?.comarca?.trim();
+
+      if (!currentValue) {
+        return baseOptions;
+      }
+
+      if (baseOptions.some((item) => item.label === currentValue)) {
+        return baseOptions;
+      }
+
+      return [
+        {
+          key: `legacy:${currentValue}`,
+          label: currentValue,
+          textValue: currentValue,
+        },
+        ...baseOptions,
+      ];
+    },
+    [comarcas, formData?.comarca],
+  );
+  const varaOptions = useMemo(
+    () => {
+      const baseOptions = varas.map((vara) => ({
+        key: vara,
+        label: vara,
+        textValue: vara,
+      }));
+      const currentValue = formData?.vara?.trim();
+
+      if (!currentValue) {
+        return baseOptions;
+      }
+
+      if (baseOptions.some((item) => item.label === currentValue)) {
+        return baseOptions;
+      }
+
+      return [
+        {
+          key: `legacy:${currentValue}`,
+          label: currentValue,
+          textValue: currentValue,
+        },
+        ...baseOptions,
+      ];
+    },
+    [formData?.vara, varas],
+  );
+  const selectedOrgaoJulgadorKey = useMemo(() => {
+    const currentValue = formData?.orgaoJulgador?.trim();
+
+    if (!currentValue) {
+      return selectedTribunalKeys[0] ?? null;
+    }
+
+    const matched = tribunalOptions.find(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    return matched?.key ?? null;
+  }, [formData?.orgaoJulgador, selectedTribunalKeys, tribunalOptions]);
+  const selectedComarcaKey = useMemo(() => {
+    const currentValue = formData?.comarca?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    return comarcaOptions.find((item) => item.label === currentValue)?.key ?? null;
+  }, [comarcaOptions, formData?.comarca]);
+  const selectedVaraKey = useMemo(() => {
+    const currentValue = formData?.vara?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    return varaOptions.find((item) => item.label === currentValue)?.key ?? null;
+  }, [formData?.vara, varaOptions]);
 
   useEffect(() => {
     if (!processo || formData) return;
+
+    const clientesVinculadosIds = Array.isArray(processo.clientesVinculados)
+      ? processo.clientesVinculados
+          .map((cliente) => cliente?.id)
+          .filter((clienteId): clienteId is string => Boolean(clienteId))
+      : processo.cliente?.id
+        ? [processo.cliente.id]
+        : [];
+    const advogadosResponsaveisIds = Array.isArray(
+      processo.advogadosResponsaveis,
+    )
+      ? processo.advogadosResponsaveis
+          .map((advogado) => advogado?.id)
+          .filter((advogadoId): advogadoId is string => Boolean(advogadoId))
+      : processo.advogadoResponsavel?.id
+        ? [processo.advogadoResponsavel.id]
+        : [];
 
     const mapped: ProcessoCreateInput = {
       numero: processo.numero,
@@ -255,7 +473,9 @@ export default function EditarProcessoPage() {
       status: processo.status,
       arquivamentoTipo: processo.arquivamentoTipo ?? null,
       classeProcessual: processo.classeProcessual || "",
-      orgaoJulgador: processo.orgaoJulgador || "",
+      orgaoJulgador:
+        processo.orgaoJulgador ||
+        buildTribunalLabel(processo.tribunal || undefined),
       vara: processo.vara || "",
       comarca: processo.comarca || "",
       foro: processo.foro || "",
@@ -263,16 +483,10 @@ export default function EditarProcessoPage() {
       numeroInterno: processo.numeroInterno || "",
       pastaCompartilhadaUrl: processo.pastaCompartilhadaUrl || "",
       clienteId: processo.cliente.id,
-      clienteIds:
-        processo.clientesVinculados?.map((cliente) => cliente.id) ??
-        [processo.cliente.id],
+      clienteIds: clientesVinculadosIds,
       segredoJustica: processo.segredoJustica,
       advogadoResponsavelId: processo.advogadoResponsavel?.id || "",
-      advogadoResponsavelIds:
-        processo.advogadosResponsaveis?.map((advogado) => advogado.id) ??
-        (processo.advogadoResponsavel?.id
-          ? [processo.advogadoResponsavel.id]
-          : []),
+      advogadoResponsavelIds: advogadosResponsaveisIds,
       juizId: processo.juiz?.id || "",
       tribunalId: processo.tribunal?.id || "",
     };
@@ -301,17 +515,17 @@ export default function EditarProcessoPage() {
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "Petição Inicial";
+        return "PetiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o Inicial";
       case ProcessoFase.CITACAO:
-        return "Citação";
+        return "CitaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
       case ProcessoFase.INSTRUCAO:
-        return "Instrução";
+        return "InstruÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
       case ProcessoFase.SENTENCA:
-        return "Sentença";
+        return "SentenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "Execução";
+        return "ExecuÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
       default:
         return fase;
     }
@@ -320,9 +534,9 @@ export default function EditarProcessoPage() {
   const getGrauLabel = (grau: ProcessoGrau) => {
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1º Grau";
+        return "1ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2º Grau";
+        return "2ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:
@@ -334,7 +548,7 @@ export default function EditarProcessoPage() {
     if (!formData) return;
 
     if (!formData.numero.trim()) {
-      toast.error("Número do processo é obrigatório");
+      toast.error("NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero do processo ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© obrigatÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio");
 
       return;
     }
@@ -458,7 +672,7 @@ export default function EditarProcessoPage() {
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
         <p className="text-lg font-semibold text-danger">
-          Não foi possível carregar o processo
+          NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o foi possÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel carregar o processo
         </p>
         <Button
           color="primary"
@@ -476,7 +690,7 @@ export default function EditarProcessoPage() {
         <div>
           <h1 className={title()}>Editar Processo</h1>
           <p className="text-sm text-default-500 mt-1">
-            Atualize as informações do processo jurídico
+            Atualize as informaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes do processo jurÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­dico
           </p>
         </div>
         <div className="flex gap-2">
@@ -494,7 +708,7 @@ export default function EditarProcessoPage() {
             startContent={!isSaving ? <Save className="h-4 w-4" /> : undefined}
             onPress={handleSubmit}
           >
-            Salvar alterações
+            Salvar alteraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes
           </Button>
         </div>
       </div>
@@ -503,21 +717,21 @@ export default function EditarProcessoPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Informações do Processo</h2>
+            <h2 className="text-lg font-semibold">InformaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes do Processo</h2>
           </div>
         </CardHeader>
         <Divider />
         <CardBody className="gap-6">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📋 Dados Básicos
+              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¹ Dados BÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡sicos
             </h3>
 
             <Select
-              description="Vincule um ou mais advogados responsáveis a este processo."
+              description="Vincule um ou mais advogados responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡veis a este processo."
               items={advogadoOptions}
               isLoading={isLoadingAdvogados}
-              label="Advogados responsáveis"
+              label="Advogados responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡veis"
               placeholder="Selecione um ou mais advogados"
               selectedKeys={new Set(selectedAdvogadoKeys)}
               selectionMode="multiple"
@@ -624,7 +838,7 @@ export default function EditarProcessoPage() {
               <Input
                 isRequired
                 description="Identificador principal do processo para busca e controle interno."
-                label="Número do Processo *"
+                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero do Processo *"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numero}
                 onValueChange={(value) =>
@@ -635,8 +849,8 @@ export default function EditarProcessoPage() {
               />
 
               <Input
-                description="Informe se houver diferença do número principal"
-                label="Número CNJ (oficial)"
+                description="Informe se houver diferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a do nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero principal"
+                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero CNJ (oficial)"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numeroCnj || ""}
                 onValueChange={(value) =>
@@ -647,8 +861,8 @@ export default function EditarProcessoPage() {
               />
 
               <Input
-                description="Código interno para organização do escritório (opcional)."
-                label="Número Interno"
+                description="CÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³digo interno para organizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o do escritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio (opcional)."
+                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero Interno"
                 placeholder="Ex: 2024/001"
                 value={formData.numeroInterno || ""}
                 onValueChange={(value) =>
@@ -661,8 +875,8 @@ export default function EditarProcessoPage() {
 
             <Input
               description="Nome curto para identificar rapidamente o caso nas listagens."
-              label="Título"
-              placeholder="Ex: Ação de Despejo, Divórcio, etc."
+              label="TÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­tulo"
+              placeholder="Ex: AÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de Despejo, DivÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rcio, etc."
               value={formData.titulo || ""}
               onValueChange={(value) =>
                 setFormData((prev) =>
@@ -672,8 +886,8 @@ export default function EditarProcessoPage() {
             />
 
             <Textarea
-              description="Resumo do contexto, estratégia ou observações importantes do caso."
-              label="Descrição"
+              description="Resumo do contexto, estratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gia ou observaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes importantes do caso."
+              label="DescriÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o"
               minRows={3}
               placeholder="Resumo do caso..."
               value={formData.descricao || ""}
@@ -689,18 +903,18 @@ export default function EditarProcessoPage() {
 
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ⚖️ Classificação e Status
+              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o e Status
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SearchableSelect
-              description="Juiz responsável para rastrear padrão de decisões e produtividade."
+              description="Juiz responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡vel para rastrear padrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de decisÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes e produtividade."
               emptyContent="Nenhuma autoridade encontrada"
               isLoading={isLoadingJuizes}
               isRequired
               items={juizOptions}
               label="Juiz do Caso *"
-              placeholder="Selecione o juiz responsável pelo caso"
+              placeholder="Selecione o juiz responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡vel pelo caso"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -726,20 +940,46 @@ export default function EditarProcessoPage() {
               emptyContent="Nenhum tribunal encontrado"
               isLoading={isLoadingTribunais}
               isRequired
+              isVirtualized={false}
               items={tribunalOptions}
               label="Tribunal *"
               placeholder="Selecione o tribunal"
               selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
-                setFormData((prev) =>
-                  prev ? { ...prev, tribunalId: selectedKey || "" } : prev,
-                )
+                setFormData((prev) => {
+                  if (!prev) {
+                    return prev;
+                  }
+
+                  const selectedTribunal = tribunais.find(
+                    (tribunal) => tribunal.id === selectedKey,
+                  );
+                  const tribunalLabel = buildTribunalLabel(selectedTribunal);
+                  const shouldSyncOrgao =
+                    !prev.orgaoJulgador?.trim() ||
+                    prev.orgaoJulgador ===
+                      buildTribunalLabel(
+                        tribunais.find(
+                          (tribunal) => tribunal.id === prev.tribunalId,
+                        ),
+                      );
+
+                  return {
+                    ...prev,
+                    tribunalId: selectedKey || "",
+                    comarca: "",
+                    vara: "",
+                    orgaoJulgador: shouldSyncOrgao
+                      ? tribunalLabel
+                      : prev.orgaoJulgador,
+                  };
+                })
               }
             />
 
             <Select
-              description="Situação atual do processo no escritório."
+              description="SituaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o atual do processo no escritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio."
               label="Status"
                 placeholder="Selecione o status"
                 selectedKeys={formData.status ? [formData.status] : []}
@@ -805,24 +1045,50 @@ export default function EditarProcessoPage() {
                 </Select>
               ) : null}
 
-              <Input
-                description="Classe jurídica informada no tribunal (ex.: Procedimento Comum)."
-                label="Classe Processual"
-                placeholder="Ex: Procedimento Comum"
-                value={formData.classeProcessual || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) =>
-                    prev ? { ...prev, classeProcessual: value } : prev,
-                  )
-                }
-              />
+              <div className="space-y-2">
+                <SearchableSelect
+                  description="Classe processual padrao do escritorio. Configure o catalogo em Configuracoes."
+                  emptyContent="Nenhuma classe processual cadastrada"
+                  isClearable
+                  isDisabled={!formData}
+                  isLoading={isLoadingClassesProcessuais}
+                  items={classProcessualOptions}
+                  label="Classe Processual"
+                  placeholder="Selecione uma classe processual"
+                  selectedKey={selectedClasseProcessualKey}
+                  onSelectionChange={(key) => {
+                    setFormData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            classeProcessual:
+                              classProcessualOptions.find(
+                                (item) => item.key === key,
+                              )?.label ?? undefined,
+                          }
+                        : prev,
+                    );
+                  }}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    as={Link}
+                    color="primary"
+                    href="/configuracoes?tab=classes-processuais"
+                    size="sm"
+                    variant="light"
+                  >
+                    Gerenciar classes processuais
+                  </Button>
+                </div>
+              </div>
 
               <Select
-                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
+                description="ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o por ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rea de atuaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o (opcional). Configure ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡reas em ConfiguraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes."
                 isClearable
                 isLoading={isLoadingAreas}
-                label="Área do processo"
-                placeholder="Selecione uma área"
+                label="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Ârea do processo"
+                placeholder="Selecione uma ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rea"
                 selectedKeys={selectedAreaKeys}
                 onSelectionChange={(keys) => {
                   const selectedKey = Array.from(keys)[0] as string | undefined;
@@ -871,7 +1137,7 @@ export default function EditarProcessoPage() {
               </Select>
 
               <Select
-                description="Instância de tramitação (1º grau, 2º grau ou tribunal superior)."
+                description="InstÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ncia de tramitaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o (1ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau, 2ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau ou tribunal superior)."
                 label="Grau"
                 placeholder="Selecione o grau"
                 selectedKeys={formData.grau ? [formData.grau] : []}
@@ -895,24 +1161,35 @@ export default function EditarProcessoPage() {
               </Select>
             </div>
 
-            <Input
-              description="Câmara, turma ou órgão responsável pelo julgamento."
-              label="Órgão Julgador"
-              placeholder="Ex: 2ª Câmara de Direito Público"
+            <SearchableSelect
+              description="Por padrao, herda o mesmo tribunal acima. Se precisar, selecione outro."
+              emptyContent="Nenhum tribunal encontrado"
+              isLoading={isLoadingTribunais}
+              isVirtualized={false}
+              items={tribunalOptions}
+              label="Orgao Julgador"
+              placeholder="Digite para buscar o orgao julgador"
+              selectedKey={selectedOrgaoJulgadorKey}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              value={formData.orgaoJulgador || ""}
-              onValueChange={(value) =>
+              onSelectionChange={(selectedKey) =>
                 setFormData((prev) =>
-                  prev ? { ...prev, orgaoJulgador: value } : prev,
+                  prev
+                    ? {
+                        ...prev,
+                        orgaoJulgador:
+                          tribunalOptions.find((item) => item.key === selectedKey)
+                            ?.label || "",
+                      }
+                    : prev,
                 )
               }
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                description="Procedimento aplicado ao caso (ordinário, sumário, especial etc.)."
+                description="Procedimento aplicado ao caso (ordinario, sumario, especial etc.)."
                 label="Rito"
-                placeholder="Ex: Ordinário, Sumário"
+                placeholder="Ex: Ordinario, Sumario"
                 value={formData.rito || ""}
                 onValueChange={(value) =>
                   setFormData((prev) =>
@@ -922,7 +1199,7 @@ export default function EditarProcessoPage() {
               />
 
               <Input
-                description="Valor econômico da ação, quando houver."
+                description="Valor economico da acao, quando houver."
                 label="Valor da Causa (R$)"
                 placeholder="0,00"
                 startContent={
@@ -955,27 +1232,42 @@ export default function EditarProcessoPage() {
                 }}
               />
             </div>
+
           </div>
 
           <Divider />
 
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📍 Localização
+              Localizacao
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                description="Cidade/comarca em que o processo tramita."
+              <SearchableSelect
+                description="Comarca vinculada ao tribunal selecionado."
+                emptyContent="Nenhuma comarca encontrada"
+                isDisabled={!formData.tribunalId}
+                isLoading={isLoadingComarcas}
+                items={comarcaOptions}
                 label="Comarca"
-                placeholder="Ex: São Paulo"
+                placeholder="Digite para buscar a comarca"
+                selectedKey={selectedComarcaKey}
                 startContent={<MapPin className="h-4 w-4 text-default-400" />}
-                value={formData.comarca || ""}
-                onValueChange={(value) =>
+                onSelectionChange={(selectedKey) => {
+                  const option = comarcaOptions.find(
+                    (item) => item.key === selectedKey,
+                  );
+
                   setFormData((prev) =>
-                    prev ? { ...prev, comarca: value } : prev,
-                  )
-                }
+                    prev
+                      ? {
+                          ...prev,
+                          comarca: option?.label || "",
+                          vara: "",
+                        }
+                      : prev,
+                  );
+                }}
               />
 
               <Input
@@ -991,13 +1283,26 @@ export default function EditarProcessoPage() {
               />
             </div>
 
-            <Input
-              description="Vara ou juizado específico onde o processo corre."
+            <SearchableSelect
+              description="Vara ou juizado disponível para a comarca selecionada."
+              emptyContent="Nenhuma vara encontrada"
+              isDisabled={!formData.tribunalId || !formData.comarca}
+              isLoading={isLoadingVaras}
+              items={varaOptions}
               label="Vara"
-              placeholder="Ex: 1ª Vara Cível"
-              value={formData.vara || ""}
-              onValueChange={(value) =>
-                setFormData((prev) => (prev ? { ...prev, vara: value } : prev))
+              placeholder="Digite para buscar a vara"
+              selectedKey={selectedVaraKey}
+              onSelectionChange={(selectedKey) =>
+                setFormData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        vara:
+                          varaOptions.find((item) => item.key === selectedKey)
+                            ?.label || "",
+                      }
+                    : prev,
+                )
               }
             />
           </div>
@@ -1006,13 +1311,13 @@ export default function EditarProcessoPage() {
 
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📅 Outras Informações
+              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Outras InformaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DateInput
-                description="Data oficial de distribuição do processo."
-                label="Data de Distribuição"
+                description="Data oficial de distribuiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o do processo."
+                label="Data de DistribuiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o"
                 startContent={<Calendar className="h-4 w-4 text-default-400" />}
                 value={
                   formData.dataDistribuicao
@@ -1034,7 +1339,7 @@ export default function EditarProcessoPage() {
               />
 
               <DateInput
-                description="Próximo prazo estratégico para acompanhamento da equipe."
+                description="PrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ximo prazo estratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gico para acompanhamento da equipe."
                 label="Prazo Principal"
                 startContent={<Clock className="h-4 w-4 text-default-400" />}
                 value={
@@ -1056,21 +1361,6 @@ export default function EditarProcessoPage() {
                 }
               />
             </div>
-
-            <Input
-              description="Cole aqui o link da pasta de documentos do caso (Google Drive, OneDrive etc.)."
-              label="Pasta de Documentos Compartilhada"
-              placeholder="Ex: https://drive.google.com/drive/folders/..."
-              startContent={<Link2 className="h-4 w-4 text-default-400" />}
-              type="url"
-              value={formData.pastaCompartilhadaUrl || ""}
-              onValueChange={(value) =>
-                setFormData((prev) =>
-                  prev ? { ...prev, pastaCompartilhadaUrl: value } : prev,
-                )
-              }
-            />
-
             <Checkbox
               isSelected={!!formData.segredoJustica}
               onValueChange={(checked) =>
@@ -1081,10 +1371,10 @@ export default function EditarProcessoPage() {
             >
               <div className="flex flex-col">
                 <span className="text-sm font-semibold">
-                  Segredo de Justiça
+                  Segredo de JustiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a
                 </span>
                 <span className="text-xs text-default-400">
-                  Marque se este processo corre em segredo de justiça
+                  Marque se este processo corre em segredo de justiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a
                 </span>
               </div>
             </Checkbox>
@@ -1116,3 +1406,4 @@ export default function EditarProcessoPage() {
     </div>
   );
 }
+

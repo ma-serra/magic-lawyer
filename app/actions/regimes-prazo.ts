@@ -7,6 +7,7 @@ import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
 import { ProcessoPrazoStatus, TipoFeriado } from "@/generated/prisma";
 import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
+import { ensureSharedOfficialHolidaysForYears } from "@/app/lib/feriados/sync";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import {
   holidayMatchesScope,
@@ -461,6 +462,16 @@ export async function simulateRegimePrazo(payload: SimulateRegimePrazoPayload) {
       dataInicio,
       Math.max(quantidadeDias * 4, quantidadeDias + 180),
     );
+
+    if (regime.contarDiasUteis) {
+      await ensureSharedOfficialHolidaysForYears(
+        [dataInicio.getUTCFullYear(), estimatedRangeEnd.getUTCFullYear()],
+        {
+          uf: scopeUf,
+          municipio: scopeMunicipio,
+        },
+      );
+    }
 
     const feriados = regime.contarDiasUteis
       ? await prisma.feriado.findMany({
@@ -964,7 +975,10 @@ export async function deleteRegimePrazo(regimeId: string) {
     }
 
     const vinculados = await prisma.processoPrazo.count({
-      where: { regimePrazoId: regime.id },
+      where: {
+        regimePrazoId: regime.id,
+        deletedAt: null,
+      },
     });
 
     if (vinculados > 0) {

@@ -550,7 +550,11 @@ export async function getAdminReportsHub(
       prisma.processoPrazo.count({
         where: {
           ...(modelTenantWhere ?? {}),
+          deletedAt: null,
           status: "ABERTO",
+          processo: {
+            deletedAt: null,
+          },
           dataVencimento: {
             gte: startOfDay(now),
             lte: endOfDay(new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)),
@@ -560,7 +564,11 @@ export async function getAdminReportsHub(
       prisma.processoPrazo.count({
         where: {
           ...(modelTenantWhere ?? {}),
+          deletedAt: null,
           status: "ABERTO",
+          processo: {
+            deletedAt: null,
+          },
           dataVencimento: {
             lt: startOfDay(now),
           },

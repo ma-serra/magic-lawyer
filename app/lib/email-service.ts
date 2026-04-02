@@ -19,6 +19,11 @@ export interface EmailData {
   html: string;
   text?: string;
   from?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer | string;
+    contentType?: string;
+  }>;
 }
 
 export interface AdvogadoEmailData {
@@ -27,6 +32,14 @@ export interface AdvogadoEmailData {
   oab: string;
   especialidades: string[];
   linkLogin?: string;
+}
+
+function toBase64AttachmentContent(content: Buffer | string) {
+  if (Buffer.isBuffer(content)) {
+    return content.toString("base64");
+  }
+
+  return Buffer.from(content).toString("base64");
 }
 
 // =============================================
@@ -489,6 +502,11 @@ class EmailService {
         subject: emailData.subject,
         html: emailData.html,
         text: emailData.text || emailData.html.replace(/<[^>]*>/g, ""),
+        attachments: emailData.attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          content: toBase64AttachmentContent(attachment.content),
+          contentType: attachment.contentType,
+        })),
       });
 
       if (error) {

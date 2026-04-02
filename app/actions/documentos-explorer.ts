@@ -1120,6 +1120,8 @@ export async function uploadDocumentoExplorer(
     description?: string;
     visivelParaCliente?: boolean;
     allowedExtensions?: string[];
+    tipo?: string;
+    autoCreateLinkedProcuracao?: boolean;
   } = {},
 ) {
   try {
@@ -1260,13 +1262,30 @@ export async function uploadDocumentoExplorer(
           select: {
             id: true,
             numero: true,
+            advogadoResponsavelId: true,
+            responsaveis: {
+              select: {
+                advogadoId: true,
+              },
+            },
           },
         })
       : [];
-    const processosById = new Map(processosRaw.map((processo) => [processo.id, processo]));
+    const processosById = new Map(
+      processosRaw.map((processo) => [processo.id, processo]),
+    );
     const processos = processoIds
       .map((processoIdSelecionado) => processosById.get(processoIdSelecionado))
-      .filter((processo): processo is { id: string; numero: string } => Boolean(processo));
+      .filter(
+        (
+          processo,
+        ): processo is {
+          id: string;
+          numero: string;
+          advogadoResponsavelId: string | null;
+          responsaveis: Array<{ advogadoId: string }>;
+        } => Boolean(processo),
+      );
 
     if (processoIds.length && processos.length !== processoIds.length) {
       return { success: false, error: "Processo selecionado inválido" };
@@ -1369,6 +1388,10 @@ export async function uploadDocumentoExplorer(
 
     const primaryProcessoId = processos[0]?.id ?? null;
     const primaryContratoId = contratos[0]?.id ?? null;
+    const normalizedTipo =
+      typeof options.tipo === "string" && options.tipo.trim().length > 0
+        ? options.tipo.trim()
+        : "documento_geral";
 
     const isVisibleToClient =
       typeof options.visivelParaCliente === "boolean"
@@ -1380,7 +1403,7 @@ export async function uploadDocumentoExplorer(
         data: {
           tenantId: user.tenantId,
           nome: file.name,
-          tipo: "processo",
+          tipo: normalizedTipo,
           descricao: options.description,
           url: uploadedUrl,
           tamanhoBytes: file.size,
@@ -1395,6 +1418,7 @@ export async function uploadDocumentoExplorer(
             folderPath: uploadedFolderPath,
             subpastas: normalizedFolderSegments,
             originalFileName: file.name,
+            tipoDocumento: normalizedTipo,
             processos: processos.map((proc) => proc.id),
             contratos: contratos.map((contrato) => contrato.id),
             causaId: causa?.id ?? null,
@@ -1455,6 +1479,108 @@ export async function uploadDocumentoExplorer(
             principal: false,
           },
         });
+      }
+
+      if (
+        options.autoCreateLinkedProcuracao &&
+        normalizedTipo === "procuracao" &&
+        primaryProcessoId
+      ) {
+        const primaryProcesso = processos[0];
+        const advogadoIds = Array.from(
+          new Set(
+            [
+              ...(primaryProcesso?.responsaveis ?? []).map(
+                (item) => item.advogadoId,
+              ),
+              primaryProcesso?.advogadoResponsavelId ?? null,
+            ].filter((value): value is string => Boolean(value)),
+          ),
+        );
+
+        const procuracao = await tx.procuracao.create({
+          data: {
+            tenantId: user.tenantId,
+            clienteId: cliente.id,
+            arquivoUrl: uploadedUrl,
+            observacoes:
+              options.description?.trim() ||
+              `Criada a partir do documento ${file.name}`,
+            createdById: user.id,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        await tx.procuracaoProcesso.create({
+          data: {
+            tenantId: user.tenantId,
+            procuracaoId: procuracao.id,
+            processoId: primaryProcessoId,
+          },
+        });
+
+        if (advogadoIds.length > 0) {
+          await tx.procuracaoAdvogado.createMany({
+            data: advogadoIds.map((advogadoId) => ({
+              tenantId: user.tenantId,
+              procuracaoId: procuracao.id,
+              advogadoId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        await tx.documentoProcuracao.create({
+          data: {
+            tenantId: user.tenantId,
+            procuracaoId: procuracao.id,
+            fileName: file.name,
+            originalName: file.name,
+            description: options.description?.trim() || null,
+            tipo: "documento_original",
+            url: uploadedUrl,
+            publicId: uploadedPublicId,
+            size: file.size,
+            mimeType: file.type || "application/octet-stream",
+            uploadedBy: user.id,
+          },
+        });
+
+        await tx.documento.update({
+          where: {
+            id: createdDocumento.id,
+          },
+          data: {
+            metadados: {
+              ...((createdDocumento.metadados as Record<string, unknown>) || {}),
+              folderPath: uploadedFolderPath,
+              subpastas: normalizedFolderSegments,
+              originalFileName: file.name,
+              tipoDocumento: normalizedTipo,
+              processos: processos.map((proc) => proc.id),
+              contratos: contratos.map((contrato) => contrato.id),
+              causaId: causa?.id ?? null,
+              procuracaoId: procuracao.id,
+            },
+          },
+        });
+
+        return {
+          ...createdDocumento,
+          metadados: {
+            ...((createdDocumento.metadados as Record<string, unknown>) || {}),
+            folderPath: uploadedFolderPath,
+            subpastas: normalizedFolderSegments,
+            originalFileName: file.name,
+            tipoDocumento: normalizedTipo,
+            processos: processos.map((proc) => proc.id),
+            contratos: contratos.map((contrato) => contrato.id),
+            causaId: causa?.id ?? null,
+            procuracaoId: procuracao.id,
+          },
+        };
       }
 
       return createdDocumento;
@@ -1526,6 +1652,10 @@ export async function uploadDocumentoExplorer(
       success: true,
       documentoId: documento.id,
       url: uploadResult.url,
+      procuracaoId:
+        ((documento.metadados as Record<string, unknown> | null)?.procuracaoId as
+          | string
+          | undefined) ?? null,
     };
   } catch (error) {
     logger.error("Erro ao enviar documento pelo explorador:", error);

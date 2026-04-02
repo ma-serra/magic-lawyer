@@ -135,6 +135,7 @@ export type AgendaEventType =
   | "evento.cancelled"
   | "evento.reminder_1h"
   | "evento.reminder_1d"
+  | "evento.reminder_custom"
   | "evento.google_synced";
 
 export type DocumentoEventType =

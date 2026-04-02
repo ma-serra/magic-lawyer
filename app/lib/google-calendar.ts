@@ -313,15 +313,18 @@ export const listEvents = async (
 
 // Função para sincronizar eventos locais com Google Calendar
 export const syncEventWithGoogle = async (
-  localEvent: {
+localEvent: {
     id: string;
     titulo: string;
     descricao?: string;
     dataInicio: Date;
     dataFim: Date;
     local?: string;
+    isOnline?: boolean;
+    linkAcesso?: string;
     participantes: string[];
     lembreteMinutos?: number;
+    lembretesMinutos?: number[];
   },
   googleTokens: {
     accessToken: string;
@@ -330,9 +333,26 @@ export const syncEventWithGoogle = async (
   googleEventId?: string,
   calendarId: string = "primary",
 ): Promise<CalendarApiResponse> => {
+  const lembretesMinutos = Array.from(
+    new Set(
+      ((localEvent.lembretesMinutos?.length
+        ? localEvent.lembretesMinutos
+        : localEvent.lembreteMinutos && localEvent.lembreteMinutos > 0
+          ? [localEvent.lembreteMinutos]
+          : []) as number[])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => b - a);
+
   const googleEvent: GoogleCalendarEvent = {
     summary: localEvent.titulo,
-    description: localEvent.descricao,
+    description:
+      localEvent.isOnline && localEvent.linkAcesso
+        ? [localEvent.descricao, `Link do evento online: ${localEvent.linkAcesso}`]
+            .filter(Boolean)
+            .join("\n\n")
+        : localEvent.descricao,
     start: {
       dateTime: localEvent.dataInicio.toISOString(),
       timeZone: "America/Sao_Paulo",
@@ -345,17 +365,17 @@ export const syncEventWithGoogle = async (
     attendees: localEvent.participantes.map((email) => ({ email })),
     reminders: {
       useDefault: false,
-      overrides: localEvent.lembreteMinutos
-        ? [
+      overrides: lembretesMinutos.length > 0
+        ? lembretesMinutos.flatMap((minutes) => [
             {
               method: "email",
-              minutes: localEvent.lembreteMinutos,
+              minutes,
             },
             {
               method: "popup",
-              minutes: localEvent.lembreteMinutos,
+              minutes,
             },
-          ]
+          ])
         : undefined,
     },
   };

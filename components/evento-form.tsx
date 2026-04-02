@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
-  Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Chip, Spinner, Select, SelectItem } from "@heroui/react";
-import { Calendar, MapPin, Users, FileText, AlertCircle } from "lucide-react";
+  Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Chip, Spinner, Select, SelectItem, Switch } from "@heroui/react";
+import { Calendar, MapPin, Users, FileText, AlertCircle, Video, Link as LinkIcon } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { parseAbsoluteToLocal } from "@internationalized/date";
 
@@ -26,12 +26,15 @@ interface FormEventoData {
   dataInicio: any; // DateValue do @internationalized/date
   dataFim: any; // DateValue do @internationalized/date
   local: string;
+  isOnline: boolean;
+  linkAcesso: string;
   participantes: string[];
   processoId: string | null;
   clienteId: string | null;
   advogadoResponsavelId: string | null;
   status: EventoStatus;
   lembreteMinutos: number;
+  lembretesMinutos: number[];
   observacoes: string;
   recorrencia: string;
   recorrenciaFim: any;
@@ -72,11 +75,11 @@ const lembretes = [
 ];
 
 const recorrencias = [
-  { key: "NENHUMA", label: "Sem recorrência" },
-  { key: "DIARIA", label: "Diária" },
-  { key: "SEMANAL", label: "Semanal" },
-  { key: "MENSAL", label: "Mensal" },
-  { key: "ANUAL", label: "Anual" },
+  { key: "NENHUMA", label: "Não repetir" },
+  { key: "DIARIA", label: "Repetir diariamente" },
+  { key: "SEMANAL", label: "Repetir semanalmente" },
+  { key: "MENSAL", label: "Repetir mensalmente" },
+  { key: "ANUAL", label: "Repetir anualmente" },
 ];
 
 export default function EventoForm({
@@ -86,6 +89,7 @@ export default function EventoForm({
   initialDate,
   onSuccess,
 }: EventoFormProps) {
+  const validationAlertRef = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [novoParticipante, setNovoParticipante] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -97,12 +101,15 @@ export default function EventoForm({
     dataInicio: null,
     dataFim: null,
     local: "",
+    isOnline: false,
+    linkAcesso: "",
     participantes: [],
     processoId: null,
     clienteId: null,
     advogadoResponsavelId: null,
     status: EventoStatus.AGENDADO,
     lembreteMinutos: 30,
+    lembretesMinutos: [30],
     observacoes: "",
     recorrencia: "NENHUMA",
     recorrenciaFim: null,
@@ -128,12 +135,23 @@ export default function EventoForm({
           ? parseAbsoluteToLocal(new Date(evento.dataFim).toISOString())
           : null,
         local: evento.local || "",
+        isOnline: evento.isOnline || false,
+        linkAcesso: evento.linkAcesso || "",
         participantes: evento.participantes || [],
         processoId: evento.processoId || null,
         clienteId: evento.clienteId || null,
         advogadoResponsavelId: evento.advogadoResponsavelId || null,
         status: evento.status || EventoStatus.AGENDADO,
         lembreteMinutos: evento.lembreteMinutos || 30,
+        lembretesMinutos:
+          (evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos
+            ?.length
+            ? [...(evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos]
+            : evento.lembreteMinutos !== null &&
+                evento.lembreteMinutos !== undefined &&
+                evento.lembreteMinutos > 0
+              ? [evento.lembreteMinutos]
+              : [],
         observacoes: evento.observacoes || "",
         recorrencia: evento.recorrencia || "NENHUMA",
         recorrenciaFim: evento.recorrenciaFim
@@ -161,12 +179,15 @@ export default function EventoForm({
       dataInicio: dataInicioDefault,
       dataFim: dataFimDefault,
       local: "",
+      isOnline: false,
+      linkAcesso: "",
       participantes: [],
       processoId: null,
       clienteId: null,
       advogadoResponsavelId: null,
       status: EventoStatus.AGENDADO,
       lembreteMinutos: 30,
+      lembretesMinutos: [30],
       observacoes: "",
       recorrencia: "NENHUMA",
       recorrenciaFim: null,
@@ -259,6 +280,7 @@ export default function EventoForm({
       }),
     [selectData?.advogados],
   );
+  const validationMessages = useMemo(() => Object.values(errors), [errors]);
 
   // Inicializar formData quando modal abre ou evento muda
   useEffect(() => {
@@ -291,6 +313,10 @@ export default function EventoForm({
       newErrors.dataFim = "Data de fim é obrigatória";
     }
 
+    if (!formData.tipo) {
+      newErrors.tipo = "Tipo de evento é obrigatório";
+    }
+
     if (formData.dataInicio && formData.dataFim) {
       const inicio = formData.dataInicio.toDate();
       const fim = formData.dataFim.toDate();
@@ -321,6 +347,23 @@ export default function EventoForm({
       newErrors.local = "Local deve ter no máximo 200 caracteres";
     }
 
+    if (formData.isOnline) {
+      if (!formData.linkAcesso?.trim()) {
+        newErrors.linkAcesso = "Link do evento online é obrigatório";
+      } else {
+        try {
+          const candidate =
+            formData.linkAcesso.startsWith("http://") ||
+            formData.linkAcesso.startsWith("https://")
+              ? formData.linkAcesso
+              : `https://${formData.linkAcesso}`;
+          new URL(candidate);
+        } catch {
+          newErrors.linkAcesso = "Informe um link válido";
+        }
+      }
+    }
+
     if (formData.observacoes && formData.observacoes.length > 500) {
       newErrors.observacoes = "Observações devem ter no máximo 500 caracteres";
     }
@@ -334,7 +377,14 @@ export default function EventoForm({
     e.preventDefault();
 
     if (!validateForm()) {
-      toast.error("Por favor, corrija os erros no formulário");
+      requestAnimationFrame(() => {
+        validationAlertRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+
+      toast.error("Preencha os campos obrigatórios antes de salvar");
 
       return;
     }
@@ -346,6 +396,10 @@ export default function EventoForm({
       const dataToSubmit = {
         ...formData,
         participantes,
+        lembreteMinutos:
+          formData.lembretesMinutos.length > 0
+            ? Math.min(...formData.lembretesMinutos)
+            : 0,
         dataInicio: formData.dataInicio
           ? formData.dataInicio.toDate().toISOString()
           : "",
@@ -444,6 +498,28 @@ export default function EventoForm({
               </div>
             ) : (
               <>
+                {validationMessages.length > 0 ? (
+                  <div
+                    ref={validationAlertRef}
+                    className="rounded-2xl border border-danger-300 bg-danger-50/80 p-4 text-danger-700 dark:border-danger/40 dark:bg-danger/10 dark:text-danger-200"
+                    role="alert"
+                  >
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold">
+                          Revise os campos obrigatórios antes de salvar
+                        </p>
+                        <ul className="space-y-1 text-xs sm:text-sm">
+                          {validationMessages.map((message) => (
+                            <li key={message}>- {message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Título */}
                 <Input
                   isRequired
@@ -486,6 +562,8 @@ export default function EventoForm({
                   <Select
                     isRequired
                     color="primary"
+                    errorMessage={errors.tipo}
+                    isInvalid={!!errors.tipo}
                     label="Tipo"
                     placeholder="Selecione o tipo"
                     selectedKeys={formData.tipo ? [formData.tipo] : []}
@@ -498,6 +576,10 @@ export default function EventoForm({
                         ...formData,
                         tipo: selectedKey as EventoTipo,
                       });
+
+                      if (errors.tipo) {
+                        setErrors({ ...errors, tipo: "" });
+                      }
                     }}
                   >
                     {tiposEvento.map((tipo) => (
@@ -569,74 +651,160 @@ export default function EventoForm({
                 </div>
 
                 {!evento ? (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Select
-                      color="secondary"
-                      label="Recorrência"
-                      placeholder="Selecione a recorrência"
-                      selectedKeys={
-                        formData.recorrencia ? [formData.recorrencia] : ["NENHUMA"]
-                      }
-                      onSelectionChange={(keys) => {
-                        const selectedKey =
-                          (Array.from(keys)[0] as string | undefined) ||
-                          "NENHUMA";
-                        setFormData((prev) => ({
-                          ...prev,
-                          recorrencia: selectedKey,
-                          recorrenciaFim:
-                            selectedKey === "NENHUMA" ? null : prev.recorrenciaFim,
-                        }));
-                      }}
-                    >
-                      {recorrencias.map((item) => (
-                        <SelectItem key={item.key} textValue={item.label}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </Select>
+                  <div className="space-y-3 rounded-2xl border border-default-200 bg-default-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Repetição do evento na agenda
+                      </p>
+                      <p className="text-xs text-default-500">
+                        Use isso apenas quando o mesmo compromisso precisa reaparecer automaticamente no calendário.
+                        Isso não controla avisos. O aviso é configurado no campo
+                        {" "}
+                        <span className="font-medium text-foreground">
+                          Avisar antes do evento
+                        </span>
+                        {" "}
+                        mais abaixo.
+                      </p>
+                      <p className="text-xs text-default-500">
+                        No jurídico, isso costuma ser raro. Na maior parte dos casos, deixe como
+                        {" "}
+                        <span className="font-medium text-foreground">
+                          Não repetir
+                        </span>
+                        .
+                      </p>
+                    </div>
 
-                    {formData.recorrencia !== "NENHUMA" ? (
-                      <DateInput
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Select
                         color="secondary"
-                        errorMessage={errors.recorrenciaFim}
-                        granularity="day"
-                        isInvalid={!!errors.recorrenciaFim}
-                        label="Repetir até"
-                        dateValue={formData.recorrenciaFim}
-                        variant="bordered"
-                        onDateChange={(value) =>
+                        label="Repetição do evento"
+                        placeholder="Use apenas se este compromisso se repetir"
+                        selectedKeys={
+                          formData.recorrencia ? [formData.recorrencia] : ["NENHUMA"]
+                        }
+                        onSelectionChange={(keys) => {
+                          const selectedKey =
+                            (Array.from(keys)[0] as string | undefined) ||
+                            "NENHUMA";
                           setFormData((prev) => ({
                             ...prev,
-                            recorrenciaFim: value,
-                          }))
-                        }
-                      />
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-default-300 p-3 text-xs text-default-500">
-                        Defina a recorrência para habilitar a data final das ocorrências.
-                      </div>
-                    )}
+                            recorrencia: selectedKey,
+                            recorrenciaFim:
+                              selectedKey === "NENHUMA" ? null : prev.recorrenciaFim,
+                          }));
+                        }}
+                      >
+                        {recorrencias.map((item) => (
+                          <SelectItem key={item.key} textValue={item.label}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </Select>
+
+                      {formData.recorrencia !== "NENHUMA" ? (
+                        <DateInput
+                          color="secondary"
+                          errorMessage={errors.recorrenciaFim}
+                          granularity="day"
+                          isInvalid={!!errors.recorrenciaFim}
+                          label="Repetir até"
+                          dateValue={formData.recorrenciaFim}
+                          variant="bordered"
+                          onDateChange={(value) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              recorrenciaFim: value,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-default-300 p-3 text-xs text-default-500">
+                          O evento será criado uma única vez. Use a repetição somente se esse mesmo compromisso precisar voltar automaticamente para a agenda.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
 
                 {/* Local */}
-                <Input
-                  color="danger"
-                  errorMessage={errors.local}
-                  isInvalid={!!errors.local}
-                  label="Local"
-                  placeholder="Ex: Fórum Central - Sala 101"
-                  startContent={<MapPin className="w-4 h-4 text-danger" />}
-                  value={formData.local}
-                  variant="bordered"
-                  onChange={(e) => {
-                    setFormData({ ...formData, local: e.target.value });
-                    if (errors.local) {
-                      setErrors({ ...errors, local: "" });
+                <div className="space-y-4 rounded-2xl border border-default-200 bg-default-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Tipo de atendimento
+                      </p>
+                      <p className="text-xs text-default-500">
+                        Marque quando esse compromisso acontecer por videoconferência ou outra plataforma online.
+                      </p>
+                    </div>
+                    <Switch
+                      color="primary"
+                      isSelected={formData.isOnline}
+                      onValueChange={(value) => {
+                        setFormData({
+                          ...formData,
+                          isOnline: value,
+                          linkAcesso: value ? formData.linkAcesso : "",
+                        });
+
+                        if (errors.linkAcesso) {
+                          setErrors({ ...errors, linkAcesso: "" });
+                        }
+                      }}
+                    >
+                      Evento online
+                    </Switch>
+                  </div>
+
+                  {formData.isOnline ? (
+                    <Input
+                      isRequired
+                      color="primary"
+                      errorMessage={errors.linkAcesso}
+                      isInvalid={!!errors.linkAcesso}
+                      label="Link do evento online"
+                      placeholder="Ex: https://meet.google.com/abc-defg-hij"
+                      startContent={<LinkIcon className="w-4 h-4 text-primary" />}
+                      value={formData.linkAcesso}
+                      variant="bordered"
+                      onChange={(e) => {
+                        setFormData({ ...formData, linkAcesso: e.target.value });
+                        if (errors.linkAcesso) {
+                          setErrors({ ...errors, linkAcesso: "" });
+                        }
+                      }}
+                    />
+                  ) : null}
+
+                  <Input
+                    color="danger"
+                    errorMessage={errors.local}
+                    isInvalid={!!errors.local}
+                    label={formData.isOnline ? "Plataforma / observação do local" : "Local"}
+                    placeholder={
+                      formData.isOnline
+                        ? "Ex: Sala virtual principal ou observação complementar"
+                        : "Ex: Fórum Central - Sala 101"
                     }
-                  }}
-                />
+                    startContent={
+                      formData.isOnline ? (
+                        <Video className="w-4 h-4 text-danger" />
+                      ) : (
+                        <MapPin className="w-4 h-4 text-danger" />
+                      )
+                    }
+                    value={formData.local}
+                    variant="bordered"
+                    onChange={(e) => {
+                      setFormData({ ...formData, local: e.target.value });
+                      if (errors.local) {
+                        setErrors({ ...errors, local: "" });
+                      }
+                    }}
+                  />
+                </div>
 
                 {/* Relacionamentos */}
                 <div className="grid grid-cols-3 gap-4">
@@ -735,37 +903,62 @@ export default function EventoForm({
                   )}
                 </div>
 
-                {/* Lembrete */}
-                <Select
-                  color="warning"
-                  label="Lembrete"
-                  placeholder="Selecione quando receber o lembrete"
-                  selectedKeys={
-                    formData.lembreteMinutos !== undefined &&
-                    formData.lembreteMinutos !== null
-                      ? [formData.lembreteMinutos.toString()]
-                      : []
-                  }
-                  startContent={
-                    <AlertCircle className="w-4 h-4 text-warning" />
-                  }
-                  onSelectionChange={(keys) => {
-                    const selectedKey = Array.from(keys)[0] as string | undefined;
+                {/* Lembretes */}
+                <div className="space-y-3 rounded-2xl border border-default-200 bg-default-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-warning" />
+                      <p className="text-sm font-semibold text-foreground">
+                        Avisar antes do evento
+                      </p>
+                    </div>
+                    <p className="text-xs text-default-500">
+                      Você pode marcar mais de um aviso para o mesmo evento. Exemplo: 1 dia antes, 1 hora antes e 15 minutos antes.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {lembretes.map((lembrete) => {
+                      const isSelected = formData.lembretesMinutos.includes(
+                        Number(lembrete.key),
+                      );
 
-                    if (!selectedKey) return;
+                      return (
+                        <Button
+                          key={lembrete.key.toString()}
+                          color={isSelected ? "warning" : "default"}
+                          size="sm"
+                          variant={isSelected ? "flat" : "bordered"}
+                          onPress={() => {
+                            const key = Number(lembrete.key);
+                            const nextLembretes = isSelected
+                              ? formData.lembretesMinutos.filter((item) => item !== key)
+                              : [...formData.lembretesMinutos, key].sort((a, b) => b - a);
 
-                    setFormData({
-                      ...formData,
-                      lembreteMinutos: parseInt(selectedKey),
-                    });
-                  }}
-                >
-                  {lembretes.map((lembrete) => (
-                    <SelectItem key={lembrete.key.toString()} textValue={lembrete.label}>
-                      {lembrete.label}
-                    </SelectItem>
-                  ))}
-                </Select>
+                            setFormData({
+                              ...formData,
+                              lembretesMinutos: nextLembretes,
+                              lembreteMinutos:
+                                nextLembretes.length > 0
+                                  ? Math.min(...nextLembretes)
+                                  : 0,
+                            });
+                          }}
+                        >
+                          {lembrete.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <div className="text-xs text-default-500">
+                    {formData.lembretesMinutos.length > 0
+                      ? `O sistema vai avisar ${formData.lembretesMinutos.length} vez(es): ${formData.lembretesMinutos
+                          .slice()
+                          .sort((a, b) => b - a)
+                          .map((minutos) => lembretes.find((item) => Number(item.key) === minutos)?.label || `${minutos} minutos antes`)
+                          .join(", ")}.`
+                      : "Nenhum aviso automático será enviado antes deste evento."}
+                  </div>
+                </div>
 
                 {/* Observações */}
                 <Textarea

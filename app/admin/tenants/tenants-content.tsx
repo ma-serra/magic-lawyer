@@ -541,11 +541,11 @@ function TenantCard({
     >
       <PeopleEntityCardHeader className="flex flex-col gap-4 border-default-200/80 lg:flex-row lg:items-start lg:justify-between dark:border-white/10">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-default-200/80 bg-default-100/55 shadow-sm dark:border-white/10 dark:bg-white/5">
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-default-200/80 bg-default-100/55 shadow-sm dark:border-white/10 dark:bg-white/5">
             {effectiveTenant.branding?.logoUrl ? (
               <Image
                 alt={`Logo ${effectiveTenant.name}`}
-                className="h-full w-full object-contain"
+                className="h-full w-full rounded-full object-cover"
                 height={64}
                 src={effectiveTenant.branding.logoUrl}
                 width={64}

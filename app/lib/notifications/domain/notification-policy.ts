@@ -231,6 +231,7 @@ export class NotificationPolicy {
       ],
       "evento.reminder_1h": ["eventoId", "titulo", "dataInicio"],
       "evento.reminder_1d": ["eventoId", "titulo", "dataInicio"],
+      "evento.reminder_custom": ["eventoId", "titulo", "dataInicio"],
       "evento.google_synced": ["eventoId", "titulo", "googleEventId"],
 
       // DOCUMENTOS
@@ -334,6 +335,7 @@ export class NotificationPolicy {
       "documento.rejected": "HIGH",
       "evento.cancelled": "HIGH",
       "evento.reminder_1h": "HIGH",
+      "evento.reminder_custom": "HIGH",
       "equipe.user_invited": "HIGH",
       "equipe.permissions_changed": "HIGH",
       "equipe.user_removed": "HIGH",
@@ -564,6 +566,7 @@ export class NotificationPolicy {
       ],
       "evento.reminder_1h": ["eventoId", "titulo", "dataInicio"],
       "evento.reminder_1d": ["eventoId", "titulo", "dataInicio"],
+      "evento.reminder_custom": ["eventoId", "titulo", "dataInicio"],
       "evento.google_synced": ["eventoId", "titulo", "googleEventId"],
       // DOCUMENTOS
       "documento.uploaded": ["documentoId", "nome"],

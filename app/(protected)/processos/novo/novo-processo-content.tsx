@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -24,6 +24,8 @@ import {
   Link2,
   Clock,
   Users,
+  FileText,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -37,8 +39,13 @@ import {
   createProcesso,
   type ProcessoCreateInput,
 } from "@/app/actions/processos";
-import { listTribunaisParaVinculo } from "@/app/actions/tribunais";
+import {
+  listComarcasPorTribunal,
+  listTribunaisParaVinculo,
+  listVarasPorTribunal,
+} from "@/app/actions/tribunais";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
+import { listClassesProcessuais } from "@/app/actions/classes-processuais";
 import {
   ProcessoArquivamentoTipo,
   ProcessoStatus,
@@ -52,7 +59,19 @@ import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
+import { ClienteCreateModal } from "@/components/clientes/cliente-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
+
+function buildTribunalLabel(tribunal?: {
+  sigla?: string | null;
+  nome: string;
+}) {
+  if (!tribunal) {
+    return "";
+  }
+
+  return tribunal.sigla ? `${tribunal.sigla} - ${tribunal.nome}` : tribunal.nome;
+}
 
 export function NovoProcessoContent() {
   const router = useRouter();
@@ -60,8 +79,12 @@ export function NovoProcessoContent() {
   const clienteIdParam = searchParams.get("clienteId");
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isClienteModalOpen, setIsClienteModalOpen] = useState(false);
   const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
+  const [advogadoPickerKey, setAdvogadoPickerKey] = useState<string | null>(
+    null,
+  );
   const [formData, setFormData] = useState<ProcessoCreateInput>({
     numero: "",
     numeroCnj: "",
@@ -86,8 +109,12 @@ export function NovoProcessoContent() {
     tribunalId: "",
   });
 
-  // Buscar clientes para o select (apenas se não veio de um cliente)
-  const { clientes, isLoading: isLoadingClientes } = useClientesParaSelect();
+  // Buscar clientes para o select (apenas se nÃ£o veio de um cliente)
+  const {
+    clientes,
+    isLoading: isLoadingClientes,
+    mutate: mutateClientes,
+  } = useClientesParaSelect();
   const { advogados, isLoading: isLoadingAdvogados } = useAdvogadosParaSelect();
   const {
     juizes: juizesDisponiveis,
@@ -115,6 +142,28 @@ export function NovoProcessoContent() {
     "tribunais-vinculo-processos-novo",
     () => listTribunaisParaVinculo(),
   );
+  const { data: comarcasData, isLoading: isLoadingComarcas } = useSWR(
+    formData.tribunalId
+      ? ["comarcas-processo-novo", formData.tribunalId]
+      : null,
+    ([, tribunalId]) => listComarcasPorTribunal(tribunalId),
+  );
+  const { data: varasData, isLoading: isLoadingVaras } = useSWR(
+    formData.tribunalId
+      ? ["varas-processo-novo", formData.tribunalId, formData.comarca || ""]
+      : null,
+    ([, tribunalId, comarca]) =>
+      listVarasPorTribunal({
+        tribunalId,
+        comarca: typeof comarca === "string" ? comarca : undefined,
+      }),
+  );
+  const {
+    data: classesProcessuaisData,
+    isLoading: isLoadingClassesProcessuais,
+  } = useSWR("classes-processuais-select", () =>
+    listClassesProcessuais({ ativo: true }),
+  );
   const areas = useMemo(() => {
     if (!areasData?.success) {
       return [];
@@ -129,6 +178,27 @@ export function NovoProcessoContent() {
 
     return tribunaisData.tribunais ?? [];
   }, [tribunaisData]);
+  const comarcas = useMemo(() => {
+    if (!comarcasData?.success) {
+      return [];
+    }
+
+    return comarcasData.comarcas ?? [];
+  }, [comarcasData]);
+  const varas = useMemo(() => {
+    if (!varasData?.success) {
+      return [];
+    }
+
+    return varasData.varas ?? [];
+  }, [varasData]);
+  const classesProcessuais = useMemo(() => {
+    if (!classesProcessuaisData?.success) {
+      return [];
+    }
+
+    return classesProcessuaisData.classes ?? [];
+  }, [classesProcessuaisData]);
 
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente) => cliente.id)),
@@ -138,6 +208,59 @@ export function NovoProcessoContent() {
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
   );
+  const classProcessualOptions = useMemo(() => {
+    const baseOptions = classesProcessuais.map((classe) => ({
+      key: classe.slug,
+      label: classe.nome,
+      textValue: [classe.nome, classe.slug, classe.descricao || ""]
+        .filter(Boolean)
+        .join(" "),
+      description: classe.descricao || undefined,
+    }));
+
+    const currentValue = formData.classeProcessual?.trim();
+
+    if (!currentValue) {
+      return baseOptions;
+    }
+
+    const exists = baseOptions.some(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    if (exists) {
+      return baseOptions;
+    }
+
+    return [
+      {
+        key: `legacy:${currentValue}`,
+        label: currentValue,
+        textValue: currentValue,
+        description: "Classe legada já informada neste processo",
+      },
+      ...baseOptions,
+    ];
+  }, [classesProcessuais, formData.classeProcessual]);
+  const selectedClasseProcessualKey = useMemo(() => {
+    const currentValue = formData.classeProcessual?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    const matched = classProcessualOptions.find(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    return matched?.key ?? null;
+  }, [classProcessualOptions, formData.classeProcessual]);
   const advogadoKeys = useMemo(
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
@@ -218,7 +341,7 @@ export function NovoProcessoContent() {
           .filter(Boolean)
           .join(" "),
         description:
-          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" â€¢ ") ||
           "Sem vara/comarca informada",
       })),
     [juizesDoFormulario],
@@ -239,11 +362,101 @@ export function NovoProcessoContent() {
           .filter(Boolean)
           .join(" "),
         description:
-          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" â€¢ ") ||
           "Sem esfera/UF",
       })),
     [tribunais],
   );
+  const comarcaOptions = useMemo(
+    () => {
+      const baseOptions = comarcas.map((comarca) => ({
+        key: comarca,
+        label: comarca,
+        textValue: comarca,
+      }));
+      const currentValue = formData.comarca?.trim();
+
+      if (!currentValue) {
+        return baseOptions;
+      }
+
+      if (baseOptions.some((item) => item.label === currentValue)) {
+        return baseOptions;
+      }
+
+      return [
+        {
+          key: `legacy:${currentValue}`,
+          label: currentValue,
+          textValue: currentValue,
+        },
+        ...baseOptions,
+      ];
+    },
+    [comarcas, formData.comarca],
+  );
+  const varaOptions = useMemo(
+    () => {
+      const baseOptions = varas.map((vara) => ({
+        key: vara,
+        label: vara,
+        textValue: vara,
+      }));
+      const currentValue = formData.vara?.trim();
+
+      if (!currentValue) {
+        return baseOptions;
+      }
+
+      if (baseOptions.some((item) => item.label === currentValue)) {
+        return baseOptions;
+      }
+
+      return [
+        {
+          key: `legacy:${currentValue}`,
+          label: currentValue,
+          textValue: currentValue,
+        },
+        ...baseOptions,
+      ];
+    },
+    [formData.vara, varas],
+  );
+  const selectedOrgaoJulgadorKey = useMemo(() => {
+    const currentValue = formData.orgaoJulgador?.trim();
+
+    if (!currentValue) {
+      return selectedTribunalKeys[0] ?? null;
+    }
+
+    const matched = tribunalOptions.find(
+      (item) =>
+        item.label.localeCompare(currentValue, "pt-BR", {
+          sensitivity: "accent",
+        }) === 0,
+    );
+
+    return matched?.key ?? null;
+  }, [formData.orgaoJulgador, selectedTribunalKeys, tribunalOptions]);
+  const selectedComarcaKey = useMemo(() => {
+    const currentValue = formData.comarca?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    return comarcaOptions.find((item) => item.label === currentValue)?.key ?? null;
+  }, [comarcaOptions, formData.comarca]);
+  const selectedVaraKey = useMemo(() => {
+    const currentValue = formData.vara?.trim();
+
+    if (!currentValue) {
+      return null;
+    }
+
+    return varaOptions.find((item) => item.label === currentValue)?.key ?? null;
+  }, [formData.vara, varaOptions]);
   const advogadoOptions = useMemo(
     () =>
       (advogados || []).map((advogado) => ({
@@ -254,6 +467,13 @@ export function NovoProcessoContent() {
       })),
     [advogados],
   );
+  const advogadoOptionsDisponiveis = useMemo(
+    () =>
+      advogadoOptions.filter(
+        (option) => !selectedAdvogadoKeys.includes(option.key),
+      ),
+    [advogadoOptions, selectedAdvogadoKeys],
+  );
 
   const fases = Object.values(ProcessoFase);
   const graus = Object.values(ProcessoGrau);
@@ -261,17 +481,17 @@ export function NovoProcessoContent() {
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "Petição Inicial";
+        return "PetiÃ§Ã£o Inicial";
       case ProcessoFase.CITACAO:
-        return "Citação";
+        return "CitaÃ§Ã£o";
       case ProcessoFase.INSTRUCAO:
-        return "Instrução";
+        return "InstruÃ§Ã£o";
       case ProcessoFase.SENTENCA:
-        return "Sentença";
+        return "SentenÃ§a";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "Execução";
+        return "ExecuÃ§Ã£o";
       default:
         return fase;
     }
@@ -280,9 +500,9 @@ export function NovoProcessoContent() {
   const getGrauLabel = (grau: ProcessoGrau) => {
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1º Grau";
+        return "1Âº Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2º Grau";
+        return "2Âº Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:
@@ -292,7 +512,7 @@ export function NovoProcessoContent() {
 
   const handleSubmit = async () => {
     if (!formData.numero.trim()) {
-      toast.error("Número do processo é obrigatório");
+      toast.error("NÃºmero do processo Ã© obrigatÃ³rio");
 
       return;
     }
@@ -409,7 +629,7 @@ export function NovoProcessoContent() {
         <div>
           <h1 className={title()}>Novo Processo</h1>
           <p className="text-sm text-default-500 mt-1">
-            Cadastrar novo processo jurídico
+            Cadastrar novo processo jurÃ­dico
           </p>
         </div>
         <Button
@@ -428,57 +648,58 @@ export function NovoProcessoContent() {
           <CardBody className="flex flex-row items-center gap-2">
             <User className="h-5 w-5 text-primary" />
             <p className="text-sm text-primary">
-              Este processo começará com este cliente já vinculado. Você pode adicionar outros abaixo.
+              Este processo comeÃ§arÃ¡ com este cliente jÃ¡ vinculado. VocÃª pode adicionar outros abaixo.
             </p>
           </CardBody>
         </Card>
       )}
 
-      {/* Formulário */}
+      {/* FormulÃ¡rio */}
       <Card className="border border-default-200">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Informações do Processo</h2>
+            <h2 className="text-lg font-semibold">InformaÃ§Ãµes do Processo</h2>
           </div>
         </CardHeader>
         <Divider />
         <CardBody className="gap-6">
-          {/* Seção: Dados Básicos */}
+          {/* SeÃ§Ã£o: Dados BÃ¡sicos */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📋 Dados Básicos
+              ðŸ“‹ Dados BÃ¡sicos
             </h3>
 
-            {/* Select de Cliente (se não veio de um cliente) */}
+            {/* Select de Cliente (se nÃ£o veio de um cliente) */}
             <Select
-                isRequired
-                description="Selecione um ou mais clientes vinculados a este processo. Todos aparecem no caso."
-                items={clienteOptions}
-                label="Clientes vinculados *"
-                placeholder="Selecione um ou mais clientes"
-                selectedKeys={new Set(selectedClienteKeys)}
-                selectionMode="multiple"
-                startContent={<Users className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) => {
-                  const nextKeys = Array.from(keys).map(String);
+              isRequired
+              description="Selecione um ou mais clientes vinculados a este processo. Todos aparecem no caso."
+              items={clienteOptions}
+              label="Clientes vinculados *"
+              placeholder="Selecione um ou mais clientes"
+              selectedKeys={new Set(selectedClienteKeys)}
+              selectionMode="multiple"
+              startContent={<Users className="h-4 w-4 text-default-400" />}
+              onSelectionChange={(keys) => {
+                const nextKeys = Array.from(keys).map(String);
 
-                  setFormData((prev) => ({
-                    ...prev,
-                    clienteId: nextKeys[0] || "",
-                    clienteIds: nextKeys,
-                  }));
-                }}
-              >
-                {clienteOptions.map((item) => (
-                  <SelectItem
-                    key={item.key}
-                    textValue={item.textValue ?? item.label}
-                  >
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </Select>
+                setFormData((prev) => ({
+                  ...prev,
+                  clienteId: nextKeys[0] || "",
+                  clienteIds: nextKeys,
+                }));
+              }}
+            >
+              {clienteOptions.map((item) => (
+                <SelectItem
+                  key={item.key}
+                  textValue={item.textValue ?? item.label}
+                >
+                  {item.label}
+                </SelectItem>
+              ))}
+            </Select>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               {selectedClienteKeys.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {selectedClienteKeys.map((clienteId) => {
@@ -500,16 +721,29 @@ export function NovoProcessoContent() {
                     );
                   })}
                 </div>
-              ) : null}
+              ) : (
+                <p className="text-xs text-default-500">
+                  Nao ha clientes cadastrados neste escritorio ainda.
+                </p>
+              )}
+              <Button
+                color="primary"
+                size="sm"
+                variant="light"
+                onPress={() => setIsClienteModalOpen(true)}
+              >
+                Nao tem cliente? Criar novo cliente
+              </Button>
+            </div>
 
             <SearchableSelect
               isRequired
-              description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
+              description="ObrigatÃ³rio para anÃ¡lise de perfil de julgamento e histÃ³rico estratÃ©gico."
               emptyContent="Nenhuma autoridade encontrada"
               items={juizOptions}
               isLoading={isLoadingJuizes}
               label="Autoridade do Caso *"
-              placeholder="Selecione o juiz ou promotor responsável"
+              placeholder="Selecione o juiz ou promotor responsÃ¡vel"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -531,84 +765,128 @@ export function NovoProcessoContent() {
               </Button>
             </div>
 
-            <Select
-              description="Tribunal ao qual o processo está vinculado. Pode ser global (oficial) ou do seu escritório."
+            <SearchableSelect
+              description="Tribunal ao qual o processo esta vinculado. Digite para encontrar mais rapido."
+              emptyContent="Nenhum tribunal encontrado"
               items={tribunalOptions}
               isLoading={isLoadingTribunais}
               isRequired
+              isVirtualized={false}
               label="Tribunal *"
-              placeholder="Selecione o tribunal do caso"
-              selectedKeys={new Set(selectedTribunalKeys)}
+              placeholder="Digite para buscar o tribunal"
+              selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  tribunalId: Array.from(keys)[0]?.toString() || "",
-                }))
-              }
-            >
-              {tribunalOptions.map((item) => (
-                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </Select>
-
-            <Select
-              description="Vincule um ou mais advogados responsáveis a este processo."
-              items={advogadoOptions}
-              isLoading={isLoadingAdvogados}
-              label="Advogados responsáveis"
-              placeholder="Selecione um ou mais advogados"
-              selectedKeys={new Set(selectedAdvogadoKeys)}
-              selectionMode="multiple"
-              startContent={<Scale className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(keys) => {
-                const nextKeys = Array.from(keys).map(String);
-
-                setFormData((prev) => ({
-                  ...prev,
-                  advogadoResponsavelId: nextKeys[0] || "",
-                  advogadoResponsavelIds: nextKeys,
-                }));
-              }}
-            >
-              {advogadoOptions.map((item) => (
-                <SelectItem key={item.key} textValue={item.textValue ?? item.label}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </Select>
-            {selectedAdvogadoKeys.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {selectedAdvogadoKeys.map((advogadoId) => {
-                  const advogado = (advogados || []).find(
-                    (item) => item.id === advogadoId,
+              onSelectionChange={(selectedKey) =>
+                setFormData((prev) => {
+                  const selectedTribunal = tribunais.find(
+                    (tribunal) => tribunal.id === selectedKey,
                   );
+                  const tribunalLabel = buildTribunalLabel(selectedTribunal);
+                  const shouldSyncOrgao =
+                    !prev.orgaoJulgador?.trim() ||
+                    prev.orgaoJulgador ===
+                      buildTribunalLabel(
+                        tribunais.find(
+                          (tribunal) => tribunal.id === prev.tribunalId,
+                        ),
+                      );
 
-                  if (!advogado) {
-                    return null;
+                  return {
+                    ...prev,
+                    tribunalId: selectedKey || "",
+                    comarca: "",
+                    vara: "",
+                    orgaoJulgador: shouldSyncOrgao
+                      ? tribunalLabel
+                      : prev.orgaoJulgador,
+                  };
+                })
+              }
+            />
+
+            <div className="space-y-3">
+              <SearchableSelect
+                description="Digite para localizar e adicionar advogados responsaveis."
+                emptyContent="Nenhum advogado encontrado"
+                items={advogadoOptionsDisponiveis}
+                isLoading={isLoadingAdvogados}
+                label="Advogados responsaveis"
+                placeholder="Digite para buscar e adicionar"
+                selectedKey={advogadoPickerKey}
+                startContent={<Scale className="h-4 w-4 text-default-400" />}
+                onSelectionChange={(selectedKey) => {
+                  setAdvogadoPickerKey(selectedKey);
+
+                  if (!selectedKey) {
+                    return;
                   }
 
-                  return (
-                    <Chip
-                      key={advogadoId}
-                      color="secondary"
-                      size="sm"
-                      variant="flat"
-                    >
-                      {advogado.label}
-                    </Chip>
-                  );
-                })}
-              </div>
-            ) : null}
+                  setFormData((prev) => {
+                    const atuais = prev.advogadoResponsavelIds?.length
+                      ? prev.advogadoResponsavelIds
+                      : prev.advogadoResponsavelId
+                        ? [prev.advogadoResponsavelId]
+                        : [];
+                    const nextKeys = Array.from(
+                      new Set([...atuais, selectedKey]),
+                    );
+
+                    return {
+                      ...prev,
+                      advogadoResponsavelId: nextKeys[0] || "",
+                      advogadoResponsavelIds: nextKeys,
+                    };
+                  });
+
+                  setAdvogadoPickerKey(null);
+                }}
+              />
+              {selectedAdvogadoKeys.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedAdvogadoKeys.map((advogadoId) => {
+                    const advogado = (advogados || []).find(
+                      (item) => item.id === advogadoId,
+                    );
+
+                    if (!advogado) {
+                      return null;
+                    }
+
+                    return (
+                      <Button
+                        key={advogadoId}
+                        color="secondary"
+                        endContent={<X className="h-3 w-3" />}
+                        size="sm"
+                        variant="flat"
+                        onPress={() =>
+                          setFormData((prev) => {
+                            const nextKeys = selectedAdvogadoKeys.filter(
+                              (id) => id !== advogadoId,
+                            );
+
+                            return {
+                              ...prev,
+                              advogadoResponsavelId: nextKeys[0] || "",
+                              advogadoResponsavelIds: nextKeys,
+                            };
+                          })
+                        }
+                      >
+                        {advogado.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Input
                 isRequired
                 description="Identificador principal do processo para busca e controle interno."
-                label="Número do Processo *"
+                label="NÃºmero do Processo *"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numero}
                 onValueChange={(value) =>
@@ -617,8 +895,8 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="Informe se houver diferença do número principal"
-                label="Número CNJ (oficial)"
+                description="Informe se houver diferenÃ§a do nÃºmero principal"
+                label="NÃºmero CNJ (oficial)"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numeroCnj || ""}
                 onValueChange={(value) =>
@@ -627,8 +905,8 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="Código interno para organização do escritório (opcional)."
-                label="Número Interno"
+                description="CÃ³digo interno para organizaÃ§Ã£o do escritÃ³rio (opcional)."
+                label="NÃºmero Interno"
                 placeholder="Ex: 2024/001"
                 value={formData.numeroInterno || ""}
                 onValueChange={(value) =>
@@ -639,8 +917,8 @@ export function NovoProcessoContent() {
 
             <Input
               description="Nome curto para identificar rapidamente o caso nas listagens."
-              label="Título"
-              placeholder="Ex: Ação de Despejo, Divórcio, etc."
+              label="TÃ­tulo"
+              placeholder="Ex: AÃ§Ã£o de Despejo, DivÃ³rcio, etc."
               value={formData.titulo || ""}
               onValueChange={(value) =>
                 setFormData((prev) => ({ ...prev, titulo: value }))
@@ -648,8 +926,8 @@ export function NovoProcessoContent() {
             />
 
             <Textarea
-              description="Resumo do contexto, estratégia ou observações importantes do caso."
-              label="Descrição"
+              description="Resumo do contexto, estratÃ©gia ou observaÃ§Ãµes importantes do caso."
+              label="DescriÃ§Ã£o"
               minRows={3}
               placeholder="Resumo do caso..."
               value={formData.descricao || ""}
@@ -661,15 +939,15 @@ export function NovoProcessoContent() {
 
           <Divider />
 
-          {/* Seção: Classificação */}
+          {/* SeÃ§Ã£o: ClassificaÃ§Ã£o */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ⚖️ Classificação e Status
+              âš–ï¸ ClassificaÃ§Ã£o e Status
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Select
-                description="Situação atual do processo no escritório."
+                description="SituaÃ§Ã£o atual do processo no escritÃ³rio."
                 label="Status"
                 placeholder="Selecione o status"
                 selectedKeys={formData.status ? [formData.status] : []}
@@ -727,22 +1005,46 @@ export function NovoProcessoContent() {
                 </Select>
               ) : null}
 
-              <Input
-                description="Classe jurídica informada no tribunal (ex.: Procedimento Comum)."
-                label="Classe Processual"
-                placeholder="Ex: Procedimento Comum"
-                value={formData.classeProcessual || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, classeProcessual: value }))
-                }
-              />
+              <div className="space-y-2">
+                <SearchableSelect
+                  description="Catálogo de classes processuais do escritório. Se faltar alguma, cadastre em Configurações."
+                  emptyContent="Nenhuma classe processual encontrada"
+                  isLoading={isLoadingClassesProcessuais}
+                  items={classProcessualOptions}
+                  label="Classe Processual"
+                  placeholder="Digite para buscar a classe"
+                  selectedKey={selectedClasseProcessualKey}
+                  startContent={<FileText className="h-4 w-4 text-default-400" />}
+                  onSelectionChange={(selectedKey) => {
+                    const option = classProcessualOptions.find(
+                      (item) => item.key === selectedKey,
+                    );
+
+                    setFormData((prev) => ({
+                      ...prev,
+                      classeProcessual: option?.label || "",
+                    }));
+                  }}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    as={Link}
+                    color="secondary"
+                    href="/configuracoes?tab=classes-processuais"
+                    size="sm"
+                    variant="light"
+                  >
+                    Gerenciar classes processuais
+                  </Button>
+                </div>
+              </div>
 
               <Select
-                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
+                description="ClassificaÃ§Ã£o por Ã¡rea de atuaÃ§Ã£o (opcional). Configure Ã¡reas em ConfiguraÃ§Ãµes."
                 isClearable
                 isLoading={isLoadingAreas}
-                label="Área do processo"
-                placeholder="Selecione uma área"
+                label="Ãrea do processo"
+                placeholder="Selecione uma Ã¡rea"
                 selectedKeys={selectedAreaKeys}
                 onSelectionChange={(keys) => {
                   const selectedKey = Array.from(keys)[0] as string | undefined;
@@ -783,7 +1085,7 @@ export function NovoProcessoContent() {
               </Select>
 
               <Select
-                description="Instância de tramitação (1º grau, 2º grau ou tribunal superior)."
+                description="InstÃ¢ncia de tramitaÃ§Ã£o (1Âº grau, 2Âº grau ou tribunal superior)."
                 label="Grau"
                 placeholder="Selecione o grau"
                 selectedKeys={formData.grau ? [formData.grau] : []}
@@ -803,22 +1105,31 @@ export function NovoProcessoContent() {
               </Select>
             </div>
 
-            <Input
-              description="Câmara, turma ou órgão responsável pelo julgamento."
-              label="Órgão Julgador"
-              placeholder="Ex: 2ª Câmara de Direito Público"
+            <SearchableSelect
+              description="Por padrao, herda o mesmo tribunal acima. Se precisar, selecione outro."
+              emptyContent="Nenhum tribunal encontrado"
+              isLoading={isLoadingTribunais}
+              isVirtualized={false}
+              items={tribunalOptions}
+              label="Orgao Julgador"
+              placeholder="Digite para buscar o orgao julgador"
+              selectedKey={selectedOrgaoJulgadorKey}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              value={formData.orgaoJulgador || ""}
-              onValueChange={(value) =>
-                setFormData((prev) => ({ ...prev, orgaoJulgador: value }))
+              onSelectionChange={(selectedKey) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  orgaoJulgador:
+                    tribunalOptions.find((item) => item.key === selectedKey)
+                      ?.label || "",
+                }))
               }
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                description="Procedimento aplicado ao caso (ordinário, sumário, especial etc.)."
+                description="Procedimento aplicado ao caso (ordinÃ¡rio, sumÃ¡rio, especial etc.)."
                 label="Rito"
-                placeholder="Ex: Ordinário, Sumário"
+                placeholder="Ex: OrdinÃ¡rio, SumÃ¡rio"
                 value={formData.rito || ""}
                 onValueChange={(value) =>
                   setFormData((prev) => ({ ...prev, rito: value }))
@@ -826,7 +1137,7 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="Valor econômico da ação, quando houver."
+                description="Valor econÃ´mico da aÃ§Ã£o, quando houver."
                 label="Valor da Causa (R$)"
                 placeholder="0,00"
                 startContent={
@@ -858,22 +1169,34 @@ export function NovoProcessoContent() {
 
           <Divider />
 
-          {/* Seção: Localização */}
+          {/* SeÃ§Ã£o: LocalizaÃ§Ã£o */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📍 Localização
+              ðŸ“ LocalizaÃ§Ã£o
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                description="Cidade/comarca em que o processo tramita."
+              <SearchableSelect
+                description="Comarca vinculada ao tribunal selecionado."
+                emptyContent="Nenhuma comarca encontrada"
+                isDisabled={!formData.tribunalId}
+                isLoading={isLoadingComarcas}
+                items={comarcaOptions}
                 label="Comarca"
-                placeholder="Ex: São Paulo"
+                placeholder="Digite para buscar a comarca"
+                selectedKey={selectedComarcaKey}
                 startContent={<MapPin className="h-4 w-4 text-default-400" />}
-                value={formData.comarca || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, comarca: value }))
-                }
+                onSelectionChange={(selectedKey) => {
+                  const option = comarcaOptions.find(
+                    (item) => item.key === selectedKey,
+                  );
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    comarca: option?.label || "",
+                    vara: "",
+                  }));
+                }}
               />
 
               <Input
@@ -887,29 +1210,38 @@ export function NovoProcessoContent() {
               />
             </div>
 
-            <Input
-              description="Vara ou juizado específico onde o processo corre."
+            <SearchableSelect
+              description="Vara ou juizado disponível para a comarca selecionada."
+              emptyContent="Nenhuma vara encontrada"
+              isDisabled={!formData.tribunalId || !formData.comarca}
+              isLoading={isLoadingVaras}
+              items={varaOptions}
               label="Vara"
-              placeholder="Ex: 1ª Vara Cível"
-              value={formData.vara || ""}
-              onValueChange={(value) =>
-                setFormData((prev) => ({ ...prev, vara: value }))
-              }
+              placeholder="Digite para buscar a vara"
+              selectedKey={selectedVaraKey}
+              onSelectionChange={(selectedKey) => {
+                const option = varaOptions.find((item) => item.key === selectedKey);
+
+                setFormData((prev) => ({
+                  ...prev,
+                  vara: option?.label || "",
+                }));
+              }}
             />
           </div>
 
           <Divider />
 
-          {/* Seção: Outras Informações */}
+          {/* SeÃ§Ã£o: Outras InformaÃ§Ãµes */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              📅 Outras Informações
+              ðŸ“… Outras InformaÃ§Ãµes
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DateInput
-                description="Data oficial de distribuição do processo."
-                label="Data de Distribuição"
+                description="Data oficial de distribuiÃ§Ã£o do processo."
+                label="Data de DistribuiÃ§Ã£o"
                 startContent={<Calendar className="h-4 w-4 text-default-400" />}
                 value={
                   formData.dataDistribuicao
@@ -927,7 +1259,7 @@ export function NovoProcessoContent() {
               />
 
               <DateInput
-                description="Próximo prazo estratégico para acompanhamento da equipe."
+                description="PrÃ³ximo prazo estratÃ©gico para acompanhamento da equipe."
                 label="Prazo Principal"
                 startContent={<Clock className="h-4 w-4 text-default-400" />}
                 value={
@@ -969,24 +1301,24 @@ export function NovoProcessoContent() {
             >
               <div className="flex flex-col">
                 <span className="text-sm font-semibold">
-                  Segredo de Justiça
+                  Segredo de JustiÃ§a
                 </span>
                 <span className="text-xs text-default-400">
-                  Marque se este processo corre em segredo de justiça
+                  Marque se este processo corre em segredo de justiÃ§a
                 </span>
               </div>
             </Checkbox>
           </div>
 
-          {/* Informação */}
+          {/* InformaÃ§Ã£o */}
           <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
             <p className="text-xs text-primary-600">
-              💡 Após criar o processo, você poderá adicionar documentos,
-              eventos, movimentações e vincular procurações.
+              ðŸ’¡ ApÃ³s criar o processo, vocÃª poderÃ¡ adicionar documentos,
+              eventos, movimentaÃ§Ãµes e vincular procuraÃ§Ãµes.
             </p>
           </div>
 
-          {/* Botões de Ação */}
+          {/* BotÃµes de AÃ§Ã£o */}
           <div className="flex gap-3 justify-end">
             <Button
               variant="light"
@@ -1011,6 +1343,28 @@ export function NovoProcessoContent() {
           </div>
         </CardBody>
       </Card>
+
+      <ClienteCreateModal
+        isOpen={isClienteModalOpen}
+        onCreated={async (cliente) => {
+          await mutateClientes();
+          setFormData((prev) => {
+            const currentIds = prev.clienteIds?.length
+              ? prev.clienteIds
+              : prev.clienteId
+                ? [prev.clienteId]
+                : [];
+            const nextIds = Array.from(new Set([...currentIds, cliente.id]));
+
+            return {
+              ...prev,
+              clienteId: nextIds[0] || "",
+              clienteIds: nextIds,
+            };
+          });
+        }}
+        onOpenChange={setIsClienteModalOpen}
+      />
 
       <AuthorityQuickCreateModal
         isOpen={isAuthorityModalOpen}

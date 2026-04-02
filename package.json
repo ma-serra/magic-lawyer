@@ -39,6 +39,7 @@
     "notifications:crons": "curl -sSf -X GET \"http://localhost:9192/api/cron/check-deadlines\" -H \"Authorization: Bearer ${CRON_SECRET:-test-secret}\" > /dev/null && curl -sSf -X GET \"http://localhost:9192/api/cron/check-contracts\" -H \"Authorization: Bearer ${CRON_SECRET:-test-secret}\" > /dev/null",
     "notifications:all": "npm run notifications:test && npm run notifications:webhook && npm run notifications:smoke && npm run notifications:crons",
     "notifications:repair": "npx tsx scripts/fix-tenant-status-simple.ts",
+    "feriados:seed:free": "npx tsx scripts/seed-feriados-free.ts",
     "jusbrasil:backfill:process-monitors": "npx tsx scripts/jusbrasil-backfill-process-monitors.ts",
     "jusbrasil:backfill:prazos": "npx tsx scripts/backfill-jusbrasil-prazos.ts",
     "polling:status": "npx tsx scripts/polling-control.ts --status",

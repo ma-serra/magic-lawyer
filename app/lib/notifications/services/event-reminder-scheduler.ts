@@ -8,9 +8,58 @@ import { NotificationFactory } from "../domain/notification-factory";
 
 import prisma from "@/app/lib/prisma";
 
+const REMINDER_CHECK_WINDOW_MS = 15 * 60 * 1000;
+
+function resolveReminderType(minutesBefore: number) {
+  if (minutesBefore === 1440) {
+    return "evento.reminder_1d";
+  }
+
+  if (minutesBefore === 60) {
+    return "evento.reminder_1h";
+  }
+
+  return "evento.reminder_custom";
+}
+
+function formatReminderLabel(minutesBefore: number) {
+  if (minutesBefore >= 1440 && minutesBefore % 1440 === 0) {
+    const days = minutesBefore / 1440;
+
+    return days === 1 ? "1 dia antes" : `${days} dias antes`;
+  }
+
+  if (minutesBefore >= 60 && minutesBefore % 60 === 0) {
+    const hours = minutesBefore / 60;
+
+    return hours === 1 ? "1 hora antes" : `${hours} horas antes`;
+  }
+
+  return `${minutesBefore} minutos antes`;
+}
+
+function resolveEventReminderSchedule(evento: {
+  lembreteMinutos: number | null;
+  lembretesMinutos?: number[];
+}) {
+  const schedule = Array.from(
+    new Set(
+      ((evento.lembretesMinutos && evento.lembretesMinutos.length > 0
+        ? evento.lembretesMinutos
+        : evento.lembreteMinutos && evento.lembreteMinutos > 0
+          ? [evento.lembreteMinutos]
+          : []) as number[])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => b - a);
+
+  return schedule;
+}
+
 export class EventReminderSchedulerService {
   /**
-   * Verifica e envia lembretes de eventos (1 dia e 1 hora antes)
+   * Verifica e envia lembretes de eventos conforme configurado em cada evento.
    */
   static async checkEventReminders(): Promise<void> {
     try {
@@ -19,173 +68,129 @@ export class EventReminderSchedulerService {
       );
 
       const now = new Date();
-      const umDia = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h a partir de agora
-      const umaHora = new Date(now.getTime() + 60 * 60 * 1000); // 1h a partir de agora
-      const proximos15Minutos = new Date(now.getTime() + 15 * 60 * 1000); // Janela de 15min para envio
-
-      // Buscar eventos que começam em ~24 horas (lembrete 1 dia)
-      const eventos1Dia = await prisma.evento.findMany({
-        where: {
-          dataInicio: {
-            gte: umDia,
-            lte: new Date(umDia.getTime() + 60 * 60 * 1000), // Janela de 1h
-          },
-          status: {
-            in: ["AGENDADO", "CONFIRMADO"],
-          },
-        },
-        include: {
-          processo: {
-            select: {
-              id: true,
-              numero: true,
-            },
-          },
-          cliente: {
-            select: {
-              id: true,
-              nome: true,
-              usuarioId: true,
-            },
-          },
-          advogadoResponsavel: {
-            include: {
-              usuario: {
-                select: {
-                  id: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      // Buscar eventos que começam em ~1 hora (lembrete 1 hora)
-      const eventos1Hora = await prisma.evento.findMany({
-        where: {
-          dataInicio: {
-            gte: umaHora,
-            lte: proximos15Minutos, // Janela de 15min para envio
-          },
-          status: {
-            in: ["AGENDADO", "CONFIRMADO"],
-          },
-        },
-        include: {
-          processo: {
-            select: {
-              id: true,
-              numero: true,
-            },
-          },
-          cliente: {
-            select: {
-              id: true,
-              nome: true,
-              usuarioId: true,
-            },
-          },
-          advogadoResponsavel: {
-            include: {
-              usuario: {
-                select: {
-                  id: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      console.log(
-        `[EventReminderScheduler] 📋 Encontrados ${eventos1Dia.length} eventos para lembrete 1d e ${eventos1Hora.length} para lembrete 1h`,
+      const maxReminderMinutes = 1440;
+      const horizon = new Date(
+        now.getTime() + maxReminderMinutes * 60 * 1000 + REMINDER_CHECK_WINDOW_MS,
       );
 
-      let lembretes1d = 0;
-      let lembretes1h = 0;
-
-      // Processar lembretes de 1 dia
-      for (const evento of eventos1Dia) {
-        // Verificar se já foi notificado recentemente (evitar duplicatas)
-        const ultimaNotificacao = await prisma.notification.findFirst({
-          where: {
-            tenantId: evento.tenantId,
-            type: "evento.reminder_1d",
-            payload: {
-              path: ["eventoId"],
-              equals: evento.id,
+      const eventos = await prisma.evento.findMany({
+        where: {
+          dataInicio: {
+            gte: now,
+            lte: horizon,
+          },
+          status: {
+            in: ["AGENDADO", "CONFIRMADO"],
+          },
+          OR: [
+            {
+              lembretesMinutos: {
+                isEmpty: false,
+              },
+            },
+            {
+              lembreteMinutos: {
+                gt: 0,
+              },
+            },
+          ],
+        },
+        include: {
+          processo: {
+            select: {
+              id: true,
+              numero: true,
             },
           },
-          orderBy: {
-            createdAt: "desc",
+          cliente: {
+            select: {
+              id: true,
+              nome: true,
+              usuarioId: true,
+            },
           },
-        });
-
-        // Se não foi notificado nas últimas 12 horas, notificar
-        if (
-          !ultimaNotificacao ||
-          new Date(ultimaNotificacao.createdAt).getTime() <
-            now.getTime() - 12 * 60 * 60 * 1000
-        ) {
-          const recipients = await this.getEventRecipients(evento);
-
-          for (const userId of recipients) {
-            try {
-              const event = NotificationFactory.createEvent(
-                "evento.reminder_1d",
-                evento.tenantId,
-                userId,
-                {
-                  eventoId: evento.id,
-                  titulo: evento.titulo,
-                  dataInicio: evento.dataInicio.toISOString(),
-                  local: evento.local ?? undefined,
-                  processoId: evento.processoId ?? undefined,
-                  processoNumero: evento.processo?.numero ?? undefined,
+          advogadoResponsavel: {
+            include: {
+              usuario: {
+                select: {
+                  id: true,
                 },
-              );
+              },
+            },
+          },
+        },
+      });
 
-              await NotificationService.publishNotification(event);
-              lembretes1d++;
-            } catch (error) {
-              console.error(
-                `[EventReminderScheduler] Erro ao enviar lembrete 1d para evento ${evento.id}:`,
-                error,
-              );
-            }
-          }
+      console.log(
+        `[EventReminderScheduler] 📋 Encontrados ${eventos.length} eventos com avisos configurados`,
+      );
+
+      let lembretesEnviados = 0;
+
+      for (const evento of eventos) {
+        const reminderSchedule = resolveEventReminderSchedule(evento);
+
+        if (reminderSchedule.length === 0) {
+          continue;
         }
-      }
 
-      // Processar lembretes de 1 hora
-      for (const evento of eventos1Hora) {
-        // Verificar se já foi notificado recentemente (evitar duplicatas)
-        const ultimaNotificacao = await prisma.notification.findFirst({
-          where: {
-            tenantId: evento.tenantId,
-            type: "evento.reminder_1h",
-            payload: {
-              path: ["eventoId"],
-              equals: evento.id,
+        const recipients = await this.getEventRecipients(evento);
+
+        if (recipients.length === 0) {
+          continue;
+        }
+
+        for (const minutesBefore of reminderSchedule) {
+          const scheduledAt = new Date(
+            evento.dataInicio.getTime() - minutesBefore * 60 * 1000,
+          );
+          const scheduledWindowEnd = new Date(
+            scheduledAt.getTime() + REMINDER_CHECK_WINDOW_MS,
+          );
+
+          if (scheduledAt > now || scheduledWindowEnd < now) {
+            continue;
+          }
+
+          const notificationType = resolveReminderType(minutesBefore);
+          const ultimaNotificacao = await prisma.notification.findFirst({
+            where: {
+              tenantId: evento.tenantId,
+              type: notificationType,
+              payload: {
+                path: ["eventoId"],
+                equals: evento.id,
+              },
+              ...(notificationType === "evento.reminder_custom"
+                ? {
+                    AND: [
+                      {
+                        payload: {
+                          path: ["reminderMinutes"],
+                          equals: minutesBefore,
+                        },
+                      },
+                    ],
+                  }
+                : {}),
             },
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-        });
+            orderBy: {
+              createdAt: "desc",
+            },
+          });
 
-        // Se não foi notificado nas últimas 30 minutos, notificar
-        if (
-          !ultimaNotificacao ||
-          new Date(ultimaNotificacao.createdAt).getTime() <
-            now.getTime() - 30 * 60 * 1000
-        ) {
-          const recipients = await this.getEventRecipients(evento);
+          if (
+            ultimaNotificacao &&
+            new Date(ultimaNotificacao.createdAt).getTime() >
+              now.getTime() - REMINDER_CHECK_WINDOW_MS
+          ) {
+            continue;
+          }
 
           for (const userId of recipients) {
             try {
               const event = NotificationFactory.createEvent(
-                "evento.reminder_1h",
+                notificationType,
                 evento.tenantId,
                 userId,
                 {
@@ -193,16 +198,29 @@ export class EventReminderSchedulerService {
                   titulo: evento.titulo,
                   dataInicio: evento.dataInicio.toISOString(),
                   local: evento.local ?? undefined,
+                  isOnline: evento.isOnline,
+                  linkAcesso: evento.linkAcesso ?? undefined,
                   processoId: evento.processoId ?? undefined,
                   processoNumero: evento.processo?.numero ?? undefined,
+                  reminderMinutes: minutesBefore,
+                  reminderLabel: formatReminderLabel(minutesBefore),
+                  detailLines: evento.isOnline
+                    ? [
+                        "Evento online",
+                        ...(evento.linkAcesso
+                          ? [`Link: ${evento.linkAcesso}`]
+                          : []),
+                        `Aviso configurado para ${formatReminderLabel(minutesBefore)}`,
+                      ]
+                    : [`Aviso configurado para ${formatReminderLabel(minutesBefore)}`],
                 },
               );
 
               await NotificationService.publishNotification(event);
-              lembretes1h++;
+              lembretesEnviados++;
             } catch (error) {
               console.error(
-                `[EventReminderScheduler] Erro ao enviar lembrete 1h para evento ${evento.id}:`,
+                `[EventReminderScheduler] Erro ao enviar lembrete ${minutesBefore}m para evento ${evento.id}:`,
                 error,
               );
             }
@@ -211,7 +229,7 @@ export class EventReminderSchedulerService {
       }
 
       console.log(
-        `[EventReminderScheduler] ✅ Verificação concluída: ${lembretes1d} lembretes 1d e ${lembretes1h} lembretes 1h enviados`,
+        `[EventReminderScheduler] ✅ Verificação concluída: ${lembretesEnviados} lembrete(s) enviados`,
       );
     } catch (error) {
       console.error(

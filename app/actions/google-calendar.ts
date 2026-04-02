@@ -349,9 +349,27 @@ export async function syncEventoWithGoogle(eventoId: string) {
     }
 
     // Preparar dados para Google Calendar
+    const lembretesMinutos = Array.from(
+      new Set(
+        (((evento as typeof evento & { lembretesMinutos?: number[] }).lembretesMinutos
+          ?.length
+          ? (evento as typeof evento & { lembretesMinutos?: number[] }).lembretesMinutos
+          : evento.lembreteMinutos && evento.lembreteMinutos > 0
+            ? [evento.lembreteMinutos]
+            : []) as number[])
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    ).sort((a, b) => b - a);
+
     const googleEvent: GoogleCalendarEvent = {
       summary: evento.titulo,
-      description: evento.descricao || undefined,
+      description:
+        evento.isOnline && evento.linkAcesso
+          ? [evento.descricao || undefined, `Link do evento online: ${evento.linkAcesso}`]
+              .filter(Boolean)
+              .join("\n\n")
+          : evento.descricao || undefined,
       start: {
         dateTime: evento.dataInicio.toISOString(),
         timeZone: "America/Sao_Paulo",
@@ -364,17 +382,17 @@ export async function syncEventoWithGoogle(eventoId: string) {
       attendees: evento.participantes.map((email) => ({ email })),
       reminders: {
         useDefault: false,
-        overrides: evento.lembreteMinutos
-          ? [
+        overrides: lembretesMinutos.length > 0
+          ? lembretesMinutos.flatMap((minutes) => [
               {
                 method: "email" as const,
-                minutes: evento.lembreteMinutos,
+                minutes,
               },
               {
                 method: "popup" as const,
-                minutes: evento.lembreteMinutos,
+                minutes,
               },
-            ]
+            ])
           : [
               {
                 method: "email" as const,
@@ -842,6 +860,11 @@ export async function importEventosFromGoogle() {
             dataInicio,
             dataFim,
             local: eventoGoogle.location || undefined,
+            isOnline: Boolean((eventoGoogle as any).hangoutLink),
+            linkAcesso:
+              typeof (eventoGoogle as any).hangoutLink === "string"
+                ? (eventoGoogle as any).hangoutLink
+                : undefined,
             participantes,
             criadoPorId: session.user.id,
             googleEventId: eventoGoogle.id,
