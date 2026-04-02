@@ -1,4 +1,5 @@
 import { getSession } from "@/app/lib/auth";
+import prisma from "@/app/lib/prisma";
 
 function normalizeEmail(value?: string | null) {
   return value?.trim().toLowerCase() || "";
@@ -18,7 +19,6 @@ function getProductionAllowlist() {
 export async function canCurrentUserAccessDevWorkbench() {
   const session = await getSession();
   const email = normalizeEmail(session?.user?.email);
-  const role = String((session?.user as any)?.role ?? "");
 
   if (!email) {
     return false;
@@ -32,9 +32,19 @@ export async function canCurrentUserAccessDevWorkbench() {
     return false;
   }
 
-  if (role !== "SUPER_ADMIN") {
+  const allowlist = getProductionAllowlist();
+
+  if (!allowlist.has(email)) {
     return false;
   }
 
-  return getProductionAllowlist().has(email);
+  const linkedSuperAdmin = await prisma.superAdmin.findFirst({
+    where: {
+      email: { equals: email, mode: "insensitive" },
+      status: "ACTIVE",
+    },
+    select: { id: true },
+  });
+
+  return Boolean(linkedSuperAdmin);
 }
