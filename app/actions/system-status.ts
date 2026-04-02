@@ -6,6 +6,7 @@ import Ably from "ably";
 import Redis from "ioredis";
 import { v2 as cloudinary } from "cloudinary";
 
+import { canCurrentUserAccessDevWorkbench } from "@/app/lib/dev-workbench-access";
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
 import {
@@ -418,8 +419,12 @@ async function checkRedis(): Promise<ExternalServiceStatus> {
 
 export async function fetchSystemStatus() {
   const session = await getServerSession(authOptions);
+  const workbenchEnabled =
+    process.env.NODE_ENV === "development"
+      ? true
+      : await canCurrentUserAccessDevWorkbench();
 
-  if (!session?.user || (session.user as any)?.role !== "SUPER_ADMIN") {
+  if (!session?.user || !workbenchEnabled) {
     return {
       success: false,
       error: "Sem permissão para consultar status",

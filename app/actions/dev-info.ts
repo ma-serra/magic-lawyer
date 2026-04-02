@@ -3,6 +3,7 @@
 import { execSync } from "child_process";
 
 import { getSession } from "@/app/lib/auth";
+import { canCurrentUserAccessDevWorkbench } from "@/app/lib/dev-workbench-access";
 import prisma from "@/app/lib/prisma";
 import { getOnlinePresenceSnapshot } from "@/app/lib/realtime/session-presence";
 import { buildDefaultTenantDomainBySlug } from "@/lib/tenant-host";
@@ -139,7 +140,12 @@ function emptyDevInfo(viewer?: Partial<DevViewerInfo>): DevInfo {
 }
 
 export async function getDevInfo(): Promise<DevInfo> {
-  if (process.env.NODE_ENV !== "development") {
+  const workbenchEnabled =
+    process.env.NODE_ENV === "development"
+      ? true
+      : await canCurrentUserAccessDevWorkbench();
+
+  if (!workbenchEnabled) {
     return emptyDevInfo();
   }
 
@@ -154,6 +160,8 @@ export async function getDevInfo(): Promise<DevInfo> {
           }
         | undefined) ?? null;
 
+    const canViewPrivilegedData = workbenchEnabled;
+
     const viewer: DevViewerInfo = {
       isAuthenticated: Boolean(session?.user),
       role:
@@ -165,9 +173,9 @@ export async function getDevInfo(): Promise<DevInfo> {
         typeof sessionUser.tenantSlug === "string"
           ? sessionUser.tenantSlug
           : null,
-      canViewUsers: session?.user?.role === "SUPER_ADMIN",
-      canViewOnline: session?.user?.role === "SUPER_ADMIN",
-      canImpersonate: session?.user?.role === "SUPER_ADMIN",
+      canViewUsers: canViewPrivilegedData,
+      canViewOnline: canViewPrivilegedData,
+      canImpersonate: canViewPrivilegedData,
       impersonationActive: Boolean(impersonation?.active),
       impersonationTargetEmail:
         typeof impersonation?.targetUserEmail === "string"

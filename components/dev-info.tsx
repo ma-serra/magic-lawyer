@@ -444,7 +444,8 @@ export function DevInfo({
     null,
   );
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
-  const canViewStatus = (session?.user as Record<string, unknown> | undefined)?.role === "SUPER_ADMIN";
+  const sessionIsSuperAdmin =
+    (session?.user as Record<string, unknown> | undefined)?.role === "SUPER_ADMIN";
 
   const {
     data: devInfo,
@@ -452,7 +453,7 @@ export function DevInfo({
     isLoading,
     mutate,
   } = useSWR<DevInfoData>(
-    process.env.NODE_ENV === "development" ? "dev-info" : null,
+    "dev-info",
     getDevInfo,
     {
       refreshInterval: isModalOpen ? 15000 : 0,
@@ -466,8 +467,7 @@ export function DevInfo({
     isLoading: isSystemStatusLoading,
     mutate: mutateSystemStatus,
   } = useSWR<SystemStatusData>(
-    process.env.NODE_ENV === "development" &&
-      canViewStatus &&
+    (sessionIsSuperAdmin || devInfo?.viewer.canViewUsers) &&
       (showStatusTrigger || isModalOpen)
       ? "dev-system-status"
       : null,
@@ -482,6 +482,7 @@ export function DevInfo({
   const totalQuickLogins = quickLoginGroups.reduce((total, group) => {
     return total + group.options.length;
   }, 0);
+  const canViewStatus = sessionIsSuperAdmin || Boolean(devInfo?.viewer.canViewUsers);
 
   const filteredTenants = useMemo(() => {
     return (devInfo?.tenants ?? []).filter((tenant) =>
@@ -628,10 +629,6 @@ export function DevInfo({
     systemStatusItems,
     systemStatusSummary.tone,
   ]);
-
-  if (process.env.NODE_ENV !== "development") {
-    return null;
-  }
 
   const openWorkbench = (nextTab: DevTabKey) => {
     const resolvedTab = nextTab === "status" && !canViewStatus ? "overview" : nextTab;
