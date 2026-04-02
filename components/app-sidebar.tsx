@@ -6,7 +6,6 @@ import {
   type ReactNode,
   useState,
   useEffect,
-  useTransition,
 } from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -17,22 +16,13 @@ import {
   DrawerContent,
   DrawerHeader,
 } from "@heroui/drawer";
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-} from "@heroui/modal";
 import { Button } from "@heroui/button";
 import { Avatar } from "@heroui/avatar";
 import { Tooltip } from "@heroui/react";
 import { useSession } from "next-auth/react";
 
-import { fetchSystemStatus } from "@/app/actions/system-status";
 import type { AuthenticatedNavPrefetchStrategy } from "@/app/lib/navigation/prefetch-policy";
 import { AppNavLink } from "@/components/app-nav-link";
-import type { ExternalServiceStatus } from "@/app/actions/system-status";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { Logo } from "@/components/icons";
 import { DevInfo } from "@/components/dev-info";
@@ -909,114 +899,8 @@ function SidebarContent({
   const userAvatar =
     (session?.user as any)?.avatarUrl || session?.user?.image || undefined;
   const sidebarUserName = useMemo(() => getSidebarDisplayName(userName), [userName]);
-  const shouldFetchStatus = isSuperAdmin;
-  const showStatusPanel = shouldFetchStatus && !collapsed;
-  const [serviceStatus, setServiceStatus] = useState<{
-    loading: boolean;
-    items: ExternalServiceStatus[];
-    error?: string;
-    checkedAt?: string;
-  }>({
-    loading: false,
-    items: [],
-  });
-  const [selectedService, setSelectedService] =
-    useState<ExternalServiceStatus | null>(null);
-  const [, startStatusTransition] = useTransition();
-
-  useEffect(() => {
-    if (!shouldFetchStatus) {
-      return;
-    }
-
-    let active = true;
-
-    setServiceStatus((prev) => ({
-      ...prev,
-      loading: true,
-      error: undefined,
-    }));
-
-    startStatusTransition(() => {
-      fetchSystemStatus()
-        .then((result) => {
-          if (!active) return;
-
-          if (!result.success) {
-            setServiceStatus({
-              loading: false,
-              items: [],
-              error: result.error ?? "Falha ao consultar status",
-            });
-
-            return;
-          }
-
-          setServiceStatus({
-            loading: false,
-            items: Array.isArray(result.services) ? result.services : [],
-            checkedAt: result.checkedAt ?? new Date().toISOString(),
-          });
-        })
-        .catch((error) => {
-          if (!active) return;
-
-          setServiceStatus((prev) => ({
-            ...prev,
-            loading: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Falha ao consultar status",
-          }));
-        });
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [shouldFetchStatus]);
-
-  const lastCheckedLabel = serviceStatus.checkedAt
-    ? new Date(serviceStatus.checkedAt).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
-
-  const selectedServiceCheckedLabel =
-    selectedService?.checkedAt || serviceStatus.checkedAt
-      ? new Date(
-          selectedService?.checkedAt || serviceStatus.checkedAt || Date.now(),
-        ).toLocaleString("pt-BR")
-      : "-";
-
-  const selectedServiceTerminalOutput = useMemo(() => {
-    if (!selectedService) {
-      return "";
-    }
-
-    const lines = [
-      `$ health-check --service ${selectedService.id}`,
-      `${selectedService.ok ? "[OK]" : "[ERROR]"} ${selectedService.name}`,
-      selectedService.ok
-        ? `Mensagem: ${selectedService.message || "Conectado com sucesso."}`
-        : `Falha: ${selectedService.message || "Sem detalhes de erro."}`,
-      `Checked at: ${selectedServiceCheckedLabel}`,
-    ];
-
-    if (selectedService.details && Object.keys(selectedService.details).length) {
-      lines.push("Detalhes técnicos:");
-      Object.entries(selectedService.details).forEach(([key, value]) => {
-        lines.push(`- ${key}: ${value}`);
-      });
-    }
-
-    return lines.join("\n");
-  }, [selectedService, selectedServiceCheckedLabel]);
-
+  const showDevWorkbench = process.env.NODE_ENV === "development" && !collapsed;
   const sections = useMemo(() => {
-    // Agrupar itens principais por seção
     const groupedItems = navItems.reduce(
       (acc, item) => {
         const section = item.section || "Geral";
@@ -1031,7 +915,6 @@ function SidebarContent({
       {} as Record<string, SidebarNavItem[]>,
     );
 
-    // Agrupar itens secundários por seção
     const groupedSecondaryItems = secondaryItems.reduce(
       (acc, item) => {
         const section = item.section || "Administração";
@@ -1046,10 +929,7 @@ function SidebarContent({
       {} as Record<string, SidebarNavItem[]>,
     );
 
-    // Criar seções ordenadas
-    const sections: Array<{ title: string; items: SidebarNavItem[] }> = [];
-
-    // Ordem das seções principais
+    const orderedSections: Array<{ title: string; items: SidebarNavItem[] }> = [];
     const sectionOrder = [
       "Visão Geral",
       "Gestão de Pessoas",
@@ -1058,42 +938,39 @@ function SidebarContent({
       "Administração",
     ];
 
-    // Adicionar seções principais na ordem
     sectionOrder.forEach((sectionTitle) => {
       if (groupedItems[sectionTitle]?.length > 0) {
-        sections.push({
+        orderedSections.push({
           title: sectionTitle,
           items: groupedItems[sectionTitle],
         });
       }
     });
 
-    // Adicionar seções não ordenadas
     Object.entries(groupedItems).forEach(([sectionTitle, items]) => {
       if (!sectionOrder.includes(sectionTitle) && items.length > 0) {
-        sections.push({ title: sectionTitle, items });
+        orderedSections.push({ title: sectionTitle, items });
       }
     });
 
-    // Adicionar seções secundárias (evitando duplicatas)
     Object.entries(groupedSecondaryItems).forEach(([sectionTitle, items]) => {
-      if (items.length > 0) {
-        // Verificar se já existe uma seção com esse nome
-        const existingSectionIndex = sections.findIndex(
-          (s) => s.title === sectionTitle,
-        );
-
-        if (existingSectionIndex >= 0) {
-          // Se existe, mesclar os itens
-          sections[existingSectionIndex].items.push(...items);
-        } else {
-          // Se não existe, criar nova seção
-          sections.push({ title: sectionTitle, items });
-        }
+      if (items.length === 0) {
+        return;
       }
+
+      const existingSectionIndex = orderedSections.findIndex(
+        (section) => section.title === sectionTitle,
+      );
+
+      if (existingSectionIndex >= 0) {
+        orderedSections[existingSectionIndex].items.push(...items);
+        return;
+      }
+
+      orderedSections.push({ title: sectionTitle, items });
     });
 
-    return sections;
+    return orderedSections;
   }, [navItems, secondaryItems]);
 
   return (
@@ -1235,130 +1112,17 @@ function SidebarContent({
           </div>
         ))}
 
-        {showStatusPanel ? (
-          <div className="rounded-2xl border border-success-200/30 bg-success-50/10 p-4 text-sm text-default-500">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.35em] text-success-200">
-              <div className="flex items-center gap-2">
-                <span>Status</span>
-                <Tooltip
-                  content="Testamos cada serviço chamando diretamente a API com as credenciais reais do sistema."
-                  placement="right"
-                  showArrow
-                >
-                  <span className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-success-200/50 text-[10px] text-success-50">
-                    ?
-                  </span>
-                </Tooltip>
-              </div>
-              {serviceStatus.loading ? (
-                <span className="text-warning-400">Checando…</span>
-              ) : lastCheckedLabel ? (
-                <span className="text-default-400">{lastCheckedLabel}</span>
-              ) : null}
-            </div>
-            {serviceStatus.error ? (
-              <p className="mt-2 text-xs text-danger-400">
-                {serviceStatus.error}
-              </p>
-            ) : serviceStatus.loading ? (
-              <p className="mt-2 text-xs text-default-400">
-                Validando integrações…
-              </p>
-            ) : serviceStatus.items.length === 0 ? (
-              <p className="mt-2 text-xs text-default-400">
-                Nenhuma verificação registrada.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {serviceStatus.items.map((service) => (
-                  <li
-                    key={service.id}
-                    className="text-[13px]"
-                  >
-                    <button
-                      className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition hover:bg-white/10"
-                      type="button"
-                      onClick={() => setSelectedService(service)}
-                    >
-                      <span className="text-default-600">{service.name}</span>
-                      <span
-                        className={
-                          service.ok ? "text-success-400" : "text-danger-400"
-                        }
-                      >
-                        {service.ok ? "Conectado" : "Falhou"}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : null}
+
       </div>
-
-      <Modal
-        isOpen={!!selectedService}
-        size="lg"
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedService(null);
-          }
-        }}
-      >
-        <ModalContent>
-          <ModalHeader className="flex items-center justify-between gap-3">
-            <div className="flex flex-col">
-              <span className="text-base font-semibold">
-                {selectedService?.name || "Serviço"}
-              </span>
-              <span className="text-xs text-default-500">
-                Última checagem: {selectedServiceCheckedLabel}
-              </span>
-            </div>
-            {selectedService ? (
-              <span
-                className={
-                  selectedService.ok ? "text-success-500" : "text-danger-500"
-                }
-              >
-                {selectedService.ok ? "Conectado" : "Falhou"}
-              </span>
-            ) : null}
-          </ModalHeader>
-          <ModalBody>
-            <div className="rounded-xl border border-default-200/60 bg-black/85 p-3">
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs text-success-300">
-                {selectedServiceTerminalOutput}
-              </pre>
-            </div>
-            {selectedService?.message ? (
-              <p
-                className={
-                  selectedService.ok
-                    ? "text-sm text-success-600"
-                    : "text-sm text-danger-600"
-                }
-              >
-                {selectedService.message}
-              </p>
-            ) : null}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" onPress={() => setSelectedService(null)}>
-              Fechar
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
       {isDesktop ? (
         <div className="border-t border-default-200 p-3 space-y-2">
-          {process.env.NODE_ENV === "development" && !collapsed ? (
+          {showDevWorkbench ? (
             <DevInfo
               mode="inline"
               buttonClassName="w-full justify-start px-3 py-2 h-auto border border-default-200 bg-default-100/60 text-default-700 hover:bg-default-100 hover:text-default-900 shadow-none"
               buttonContainerClassName="w-full"
+              showStatusTrigger={isSuperAdmin}
+              statusButtonClassName="w-full justify-between px-3 py-2 h-auto"
             />
           ) : null}
           <Button

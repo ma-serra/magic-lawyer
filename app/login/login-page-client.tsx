@@ -24,7 +24,6 @@ import { Logo } from "@/components/icons";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { useTenantFromDomain } from "@/hooks/use-tenant-from-domain";
 import { DevInfo } from "@/components/dev-info";
-import { LogIn } from "lucide-react";
 import { fetchTenantBrandingFromDomain } from "@/lib/fetchers/tenant-branding";
 import { getDevQuickLogins } from "@/app/actions/tenant-domains";
 import {
@@ -102,10 +101,8 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
           | "danger"
           | "default";
       }>;
-    }>
-  >([]);
-  const [devPanelOpen, setDevPanelOpen] = useState(false);
-  const [isLargeScreen, setIsLargeScreen] = useState(false);
+      }>
+    >([]);
   const callbackUrl = params.get("callbackUrl");
   const reason = params.get("reason"); // Motivo do redirecionamento
   const firstAccessReady = params.get("firstAccessReady");
@@ -492,32 +489,6 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
 
   useEffect(() => {
     if (!isDevMode) {
-      return;
-    }
-
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleResize = () => {
-      setIsLargeScreen(window.innerWidth >= 1024);
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [isDevMode]);
-
-  useEffect(() => {
-    // Garantir que o painel dev comece sempre fechado
-    setDevPanelOpen(false);
-  }, []);
-
-  useEffect(() => {
-    if (!isDevMode) {
       setDevQuickLogins([]);
 
       return;
@@ -805,133 +776,10 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
         <DevInfo
           buttonClassName="shadow-lg"
           buttonContainerClassName="fixed top-6 right-6 z-10"
+          quickLoginGroups={devQuickLogins}
+          onQuickLogin={handleDevQuickLogin}
         />
       ) : null}
-
-      {isDevMode && devQuickLogins.length > 0 && (
-        <>
-          {!isLargeScreen && devPanelOpen && (
-            <div
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity"
-              onClick={() => setDevPanelOpen(false)}
-            />
-          )}
-
-          <div className="fixed bottom-20 right-6 z-40 flex items-center gap-2">
-            <Button
-              key="dev-quick-logins-button"
-              className="shadow-lg"
-              color="primary"
-              size="sm"
-              startContent={<LogIn className="h-4 w-4" />}
-              variant="flat"
-              onPress={() => setDevPanelOpen((prev) => !prev)}
-            >
-              {devPanelOpen ? "Esconder logins" : "Logins rápidos"}
-            </Button>
-          </div>
-
-          <aside
-            className={`fixed z-50 transition-all duration-300 ${
-              isLargeScreen
-                ? "top-24 right-6 w-[320px]"
-                : "top-24 left-1/2 w-[min(420px,calc(100vw-2.5rem))] -translate-x-1/2"
-            } ${devPanelOpen ? "opacity-100 pointer-events-auto translate-y-0" : isLargeScreen ? "opacity-0 pointer-events-none translate-x-6" : "opacity-0 pointer-events-none -translate-y-4"}`}
-          >
-            <Card className="border border-primary/20 shadow-2xl backdrop-blur bg-white/95 dark:bg-content1/90 h-full max-h-[75vh] flex flex-col">
-              <CardHeader className="flex items-center justify-between gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-default-700 dark:text-default-200">
-                    Painel Dev
-                  </p>
-                  <p className="text-xs text-default-400">
-                    Logins rápidos para testes locais
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Chip color="primary" size="sm" variant="flat">
-                    Dev only
-                  </Chip>
-                  <Button
-                    isIconOnly
-                    aria-label="Fechar painel de logins"
-                    size="sm"
-                    variant="light"
-                    onPress={() => setDevPanelOpen(false)}
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        d="M18 6L6 18M6 6l12 12"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </Button>
-                </div>
-              </CardHeader>
-              <Divider />
-              <CardBody className="space-y-5 overflow-y-auto pr-1">
-                {devQuickLogins.map((group, groupIndex) => (
-                  <div key={group.group} className="space-y-3">
-                    <div>
-                      <p className="text-sm font-semibold text-default-600 dark:text-default-300">
-                        {group.group}
-                      </p>
-                      {group.description ? (
-                        <p className="text-xs text-default-400">
-                          {group.description}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      {group.options.map((option) => (
-                        <div
-                          key={option.email}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-default-200 bg-default-50 px-3 py-2 dark:border-default-100/20 dark:bg-default-50/10"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-default-600 dark:text-default-100 truncate">
-                              {option.name}
-                            </p>
-                            <Chip
-                              className="mt-1"
-                              color={option.chipColor ?? "default"}
-                              size="sm"
-                              variant="flat"
-                            >
-                              {option.roleLabel}
-                            </Chip>
-                          </div>
-                          <Button
-                            color="primary"
-                            isDisabled={loading}
-                            size="sm"
-                            variant="flat"
-                            onPress={() => handleDevQuickLogin(option)}
-                          >
-                            Logar
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    {groupIndex !== devQuickLogins.length - 1 && <Divider />}
-                  </div>
-                ))}
-                <p className="text-[10px] text-default-400">
-                  Disponível apenas em ambientes de desenvolvimento. Usa as
-                  credenciais padrão do seed.
-                </p>
-              </CardBody>
-            </Card>
-          </aside>
-        </>
-      )}
 
       <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
         <section className="order-2 space-y-8 lg:order-1">
