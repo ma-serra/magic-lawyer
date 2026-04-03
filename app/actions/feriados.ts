@@ -11,6 +11,7 @@ import {
   ensureSharedNationalHolidays,
   ensureSharedOfficialHolidaysForScope,
 } from "@/app/lib/feriados/sync";
+import { recomputeHolidayImpactsForOpenDeadlines } from "@/app/lib/feriados/holiday-impact-resolver";
 
 // ============================================
 // TIPOS
@@ -317,6 +318,15 @@ export async function createFeriado(
       },
     });
 
+    await recomputeHolidayImpactsForOpenDeadlines({
+      tenantId,
+      year: input.data.getUTCFullYear(),
+      scope: {
+        uf: input.uf ?? null,
+        municipio: input.municipio ?? null,
+      },
+    });
+
     revalidatePath("/regimes-prazo");
 
     return {
@@ -349,7 +359,12 @@ export async function updateFeriado(
         tenantId,
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        data: true,
+        uf: true,
+        municipio: true,
+      },
     });
 
     if (!feriadoAtual) {
@@ -379,6 +394,24 @@ export async function updateFeriado(
             sigla: true,
           },
         },
+      },
+    });
+
+    await recomputeHolidayImpactsForOpenDeadlines({
+      tenantId,
+      year: feriadoAtual.data.getUTCFullYear(),
+      scope: {
+        uf: feriadoAtual.uf ?? null,
+        municipio: feriadoAtual.municipio ?? null,
+      },
+    });
+
+    await recomputeHolidayImpactsForOpenDeadlines({
+      tenantId,
+      year: feriado.data.getUTCFullYear(),
+      scope: {
+        uf: feriado.uf ?? null,
+        municipio: feriado.municipio ?? null,
       },
     });
 
@@ -417,7 +450,12 @@ export async function deleteFeriado(
         tenantId,
         deletedAt: null,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        data: true,
+        uf: true,
+        municipio: true,
+      },
     });
 
     if (!feriadoAtual) {
@@ -436,6 +474,15 @@ export async function deleteFeriado(
         },
         "Exclusão manual de feriado",
       ),
+    });
+
+    await recomputeHolidayImpactsForOpenDeadlines({
+      tenantId,
+      year: feriadoAtual.data.getUTCFullYear(),
+      scope: {
+        uf: feriadoAtual.uf ?? null,
+        municipio: feriadoAtual.municipio ?? null,
+      },
     });
 
     revalidatePath("/regimes-prazo");
@@ -758,6 +805,14 @@ export async function importarFeriadosOficiais(input: {
       };
     }
 
+    await recomputeHolidayImpactsForOpenDeadlines({
+      year: ano,
+      scope: {
+        uf: normalizedUf ?? null,
+        municipio: normalizedMunicipio ?? null,
+      },
+    });
+
     revalidatePath("/regimes-prazo");
 
     try {
@@ -860,6 +915,10 @@ export async function importarFeriadosNacionais(
         };
       }
     }
+
+    await recomputeHolidayImpactsForOpenDeadlines({
+      year: ano,
+    });
 
     revalidatePath("/regimes-prazo");
 

@@ -10,6 +10,7 @@ import {
   buildProcessoClienteMembershipWhere,
 } from "@/app/lib/processos/processo-vinculos";
 import { backfillManagedPrazoPrincipalForWhere } from "@/app/lib/processos/prazo-principal-sync";
+import { parseHolidayImpact, type HolidayImpactSnapshot } from "@/app/lib/feriados/holiday-impact";
 import { Prisma, ProcessoPrazoStatus, UserRole } from "@/generated/prisma";
 
 type PrazoWorkspaceHorizon =
@@ -40,6 +41,7 @@ export type PrazoWorkspaceItem = {
   dataVencimento: string;
   dataCumprimento: string | null;
   prorrogadoPara: string | null;
+  holidayImpact: HolidayImpactSnapshot | null;
   responsavelId: string | null;
   responsavel: {
     id: string;
@@ -327,6 +329,7 @@ function serializePrazoItem(
     dataVencimento: prazo.dataVencimento.toISOString(),
     dataCumprimento: prazo.dataCumprimento?.toISOString() ?? null,
     prorrogadoPara: prazo.prorrogadoPara?.toISOString() ?? null,
+    holidayImpact: parseHolidayImpact(prazo.holidayImpact),
     responsavelId: prazo.responsavelId ?? null,
     responsavel: prazo.responsavel
       ? {

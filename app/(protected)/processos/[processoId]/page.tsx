@@ -14,6 +14,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
+import { Progress } from "@heroui/progress";
 import { Spinner } from "@heroui/spinner";
 import { Tabs, Tab } from "@heroui/tabs";
 import { Input } from "@heroui/input";
@@ -69,6 +70,7 @@ import {
 import { useJuizes, useJuizesCatalogoPorNome } from "@/app/hooks/use-juizes";
 import { usePermissionCheck } from "@/app/hooks/use-permission-check";
 import { useProcuracoesDisponiveis } from "@/app/hooks/use-clientes";
+import { useHolidayExperienceRollout } from "@/app/hooks/use-holiday-experience";
 import { title } from "@/components/primitives";
 import {
   ProcessoStatus,
@@ -114,6 +116,7 @@ import {
   getPrazoOperationalBucket,
 } from "@/app/lib/prazos/workspace";
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
+import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
 
 const parteFormInitial: {
   tipoPolo: ProcessoPolo;
@@ -276,8 +279,27 @@ function resolveProcessoUploadType(file: File): ProcessoUploadFileType | null {
   return null;
 }
 
-function formatMegabytes(bytes: number): string {
-  return `${Math.round(bytes / (1024 * 1024))} MB`;
+function getProcessoUploadLimitBytes(file: File): number | null {
+  const fileType = resolveProcessoUploadType(file);
+
+  return fileType ? PROCESSO_UPLOAD_LIMIT_BYTES[fileType] : null;
+}
+
+function formatMegabytes(
+  bytes: number,
+  options?: {
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+  },
+): string {
+  return `${new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: options?.minimumFractionDigits ?? 0,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 2,
+  }).format(bytes / (1024 * 1024))} MB`;
+}
+
+function getUploadUsagePercent(fileSize: number, limitBytes: number): number {
+  return Math.min(100, (fileSize / limitBytes) * 100);
 }
 
 function getDocumentoTipoLabel(tipo?: string | null) {
@@ -538,6 +560,7 @@ export default function ProcessoDetalhesPage() {
     useEventosProcesso(processoId);
   const { movimentacoes, isLoading: isLoadingMovimentacoes } =
     useMovimentacoesProcesso(processoId);
+  const { rollout: holidayExperienceRollout } = useHolidayExperienceRollout();
   const { juizes: autoridadesVisiveis, isLoading: isLoadingAutoridades } =
     useJuizes({
       search: "",
@@ -596,6 +619,9 @@ export default function ProcessoDetalhesPage() {
   const deadlineAlertsMuted =
     prazoNotificationPreference?.success &&
     prazoNotificationPreference.data?.deadlineAlertsMuted === true;
+  const holidayProcessEnabled =
+    holidayExperienceRollout?.surfaces.find((surface) => surface.key === "process")
+      ?.enabled ?? false;
 
   const [parteForm, setParteForm] = useState(parteFormInitial);
   const [prazoForm, setPrazoForm] = useState(prazoFormInitial);
@@ -2617,6 +2643,14 @@ export default function ProcessoDetalhesPage() {
                                   prazo.status,
                                 )}
                               </div>
+                              {holidayProcessEnabled ? (
+                                <HolidayImpactPanel
+                                  audience={isCliente ? "client" : "internal"}
+                                  className="mt-2"
+                                  compact={isCliente}
+                                  impact={prazo.holidayImpact}
+                                />
+                              ) : null}
                               {prazo.descricao && (
                                 <p className="text-xs text-default-500">
                                   {prazo.descricao}
@@ -2947,84 +2981,129 @@ export default function ProcessoDetalhesPage() {
                         vincula neste processo.
                       </p>
                       <div className="mt-4 space-y-3">
-                        {documentoUploads.map((upload, index) => (
-                          <Card
-                            key={upload.id}
-                            className="border border-default-200/80 bg-content1/80 shadow-none"
-                          >
-                            <CardBody className="space-y-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-semibold">
-                                    {index + 1}. {upload.file.name}
-                                  </p>
-                                  <p className="text-xs text-default-500">
-                                    {(upload.file.size / 1024 / 1024).toFixed(2)} MB
-                                  </p>
-                                </div>
-                                <Button
-                                  isIconOnly
-                                  color="danger"
-                                  size="sm"
-                                  variant="light"
-                                  onPress={() => handleRemoveDocumentoUpload(upload.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                        {documentoUploads.map((upload, index) => {
+                          const uploadLimitBytes = getProcessoUploadLimitBytes(
+                            upload.file,
+                          );
+                          const uploadUsagePercent = uploadLimitBytes
+                            ? getUploadUsagePercent(
+                                upload.file.size,
+                                uploadLimitBytes,
+                              )
+                            : 0;
 
-                              <div className="grid gap-3 md:grid-cols-2">
-                                <Select
-                                  label="Tipo do documento"
-                                  selectedKeys={[upload.tipo]}
-                                  onSelectionChange={(keys) => {
-                                    const selected = Array.from(keys)[0] as
-                                      | ProcessoDocumentoClassificacao
-                                      | undefined;
-                                    if (!selected) return;
-                                    handleUpdateDocumentoUpload(upload.id, {
-                                      tipo: selected,
-                                    });
-                                  }}
-                                >
-                                  {PROCESSO_DOCUMENT_TYPE_OPTIONS.map((option) => (
-                                    <SelectItem
-                                      key={option.key}
-                                      textValue={option.label}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </Select>
-
-                                <div className="flex items-center rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
-                                  <Checkbox
-                                    isSelected={!upload.visivelParaCliente}
-                                    onValueChange={(checked) =>
-                                      handleUpdateDocumentoUpload(upload.id, {
-                                        visivelParaCliente: !checked,
-                                      })
+                          return (
+                            <Card
+                              key={upload.id}
+                              className="border border-default-200/80 bg-content1/80 shadow-none"
+                            >
+                              <CardBody className="space-y-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold">
+                                      {index + 1}. {upload.file.name}
+                                    </p>
+                                    <p className="text-xs text-default-500">
+                                      {formatMegabytes(upload.file.size, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    isIconOnly
+                                    color="danger"
+                                    size="sm"
+                                    variant="light"
+                                    onPress={() =>
+                                      handleRemoveDocumentoUpload(upload.id)
                                     }
                                   >
-                                    Ocultar do cliente
-                                  </Checkbox>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
                                 </div>
-                              </div>
 
-                              <Textarea
-                                label="Descricao interna"
-                                minRows={2}
-                                placeholder="Opcional: observacao da equipe sobre este anexo"
-                                value={upload.descricao}
-                                onValueChange={(value) =>
-                                  handleUpdateDocumentoUpload(upload.id, {
-                                    descricao: value,
-                                  })
-                                }
-                              />
-                            </CardBody>
-                          </Card>
-                        ))}
+                                {uploadLimitBytes ? (
+                                  <Progress
+                                    aria-label={`Uso do limite de upload para ${upload.file.name}`}
+                                    classNames={{
+                                      base: "max-w-full",
+                                      label:
+                                        "text-[11px] uppercase tracking-[0.18em] text-default-500",
+                                      value: "text-[11px] text-default-500",
+                                      track: "h-2",
+                                    }}
+                                    color={
+                                      uploadUsagePercent >= 90
+                                        ? "danger"
+                                        : uploadUsagePercent >= 75
+                                          ? "warning"
+                                          : "primary"
+                                    }
+                                    label={`Limite ${formatMegabytes(uploadLimitBytes)}`}
+                                    maxValue={uploadLimitBytes}
+                                    size="sm"
+                                    value={upload.file.size}
+                                    valueLabel={`${formatMegabytes(upload.file.size, {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })} de ${formatMegabytes(uploadLimitBytes)}`}
+                                  />
+                                ) : null}
+
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  <Select
+                                    label="Tipo do documento"
+                                    selectedKeys={[upload.tipo]}
+                                    onSelectionChange={(keys) => {
+                                      const selected = Array.from(keys)[0] as
+                                        | ProcessoDocumentoClassificacao
+                                        | undefined;
+                                      if (!selected) return;
+                                      handleUpdateDocumentoUpload(upload.id, {
+                                        tipo: selected,
+                                      });
+                                    }}
+                                  >
+                                    {PROCESSO_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                                      <SelectItem
+                                        key={option.key}
+                                        textValue={option.label}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </Select>
+
+                                  <div className="flex items-center rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
+                                    <Checkbox
+                                      isSelected={!upload.visivelParaCliente}
+                                      onValueChange={(checked) =>
+                                        handleUpdateDocumentoUpload(upload.id, {
+                                          visivelParaCliente: !checked,
+                                        })
+                                      }
+                                    >
+                                      Ocultar do cliente
+                                    </Checkbox>
+                                  </div>
+                                </div>
+
+                                <Textarea
+                                  label="Descricao interna"
+                                  minRows={2}
+                                  placeholder="Opcional: observacao da equipe sobre este anexo"
+                                  value={upload.descricao}
+                                  onValueChange={(value) =>
+                                    handleUpdateDocumentoUpload(upload.id, {
+                                      descricao: value,
+                                    })
+                                  }
+                                />
+                              </CardBody>
+                            </Card>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : null}
@@ -3100,7 +3179,10 @@ export default function ProcessoDetalhesPage() {
                         </div>
                         {doc.tamanhoBytes && (
                           <Chip size="sm" variant="flat">
-                            {(doc.tamanhoBytes / 1024).toFixed(2)} KB
+                            {formatMegabytes(doc.tamanhoBytes, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
                           </Chip>
                         )}
                       </div>

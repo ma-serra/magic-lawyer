@@ -28,6 +28,14 @@ import {
   buildProcessoClienteMembershipWhere,
 } from "@/app/lib/processos/processo-vinculos";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
+import {
+  buildHolidayScopeFromProcess,
+  resolveHolidayImpactForPrazoDraft,
+} from "@/app/lib/feriados/holiday-impact-resolver";
+import {
+  buildHolidayImpactDetailLines,
+  parseHolidayImpact,
+} from "@/app/lib/feriados/holiday-impact";
 
 // ============================================
 // TIPOS
@@ -695,6 +703,7 @@ export async function listAndamentos(
               titulo: true,
               dataVencimento: true,
               status: true,
+              holidayImpact: true,
             },
           },
         },
@@ -746,6 +755,7 @@ export async function listAndamentos(
               titulo: true,
               dataVencimento: true,
               status: true,
+              holidayImpact: true,
             },
           },
         },
@@ -775,6 +785,12 @@ export async function listAndamentos(
               status: andamento.tarefaRelacionada.status,
             }
           : null,
+      prazosRelacionados: Array.isArray(andamento.prazosRelacionados)
+        ? andamento.prazosRelacionados.map((prazo: any) => ({
+            ...prazo,
+            holidayImpact: parseHolidayImpact(prazo.holidayImpact),
+          }))
+        : [],
     }));
 
     const processosComAndamentoIds = await prisma.movimentacaoProcesso.findMany({
@@ -1081,6 +1097,13 @@ export async function createAndamento(
     // Verificar se processo existe e pertence ao tenant
     const processo = await prisma.processo.findFirst({
       where: processoWhere,
+      include: {
+        tribunal: {
+          select: {
+            uf: true,
+          },
+        },
+      },
     });
 
     if (!processo) {
@@ -1181,6 +1204,17 @@ export async function createAndamento(
 
     // Se marcado para gerar prazo automático
     if (input.geraPrazo && input.prazo) {
+      const holidayImpact = await resolveHolidayImpactForPrazoDraft({
+        tenantId,
+        baseDate: input.prazo,
+        regimePrazoId: null,
+        scope: buildHolidayScopeFromProcess({
+          tribunalId: processo.tribunalId,
+          uf: processo.tribunal?.uf ?? null,
+          municipio: processo.comarca,
+        }),
+      });
+
       const prazo = await prisma.processoPrazo.create({
         data: {
           tenantId,
@@ -1189,6 +1223,7 @@ export async function createAndamento(
           descricao: input.descricao,
           dataVencimento: input.prazo,
           status: "ABERTO",
+          holidayImpact,
           origemMovimentacaoId: andamento.id,
         },
       });
@@ -1210,6 +1245,10 @@ export async function createAndamento(
           processoNumero: processo.numero,
           titulo: input.titulo,
           dataVencimento: input.prazo,
+          effectiveDate: holidayImpact.effectiveDate,
+          holidayImpact,
+          holidayImpactSummary: holidayImpact.summary,
+          detailLines: buildHolidayImpactDetailLines(holidayImpact),
         },
         referenciaTipo: "prazo",
         referenciaId: prazo.id,

@@ -13,6 +13,11 @@ import {
   processoClienteResumoSelect,
 } from "@/app/lib/processos/processo-vinculos";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
+import {
+  normalizeModeloPeticaoDocument,
+  serializeModeloPeticaoDocumentToText,
+  type ModeloPeticaoDocumentJson,
+} from "@/lib/modelos-peticao/document-schema";
 
 // ============================================
 // TIPOS
@@ -47,6 +52,7 @@ export interface PeticaoCreateInput {
   status?: PeticaoStatus;
   descricao?: string;
   conteudo?: string;
+  documentoJson?: ModeloPeticaoDocumentJson | null;
   documentoId?: string;
   protocoloNumero?: string;
   protocoladoEm?: Date;
@@ -61,6 +67,7 @@ export interface PeticaoUpdateInput {
   status?: PeticaoStatus;
   descricao?: string;
   conteudo?: string;
+  documentoJson?: ModeloPeticaoDocumentJson | null;
   documentoId?: string;
   protocoloNumero?: string;
   protocoladoEm?: Date;
@@ -102,6 +109,14 @@ function normalizePeticaoLongText(value?: string | null) {
 
 function getPeticaoConteudoTamanho(value?: string | null) {
   return normalizePeticaoLongText(value)?.length ?? 0;
+}
+
+function toPrismaJsonInput(value: unknown) {
+  if (value === null || value === undefined) {
+    return Prisma.JsonNull;
+  }
+
+  return value as Prisma.InputJsonValue;
 }
 
 function buildInitialPeticaoConteudo(input: {
@@ -611,8 +626,18 @@ export async function createPeticao(input: PeticaoCreateInput) {
       }
     }
 
+    const documentoNormalizado = input.documentoJson
+      ? normalizeModeloPeticaoDocument(input.documentoJson, {
+          conteudo: input.conteudo,
+          tipo: input.tipo,
+        })
+      : null;
     const conteudoNormalizado =
-      normalizePeticaoLongText(input.conteudo) ??
+      normalizePeticaoLongText(
+        documentoNormalizado
+          ? serializeModeloPeticaoDocumentToText(documentoNormalizado)
+          : input.conteudo,
+      ) ??
       buildInitialPeticaoConteudo({
         titulo: input.titulo,
         tipo: input.tipo,
@@ -631,6 +656,10 @@ export async function createPeticao(input: PeticaoCreateInput) {
         status: input.status || PeticaoStatus.RASCUNHO,
         descricao: input.descricao,
         conteudo: conteudoNormalizado,
+        documentoJson:
+          documentoNormalizado !== null
+            ? toPrismaJsonInput(documentoNormalizado)
+            : undefined,
         conteudoTamanho: getPeticaoConteudoTamanho(conteudoNormalizado),
         documentoId: input.documentoId,
         protocoloNumero: input.protocoloNumero,
@@ -794,37 +823,77 @@ export async function updatePeticao(id: string, input: PeticaoUpdateInput) {
       }
     }
 
-    const conteudoNormalizado =
-      input.conteudo !== undefined
-        ? normalizePeticaoLongText(input.conteudo)
+    const documentoNormalizado =
+      input.documentoJson !== undefined
+        ? input.documentoJson
+          ? normalizeModeloPeticaoDocument(input.documentoJson, {
+              conteudo: input.conteudo ?? peticaoExistente.conteudo,
+              tipo: input.tipo ?? peticaoExistente.tipo,
+            })
+          : null
         : undefined;
+    const conteudoNormalizado =
+      input.conteudo !== undefined || documentoNormalizado !== undefined
+        ? normalizePeticaoLongText(
+            documentoNormalizado
+              ? serializeModeloPeticaoDocumentToText(documentoNormalizado)
+              : input.conteudo,
+          )
+        : undefined;
+    const data: Prisma.PeticaoUncheckedUpdateInput = {};
+
+    if (input.processoId) {
+      data.processoId = input.processoId;
+    }
+
+    if (input.causaId !== undefined) {
+      data.causaId = input.causaId;
+    }
+
+    if (input.titulo) {
+      data.titulo = input.titulo;
+    }
+
+    if (input.tipo !== undefined) {
+      data.tipo = input.tipo;
+    }
+
+    if (input.status) {
+      data.status = input.status;
+    }
+
+    if (input.descricao !== undefined) {
+      data.descricao = input.descricao;
+    }
+
+    if (conteudoNormalizado !== undefined) {
+      data.conteudo = conteudoNormalizado;
+      data.conteudoTamanho = getPeticaoConteudoTamanho(conteudoNormalizado);
+    }
+
+    if (documentoNormalizado !== undefined) {
+      data.documentoJson = toPrismaJsonInput(documentoNormalizado);
+    }
+
+    if (input.documentoId !== undefined) {
+      data.documentoId = input.documentoId;
+    }
+
+    if (input.protocoloNumero !== undefined) {
+      data.protocoloNumero = input.protocoloNumero;
+    }
+
+    if (input.protocoladoEm !== undefined) {
+      data.protocoladoEm = input.protocoladoEm;
+    }
+
+    if (input.observacoes !== undefined) {
+      data.observacoes = input.observacoes;
+    }
 
     const peticao = await prisma.peticao.update({
       where: { id },
-      data: {
-        ...(input.processoId && { processoId: input.processoId }),
-        ...(input.causaId !== undefined && { causaId: input.causaId }),
-        ...(input.titulo && { titulo: input.titulo }),
-        ...(input.tipo !== undefined && { tipo: input.tipo }),
-        ...(input.status && { status: input.status }),
-        ...(input.descricao !== undefined && { descricao: input.descricao }),
-        ...(conteudoNormalizado !== undefined && {
-          conteudo: conteudoNormalizado,
-          conteudoTamanho: getPeticaoConteudoTamanho(conteudoNormalizado),
-        }),
-        ...(input.documentoId !== undefined && {
-          documentoId: input.documentoId,
-        }),
-        ...(input.protocoloNumero !== undefined && {
-          protocoloNumero: input.protocoloNumero,
-        }),
-        ...(input.protocoladoEm !== undefined && {
-          protocoladoEm: input.protocoladoEm,
-        }),
-        ...(input.observacoes !== undefined && {
-          observacoes: input.observacoes,
-        }),
-      },
+      data,
       include: {
         processo: {
           select: {

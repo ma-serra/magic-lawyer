@@ -151,6 +151,7 @@ model Tenant {
   eventos                   Evento[]
   eventoParticipantes       EventoParticipante[]
   agendaDisponibilidades    AgendaDisponibilidade[]
+  holidayExperienceRollout  HolidayExperienceTenantRollout?
   faturas                   Fatura[]
   favoritosJuiz             FavoritoJuiz[]
   julgamentos               Julgamento[]
@@ -386,7 +387,7 @@ model TenantChannelProvider {
 
 model TenantChannelTemplate {
   id        String           @id @default(cuid())
-  tenantId  String
+  tenantId     String
   channel   NotificacaoCanal
   slug      String
   title     String
@@ -552,6 +553,7 @@ model Usuario {
   telegramAlertsEnabled            Boolean                  @default(true)
   avatarUrl                        String?
   active                           Boolean                  @default(true)
+  requiresPasswordChange           Boolean                  @default(false)
   sessionVersion                   Int                      @default(1)
   statusChangedAt                  DateTime?
   statusReason                     String?
@@ -1083,7 +1085,7 @@ model NotificacaoUsuario {
 
 model UsuarioPermissao {
   id        String           @id @default(cuid())
-  tenantId  String
+  tenantId     String
   usuarioId String
   permissao TenantPermission
   createdAt DateTime         @default(now())
@@ -1241,6 +1243,7 @@ model ProcessoPrazo {
   dataVencimento       DateTime
   dataCumprimento      DateTime?
   prorrogadoPara       DateTime?
+  holidayImpact        Json?
   responsavelId        String?
   origemMovimentacaoId String?
   origemEventoId       String?
@@ -1569,6 +1572,41 @@ model Feriado {
   @@schema("magiclawyer")
 }
 
+model HolidayExperienceRollout {
+  id                   String   @id @default("global")
+  globalEnabled        Boolean  @default(false)
+  dashboardEnabled     Boolean  @default(true)
+  processEnabled       Boolean  @default(true)
+  andamentosEnabled    Boolean  @default(true)
+  agendaEnabled        Boolean  @default(true)
+  notificationsEnabled Boolean  @default(true)
+  notes                String?
+  updatedBy            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@schema("magiclawyer")
+}
+
+model HolidayExperienceTenantRollout {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  enabled              Boolean?
+  dashboardEnabled     Boolean?
+  processEnabled       Boolean?
+  andamentosEnabled    Boolean?
+  agendaEnabled        Boolean?
+  notificationsEnabled Boolean?
+  notes                String?
+  updatedBy            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@schema("magiclawyer")
+}
+
 model Causa {
   id                 String              @id @default(cuid())
   tenantId           String
@@ -1752,6 +1790,7 @@ model Peticao {
   status             PeticaoStatus       @default(RASCUNHO)
   descricao          String?
   conteudo           String?             @db.Text
+  documentoJson      Json?
   conteudoTamanho    Int                 @default(0)
   documentoId        String?
   protocoloNumero    String?
@@ -1783,19 +1822,21 @@ model Peticao {
 }
 
 model ModeloPeticao {
-  id        String    @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId  String
-  nome      String
-  descricao String?
-  conteudo  String // Template HTML/Markdown com placeholders
-  categoria String? // Ex: "INICIAL", "CONTESTACAO", "RECURSO", "MANIFESTACAO"
-  tipo      String? // Ex: "CIVEL", "TRABALHISTA", "CRIMINAL"
-  variaveis Json? // Array de variáveis disponíveis: [{nome, tipo, descricao, obrigatorio}]
-  publico   Boolean   @default(false) // Se pode ser compartilhado entre tenants
-  ativo     Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  nome         String
+  descricao    String?
+  conteudo     String // Template HTML/Markdown com placeholders
+  documentoJson Json?
+  presetKey    String?
+  categoria    String? // Ex: "INICIAL", "CONTESTACAO", "RECURSO", "MANIFESTACAO"
+  tipo         String? // Ex: "CIVEL", "TRABALHISTA", "CRIMINAL"
+  variaveis    Json? // Array de variáveis disponíveis: [{nome, tipo, descricao, obrigatorio}]
+  publico      Boolean   @default(false) // Se pode ser compartilhado entre tenants
+  ativo        Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   // Relacionamentos
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)

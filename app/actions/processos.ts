@@ -53,6 +53,15 @@ import {
 } from "@/app/lib/advogado-access";
 import { validateDeadlineWithRegime } from "@/app/lib/feriados/prazo-validation";
 import {
+  buildHolidayScopeFromProcess,
+  resolveHolidayImpactForPrazoDraft,
+} from "@/app/lib/feriados/holiday-impact-resolver";
+import {
+  buildHolidayImpactDetailLines,
+  parseHolidayImpact,
+  type HolidayImpactSnapshot,
+} from "@/app/lib/feriados/holiday-impact";
+import {
   buildJusbrasilProcessUserCustom,
   ensureJusbrasilProcessMonitorBestEffort,
 } from "@/app/lib/juridical/jusbrasil-process-monitoring";
@@ -386,6 +395,7 @@ export interface ProcessoPrazo {
   dataVencimento: Date;
   dataCumprimento: Date | null;
   prorrogadoPara: Date | null;
+  holidayImpact?: HolidayImpactSnapshot | null;
   responsavelId: string | null;
   responsavel?: {
     id: string;
@@ -1298,6 +1308,7 @@ function buildPrazoAuditSnapshot(prazo: {
   origemMovimentacaoId?: string | null;
   origemEventoId?: string | null;
   regimePrazoId?: string | null;
+  holidayImpact?: HolidayImpactSnapshot | null;
 }): Record<string, string | null> {
   return {
     titulo: prazo.titulo ?? null,
@@ -1311,6 +1322,10 @@ function buildPrazoAuditSnapshot(prazo: {
     origemMovimentacaoId: prazo.origemMovimentacaoId ?? null,
     origemEventoId: prazo.origemEventoId ?? null,
     regimePrazoId: prazo.regimePrazoId ?? null,
+    holidayImpactEffectiveDate: normalizeAuditDate(
+      prazo.holidayImpact?.effectiveDate ?? null,
+    ),
+    holidayImpactSummary: prazo.holidayImpact?.summary ?? null,
   };
 }
 
@@ -1333,6 +1348,45 @@ function buildPrazoAuditDiff(
       },
     ];
   });
+}
+
+async function buildPrazoHolidayImpact(params: {
+  tenantId: string;
+  processo: {
+    tribunalId?: string | null;
+    comarca?: string | null;
+    tribunal?: {
+      uf?: string | null;
+    } | null;
+  };
+  regimePrazoId?: string | null;
+  dataVencimento: Date;
+  prorrogadoPara?: Date | null;
+}) {
+  return resolveHolidayImpactForPrazoDraft({
+    tenantId: params.tenantId,
+    baseDate: params.prorrogadoPara ?? params.dataVencimento,
+    regimePrazoId: params.regimePrazoId ?? null,
+    scope: buildHolidayScopeFromProcess({
+      tribunalId: params.processo.tribunalId ?? null,
+      uf: params.processo.tribunal?.uf ?? null,
+      municipio: params.processo.comarca ?? null,
+    }),
+  });
+}
+
+function buildPrazoHolidayNotificationPayload(
+  holidayImpact: HolidayImpactSnapshot | null | undefined,
+) {
+  if (!holidayImpact?.wasShifted) {
+    return {};
+  }
+
+  return {
+    holidayImpact,
+    holidayImpactSummary: holidayImpact.summary,
+    detailLines: buildHolidayImpactDetailLines(holidayImpact),
+  };
 }
 
 async function publishPrazoNotificationToUsers(params: {
@@ -4124,6 +4178,14 @@ export async function createProcessoPrazo(
       };
     }
 
+    const holidayImpact = await buildPrazoHolidayImpact({
+      tenantId,
+      processo,
+      regimePrazoId,
+      dataVencimento: parsedDataVencimento.date,
+      prorrogadoPara: parsedProrrogadoPara.date,
+    });
+
     const prazo = await prisma.processoPrazo.create({
       data: {
         tenantId,
@@ -4135,6 +4197,7 @@ export async function createProcessoPrazo(
         dataVencimento: parsedDataVencimento.date,
         prorrogadoPara: parsedProrrogadoPara.date,
         dataCumprimento: parsedDataCumprimento.date,
+        holidayImpact,
         responsavelId,
         origemMovimentacaoId: input.origemMovimentacaoId ?? null,
         origemEventoId: input.origemEventoId ?? null,
@@ -4162,9 +4225,11 @@ export async function createProcessoPrazo(
           processoNumero: processo.numero,
           titulo: prazo.titulo,
           dataVencimento: prazo.dataVencimento.toISOString(),
+          effectiveDate: holidayImpact.effectiveDate,
           status: prazo.status,
           referenciaTipo: "prazo",
           referenciaId: prazo.id,
+          ...buildPrazoHolidayNotificationPayload(holidayImpact),
         },
       });
     } catch (notificationError) {
@@ -4178,6 +4243,7 @@ export async function createProcessoPrazo(
       const snapshot = buildPrazoAuditSnapshot({
         ...prazo,
         regimePrazoId: prazo.regimePrazo?.id ?? null,
+        holidayImpact: parseHolidayImpact(prazo.holidayImpact),
       });
 
       await logAudit({
@@ -4426,6 +4492,10 @@ export async function updateProcessoPrazo(
         : prazoAnterior.regimePrazo?.id ?? null;
     const proximaDataVencimento =
       parsedDataVencimento?.date ?? prazoAnterior.dataVencimento;
+    const proximoProrrogadoPara =
+      input.prorrogadoPara !== undefined
+        ? (updateData.prorrogadoPara as Date | null | undefined) ?? null
+        : prazoAnterior.prorrogadoPara;
 
     const deadlineValidation = await validateDeadlineWithRegime({
       tenantId,
@@ -4441,6 +4511,16 @@ export async function updateProcessoPrazo(
       };
     }
 
+    const holidayImpact = await buildPrazoHolidayImpact({
+      tenantId,
+      processo,
+      regimePrazoId: proximoRegimePrazoId ?? null,
+      dataVencimento: proximaDataVencimento,
+      prorrogadoPara: proximoProrrogadoPara,
+    });
+
+    updateData.holidayImpact = holidayImpact;
+
     const atualizado = await prisma.processoPrazo.update({
       where: { id: prazoId },
       data: updateData,
@@ -4450,10 +4530,12 @@ export async function updateProcessoPrazo(
     const previousSnapshot = buildPrazoAuditSnapshot({
       ...prazoAnterior,
       regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
+      holidayImpact: parseHolidayImpact(prazoAnterior.holidayImpact),
     });
     const currentSnapshot = buildPrazoAuditSnapshot({
       ...atualizado,
       regimePrazoId: atualizado.regimePrazo?.id ?? null,
+      holidayImpact: parseHolidayImpact(atualizado.holidayImpact),
     });
     const diff = buildPrazoAuditDiff(previousSnapshot, currentSnapshot);
 
@@ -4477,10 +4559,12 @@ export async function updateProcessoPrazo(
             processoNumero: processo.numero,
             titulo: atualizado.titulo,
             dataVencimento: atualizado.dataVencimento.toISOString(),
+            effectiveDate: holidayImpact.effectiveDate,
             status: atualizado.status,
             changes: diff.map((item) => item.field),
             referenciaTipo: "prazo",
             referenciaId: atualizado.id,
+            ...buildPrazoHolidayNotificationPayload(holidayImpact),
           },
         });
       } catch (notificationError) {
@@ -4569,6 +4653,7 @@ export async function deleteProcessoPrazo(prazoId: string) {
       const snapshot = buildPrazoAuditSnapshot({
         ...prazoAnterior,
         regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
+        holidayImpact: parseHolidayImpact(prazoAnterior.holidayImpact),
       });
 
       await logAudit({

@@ -24,6 +24,7 @@ import {
   normalizeModeloPeticaoVariaveis,
   type ModeloPeticaoVariavel,
 } from "@/components/modelos-peticao/modelo-peticao-document-workspace";
+import { inferPresetKeyFromTipo } from "@/lib/modelos-peticao/document-schema";
 
 const CATEGORIAS_PADRAO = [
   "INICIAL",
@@ -65,6 +66,8 @@ export default function NovoModeloPeticaoPage() {
     nome: "",
     descricao: "",
     conteudo: "",
+    documentoJson: null,
+    presetKey: "custom",
     categoria: "",
     tipo: "",
     publico: false,
@@ -102,6 +105,8 @@ export default function NovoModeloPeticaoPage() {
         categoria: novaCategoria.trim() || formData.categoria || undefined,
         tipo: novoTipo.trim() || formData.tipo || undefined,
         variaveis: mergedVariaveis.length > 0 ? mergedVariaveis : undefined,
+        documentoJson: formData.documentoJson ?? null,
+        presetKey: formData.presetKey || undefined,
       };
 
       const result = await createModeloPeticao(payload);
@@ -121,9 +126,9 @@ export default function NovoModeloPeticaoPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className={title()}>Novo Modelo de Peticao</h1>
-          <p className="mt-1 text-sm text-default-500">
-            Monte um documento reutilizavel com variaveis, preview e identidade do escritorio.
-          </p>
+            <p className="mt-1 text-sm text-default-500">
+            Monte uma peça com cara de documento, identidade do escritório e presets por área.
+            </p>
         </div>
         <Button
           as={Link}
@@ -197,7 +202,14 @@ export default function NovoModeloPeticaoPage() {
                 selectedKeys={formData.tipo ? [formData.tipo] : []}
                 onSelectionChange={(keys) => {
                   const value = Array.from(keys)[0] as string;
-                  setFormData((prev) => ({ ...prev, tipo: value }));
+                  setFormData((prev) => ({
+                    ...prev,
+                    tipo: value,
+                    presetKey:
+                      prev.presetKey === "custom"
+                        ? inferPresetKeyFromTipo(value)
+                        : prev.presetKey,
+                  }));
                   setNovoTipo("");
                 }}
               >
@@ -250,9 +262,24 @@ export default function NovoModeloPeticaoPage() {
             : null
         }
         value={formData.conteudo}
+        documentValue={formData.documentoJson ?? null}
         variaveis={variaveis}
         onChange={(conteudo) => setFormData((prev) => ({ ...prev, conteudo }))}
+        onDocumentChange={(documentoJson) =>
+          setFormData((prev) => ({ ...prev, documentoJson }))
+        }
         onVariaveisChange={setVariaveis}
+        presetKey={formData.presetKey}
+        onPresetChange={(nextPresetKey) =>
+          setFormData((prev) => ({ ...prev, presetKey: nextPresetKey }))
+        }
+        onSuggestedMetadataChange={(suggestion) =>
+          setFormData((prev) => ({
+            ...prev,
+            tipo: suggestion.tipo || prev.tipo,
+            categoria: suggestion.categoria || prev.categoria,
+          }))
+        }
       />
 
       <div className="flex justify-end gap-3">

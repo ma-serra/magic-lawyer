@@ -61,12 +61,14 @@ import {
 } from "@/app/actions/andamentos";
 import { getAllProcessos } from "@/app/actions/processos";
 import { usePermissionsCheck } from "@/app/hooks/use-permission-check";
+import { useHolidayExperienceRollout } from "@/app/hooks/use-holiday-experience";
 import {
   MovimentacaoPrioridade,
   MovimentacaoStatusOperacional,
   MovimentacaoTipo,
   UserRole,
 } from "@/generated/prisma";
+import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import { SearchableSelect } from "@/components/searchable-select";
 import { DateInput } from "@/components/ui/date-input";
@@ -123,6 +125,7 @@ interface Andamento {
     titulo: string;
     dataVencimento: Date | string;
     status: string;
+    holidayImpact?: unknown;
   }>;
   createdAt: Date | string;
   // Campos para notificações
@@ -237,6 +240,7 @@ function getMovimentacaoTipoLabel(tipo: MovimentacaoTipo | null) {
 
 export default function AndamentosPage() {
   const { data: session } = useSession();
+  const { rollout: holidayExperienceRollout } = useHolidayExperienceRollout();
   const userRole = (session?.user as any)?.role as string | undefined;
   const clienteIdFromSession = (session?.user as any)?.clienteId as
     | string
@@ -268,6 +272,10 @@ export default function AndamentosPage() {
   const canDeleteAndamento =
     !isClient && (isAdminLike || hasPermissionFor("processos", "excluir"));
   const canSendAndamentoReport = !isClient;
+  const holidayAndamentosEnabled =
+    holidayExperienceRollout?.surfaces.find(
+      (surface) => surface.key === "andamentos",
+    )?.enabled ?? false;
   // Estado dos filtros
   const [filters, setFilters] = useState<AndamentoFilters>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -1683,6 +1691,20 @@ export default function AndamentosPage() {
                               </div>
                             </div>
 
+                            {holidayAndamentosEnabled &&
+                            andamento.prazosRelacionados.length > 0 ? (
+                              <div className="space-y-2">
+                                {andamento.prazosRelacionados.map((prazo) => (
+                                  <HolidayImpactPanel
+                                    key={`${andamento.id}-${prazo.id}`}
+                                    audience={isClient ? "client" : "internal"}
+                                    compact
+                                    impact={prazo.holidayImpact as any}
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+
                             <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[176px] sm:items-stretch">
                               <Button
                                 as={Link}
@@ -1819,6 +1841,8 @@ export default function AndamentosPage() {
       {/* Modal de Criar/Editar/Visualizar */}
       <AndamentoModal
         andamento={selectedAndamento}
+        audience={isClient ? "client" : "internal"}
+        holidayExperienceEnabled={holidayAndamentosEnabled}
         isOpen={modalOpen}
         mode={modalMode}
         processos={processos}
@@ -2467,6 +2491,8 @@ interface AndamentoModalProps {
   onClose: () => void;
   mode: "create" | "edit" | "view";
   andamento: Andamento | null;
+  audience: "client" | "internal";
+  holidayExperienceEnabled: boolean;
   processos: any[];
   responsaveis: ResponsavelDisponivel[];
   tipos: MovimentacaoTipo[];
@@ -2483,6 +2509,8 @@ function AndamentoModal({
   onClose,
   mode,
   andamento,
+  audience,
+  holidayExperienceEnabled,
   processos,
   responsaveis,
   tipos,
@@ -3403,6 +3431,13 @@ function AndamentoModal({
                             >
                               {prazo.status}
                             </Chip>
+                            {holidayExperienceEnabled ? (
+                              <HolidayImpactPanel
+                                audience={audience}
+                                className="mt-2"
+                                impact={prazo.holidayImpact as any}
+                              />
+                            ) : null}
                           </div>
                         ))}
                       </div>

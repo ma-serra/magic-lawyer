@@ -16,6 +16,10 @@ import { isDeadlineProcessMuted } from "../deadline-process-preference-keys";
 import { NotificationFactory } from "../domain/notification-factory";
 import { getRedisInstance } from "../redis-singleton";
 import { extractLawyerUserIdsFromProcessScope } from "@/app/lib/juridical/process-movement-sync";
+import {
+  getHolidayImpactEffectiveDate,
+  parseHolidayImpact,
+} from "@/app/lib/feriados/holiday-impact";
 
 import prisma from "@/app/lib/prisma";
 
@@ -30,6 +34,21 @@ const CHECK_INTERVALS = {
   ONE_DAY: 1 * 24 * 60 * 60 * 1000, // 1 dia
   TWO_HOURS: 2 * 60 * 60 * 1000, // 2 horas
 };
+const EFFECTIVE_DATE_LOOKBACK_MS = 21 * 24 * 60 * 60 * 1000;
+
+function isWithinRange(date: Date, start: Date, end: Date) {
+  return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
+}
+
+function getEffectiveDeadlineDate(prazo: {
+  dataVencimento: Date;
+  holidayImpact?: unknown;
+}) {
+  return getHolidayImpactEffectiveDate(
+    parseHolidayImpact(prazo.holidayImpact),
+    prazo.dataVencimento,
+  );
+}
 
 function resolveDeadlineTargetUserIds(
   prazo: {
@@ -177,12 +196,15 @@ export class DeadlineSchedulerService {
 
     const rangeEnd = new Date(targetDate);
     rangeEnd.setHours(23, 59, 59, 999);
+    const lookupStart = new Date(
+      rangeStart.getTime() - EFFECTIVE_DATE_LOOKBACK_MS,
+    );
 
     const digestDate = rangeStart.toISOString().slice(0, 10);
     const deadlineFront = getDeadlineNotificationFront(eventType);
     const deadlineFrontLabel = getDeadlineNotificationFrontLabel(deadlineFront);
 
-    const expiringPrazos = await prisma.processoPrazo.findMany({
+    const expiringPrazosRaw = await prisma.processoPrazo.findMany({
       where: {
         deletedAt: null,
         status: "ABERTO",
@@ -190,7 +212,7 @@ export class DeadlineSchedulerService {
           deletedAt: null,
         },
         dataVencimento: {
-          gte: rangeStart,
+          gte: lookupStart,
           lte: rangeEnd,
         },
       },
@@ -266,6 +288,9 @@ export class DeadlineSchedulerService {
         },
       },
     });
+    const expiringPrazos = expiringPrazosRaw.filter((prazo) =>
+      isWithinRange(getEffectiveDeadlineDate(prazo), rangeStart, rangeEnd),
+    );
 
     const grouped = new Map<
       string,
@@ -313,13 +338,15 @@ export class DeadlineSchedulerService {
           items: [],
         };
 
+        const effectiveDate = getEffectiveDeadlineDate(prazo);
+
         entry.items.push({
           prazoId: prazo.id,
           processoId: prazo.processo.id,
           processoNumero: prazo.processo.numero,
           clienteNome: prazo.processo.cliente.nome,
           titulo: prazo.titulo,
-          dataVencimento: prazo.dataVencimento.toISOString(),
+          dataVencimento: effectiveDate.toISOString(),
         });
 
         grouped.set(groupKey, entry);
@@ -394,8 +421,11 @@ export class DeadlineSchedulerService {
     // Criar range de ±30 minutos para evitar múltiplas notificações por pequenas diferenças
     const rangeStart = new Date(targetDate.getTime() - 30 * 60 * 1000);
     const rangeEnd = new Date(targetDate.getTime() + 30 * 60 * 1000);
+    const lookupStart = new Date(
+      rangeStart.getTime() - EFFECTIVE_DATE_LOOKBACK_MS,
+    );
 
-    const expiringPrazos = await prisma.processoPrazo.findMany({
+    const expiringPrazosRaw = await prisma.processoPrazo.findMany({
       where: {
         deletedAt: null,
         status: "ABERTO", // Apenas prazos ainda abertos
@@ -403,7 +433,7 @@ export class DeadlineSchedulerService {
           deletedAt: null,
         },
         dataVencimento: {
-          gte: rangeStart,
+          gte: lookupStart,
           lte: rangeEnd,
         },
       },
@@ -474,6 +504,9 @@ export class DeadlineSchedulerService {
         },
       },
     });
+    const expiringPrazos = expiringPrazosRaw.filter((prazo) =>
+      isWithinRange(getEffectiveDeadlineDate(prazo), rangeStart, rangeEnd),
+    );
 
     console.log(
       `[DeadlineScheduler] Encontrados ${expiringPrazos.length} prazos expirando em ${daysRemaining} dias`,
@@ -531,6 +564,7 @@ export class DeadlineSchedulerService {
         }
 
         try {
+          const effectiveDate = getEffectiveDeadlineDate(prazo);
           const event = NotificationFactory.createEvent(
             eventType,
             prazo.tenantId,
@@ -541,7 +575,8 @@ export class DeadlineSchedulerService {
               processoNumero: prazo.processo.numero,
               numero: prazo.processo.numero,
               titulo: prazo.titulo,
-              dataVencimento: prazo.dataVencimento.toISOString(),
+              dataVencimento: effectiveDate.toISOString(),
+              effectiveDate: effectiveDate.toISOString(),
               diasRestantes: daysRemaining,
               frentePrazo: deadlineFront,
               frentePrazoLabel: deadlineFrontLabel,
@@ -581,8 +616,11 @@ export class DeadlineSchedulerService {
   private static async notifyExpiredDeadlines(now: Date): Promise<void> {
     // Buscar prazos que venceram nas últimas 24 horas (evitar notificações antigas)
     const expiredSince = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const lookupStart = new Date(
+      expiredSince.getTime() - EFFECTIVE_DATE_LOOKBACK_MS,
+    );
 
-    const expiredPrazos = await prisma.processoPrazo.findMany({
+    const expiredPrazosRaw = await prisma.processoPrazo.findMany({
       where: {
         deletedAt: null,
         processo: {
@@ -591,7 +629,7 @@ export class DeadlineSchedulerService {
         status: "ABERTO", // Apenas prazos ainda marcados como abertos (não tratados)
         dataVencimento: {
           lt: now, // Vencido
-          gte: expiredSince, // Venceu nas últimas 24h
+          gte: lookupStart, // Janela ampliada para data efetiva
         },
       },
       include: {
@@ -661,6 +699,14 @@ export class DeadlineSchedulerService {
         },
       },
     });
+    const expiredPrazos = expiredPrazosRaw.filter((prazo) => {
+      const effectiveDate = getEffectiveDeadlineDate(prazo);
+
+      return (
+        effectiveDate.getTime() < now.getTime() &&
+        effectiveDate.getTime() >= expiredSince.getTime()
+      );
+    });
 
     console.log(
       `[DeadlineScheduler] Encontrados ${expiredPrazos.length} prazos vencidos`,
@@ -687,9 +733,9 @@ export class DeadlineSchedulerService {
       // Verificar se já notificamos este prazo como vencido
       const notificationKey = `prazo:${prazo.id}:prazo.expired`;
 
+      const effectiveDate = getEffectiveDeadlineDate(prazo);
       const diasAtraso = Math.floor(
-        (now.getTime() - prazo.dataVencimento.getTime()) /
-          (24 * 60 * 60 * 1000),
+        (now.getTime() - effectiveDate.getTime()) / (24 * 60 * 60 * 1000),
       );
 
       for (const targetUserId of targetUserIds) {
@@ -730,7 +776,8 @@ export class DeadlineSchedulerService {
               processoNumero: prazo.processo.numero,
               numero: prazo.processo.numero,
               titulo: prazo.titulo,
-              dataVencimento: prazo.dataVencimento.toISOString(),
+              dataVencimento: effectiveDate.toISOString(),
+              effectiveDate: effectiveDate.toISOString(),
               diasAtraso,
               frentePrazo: deadlineFront,
               frentePrazoLabel: deadlineFrontLabel,

@@ -8,6 +8,7 @@ import logger from "@/lib/logger";
 import { ProcessoPrazoStatus, TipoFeriado } from "@/generated/prisma";
 import { fetchOfficialNationalHolidays } from "@/app/lib/feriados/oficial";
 import { ensureSharedOfficialHolidaysForYears } from "@/app/lib/feriados/sync";
+import { recomputeHolidayImpactsForOpenDeadlines } from "@/app/lib/feriados/holiday-impact-resolver";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import {
   holidayMatchesScope,
@@ -901,6 +902,13 @@ export async function updateRegimePrazo(
       where: { id: regime.id },
       data,
     });
+
+    if (payload.contarDiasUteis !== undefined) {
+      await recomputeHolidayImpactsForOpenDeadlines({
+        tenantId: user.tenantId,
+        regimePrazoId: regime.id,
+      });
+    }
 
     try {
       await logAudit({

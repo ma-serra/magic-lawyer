@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import prisma from "@/app/lib/prisma";
 import { authOptions } from "@/auth";
 import logger from "@/lib/logger";
+import { parseHolidayImpact } from "@/app/lib/feriados/holiday-impact";
 import {
   syncEventoWithGoogle,
   removeEventoFromGoogle,
@@ -1000,6 +1001,22 @@ pagination?: {
               observacoes: true,
             },
           },
+          prazosOriginados: {
+            where: {
+              deletedAt: null,
+            },
+            orderBy: {
+              dataVencimento: "asc",
+            },
+            take: 3,
+            select: {
+              id: true,
+              titulo: true,
+              dataVencimento: true,
+              status: true,
+              holidayImpact: true,
+            },
+          },
         },
         orderBy: {
           dataInicio: "asc",
@@ -1010,8 +1027,15 @@ pagination?: {
     ]);
 
     const meta = buildEventoListMeta(total, page, pageSize);
+    const data = eventos.map((evento) => ({
+      ...evento,
+      prazosOriginados: evento.prazosOriginados.map((prazo) => ({
+        ...prazo,
+        holidayImpact: parseHolidayImpact(prazo.holidayImpact),
+      })),
+    }));
 
-    return { success: true, data: eventos, meta };
+    return { success: true, data, meta };
   } catch (error) {
     logger.error("Erro ao buscar eventos:", error);
 
@@ -1061,6 +1085,21 @@ export async function getEventoById(id: string) {
             },
           },
         },
+        prazosOriginados: {
+          where: {
+            deletedAt: null,
+          },
+          orderBy: {
+            dataVencimento: "asc",
+          },
+          select: {
+            id: true,
+            titulo: true,
+            dataVencimento: true,
+            status: true,
+            holidayImpact: true,
+          },
+        },
         criadoPor: {
           select: {
             id: true,
@@ -1086,7 +1125,16 @@ export async function getEventoById(id: string) {
       throw new Error("Evento não encontrado");
     }
 
-    return { success: true, data: evento };
+    return {
+      success: true,
+      data: {
+        ...evento,
+        prazosOriginados: evento.prazosOriginados.map((prazo) => ({
+          ...prazo,
+          holidayImpact: parseHolidayImpact(prazo.holidayImpact),
+        })),
+      },
+    };
   } catch (error) {
     logger.error("Erro ao buscar evento:", error);
 

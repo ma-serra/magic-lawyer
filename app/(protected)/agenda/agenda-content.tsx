@@ -38,7 +38,9 @@ import { DateUtils } from "@/app/lib/date-utils";
 import { Evento, EventoConfirmacaoStatus } from "@/generated/prisma";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { useAgendaDisponibilidade } from "@/app/hooks/use-agenda-disponibilidade";
+import { useHolidayExperienceRollout } from "@/app/hooks/use-holiday-experience";
 import { SearchableSelect } from "@/components/searchable-select";
+import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
 
 type ViewMode = "calendar" | "list";
 
@@ -51,6 +53,13 @@ type EventoComConfirmacoes = Evento & {
     status: EventoConfirmacaoStatus;
     confirmadoEm?: Date | null;
     observacoes?: string | null;
+  }>;
+  prazosOriginados?: Array<{
+    id: string;
+    titulo: string;
+    dataVencimento: Date | string;
+    status: string;
+    holidayImpact?: unknown;
   }>;
 };
 
@@ -116,6 +125,7 @@ export default function AgendaPage() {
   const locale = useLocale();
   const { permissions, isCliente, isAdvogado, isSecretaria, isAdmin } =
     useUserPermissions();
+  const { rollout: holidayExperienceRollout } = useHolidayExperienceRollout();
   const session = useSession();
   const userEmail = session?.data?.user?.email;
   const { formData: eventoFormData } = useEventoFormData();
@@ -131,6 +141,9 @@ export default function AgendaPage() {
         : undefined,
     [filtroGoogle],
   );
+  const holidayAgendaEnabled =
+    holidayExperienceRollout?.surfaces.find((surface) => surface.key === "agenda")
+      ?.enabled ?? false;
 
   const filtrosBase = useMemo(
     () => ({
@@ -700,6 +713,25 @@ export default function AgendaPage() {
             );
           })}
         </div>
+      </div>
+    );
+  };
+
+  const renderHolidayDeadlinePanels = (evento: EventoComConfirmacoes) => {
+    if (!holidayAgendaEnabled || !evento.prazosOriginados?.length) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 space-y-2">
+        {evento.prazosOriginados.map((prazo) => (
+          <HolidayImpactPanel
+            key={`${evento.id}-${prazo.id}`}
+            audience={isCliente ? "client" : "internal"}
+            compact
+            impact={prazo.holidayImpact as any}
+          />
+        ))}
       </div>
     );
   };
@@ -1636,6 +1668,7 @@ export default function AgendaPage() {
                                 </div>
 
                                 {renderConfirmacoes(evento)}
+                                {renderHolidayDeadlinePanels(evento)}
                               </CardBody>
                             </Card>
                           </motion.div>
@@ -1834,6 +1867,7 @@ export default function AgendaPage() {
                                   )}
 
                                   {renderConfirmacoes(evento)}
+                                  {renderHolidayDeadlinePanels(evento)}
 
                                   {permissions.canEditAllEvents &&
                                   !isCliente &&

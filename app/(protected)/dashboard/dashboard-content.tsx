@@ -644,6 +644,9 @@ function renderListItem(item: DashboardListItem) {
           {item.subtitle ? (
             <p className="text-xs text-default-400 truncate">{item.subtitle}</p>
           ) : null}
+          {item.detail ? (
+            <p className="mt-1 text-xs text-default-500">{item.detail}</p>
+          ) : null}
           {formattedDate ? (
             <p className="text-xs text-default-500">{formattedDate}</p>
           ) : null}

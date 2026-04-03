@@ -10,6 +10,10 @@ import logger from "@/lib/logger";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const DOCUMENT_VERSION_SOFT_DELETE_MARKER = "[SOFT_DELETED_VERSION]";
+const GENERIC_BINARY_CONTENT_TYPES = new Set([
+  "application/octet-stream",
+  "binary/octet-stream",
+]);
 
 function getActiveDocumentoVersaoWhere(): Prisma.DocumentoVersaoWhereInput {
   return {
@@ -40,6 +44,30 @@ function sanitizeFileName(value: string): string {
     .trim();
 
   return cleaned.length ? cleaned : "documento";
+}
+
+function normalizeContentType(value?: string | null): string | null {
+  const normalized = value?.split(";")[0]?.trim().toLowerCase();
+
+  return normalized || null;
+}
+
+function resolveResponseContentType(
+  upstreamContentType?: string | null,
+  storedContentType?: string | null,
+): string {
+  const normalizedUpstream = normalizeContentType(upstreamContentType);
+  const normalizedStored = normalizeContentType(storedContentType);
+
+  if (
+    normalizedStored &&
+    (!normalizedUpstream ||
+      GENERIC_BINARY_CONTENT_TYPES.has(normalizedUpstream))
+  ) {
+    return storedContentType!;
+  }
+
+  return upstreamContentType || storedContentType || "application/octet-stream";
 }
 
 function resolveSourceUrl(sourceUrl: string, request: NextRequest): string {
@@ -222,9 +250,17 @@ export async function GET(
       );
     }
 
+    const upstreamHeaders = new Headers();
+    const requestedRange = request.headers.get("range");
+
+    if (requestedRange) {
+      upstreamHeaders.set("Range", requestedRange);
+    }
+
     const upstreamResponse = await fetch(sourceUrl, {
       cache: "no-store",
       redirect: "follow",
+      headers: upstreamHeaders,
     });
 
     if (!upstreamResponse.ok || !upstreamResponse.body) {
@@ -247,13 +283,34 @@ export async function GET(
     const headers = new Headers();
     headers.set(
       "Content-Type",
-      upstreamResponse.headers.get("Content-Type") ||
-        documento.contentType ||
-        "application/octet-stream",
+      resolveResponseContentType(
+        upstreamResponse.headers.get("Content-Type"),
+        documento.contentType,
+      ),
     );
     const contentLength = upstreamResponse.headers.get("Content-Length");
     if (contentLength) {
       headers.set("Content-Length", contentLength);
+    }
+    const acceptRanges = upstreamResponse.headers.get("Accept-Ranges");
+    if (acceptRanges) {
+      headers.set("Accept-Ranges", acceptRanges);
+    }
+    const contentRange = upstreamResponse.headers.get("Content-Range");
+    if (contentRange) {
+      headers.set("Content-Range", contentRange);
+    }
+    const etag = upstreamResponse.headers.get("ETag");
+    if (etag) {
+      headers.set("ETag", etag);
+    }
+    const lastModified = upstreamResponse.headers.get("Last-Modified");
+    if (lastModified) {
+      headers.set("Last-Modified", lastModified);
+    }
+    const contentEncoding = upstreamResponse.headers.get("Content-Encoding");
+    if (contentEncoding) {
+      headers.set("Content-Encoding", contentEncoding);
     }
     headers.set(
       "Content-Disposition",
@@ -264,7 +321,7 @@ export async function GET(
     headers.set("X-Content-Type-Options", "nosniff");
 
     return new NextResponse(upstreamResponse.body, {
-      status: 200,
+      status: upstreamResponse.status,
       headers,
     });
   } catch (error) {

@@ -2,6 +2,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import useSWR from "swr";
 import { Button } from "@heroui/button";
 import { Badge } from "@heroui/badge";
@@ -46,7 +47,10 @@ import {
   tracePollingAttempt,
 } from "@/app/lib/realtime/polling-telemetry";
 import { NOTIFICATION_CENTER_OPEN_EVENT } from "@/app/lib/notifications/ui-events";
+import { parseHolidayImpact } from "@/app/lib/feriados/holiday-impact";
+import { useHolidayExperienceRollout } from "@/app/hooks/use-holiday-experience";
 import { BellIcon } from "@/components/icons";
+import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
 
 const statusCopy: Record<NotificationStatus, string> = {
   NAO_LIDA: "Não lida",
@@ -194,6 +198,8 @@ function getEventMeetingUrl(notification?: NotificationItem | null) {
 }
 
 export const NotificationCenter = () => {
+  const { data: session } = useSession();
+  const { rollout: holidayExperienceRollout } = useHolidayExperienceRollout();
   const disclosure = useDisclosure();
   const detailDisclosure = useDisclosure();
   const [selectedNotification, setSelectedNotification] =
@@ -265,6 +271,12 @@ export const NotificationCenter = () => {
   const isPortalSyncWaitingCaptcha =
     portalSyncStatus?.status === "WAITING_CAPTCHA";
   const hasPortalSyncAttention = isPortalSyncRunning || isPortalSyncWaitingCaptcha;
+  const holidayNotificationsEnabled =
+    holidayExperienceRollout?.surfaces.find(
+      (surface) => surface.key === "notifications",
+    )?.enabled ?? false;
+  const holidayAudience =
+    (session?.user as any)?.role === "CLIENTE" ? "client" : "internal";
 
   const resolveReferenceLink = (item: NotificationItem): string | null => {
     const payload = asPayloadRecord(item.dados);
@@ -508,6 +520,13 @@ export const NotificationCenter = () => {
 
     return asStringArray((detailPayload as any).detailLines);
   }, [detailPayload]);
+  const detailHolidayImpact = useMemo(() => {
+    if (!holidayNotificationsEnabled || !detailPayload) {
+      return null;
+    }
+
+    return parseHolidayImpact((detailPayload as any).holidayImpact);
+  }, [detailPayload, holidayNotificationsEnabled]);
 
   const handleStatusChange = async (id: string, status: NotificationStatus) => {
     try {
@@ -1007,6 +1026,13 @@ export const NotificationCenter = () => {
                     <p className="whitespace-pre-wrap text-sm text-default-700 dark:text-default-300">
                       {notification.mensagem}
                     </p>
+                  ) : null}
+
+                  {detailHolidayImpact ? (
+                    <HolidayImpactPanel
+                      audience={holidayAudience}
+                      impact={detailHolidayImpact}
+                    />
                   ) : null}
 
                   {isOnlineEvent || eventMeetingUrl ? (

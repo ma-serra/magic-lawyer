@@ -70,6 +70,7 @@ import {
 } from "@/app/hooks/use-assinaturas";
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import { SearchableSelect } from "@/components/searchable-select";
+import { type ModeloPeticaoDocumentJson } from "@/lib/modelos-peticao/document-schema";
 
 // ============================================
 // TIPOS
@@ -82,6 +83,7 @@ interface Peticao {
   status: PeticaoStatus;
   descricao: string | null;
   conteudo: string | null;
+  documentoJson?: unknown | null;
   conteudoTamanho: number;
   protocoloNumero: string | null;
   protocoladoEm: Date | null;
@@ -1133,6 +1135,7 @@ function PeticaoModal({
     status: PeticaoStatus.RASCUNHO,
     descricao: "",
     conteudo: "",
+    documentoJson: null,
     observacoes: "",
   });
 
@@ -1183,6 +1186,7 @@ function PeticaoModal({
         status: PeticaoStatus.RASCUNHO,
         descricao: "",
         conteudo: "",
+        documentoJson: null,
         observacoes: "",
       });
       setSelectedFile(null);
@@ -1195,6 +1199,9 @@ function PeticaoModal({
         status: peticao.status,
         descricao: peticao.descricao || "",
         conteudo: peticao.conteudo || "",
+        documentoJson:
+          (peticao.documentoJson as ModeloPeticaoDocumentJson | null | undefined) ??
+          undefined,
         observacoes: peticao.observacoes || "",
       });
       setSelectedFile(null);
@@ -1249,16 +1256,56 @@ function PeticaoModal({
       }
 
       // Preparar variáveis para o template
+      const partes = Array.isArray((processoSelecionado as any).partes)
+        ? ((processoSelecionado as any).partes as Array<{
+            tipoPolo?: string;
+            nome?: string | null;
+          }>)
+        : [];
+      const autores = partes
+        .filter((parte) => parte.tipoPolo === "AUTOR")
+        .map((parte) => parte.nome?.trim())
+        .filter(Boolean);
+      const reus = partes
+        .filter((parte) => parte.tipoPolo === "REU")
+        .map((parte) => parte.nome?.trim())
+        .filter(Boolean);
+      const ministerioPublico = partes
+        .filter((parte) => parte.tipoPolo === "MINISTERIO_PUBLICO")
+        .map((parte) => parte.nome?.trim())
+        .filter(Boolean);
       const variaveis: Record<string, any> = {
         processo_numero: processoSelecionado.numero || "",
+        processo_numero_cnj:
+          processoSelecionado.numeroCnj || processoSelecionado.numero || "",
         processo_titulo: processoSelecionado.titulo || "",
+        processo_classe:
+          processoSelecionado.area?.nome || processoSelecionado.tipo || "",
+        processo_valor_causa: processoSelecionado.valorCausa || "",
         cliente_nome: processoSelecionado.cliente?.nome || "",
         cliente_documento: processoSelecionado.cliente?.documento || "",
+        cliente_email: processoSelecionado.cliente?.email || "",
+        cliente_telefone: processoSelecionado.cliente?.telefone || "",
         advogado_nome: "", // TODO: Buscar do contexto do usuário
         advogado_oab: "", // TODO: Buscar do contexto do usuário
         tribunal_nome: processoSelecionado.tribunal?.nome || "",
+        vara_nome: processoSelecionado.vara || "",
+        comarca_nome:
+          processoSelecionado.comarca ||
+          processoSelecionado.cidade ||
+          processoSelecionado.tribunal?.cidade ||
+          "",
+        orgao_julgador: processoSelecionado.orgaoJulgador || "",
         data_atual: new Date().toLocaleDateString("pt-BR"),
         valor: processoSelecionado.valorCausa || "",
+        reclamante_nome:
+          autores[0] || processoSelecionado.cliente?.nome || "",
+        reclamada_nome: reus[0] || "",
+        reu_nome: reus[0] || "",
+        autor_nome: autores[0] || processoSelecionado.cliente?.nome || "",
+        ministerio_publico_nome: ministerioPublico[0] || "",
+        autoridade_acusadora_nome:
+          ministerioPublico[0] || autores[0] || "",
       };
 
       // Processar template
@@ -1273,8 +1320,9 @@ function PeticaoModal({
           titulo: modeloInfo?.nome || formData.titulo,
           tipo: modeloInfo?.tipo || formData.tipo,
           descricao:
-            formData.descricao || toPlainTextExcerpt(resultado.data, 240),
-          conteudo: resultado.data,
+            formData.descricao || toPlainTextExcerpt(resultado.data.conteudo, 240),
+          conteudo: resultado.data.conteudo,
+          documentoJson: resultado.data.documentoJson,
         });
 
         toast.success("Modelo aplicado com sucesso!");

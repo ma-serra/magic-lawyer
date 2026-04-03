@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   Button,
   Card,
@@ -59,12 +60,18 @@ import {
 import { PeopleMetricCard, PeoplePageHeader } from "@/components/people-ui";
 import {
   mergeModeloPeticaoVariaveisWithConteudo,
+  ModeloPeticaoDocumentPreview,
+  ModeloPeticaoDocumentWorkspace,
   normalizeModeloPeticaoVariaveis,
   type ModeloPeticaoVariavel,
 } from "@/components/modelos-peticao/modelo-peticao-document-workspace";
+import { fetchTenantBrandingFromDomain } from "@/lib/fetchers/tenant-branding";
+import { type ModeloPeticaoDocumentJson } from "@/lib/modelos-peticao/document-schema";
 
 type ModeloPeticaoCardItem = ModeloPeticaoListItem & {
   conteudo?: string;
+  documentoJson?: ModeloPeticaoDocumentJson | null;
+  presetKey?: string | null;
   variaveis?: unknown;
 };
 
@@ -74,6 +81,8 @@ interface EditModeloFormState {
   categoria: string;
   tipo: string;
   conteudo: string;
+  documentoJson: ModeloPeticaoDocumentJson | null;
+  presetKey: string;
   ativo: boolean;
   publico: boolean;
 }
@@ -84,6 +93,8 @@ const EMPTY_EDIT_FORM: EditModeloFormState = {
   categoria: "",
   tipo: "",
   conteudo: "",
+  documentoJson: null,
+  presetKey: "custom",
   ativo: true,
   publico: false,
 };
@@ -142,10 +153,20 @@ export default function ModelosPeticaoPage() {
   );
   const [editForm, setEditForm] = useState<EditModeloFormState>(EMPTY_EDIT_FORM);
   const [editVariaveis, setEditVariaveis] = useState<ModeloPeticaoVariavel[]>([]);
+  const { data: tenantBranding } = useSWR(
+    "tenant-branding-from-domain",
+    fetchTenantBrandingFromDomain,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+    },
+  );
 
   const { modelos, isLoading, isError, error, mutate } = useModelosPeticao(filtros);
   const { categorias } = useCategoriasModeloPeticao();
   const { tipos } = useTiposModeloPeticao();
+  const branding = tenantBranding?.success ? tenantBranding.data : null;
 
   const modelosLista = useMemo(
     () => ((modelos || []) as ModeloPeticaoCardItem[]),
@@ -227,6 +248,8 @@ export default function ModelosPeticaoPage() {
       categoria: modelo.categoria || "",
       tipo: modelo.tipo || "",
       conteudo: modelo.conteudo || "",
+      documentoJson: modelo.documentoJson ?? null,
+      presetKey: modelo.presetKey || "custom",
       ativo: Boolean(modelo.ativo),
       publico: Boolean(modelo.publico),
     });
@@ -306,6 +329,8 @@ export default function ModelosPeticaoPage() {
         categoria: editForm.categoria.trim() || null,
         tipo: editForm.tipo.trim() || null,
         conteudo: editForm.conteudo,
+        documentoJson: editForm.documentoJson,
+        presetKey: editForm.presetKey || null,
         variaveis: mergedVariaveis,
         ativo: editForm.ativo,
         publico: editForm.publico,
@@ -761,12 +786,22 @@ export default function ModelosPeticaoPage() {
 
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-default-300">Conteúdo</p>
-                      <Textarea
-                        isReadOnly
-                        classNames={{ input: "font-mono text-xs" }}
-                        minRows={12}
-                        value={selectedModelo.conteudo || ""}
-                      />
+                      <div className="max-h-[70vh] overflow-auto rounded-3xl border border-white/10 bg-background/40 p-3">
+                        <ModeloPeticaoDocumentPreview
+                          branding={
+                            branding
+                              ? {
+                                  name: branding.name,
+                                  logoUrl: branding.logoUrl,
+                                  primaryColor: branding.primaryColor,
+                                  secondaryColor: branding.secondaryColor,
+                                  accentColor: branding.accentColor,
+                                }
+                              : null
+                          }
+                          documentValue={selectedModelo.documentoJson ?? null}
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -821,7 +856,7 @@ export default function ModelosPeticaoPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>Editar Modelo</ModalHeader>
+              <ModalHeader>Editar modelo</ModalHeader>
               <ModalBody className="gap-4">
                 <Input
                   isRequired
@@ -862,7 +897,8 @@ export default function ModelosPeticaoPage() {
                   />
                 </div>
 
-                <Textarea
+                {false && (
+                  <Textarea
                   isRequired
                   classNames={{ input: "font-mono text-sm" }}
                   label="Conteúdo do template"
@@ -872,6 +908,43 @@ export default function ModelosPeticaoPage() {
                   onValueChange={(value) =>
                     setEditForm((prev) => ({ ...prev, conteudo: value }))
                   }
+                  />
+                )}
+
+                <ModeloPeticaoDocumentWorkspace
+                  branding={
+                    branding
+                      ? {
+                          name: branding.name,
+                          logoUrl: branding.logoUrl,
+                          primaryColor: branding.primaryColor,
+                          secondaryColor: branding.secondaryColor,
+                          accentColor: branding.accentColor,
+                        }
+                      : null
+                  }
+                  compact
+                  documentValue={editForm.documentoJson}
+                  onChange={(conteudo) =>
+                    setEditForm((prev) => ({ ...prev, conteudo }))
+                  }
+                  onDocumentChange={(documentoJson) =>
+                    setEditForm((prev) => ({ ...prev, documentoJson }))
+                  }
+                  onPresetChange={(nextPresetKey) =>
+                    setEditForm((prev) => ({ ...prev, presetKey: nextPresetKey }))
+                  }
+                  onSuggestedMetadataChange={(suggestion) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      tipo: suggestion.tipo || prev.tipo,
+                      categoria: suggestion.categoria || prev.categoria,
+                    }))
+                  }
+                  onVariaveisChange={setEditVariaveis}
+                  presetKey={editForm.presetKey}
+                  value={editForm.conteudo}
+                  variaveis={editVariaveis}
                 />
 
                 <div className="flex flex-wrap gap-4">

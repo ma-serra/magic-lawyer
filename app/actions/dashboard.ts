@@ -4,6 +4,12 @@ import { getServerSession } from "next-auth/next";
 
 import prisma from "@/app/lib/prisma";
 import { getTenantBrazilCoverageOverview } from "@/app/lib/geo/brazil-coverage-service";
+import { parseHolidayImpact } from "@/app/lib/feriados/holiday-impact";
+import {
+  buildHolidayExperienceGlobalRolloutFromRecord,
+  buildHolidayExperienceTenantRolloutFromRecord,
+  resolveHolidayExperienceRollout,
+} from "@/app/lib/feriados/experience-rollout";
 import { AUTHORITY_PENDING_TASK_TITLE } from "@/app/lib/juizes/authority-profile-pendency";
 import { buildProcessoAdvogadoMembershipWhere } from "@/app/lib/processos/processo-vinculos";
 import {
@@ -58,6 +64,7 @@ export interface DashboardListItem {
   id: string;
   title: string;
   subtitle?: string;
+  detail?: string;
   badge?: string;
   tone?: Tone;
   href?: string;
@@ -203,6 +210,50 @@ async function generateMonthlySeries(
 
 function formatCountHelper(value: number, label: string) {
   return value > 0 ? `${value} ${label}` : undefined;
+}
+
+function buildHolidayDashboardListItem(
+  prazo: {
+    id: string;
+    titulo: string;
+    dataVencimento: Date;
+    holidayImpact?: unknown;
+    processo?: {
+      id: string;
+      numero: string;
+    } | null;
+  },
+  enabled: boolean,
+): DashboardListItem {
+  const holidayImpact = enabled ? parseHolidayImpact(prazo.holidayImpact) : null;
+
+  return {
+    id: prazo.id,
+    title: prazo.titulo,
+    subtitle: prazo.processo?.numero,
+    detail: holidayImpact?.summary ?? undefined,
+    date: prazo.dataVencimento.toISOString(),
+    tone: holidayImpact?.wasShifted ? "secondary" : "warning",
+    href: prazo.processo ? `/processos/${prazo.processo.id}` : undefined,
+  };
+}
+
+async function isHolidayDashboardEnabled(tenantId: string) {
+  const [rolloutRecord, tenant] = await Promise.all([
+    prisma.holidayExperienceRollout.findUnique({
+      where: { id: "global" },
+    }),
+    prisma.holidayExperienceTenantRollout.findUnique({
+      where: { tenantId },
+    }),
+  ]);
+
+  const rollout = resolveHolidayExperienceRollout({
+    globalRollout: buildHolidayExperienceGlobalRolloutFromRecord(rolloutRecord),
+    tenantRollout: buildHolidayExperienceTenantRolloutFromRecord(tenant),
+  });
+
+  return rollout.surfaces.find((surface) => surface.key === "dashboard")?.enabled ?? false;
 }
 
 async function getAuthorityPendingDashboardBundle(
@@ -572,6 +623,7 @@ async function buildAdminDashboard(
   tenantId: string,
   userId: string,
   now: Date,
+  holidayDashboardEnabled: boolean,
 ): Promise<DashboardData> {
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const weekStart = startOfWeek(now);
@@ -713,6 +765,7 @@ async function buildAdminDashboard(
         id: true,
         titulo: true,
         dataVencimento: true,
+        holidayImpact: true,
         processo: { select: { numero: true, id: true } },
       },
     }),
@@ -971,14 +1024,14 @@ async function buildAdminDashboard(
     href: evento.processo ? `/processos/${evento.processo.id}` : undefined,
   }));
 
-  const pending: DashboardListItem[] = proximosPrazos.map((prazo) => ({
-    id: prazo.id,
-    title: prazo.titulo,
-    subtitle: prazo.processo?.numero,
-    date: prazo.dataVencimento?.toISOString(),
-    tone: prazo.dataVencimento <= threeDaysAhead ? "danger" : "warning",
-    href: prazo.processo ? `/processos/${prazo.processo.id}` : undefined,
-  }));
+  const pending: DashboardListItem[] = proximosPrazos.map((prazo) => {
+    const item = buildHolidayDashboardListItem(prazo, holidayDashboardEnabled);
+
+    return {
+      ...item,
+      tone: prazo.dataVencimento <= threeDaysAhead ? "danger" : item.tone,
+    };
+  });
 
   const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
     0,
@@ -1015,6 +1068,7 @@ async function buildAdvogadoDashboard(
   tenantId: string,
   userId: string,
   now: Date,
+  holidayDashboardEnabled: boolean,
   session?: any,
 ): Promise<DashboardData> {
   // Verificar se é staff vinculado ou advogado
@@ -1085,6 +1139,7 @@ async function buildAdvogadoDashboard(
     tarefasPendentes,
     assinaturasPendentes,
     prazos24h,
+    proximosPrazos,
     proximoEvento,
     eventosProximos,
     tarefasDetalhes,
@@ -1150,6 +1205,35 @@ async function buildAdvogadoDashboard(
         dataVencimento: {
           gte: now,
           lte: tomorrow,
+        },
+      },
+    }),
+    prisma.processoPrazo.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        responsavelId: userId,
+        status: "ABERTO",
+        processo: {
+          deletedAt: null,
+        },
+        dataVencimento: {
+          gte: now,
+          lte: addDays(now, 7),
+        },
+      },
+      orderBy: { dataVencimento: "asc" },
+      take: 4,
+      select: {
+        id: true,
+        titulo: true,
+        dataVencimento: true,
+        holidayImpact: true,
+        processo: {
+          select: {
+            id: true,
+            numero: true,
+          },
         },
       },
     }),
@@ -1445,15 +1529,22 @@ async function buildAdvogadoDashboard(
     href: evento.processo ? `/processos/${evento.processo.id}` : undefined,
   }));
 
-  const pending: DashboardListItem[] = tarefasDetalhes.map((tarefa) => ({
-    id: tarefa.id,
-    title: tarefa.titulo,
-    subtitle: tarefa.processo?.numero,
-    date: tarefa.dataLimite ? tarefa.dataLimite.toISOString() : undefined,
-    tone:
-      tarefa.dataLimite && tarefa.dataLimite <= tomorrow ? "danger" : "warning",
-    href: tarefa.processo ? `/processos/${tarefa.processo.id}` : undefined,
-  }));
+  const pending: DashboardListItem[] = [
+    ...(holidayDashboardEnabled
+      ? proximosPrazos.map((prazo) => buildHolidayDashboardListItem(prazo, true))
+      : []),
+    ...tarefasDetalhes.map((tarefa) => ({
+      id: tarefa.id,
+      title: tarefa.titulo,
+      subtitle: tarefa.processo?.numero,
+      date: tarefa.dataLimite ? tarefa.dataLimite.toISOString() : undefined,
+      tone:
+        tarefa.dataLimite && tarefa.dataLimite <= tomorrow
+          ? ("danger" as Tone)
+          : ("warning" as Tone),
+      href: tarefa.processo ? `/processos/${tarefa.processo.id}` : undefined,
+    })),
+  ];
 
   const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
     0,
@@ -1867,6 +1958,7 @@ async function buildSecretariaDashboard(
   tenantId: string,
   userId: string,
   now: Date,
+  holidayDashboardEnabled: boolean,
   session?: any,
 ): Promise<DashboardData> {
   // Verificar se é staff vinculado e aplicar escopo
@@ -2048,6 +2140,7 @@ async function buildSecretariaDashboard(
     tarefasPendentes,
     documentosPendentes,
     prazosCriticos,
+    proximosPrazos,
     clientesNovos,
     eventosProximos,
     documentosPendentesDetalhes,
@@ -2096,6 +2189,40 @@ async function buildSecretariaDashboard(
         dataVencimento: {
           gte: now,
           lte: tresDias,
+        },
+      },
+    }),
+    prisma.processoPrazo.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        status: "ABERTO",
+        processo: {
+          tenantId,
+          deletedAt: null,
+          ...(isAdmin
+            ? {}
+            : {
+                ...(whereProcessos.OR ? { OR: whereProcessos.OR } : {}),
+              }),
+        },
+        dataVencimento: {
+          gte: now,
+          lte: addDays(now, 7),
+        },
+      },
+      orderBy: { dataVencimento: "asc" },
+      take: 4,
+      select: {
+        id: true,
+        titulo: true,
+        dataVencimento: true,
+        holidayImpact: true,
+        processo: {
+          select: {
+            id: true,
+            numero: true,
+          },
         },
       },
     }),
@@ -2325,16 +2452,19 @@ async function buildSecretariaDashboard(
     href: evento.processo ? `/processos/${evento.processo.id}` : undefined,
   }));
 
-  const pending: DashboardListItem[] = documentosPendentesDetalhes.map(
-    (doc) => ({
+  const pending: DashboardListItem[] = [
+    ...(holidayDashboardEnabled
+      ? proximosPrazos.map((prazo) => buildHolidayDashboardListItem(prazo, true))
+      : []),
+    ...documentosPendentesDetalhes.map((doc) => ({
       id: doc.id,
       title: doc.titulo,
       subtitle: doc.cliente?.nome,
       date: doc.createdAt?.toISOString(),
-      tone: "warning",
+      tone: "warning" as Tone,
       href: doc.processo ? `/processos/${doc.processo.id}` : undefined,
-    }),
-  );
+    })),
+  ];
 
   const combinedPending = [...authorityPendingBundle.pendingItems, ...pending].slice(
     0,
@@ -2370,6 +2500,7 @@ async function buildClienteDashboard(
   tenantId: string,
   userId: string,
   now: Date,
+  holidayDashboardEnabled: boolean,
 ): Promise<DashboardData> {
   const cliente = await prisma.cliente.findFirst({
     where: {
@@ -2401,6 +2532,7 @@ async function buildClienteDashboard(
     parcelasAtrasadas,
     eventosSemana,
     proximoEvento,
+    proximosPrazos,
     eventosLista,
     parcelasLista,
   ] = await Promise.all([
@@ -2451,6 +2583,35 @@ async function buildClienteDashboard(
       select: {
         titulo: true,
         dataInicio: true,
+      },
+    }),
+    prisma.processoPrazo.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        status: "ABERTO",
+        processo: {
+          clienteId: cliente.id,
+          deletedAt: null,
+        },
+        dataVencimento: {
+          gte: now,
+          lte: addDays(now, 14),
+        },
+      },
+      orderBy: { dataVencimento: "asc" },
+      take: 4,
+      select: {
+        id: true,
+        titulo: true,
+        dataVencimento: true,
+        holidayImpact: true,
+        processo: {
+          select: {
+            id: true,
+            numero: true,
+          },
+        },
       },
     }),
     prisma.evento.findMany({
@@ -2652,21 +2813,33 @@ async function buildClienteDashboard(
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 8);
 
-  const highlights: DashboardListItem[] = eventosLista.map((evento) => ({
-    id: evento.id,
-    title: evento.titulo,
-    date: evento.dataInicio?.toISOString(),
-    tone: "secondary",
-  }));
+  const highlights: DashboardListItem[] = [
+    ...(holidayDashboardEnabled
+      ? proximosPrazos.map((prazo) => ({
+          ...buildHolidayDashboardListItem(prazo, true),
+          tone: "secondary" as Tone,
+        }))
+      : []),
+    ...eventosLista.map((evento) => ({
+      id: evento.id,
+      title: evento.titulo,
+      date: evento.dataInicio?.toISOString(),
+      tone: "secondary" as Tone,
+    })),
+  ].slice(0, 5);
 
-  const pending: DashboardListItem[] = parcelasLista.map((parcela) => ({
-    id: parcela.id,
-    title: parcela.titulo || `Parcela #${parcela.numeroParcela}`,
-    badge: `R$ ${Number(parcela.valor).toLocaleString("pt-BR")}`,
-    date: parcela.dataVencimento?.toISOString(),
-    tone:
-      parcela.status === ContratoParcelaStatus.ATRASADA ? "danger" : "warning",
-  }));
+  const pending: DashboardListItem[] = [
+    ...parcelasLista.map((parcela) => ({
+      id: parcela.id,
+      title: parcela.titulo || `Parcela #${parcela.numeroParcela}`,
+      badge: `R$ ${Number(parcela.valor).toLocaleString("pt-BR")}`,
+      date: parcela.dataVencimento?.toISOString(),
+      tone:
+        parcela.status === ContratoParcelaStatus.ATRASADA
+          ? ("danger" as Tone)
+          : ("warning" as Tone),
+    })),
+  ];
 
   const trends = [
     ...processoSeries.map((trend, index) => ({
@@ -2704,6 +2877,9 @@ export async function getDashboardData(): Promise<DashboardResponse> {
     const userRole = (session.user as any)?.role as UserRole | undefined;
     const tenantId = (session.user as any)?.tenantId as string | undefined;
     const now = new Date();
+    const holidayDashboardEnabled = tenantId
+      ? await isHolidayDashboardEnabled(tenantId)
+      : false;
 
     let data: DashboardData;
 
@@ -2715,13 +2891,24 @@ export async function getDashboardData(): Promise<DashboardResponse> {
         if (!tenantId) {
           throw new Error("Tenant não definido para o usuário administrador");
         }
-        data = await buildAdminDashboard(tenantId, session.user.id, now);
+        data = await buildAdminDashboard(
+          tenantId,
+          session.user.id,
+          now,
+          holidayDashboardEnabled,
+        );
         break;
       case UserRole.ADVOGADO:
         if (!tenantId) {
           throw new Error("Tenant não definido para o advogado");
         }
-        data = await buildAdvogadoDashboard(tenantId, session.user.id, now);
+        data = await buildAdvogadoDashboard(
+          tenantId,
+          session.user.id,
+          now,
+          holidayDashboardEnabled,
+          session,
+        );
         break;
       case UserRole.FINANCEIRO:
         if (!tenantId) {
@@ -2737,6 +2924,7 @@ export async function getDashboardData(): Promise<DashboardResponse> {
           tenantId,
           session.user.id,
           now,
+          holidayDashboardEnabled,
           session,
         );
         break;
@@ -2744,7 +2932,12 @@ export async function getDashboardData(): Promise<DashboardResponse> {
         if (!tenantId) {
           throw new Error("Tenant não definido para o cliente");
         }
-        data = await buildClienteDashboard(tenantId, session.user.id, now);
+        data = await buildClienteDashboard(
+          tenantId,
+          session.user.id,
+          now,
+          holidayDashboardEnabled,
+        );
         break;
       default:
         data = {
