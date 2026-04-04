@@ -3854,6 +3854,13 @@ export async function updateProcessoParte(
     const tenantId = user.tenantId;
 
     const updateData: Prisma.ProcessoParteUpdateInput = {};
+    const normalizeTextField = (value: string | null | undefined) => {
+      if (value === undefined) return undefined;
+
+      const trimmedValue = value?.trim() ?? "";
+
+      return trimmedValue.length > 0 ? trimmedValue : null;
+    };
 
     let cliente: {
       id: string;
@@ -3959,17 +3966,42 @@ export async function updateProcessoParte(
     }
 
     if (input.tipoPolo !== undefined) updateData.tipoPolo = input.tipoPolo;
-    if (input.nome !== undefined) updateData.nome = input.nome;
-    if (input.documento !== undefined)
-      updateData.documento = input.documento ?? cliente?.documento ?? null;
-    if (input.email !== undefined)
-      updateData.email = input.email ?? cliente?.email ?? advogadoEmail ?? null;
-    if (input.telefone !== undefined)
+    if (input.nome !== undefined) {
+      const normalizedNome = normalizeTextField(input.nome);
+
+      if (!normalizedNome) {
+        return { success: false, error: "Informe o nome da parte" };
+      }
+
+      updateData.nome = normalizedNome;
+    }
+
+    if (input.documento !== undefined) {
+      const normalizedDocumento = normalizeTextField(input.documento);
+
+      updateData.documento = normalizedDocumento ?? cliente?.documento ?? null;
+    }
+
+    if (input.email !== undefined) {
+      const normalizedEmail = normalizeTextField(input.email);
+
+      updateData.email = normalizedEmail ?? cliente?.email ?? advogadoEmail ?? null;
+    }
+
+    if (input.telefone !== undefined) {
+      const normalizedTelefone = normalizeTextField(input.telefone);
+
       updateData.telefone =
-        input.telefone ?? cliente?.telefone ?? cliente?.celular ?? null;
-    if (input.papel !== undefined) updateData.papel = input.papel ?? null;
-    if (input.observacoes !== undefined)
-      updateData.observacoes = input.observacoes ?? null;
+        normalizedTelefone ?? cliente?.telefone ?? cliente?.celular ?? null;
+    }
+
+    if (input.papel !== undefined) {
+      updateData.papel = normalizeTextField(input.papel);
+    }
+
+    if (input.observacoes !== undefined) {
+      updateData.observacoes = normalizeTextField(input.observacoes);
+    }
 
     const atualizada = await prisma.processoParte.update({
       where: { id: parteId },

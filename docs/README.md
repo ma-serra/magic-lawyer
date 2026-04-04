@@ -39,6 +39,7 @@ Registro de correções de bugs e problemas:
 ### ✅ [Checklists](./checklists/)
 Checklists de desenvolvimento e validação:
 - Checklist geral do projeto
+- Checklist operacional de implantação por cliente
 
 ### 👨‍💼 [Administração](./admin/)
 Documentação administrativa do sistema

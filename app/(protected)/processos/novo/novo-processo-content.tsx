@@ -510,6 +510,21 @@ export function NovoProcessoContent() {
     }
   };
 
+  const grauDescription = `Instancia de tramitacao (1${String.fromCharCode(186)} grau, 2${String.fromCharCode(186)} grau ou tribunal superior).`;
+
+  const formatGrauLabel = (grau: ProcessoGrau) => {
+    switch (grau) {
+      case ProcessoGrau.PRIMEIRO:
+        return `1${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SEGUNDO:
+        return `2${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SUPERIOR:
+        return "Tribunal Superior";
+      default:
+        return grau;
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.numero.trim()) {
       toast.error("NÃºmero do processo Ã© obrigatÃ³rio");
@@ -1085,7 +1100,7 @@ export function NovoProcessoContent() {
               </Select>
 
               <Select
-                description="InstÃ¢ncia de tramitaÃ§Ã£o (1Âº grau, 2Âº grau ou tribunal superior)."
+                description={grauDescription}
                 label="Grau"
                 placeholder="Selecione o grau"
                 selectedKeys={formData.grau ? [formData.grau] : []}
@@ -1100,7 +1115,7 @@ export function NovoProcessoContent() {
                 }}
               >
                 {graus.map((grau) => (
-                  <SelectItem key={grau} textValue={getGrauLabel(grau)}>{getGrauLabel(grau)}</SelectItem>
+                  <SelectItem key={grau} textValue={formatGrauLabel(grau)}>{formatGrauLabel(grau)}</SelectItem>
                 ))}
               </Select>
             </div>

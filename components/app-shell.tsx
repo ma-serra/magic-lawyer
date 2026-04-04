@@ -12,7 +12,6 @@ import { CriticalDeadlinePopup } from "@/components/notifications/critical-deadl
 import { InAppNotificationAnnouncer } from "@/components/notifications/in-app-notification-announcer";
 import { WebPushRuntime } from "@/components/notifications/web-push-runtime";
 import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
-import { TenantFloatingChatDock } from "@/components/support/tenant-floating-chat-dock";
 import { useProfileNavigation } from "@/app/hooks/use-profile-navigation";
 import { useSessionPresenceHeartbeat } from "@/app/hooks/use-session-presence-heartbeat";
 
@@ -97,7 +96,6 @@ export function AppShell({ children }: AppShellProps) {
         </main>
         <CriticalDeadlinePopup />
         <FloatingAssistantDock scope="tenant" />
-        <TenantFloatingChatDock />
       </div>
     </div>
   );

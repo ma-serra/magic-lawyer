@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { getSession, signIn, useSession } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -59,7 +59,6 @@ type LoginPageClientProps = {
 function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
   const params = useSearchParams();
   const router = useRouter();
-  const { status, data: session } = useSession();
   const tenantFromDomain = useTenantFromDomain();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -371,7 +370,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
 
   // Exibir mensagem de motivo do redirecionamento
   useEffect(() => {
-    if (reason && status !== "authenticated") {
+    if (reason) {
       let title = "";
       let description = "";
       let color: "danger" | "warning" = "danger";
@@ -474,18 +473,7 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
         timeout: 8000,
       });
     }
-  }, [reason, status]);
-
-  useEffect(() => {
-    if (status !== "authenticated") {
-      return;
-    }
-
-    const role = (session?.user as any)?.role as string | undefined;
-    const target = resolveRedirectTarget(role);
-
-    router.replace(target);
-  }, [status, session, router, resolveRedirectTarget]);
+  }, [reason]);
 
   useEffect(() => {
     if (!isDevMode) {

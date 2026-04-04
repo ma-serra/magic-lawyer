@@ -544,6 +544,20 @@ export default function EditarProcessoPage() {
     }
   };
 
+  const grauDescription = `Instancia de tramitacao (1${String.fromCharCode(186)} grau, 2${String.fromCharCode(186)} grau ou tribunal superior).`;
+  const formatGrauLabel = (grau: ProcessoGrau) => {
+    switch (grau) {
+      case ProcessoGrau.PRIMEIRO:
+        return `1${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SEGUNDO:
+        return `2${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SUPERIOR:
+        return "Tribunal Superior";
+      default:
+        return grau;
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData) return;
 
@@ -1139,6 +1153,7 @@ export default function EditarProcessoPage() {
               <Select
                 description="InstÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ncia de tramitaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o (1ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau, 2ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau ou tribunal superior)."
                 label="Grau"
+                classNames={{ helperWrapper: "hidden" }}
                 placeholder="Selecione o grau"
                 selectedKeys={formData.grau ? [formData.grau] : []}
                 startContent={<Layers className="h-4 w-4 text-default-400" />}
@@ -1156,9 +1171,10 @@ export default function EditarProcessoPage() {
                 }}
               >
                 {graus.map((grau) => (
-                  <SelectItem key={grau} textValue={getGrauLabel(grau)}>{getGrauLabel(grau)}</SelectItem>
+                  <SelectItem key={grau} textValue={formatGrauLabel(grau)}>{formatGrauLabel(grau)}</SelectItem>
                 ))}
               </Select>
+              <p className="text-tiny text-default-400">{grauDescription}</p>
             </div>
 
             <SearchableSelect

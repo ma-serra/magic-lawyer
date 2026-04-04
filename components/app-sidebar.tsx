@@ -1166,29 +1166,21 @@ function SidebarContent({
               statusButtonClassName="w-full justify-between px-3 py-2 h-auto"
             />
           ) : null}
-          <Button
-            as={AppNavLink}
-            className={clsx(
-              "group w-full border shadow-none transition-all duration-200",
-              collapsed
-                ? "h-10 min-w-10 rounded-xl border-warning/30 bg-warning/10 px-0 text-warning hover:bg-warning/20"
-                : "h-10 justify-start rounded-xl border-warning/25 bg-warning/10 px-3 text-warning hover:bg-warning/15",
-            )}
-            color="default"
-            href="/suporte"
-            isIconOnly={collapsed}
-            prefetchStrategy="none"
-            radius="lg"
-            variant="flat"
-          >
-            <HelpIcon size={collapsed ? 16 : 17} />
-            <span className="sr-only">Abrir chamado</span>
-            {!collapsed ? (
-              <span className="ml-2 text-sm font-medium tracking-tight">
-                Ajuda
-              </span>
-            ) : null}
-          </Button>
+          <Tooltip content="Ajuda" placement="right">
+            <Button
+              as={AppNavLink}
+              className="group h-10 min-w-10 w-10 self-start rounded-xl border border-warning/30 bg-warning/10 px-0 text-warning shadow-none transition-all duration-200 hover:bg-warning/20"
+              color="default"
+              href="/suporte"
+              isIconOnly
+              prefetchStrategy="none"
+              radius="lg"
+              variant="flat"
+            >
+              <HelpIcon size={16} />
+              <span className="sr-only">Abrir chamado</span>
+            </Button>
+          </Tooltip>
           <Button
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             className={clsx(

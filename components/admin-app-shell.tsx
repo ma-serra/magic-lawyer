@@ -9,7 +9,6 @@ import { Navbar } from "@/components/navbar";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { FloatingAssistantDock } from "@/components/juridical-ai/floating-assistant-dock";
 import { ImpersonationSessionBanner } from "@/components/security/impersonation-session-banner";
-import { AdminFloatingChatDock } from "@/components/support/admin-floating-chat-dock";
 import { useAdminNavigation } from "@/app/hooks/use-admin-navigation";
 import { useSessionPresenceHeartbeat } from "@/app/hooks/use-session-presence-heartbeat";
 
@@ -93,7 +92,6 @@ export function AdminAppShell({ children }: AdminAppShellProps) {
           </div>
         </main>
         <FloatingAssistantDock scope="admin" />
-        <AdminFloatingChatDock />
       </div>
     </div>
   );

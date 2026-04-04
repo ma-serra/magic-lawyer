@@ -7,6 +7,8 @@ import {
   useTransition,
   ReactNode,
   useEffect,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -86,6 +88,7 @@ import { DateUtils } from "@/app/lib/date-utils";
 import {
   createProcessoParte,
   deleteProcessoParte,
+  updateProcessoParte,
   createProcessoPrazo,
   updateProcessoPrazo,
   deleteProcessoPrazo,
@@ -93,6 +96,7 @@ import {
   unlinkProcuracaoDoProcesso,
   updateProcesso,
   solicitarAtualizacaoJusbrasilProcesso,
+  type ProcessoParte,
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
@@ -118,7 +122,7 @@ import {
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
 
-const parteFormInitial: {
+type ParteFormState = {
   tipoPolo: ProcessoPolo;
   nome: string;
   documento: string;
@@ -126,7 +130,9 @@ const parteFormInitial: {
   telefone: string;
   papel: string;
   observacoes: string;
-} = {
+};
+
+const parteFormInitial: ParteFormState = {
   tipoPolo: ProcessoPolo.AUTOR,
   nome: "",
   documento: "",
@@ -135,6 +141,114 @@ const parteFormInitial: {
   papel: "",
   observacoes: "",
 };
+
+const buildParteFormState = (
+  parte?: Partial<
+    Pick<
+      ProcessoParte,
+      | "tipoPolo"
+      | "nome"
+      | "documento"
+      | "email"
+      | "telefone"
+      | "papel"
+      | "observacoes"
+    >
+  >,
+): ParteFormState => ({
+  tipoPolo: parte?.tipoPolo ?? ProcessoPolo.AUTOR,
+  nome: parte?.nome ?? "",
+  documento: parte?.documento ?? "",
+  email: parte?.email ?? "",
+  telefone: parte?.telefone ?? "",
+  papel: parte?.papel ?? "",
+  observacoes: parte?.observacoes ?? "",
+});
+
+interface ProcessoParteFormFieldsProps {
+  form: ParteFormState;
+  polos: ProcessoPolo[];
+  setForm: Dispatch<SetStateAction<ParteFormState>>;
+}
+
+function ProcessoParteFormFields({
+  form,
+  polos,
+  setForm,
+}: ProcessoParteFormFieldsProps) {
+  return (
+    <>
+      <Select
+        label="Tipo de polo"
+        selectedKeys={[form.tipoPolo]}
+        onSelectionChange={(keys) => {
+          const key = Array.from(keys)[0] as ProcessoPolo | undefined;
+
+          setForm((prev) => ({
+            ...prev,
+            tipoPolo: key ?? prev.tipoPolo,
+          }));
+        }}
+      >
+        {polos.map((polo) => (
+          <SelectItem key={polo} textValue={polo}>
+            {polo}
+          </SelectItem>
+        ))}
+      </Select>
+
+      <Input
+        label="Nome"
+        placeholder="Nome completo da parte"
+        value={form.nome}
+        onValueChange={(value) =>
+          setForm((prev) => ({ ...prev, nome: value }))
+        }
+      />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Input
+          label="Documento"
+          value={form.documento}
+          onValueChange={(value) =>
+            setForm((prev) => ({ ...prev, documento: value }))
+          }
+        />
+        <Input
+          label="Telefone"
+          value={form.telefone}
+          onValueChange={(value) =>
+            setForm((prev) => ({ ...prev, telefone: value }))
+          }
+        />
+      </div>
+
+      <Input
+        label="E-mail"
+        value={form.email}
+        onValueChange={(value) =>
+          setForm((prev) => ({ ...prev, email: value }))
+        }
+      />
+      <Input
+        label="Papel no processo"
+        value={form.papel}
+        onValueChange={(value) =>
+          setForm((prev) => ({ ...prev, papel: value }))
+        }
+      />
+
+      <Textarea
+        label="Observacoes"
+        minRows={2}
+        value={form.observacoes}
+        onValueChange={(value) =>
+          setForm((prev) => ({ ...prev, observacoes: value }))
+        }
+      />
+    </>
+  );
+}
 
 const prazoFormInitial = {
   titulo: "",
@@ -624,6 +738,9 @@ export default function ProcessoDetalhesPage() {
       ?.enabled ?? false;
 
   const [parteForm, setParteForm] = useState(parteFormInitial);
+  const [editingParte, setEditingParte] = useState<ProcessoParte | null>(null);
+  const [editingParteForm, setEditingParteForm] =
+    useState<ParteFormState>(parteFormInitial);
   const [prazoForm, setPrazoForm] = useState(prazoFormInitial);
   const [prazoSearch, setPrazoSearch] = useState("");
   const [prazoStatusFilter, setPrazoStatusFilter] = useState<string>("all");
@@ -1108,6 +1225,53 @@ export default function ProcessoDetalhesPage() {
       toast.error("Erro ao criar parte");
     } finally {
       setIsCreatingParte(false);
+    }
+  };
+
+  const handleStartEditParte = (parte: ProcessoParte) => {
+    setEditingParte(parte);
+    setEditingParteForm(buildParteFormState(parte));
+  };
+
+  const handleCloseEditParte = () => {
+    setEditingParte(null);
+    setEditingParteForm(parteFormInitial);
+  };
+
+  const handleUpdateParte = async () => {
+    if (!editingParte) return;
+
+    const nome = editingParteForm.nome.trim();
+
+    if (!nome) {
+      toast.error("Informe o nome da parte");
+
+      return;
+    }
+
+    setParteActionId(editingParte.id);
+    try {
+      const result = await updateProcessoParte(editingParte.id, {
+        tipoPolo: editingParteForm.tipoPolo,
+        nome,
+        documento: editingParteForm.documento.trim(),
+        email: editingParteForm.email.trim(),
+        telefone: editingParteForm.telefone.trim(),
+        papel: editingParteForm.papel.trim(),
+        observacoes: editingParteForm.observacoes.trim(),
+      });
+
+      if (result.success) {
+        toast.success("Parte atualizada");
+        handleCloseEditParte();
+        handleRefresh();
+      } else {
+        toast.error(result.error || "Erro ao atualizar parte");
+      }
+    } catch (error) {
+      toast.error("Erro ao atualizar parte");
+    } finally {
+      setParteActionId(null);
     }
   };
 
@@ -2332,16 +2496,28 @@ export default function ProcessoDetalhesPage() {
                             )}
                           </div>
                           {!isCliente && (
-                            <Button
-                              isIconOnly
-                              color="danger"
-                              disabled={parteActionId === parte.id}
-                              isLoading={parteActionId === parte.id}
-                              variant="light"
-                              onPress={() => handleDeleteParte(parte.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                isDisabled={parteActionId === parte.id}
+                                size="sm"
+                                startContent={<Edit className="h-4 w-4" />}
+                                variant="flat"
+                                onPress={() => handleStartEditParte(parte)}
+                              >
+                                Editar
+                              </Button>
+                              <Button
+                                aria-label={`Remover parte ${parte.nome}`}
+                                isIconOnly
+                                color="danger"
+                                disabled={parteActionId === parte.id}
+                                isLoading={parteActionId === parte.id}
+                                variant="light"
+                                onPress={() => handleDeleteParte(parte.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </div>
                       </CardBody>
@@ -3546,6 +3722,54 @@ export default function ProcessoDetalhesPage() {
           </div>
         </Tab>
       </Tabs>
+
+      <Modal
+        closeOnEscape={parteActionId !== editingParte?.id}
+        closeOnOverlayClick={parteActionId !== editingParte?.id}
+        footer={
+          <>
+            <Button
+              isDisabled={parteActionId === editingParte?.id}
+              variant="light"
+              onPress={handleCloseEditParte}
+            >
+              Cancelar
+            </Button>
+            <Button
+              color="primary"
+              isLoading={parteActionId === editingParte?.id}
+              startContent={
+                parteActionId === editingParte?.id ? undefined : (
+                  <Edit className="h-4 w-4" />
+                )
+              }
+              onPress={handleUpdateParte}
+            >
+              Salvar alteracoes
+            </Button>
+          </>
+        }
+        isOpen={Boolean(editingParte)}
+        showCloseButton={parteActionId !== editingParte?.id}
+        size="lg"
+        title={editingParte ? `Editar parte: ${editingParte.nome}` : "Editar parte"}
+        onClose={handleCloseEditParte}
+      >
+        <div className="space-y-4 pt-2">
+          {(editingParte?.clienteId || editingParte?.advogadoId) && (
+            <div className="rounded-lg border border-default-200 bg-default-50 px-3 py-2 text-xs text-default-500">
+              A edicao altera os dados desta parte neste processo sem remover o
+              vinculo ja existente.
+            </div>
+          )}
+
+          <ProcessoParteFormFields
+            form={editingParteForm}
+            polos={polos}
+            setForm={setEditingParteForm}
+          />
+        </div>
+      </Modal>
 
       <Modal
         bodyClassName="px-0 pb-0 pt-2"

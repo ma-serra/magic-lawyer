@@ -23,6 +23,7 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { CentralizedSearchBar } from "@/components/centralized-search-bar";
 import { Logo } from "@/components/icons";
+import { NavbarSupportChat } from "@/components/support/navbar-support-chat";
 import { TENANT_PERMISSIONS } from "@/types";
 import { UserRole, TenantPermission } from "@/generated/prisma";
 
@@ -273,6 +274,7 @@ export const Navbar = ({ onOpenSidebar, rightExtras, showAuthenticatedSecondaryN
               </svg>
             </Button>
           ) : null}
+          {session?.user ? <NavbarSupportChat /> : null}
           {session?.user ? (
             <div className="hidden sm:block">
               <NotificationCenter />

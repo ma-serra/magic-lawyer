@@ -661,17 +661,11 @@ export const NotificationCenter = () => {
 
       <Drawer
         isOpen={disclosure.isOpen}
-        motionProps={{
-          variants: {
-            enter: { x: 0 },
-            exit: { x: 600 },
-          },
-        }}
         placement="right"
-        size="xl"
+        size="5xl"
         onOpenChange={disclosure.onOpenChange}
       >
-        <DrawerContent className="border-l border-white/10 bg-background/70 backdrop-blur-3xl">
+        <DrawerContent className="w-full max-w-[min(96vw,1120px)] border-l border-white/10 bg-background/70 backdrop-blur-3xl">
           {(onClose) => (
             <>
               <DrawerHeader className="flex items-center justify-between gap-4">
@@ -711,7 +705,7 @@ export const NotificationCenter = () => {
 
               <DrawerBody className="px-0 pb-0">
                 <div className="px-6 pb-4">
-                  <div className="flex gap-2 overflow-x-auto pb-2">
+                  <div className="flex flex-wrap gap-2 pb-2">
                     {(
                       [
                         "GERAL",

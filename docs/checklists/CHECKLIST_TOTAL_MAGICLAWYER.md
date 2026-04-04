@@ -21,6 +21,9 @@
 - **Para verificar progresso:** "Atualiza o checklist com o que implementamos hoje"
 - **Para priorizar:** "Qual é a próxima prioridade no checklist?"
 
+### 🔗 **CHECKLISTS RELACIONADOS:**
+- **[CHECKLIST_IMPLANTACAO_DRA_DAYANE.md](./CHECKLIST_IMPLANTACAO_DRA_DAYANE.md)** - backlog operacional e validações da implantação da Dra. Dayane
+
 ---
 
 **Última Atualização:** 25/01/2025  

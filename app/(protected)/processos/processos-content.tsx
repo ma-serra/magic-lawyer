@@ -298,6 +298,21 @@ export function ProcessosContent({
     }
   };
 
+  const formatGrauLabel = (grau?: ProcessoGrau | null) => {
+    if (!grau) return "-";
+
+    switch (grau) {
+      case ProcessoGrau.PRIMEIRO:
+        return `1${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SEGUNDO:
+        return `2${String.fromCharCode(186)} Grau`;
+      case ProcessoGrau.SUPERIOR:
+        return "Tribunal Superior";
+      default:
+        return grau;
+    }
+  };
+
   const isProcessoOrigemSincronizacaoExterna = (processo: any) => {
     if (processo?.origemSincronizacaoExterna === true) {
       return true;
@@ -831,7 +846,7 @@ export function ProcessosContent({
                             <FilterToggleButton
                               key={grau}
                               isActive={isActive}
-                              label={getGrauLabel(grau)}
+                              label={formatGrauLabel(grau)}
                               onToggle={() =>
                                 setFiltros((prev) => ({
                                   ...prev,
@@ -1260,7 +1275,7 @@ export function ProcessosContent({
                               )}
                               {processo.grau && (
                                 <Chip color="default" size="sm" variant="flat">
-                                  {getGrauLabel(processo.grau)}
+                                  {formatGrauLabel(processo.grau)}
                                 </Chip>
                               )}
                             </div>
@@ -1502,4 +1517,3 @@ export function ProcessosContent({
     </div>
   );
 }
-
