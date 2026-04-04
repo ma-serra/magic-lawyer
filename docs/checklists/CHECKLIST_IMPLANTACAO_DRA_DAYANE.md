@@ -50,6 +50,9 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 - [x] Criar tipo de registro específico para solicitações feitas ao cliente.
 - [x] Completar o cadastro da autoridade com os campos que ficaram pendentes no teste.
 
+- [x] Permitir editar partes vinculadas ao processo sem remover o vinculo.
+- [x] Corrigir a exibicao do grau do processo nas listagens e formularios.
+
 ### Prazos e agenda
 
 - [x] Fazer o prazo criado no cadastro do processo aparecer corretamente na central de prazos.
@@ -78,6 +81,12 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 
 - [x] `npm run typecheck` executado com sucesso em 03/04/2026.
 - [x] `npm test` executado com sucesso em 03/04/2026.
+- [x] `npm run build` executado com sucesso em 03/04/2026.
+- [x] Deploy de producao versionado e publicado em 03/04/2026 (`1.0.14-beta.5`).
+
+### Suporte e implantacao
+
+- [x] Manter chat e pinpad flutuante visiveis nas rotas de suporte para destravar a implantacao assistida.
 
 ---
 

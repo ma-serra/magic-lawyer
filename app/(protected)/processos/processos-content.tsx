@@ -288,9 +288,9 @@ export function ProcessosContent({
     if (!grau) return "-";
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1Âº Grau";
+        return "1º Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2Âº Grau";
+        return "2º Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:

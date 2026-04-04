@@ -2939,7 +2939,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
       if (vinculosSelecionados.length !== normalizedLinks.clienteIds.length) {
         return {
           success: false,
-          error: "VocÃª nÃ£o tem acesso a um ou mais clientes selecionados",
+          error: "Você não tem acesso a um ou mais clientes selecionados",
         };
       }
 

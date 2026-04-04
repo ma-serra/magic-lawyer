@@ -109,7 +109,7 @@ export function NovoProcessoContent() {
     tribunalId: "",
   });
 
-  // Buscar clientes para o select (apenas se nÃ£o veio de um cliente)
+  // Buscar clientes para o select (apenas se não veio de um cliente)
   const {
     clientes,
     isLoading: isLoadingClientes,
@@ -341,7 +341,7 @@ export function NovoProcessoContent() {
           .filter(Boolean)
           .join(" "),
         description:
-          [juiz.vara, juiz.comarca].filter(Boolean).join(" â€¢ ") ||
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
           "Sem vara/comarca informada",
       })),
     [juizesDoFormulario],
@@ -362,7 +362,7 @@ export function NovoProcessoContent() {
           .filter(Boolean)
           .join(" "),
         description:
-          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" â€¢ ") ||
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
           "Sem esfera/UF",
       })),
     [tribunais],
@@ -481,17 +481,17 @@ export function NovoProcessoContent() {
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "PetiÃ§Ã£o Inicial";
+        return "Petição Inicial";
       case ProcessoFase.CITACAO:
-        return "CitaÃ§Ã£o";
+        return "Citação";
       case ProcessoFase.INSTRUCAO:
-        return "InstruÃ§Ã£o";
+        return "Instrução";
       case ProcessoFase.SENTENCA:
-        return "SentenÃ§a";
+        return "Sentença";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "ExecuÃ§Ã£o";
+        return "Execução";
       default:
         return fase;
     }
@@ -500,9 +500,9 @@ export function NovoProcessoContent() {
   const getGrauLabel = (grau: ProcessoGrau) => {
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1Âº Grau";
+        return "1º Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2Âº Grau";
+        return "2º Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:
@@ -527,7 +527,7 @@ export function NovoProcessoContent() {
 
   const handleSubmit = async () => {
     if (!formData.numero.trim()) {
-      toast.error("NÃºmero do processo Ã© obrigatÃ³rio");
+      toast.error("Número do processo é obrigatório");
 
       return;
     }
@@ -644,7 +644,7 @@ export function NovoProcessoContent() {
         <div>
           <h1 className={title()}>Novo Processo</h1>
           <p className="text-sm text-default-500 mt-1">
-            Cadastrar novo processo jurÃ­dico
+            Cadastrar novo processo jurídico
           </p>
         </div>
         <Button
@@ -663,29 +663,29 @@ export function NovoProcessoContent() {
           <CardBody className="flex flex-row items-center gap-2">
             <User className="h-5 w-5 text-primary" />
             <p className="text-sm text-primary">
-              Este processo comeÃ§arÃ¡ com este cliente jÃ¡ vinculado. VocÃª pode adicionar outros abaixo.
+              Este processo começará com este cliente já vinculado. Você pode adicionar outros abaixo.
             </p>
           </CardBody>
         </Card>
       )}
 
-      {/* FormulÃ¡rio */}
+      {/* Formulário */}
       <Card className="border border-default-200">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">InformaÃ§Ãµes do Processo</h2>
+            <h2 className="text-lg font-semibold">Informações do Processo</h2>
           </div>
         </CardHeader>
         <Divider />
         <CardBody className="gap-6">
-          {/* SeÃ§Ã£o: Dados BÃ¡sicos */}
+          {/* Seção: Dados Básicos */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ðŸ“‹ Dados BÃ¡sicos
+              📋 Dados Básicos
             </h3>
 
-            {/* Select de Cliente (se nÃ£o veio de um cliente) */}
+            {/* Select de Cliente (se não veio de um cliente) */}
             <Select
               isRequired
               description="Selecione um ou mais clientes vinculados a este processo. Todos aparecem no caso."
@@ -753,12 +753,12 @@ export function NovoProcessoContent() {
 
             <SearchableSelect
               isRequired
-              description="ObrigatÃ³rio para anÃ¡lise de perfil de julgamento e histÃ³rico estratÃ©gico."
+              description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
               emptyContent="Nenhuma autoridade encontrada"
               items={juizOptions}
               isLoading={isLoadingJuizes}
               label="Autoridade do Caso *"
-              placeholder="Selecione o juiz ou promotor responsÃ¡vel"
+              placeholder="Selecione o juiz ou promotor responsável"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -901,7 +901,7 @@ export function NovoProcessoContent() {
               <Input
                 isRequired
                 description="Identificador principal do processo para busca e controle interno."
-                label="NÃºmero do Processo *"
+                label="Número do Processo *"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numero}
                 onValueChange={(value) =>
@@ -910,8 +910,8 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="Informe se houver diferenÃ§a do nÃºmero principal"
-                label="NÃºmero CNJ (oficial)"
+                description="Informe se houver diferença do número principal"
+                label="Número CNJ (oficial)"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numeroCnj || ""}
                 onValueChange={(value) =>
@@ -920,8 +920,8 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="CÃ³digo interno para organizaÃ§Ã£o do escritÃ³rio (opcional)."
-                label="NÃºmero Interno"
+                description="Código interno para organização do escritório (opcional)."
+                label="Número Interno"
                 placeholder="Ex: 2024/001"
                 value={formData.numeroInterno || ""}
                 onValueChange={(value) =>
@@ -932,8 +932,8 @@ export function NovoProcessoContent() {
 
             <Input
               description="Nome curto para identificar rapidamente o caso nas listagens."
-              label="TÃ­tulo"
-              placeholder="Ex: AÃ§Ã£o de Despejo, DivÃ³rcio, etc."
+              label="Título"
+              placeholder="Ex: Ação de Despejo, Divórcio, etc."
               value={formData.titulo || ""}
               onValueChange={(value) =>
                 setFormData((prev) => ({ ...prev, titulo: value }))
@@ -941,8 +941,8 @@ export function NovoProcessoContent() {
             />
 
             <Textarea
-              description="Resumo do contexto, estratÃ©gia ou observaÃ§Ãµes importantes do caso."
-              label="DescriÃ§Ã£o"
+              description="Resumo do contexto, estratégia ou observações importantes do caso."
+              label="Descrição"
               minRows={3}
               placeholder="Resumo do caso..."
               value={formData.descricao || ""}
@@ -954,15 +954,15 @@ export function NovoProcessoContent() {
 
           <Divider />
 
-          {/* SeÃ§Ã£o: ClassificaÃ§Ã£o */}
+          {/* Seção: Classificação */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              âš–ï¸ ClassificaÃ§Ã£o e Status
+              ⚖️ Classificação e Status
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Select
-                description="SituaÃ§Ã£o atual do processo no escritÃ³rio."
+                description="Situação atual do processo no escritório."
                 label="Status"
                 placeholder="Selecione o status"
                 selectedKeys={formData.status ? [formData.status] : []}
@@ -1055,11 +1055,11 @@ export function NovoProcessoContent() {
               </div>
 
               <Select
-                description="ClassificaÃ§Ã£o por Ã¡rea de atuaÃ§Ã£o (opcional). Configure Ã¡reas em ConfiguraÃ§Ãµes."
+                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
                 isClearable
                 isLoading={isLoadingAreas}
-                label="Ãrea do processo"
-                placeholder="Selecione uma Ã¡rea"
+                label="Área do processo"
+                placeholder="Selecione uma área"
                 selectedKeys={selectedAreaKeys}
                 onSelectionChange={(keys) => {
                   const selectedKey = Array.from(keys)[0] as string | undefined;
@@ -1142,9 +1142,9 @@ export function NovoProcessoContent() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                description="Procedimento aplicado ao caso (ordinÃ¡rio, sumÃ¡rio, especial etc.)."
+                description="Procedimento aplicado ao caso (ordinário, sumário, especial etc.)."
                 label="Rito"
-                placeholder="Ex: OrdinÃ¡rio, SumÃ¡rio"
+                placeholder="Ex: Ordinário, Sumário"
                 value={formData.rito || ""}
                 onValueChange={(value) =>
                   setFormData((prev) => ({ ...prev, rito: value }))
@@ -1152,7 +1152,7 @@ export function NovoProcessoContent() {
               />
 
               <Input
-                description="Valor econÃ´mico da aÃ§Ã£o, quando houver."
+                description="Valor econômico da ação, quando houver."
                 label="Valor da Causa (R$)"
                 placeholder="0,00"
                 startContent={
@@ -1184,10 +1184,10 @@ export function NovoProcessoContent() {
 
           <Divider />
 
-          {/* SeÃ§Ã£o: LocalizaÃ§Ã£o */}
+          {/* Seção: Localização */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ðŸ“ LocalizaÃ§Ã£o
+              📍 Localização
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1247,16 +1247,16 @@ export function NovoProcessoContent() {
 
           <Divider />
 
-          {/* SeÃ§Ã£o: Outras InformaÃ§Ãµes */}
+          {/* Seção: Outras Informações */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ðŸ“… Outras InformaÃ§Ãµes
+              📅 Outras Informações
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DateInput
-                description="Data oficial de distribuiÃ§Ã£o do processo."
-                label="Data de DistribuiÃ§Ã£o"
+                description="Data oficial de distribuição do processo."
+                label="Data de Distribuição"
                 startContent={<Calendar className="h-4 w-4 text-default-400" />}
                 value={
                   formData.dataDistribuicao
@@ -1274,7 +1274,7 @@ export function NovoProcessoContent() {
               />
 
               <DateInput
-                description="PrÃ³ximo prazo estratÃ©gico para acompanhamento da equipe."
+                description="Próximo prazo estratégico para acompanhamento da equipe."
                 label="Prazo Principal"
                 startContent={<Clock className="h-4 w-4 text-default-400" />}
                 value={
@@ -1316,24 +1316,24 @@ export function NovoProcessoContent() {
             >
               <div className="flex flex-col">
                 <span className="text-sm font-semibold">
-                  Segredo de JustiÃ§a
+                  Segredo de Justiça
                 </span>
                 <span className="text-xs text-default-400">
-                  Marque se este processo corre em segredo de justiÃ§a
+                  Marque se este processo corre em segredo de justiça
                 </span>
               </div>
             </Checkbox>
           </div>
 
-          {/* InformaÃ§Ã£o */}
+          {/* Informação */}
           <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
             <p className="text-xs text-primary-600">
-              ðŸ’¡ ApÃ³s criar o processo, vocÃª poderÃ¡ adicionar documentos,
-              eventos, movimentaÃ§Ãµes e vincular procuraÃ§Ãµes.
+              💡 Após criar o processo, você poderá adicionar documentos,
+              eventos, movimentações e vincular procurações.
             </p>
           </div>
 
-          {/* BotÃµes de AÃ§Ã£o */}
+          {/* Botões de Ação */}
           <div className="flex gap-3 justify-end">
             <Button
               variant="light"

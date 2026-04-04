@@ -466,8 +466,8 @@ export class NotificationService {
       message = message.replace(regex, String(value));
     });
 
-    title = title.replace(/\{[^}]+\}/g, "informaÃ§Ã£o nÃ£o disponÃ­vel");
-    message = message.replace(/\{[^}]+\}/g, "informaÃ§Ã£o nÃ£o disponÃ­vel");
+    title = title.replace(/\{[^}]+\}/g, "informação não disponível");
+    message = message.replace(/\{[^}]+\}/g, "informação não disponível");
 
     return { title, message };
   }

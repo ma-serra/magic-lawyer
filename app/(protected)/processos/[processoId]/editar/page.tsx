@@ -196,7 +196,7 @@ export default function EditarProcessoPage() {
         key: `legacy:${currentValue}`,
         label: currentValue,
         textValue: currentValue,
-        description: "Classe legada jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ informada neste processo",
+        description: "Classe legada já informada neste processo",
       },
       ...baseOptions,
     ];
@@ -328,7 +328,7 @@ export default function EditarProcessoPage() {
           .filter(Boolean)
           .join(" "),
         description:
-          [juiz.vara, juiz.comarca].filter(Boolean).join(" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ") ||
+          [juiz.vara, juiz.comarca].filter(Boolean).join(" • ") ||
           "Sem vara/comarca informada",
       })),
     [juizesDoFormulario],
@@ -349,7 +349,7 @@ export default function EditarProcessoPage() {
           .filter(Boolean)
           .join(" "),
         description:
-          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ") ||
+          [tribunal.esfera, tribunal.uf].filter(Boolean).join(" • ") ||
           "Sem esfera/UF",
       })),
     [tribunais],
@@ -515,17 +515,17 @@ export default function EditarProcessoPage() {
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
       case ProcessoFase.PETICAO_INICIAL:
-        return "PetiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o Inicial";
+        return "Petição Inicial";
       case ProcessoFase.CITACAO:
-        return "CitaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
+        return "Citação";
       case ProcessoFase.INSTRUCAO:
-        return "InstruÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
+        return "Instrução";
       case ProcessoFase.SENTENCA:
-        return "SentenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a";
+        return "Sentença";
       case ProcessoFase.RECURSO:
         return "Recurso";
       case ProcessoFase.EXECUCAO:
-        return "ExecuÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o";
+        return "Execução";
       default:
         return fase;
     }
@@ -534,9 +534,9 @@ export default function EditarProcessoPage() {
   const getGrauLabel = (grau: ProcessoGrau) => {
     switch (grau) {
       case ProcessoGrau.PRIMEIRO:
-        return "1ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº Grau";
+        return "1º Grau";
       case ProcessoGrau.SEGUNDO:
-        return "2ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº Grau";
+        return "2º Grau";
       case ProcessoGrau.SUPERIOR:
         return "Tribunal Superior";
       default:
@@ -562,7 +562,7 @@ export default function EditarProcessoPage() {
     if (!formData) return;
 
     if (!formData.numero.trim()) {
-      toast.error("NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero do processo ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© obrigatÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio");
+      toast.error("Número do processo é obrigatório");
 
       return;
     }
@@ -686,7 +686,7 @@ export default function EditarProcessoPage() {
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
         <p className="text-lg font-semibold text-danger">
-          NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o foi possÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­vel carregar o processo
+          Não foi possível carregar o processo
         </p>
         <Button
           color="primary"
@@ -704,7 +704,7 @@ export default function EditarProcessoPage() {
         <div>
           <h1 className={title()}>Editar Processo</h1>
           <p className="text-sm text-default-500 mt-1">
-            Atualize as informaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes do processo jurÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­dico
+            Atualize as informações do processo jurídico
           </p>
         </div>
         <div className="flex gap-2">
@@ -722,7 +722,7 @@ export default function EditarProcessoPage() {
             startContent={!isSaving ? <Save className="h-4 w-4" /> : undefined}
             onPress={handleSubmit}
           >
-            Salvar alteraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes
+            Salvar alterações
           </Button>
         </div>
       </div>
@@ -731,21 +731,21 @@ export default function EditarProcessoPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">InformaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes do Processo</h2>
+            <h2 className="text-lg font-semibold">Informações do Processo</h2>
           </div>
         </CardHeader>
         <Divider />
         <CardBody className="gap-6">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¹ Dados BÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡sicos
+              📋 Dados Básicos
             </h3>
 
             <Select
-              description="Vincule um ou mais advogados responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡veis a este processo."
+              description="Vincule um ou mais advogados responsáveis a este processo."
               items={advogadoOptions}
               isLoading={isLoadingAdvogados}
-              label="Advogados responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡veis"
+              label="Advogados responsáveis"
               placeholder="Selecione um ou mais advogados"
               selectedKeys={new Set(selectedAdvogadoKeys)}
               selectionMode="multiple"
@@ -852,7 +852,7 @@ export default function EditarProcessoPage() {
               <Input
                 isRequired
                 description="Identificador principal do processo para busca e controle interno."
-                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero do Processo *"
+                label="Número do Processo *"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numero}
                 onValueChange={(value) =>
@@ -863,8 +863,8 @@ export default function EditarProcessoPage() {
               />
 
               <Input
-                description="Informe se houver diferenÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a do nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero principal"
-                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero CNJ (oficial)"
+                description="Informe se houver diferença do número principal"
+                label="Número CNJ (oficial)"
                 placeholder="0000000-00.0000.0.00.0000"
                 value={formData.numeroCnj || ""}
                 onValueChange={(value) =>
@@ -875,8 +875,8 @@ export default function EditarProcessoPage() {
               />
 
               <Input
-                description="CÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³digo interno para organizaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o do escritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio (opcional)."
-                label="NÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºmero Interno"
+                description="Código interno para organização do escritório (opcional)."
+                label="Número Interno"
                 placeholder="Ex: 2024/001"
                 value={formData.numeroInterno || ""}
                 onValueChange={(value) =>
@@ -889,8 +889,8 @@ export default function EditarProcessoPage() {
 
             <Input
               description="Nome curto para identificar rapidamente o caso nas listagens."
-              label="TÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­tulo"
-              placeholder="Ex: AÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de Despejo, DivÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rcio, etc."
+              label="Título"
+              placeholder="Ex: Ação de Despejo, Divórcio, etc."
               value={formData.titulo || ""}
               onValueChange={(value) =>
                 setFormData((prev) =>
@@ -900,8 +900,8 @@ export default function EditarProcessoPage() {
             />
 
             <Textarea
-              description="Resumo do contexto, estratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gia ou observaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes importantes do caso."
-              label="DescriÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o"
+              description="Resumo do contexto, estratégia ou observações importantes do caso."
+              label="Descrição"
               minRows={3}
               placeholder="Resumo do caso..."
               value={formData.descricao || ""}
@@ -917,18 +917,18 @@ export default function EditarProcessoPage() {
 
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o e Status
+              ⚖️ Classificação e Status
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SearchableSelect
-              description="Juiz responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡vel para rastrear padrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o de decisÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes e produtividade."
+              description="Juiz responsável para rastrear padrão de decisões e produtividade."
               emptyContent="Nenhuma autoridade encontrada"
               isLoading={isLoadingJuizes}
               isRequired
               items={juizOptions}
               label="Juiz do Caso *"
-              placeholder="Selecione o juiz responsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡vel pelo caso"
+              placeholder="Selecione o juiz responsável pelo caso"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -993,7 +993,7 @@ export default function EditarProcessoPage() {
             />
 
             <Select
-              description="SituaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o atual do processo no escritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rio."
+              description="Situação atual do processo no escritório."
               label="Status"
                 placeholder="Selecione o status"
                 selectedKeys={formData.status ? [formData.status] : []}
@@ -1098,11 +1098,11 @@ export default function EditarProcessoPage() {
               </div>
 
               <Select
-                description="ClassificaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o por ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rea de atuaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o (opcional). Configure ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡reas em ConfiguraÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes."
+                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
                 isClearable
                 isLoading={isLoadingAreas}
-                label="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Ârea do processo"
-                placeholder="Selecione uma ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡rea"
+                label="Área do processo"
+                placeholder="Selecione uma área"
                 selectedKeys={selectedAreaKeys}
                 onSelectionChange={(keys) => {
                   const selectedKey = Array.from(keys)[0] as string | undefined;
@@ -1151,7 +1151,7 @@ export default function EditarProcessoPage() {
               </Select>
 
               <Select
-                description="InstÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ncia de tramitaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o (1ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau, 2ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº grau ou tribunal superior)."
+                description="Instância de tramitação (1º grau, 2º grau ou tribunal superior)."
                 label="Grau"
                 classNames={{ helperWrapper: "hidden" }}
                 placeholder="Selecione o grau"
@@ -1327,13 +1327,13 @@ export default function EditarProcessoPage() {
 
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-default-600">
-              ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Outras InformaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµes
+              📅 Outras Informações
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DateInput
-                description="Data oficial de distribuiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o do processo."
-                label="Data de DistribuiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o"
+                description="Data oficial de distribuição do processo."
+                label="Data de Distribuição"
                 startContent={<Calendar className="h-4 w-4 text-default-400" />}
                 value={
                   formData.dataDistribuicao
@@ -1355,7 +1355,7 @@ export default function EditarProcessoPage() {
               />
 
               <DateInput
-                description="PrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ximo prazo estratÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gico para acompanhamento da equipe."
+                description="Próximo prazo estratégico para acompanhamento da equipe."
                 label="Prazo Principal"
                 startContent={<Clock className="h-4 w-4 text-default-400" />}
                 value={
@@ -1387,10 +1387,10 @@ export default function EditarProcessoPage() {
             >
               <div className="flex flex-col">
                 <span className="text-sm font-semibold">
-                  Segredo de JustiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a
+                  Segredo de Justiça
                 </span>
                 <span className="text-xs text-default-400">
-                  Marque se este processo corre em segredo de justiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a
+                  Marque se este processo corre em segredo de justiça
                 </span>
               </div>
             </Checkbox>

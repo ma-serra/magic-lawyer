@@ -409,21 +409,21 @@ function LoginPageInner({ marketingMetrics }: LoginPageClientProps) {
           color = "warning";
           break;
         case "SECURITY_ACTION_INVALID":
-          title = "âš ï¸ Link de seguranÃ§a invÃ¡lido";
+          title = "⚠️ Link de segurança inválido";
           description =
-            "O link de confirmaÃ§Ã£o do incidente nÃ£o Ã© vÃ¡lido. Entre novamente para receber um novo alerta.";
+            "O link de confirmação do incidente não é válido. Entre novamente para receber um novo alerta.";
           color = "warning";
           break;
         case "SECURITY_ACTION_EXPIRED":
-          title = "â° Link de seguranÃ§a expirado";
+          title = "⏰ Link de segurança expirado";
           description =
-            "O link de confirmaÃ§Ã£o expirou. Entre novamente para receber um novo alerta de acesso.";
+            "O link de confirmação expirou. Entre novamente para receber um novo alerta de acesso.";
           color = "warning";
           break;
         case "SECURITY_ACTION_USED":
-          title = "ðŸ” Incidente jÃ¡ tratado";
+          title = "🔐 Incidente já tratado";
           description =
-            "Esse alerta de seguranÃ§a jÃ¡ foi utilizado. Se ainda precisar, entre novamente e gere um novo alerta.";
+            "Esse alerta de segurança já foi utilizado. Se ainda precisar, entre novamente e gere um novo alerta.";
           color = "warning";
           break;
         case "USER_DISABLED":
