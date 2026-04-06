@@ -2,12 +2,11 @@ import { Prisma, ProcessoPrazoStatus } from "@/generated/prisma";
 
 import prisma from "@/app/lib/prisma";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
-
-export const PROCESSO_PRAZO_PRINCIPAL_MARKER =
-  "[SISTEMA] PRAZO_PRINCIPAL_PROCESSO";
-export const PROCESSO_PRAZO_PRINCIPAL_TITULO = "Prazo principal do processo";
-export const PROCESSO_PRAZO_PRINCIPAL_DESCRICAO =
-  'Gerado automaticamente a partir do campo "Prazo Principal" do processo.';
+import {
+  PROCESSO_PRAZO_PRINCIPAL_DESCRICAO,
+  PROCESSO_PRAZO_PRINCIPAL_MARKER,
+  PROCESSO_PRAZO_PRINCIPAL_TITULO,
+} from "@/app/lib/processos/prazo-principal-constants";
 
 type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 

@@ -32,6 +32,7 @@ import {
   Textarea,
   useDisclosure,
 } from "@heroui/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -2276,6 +2277,12 @@ export function SuporteContent() {
                         </div>
                       ))}
                     </div>
+                  ) : null}
+                  {isSendingReply && replyImages.length > 0 ? (
+                    <UploadProgress
+                      label="Enviando imagens da resposta"
+                      description="Os anexos do atendimento estão sendo enviados com a mensagem."
+                    />
                   ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Switch

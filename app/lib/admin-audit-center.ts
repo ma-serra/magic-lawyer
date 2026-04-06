@@ -4,6 +4,7 @@ export type AdminAuditTabKey =
   | "access"
   | "support"
   | "emails"
+  | "notifications"
   | "webhooks"
   | "crons";
 
@@ -127,6 +128,8 @@ function mapCategoryToTab(category: string): Exclude<AdminAuditTabKey, "overview
       return "support";
     case "EMAIL":
       return "emails";
+    case "NOTIFICATION":
+      return "notifications";
     case "WEBHOOK":
       return "webhooks";
     case "CRON":
@@ -166,6 +169,7 @@ export function buildAdminAuditControlTower(
     access: { count: 0, errors: 0, lastEventAt: null },
     support: { count: 0, errors: 0, lastEventAt: null },
     emails: { count: 0, errors: 0, lastEventAt: null },
+    notifications: { count: 0, errors: 0, lastEventAt: null },
     webhooks: { count: 0, errors: 0, lastEventAt: null },
     crons: { count: 0, errors: 0, lastEventAt: null },
   };
@@ -300,6 +304,11 @@ export function buildAdminAuditControlTower(
         key: "emails" as const,
         label: "Emails",
         ...categoryCounts.emails,
+      },
+      {
+        key: "notifications" as const,
+        label: "Notificações",
+        ...categoryCounts.notifications,
       },
       {
         key: "webhooks" as const,

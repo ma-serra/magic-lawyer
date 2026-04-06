@@ -15,6 +15,7 @@ import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@herou
 import { Checkbox } from "@heroui/checkbox";
 import { Switch } from "@heroui/switch";
 import { DateRangeInput } from "@/components/ui/date-range-input";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import {
   FolderPlus,
@@ -1496,6 +1497,12 @@ export function DocumentosContent({
                         ? "Arraste arquivos aqui ou use o botão de envio."
                         : "Acesso somente leitura."}
                     </div>
+                    {isUploading ? (
+                      <UploadProgress
+                        label="Enviando arquivos"
+                        description="Os documentos estão sendo organizados na pasta selecionada."
+                      />
+                    ) : null}
                     {filesInCurrentFolder.length ? (
                       <div className="space-y-2">
                         {pagedFiles.map((arquivo) => (
@@ -1829,6 +1836,12 @@ function UploadOptionsModal({
               </p>
             </ModalHeader>
             <ModalBody className="space-y-4">
+              {isSubmitting ? (
+                <UploadProgress
+                  label="Confirmando upload"
+                  description="Os arquivos serão vinculados ao cliente, processos e contratos selecionados."
+                />
+              ) : null}
               {!cliente ? (
                 <p className="text-sm text-default-500">
                   Selecione um cliente para vincular os documentos.

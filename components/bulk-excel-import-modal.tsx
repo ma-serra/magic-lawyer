@@ -13,6 +13,7 @@ import {
 } from "@heroui/react";
 import { toast } from "@/lib/toast";
 import { Download, UploadCloud } from "lucide-react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 interface SampleField {
   label: string;
@@ -163,6 +164,13 @@ export function BulkExcelImportModal({
                   </Chip>
                 </div>
               )}
+
+              {isUploading ? (
+                <UploadProgress
+                  label="Enviando arquivo"
+                  description="A planilha está sendo recebida e validada antes da importação."
+                />
+              ) : null}
 
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-default-600 dark:text-default-300">

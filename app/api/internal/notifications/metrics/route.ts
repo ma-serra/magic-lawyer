@@ -119,6 +119,9 @@ export async function GET(request: NextRequest) {
         createdAt: {
           gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
         },
+        status: {
+          not: "SKIPPED",
+        },
       },
       _count: {
         id: true,

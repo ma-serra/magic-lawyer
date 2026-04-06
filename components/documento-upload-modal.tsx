@@ -8,6 +8,7 @@ import { Textarea } from "@heroui/input";
 
 import { Upload, FileText, X } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import {
   useUploadDocumentoProcuracao,
@@ -259,6 +260,12 @@ export default function DocumentoUploadModal({
                 value={description}
                 onValueChange={setDescription}
               />
+              {isSubmitting || isUploading ? (
+                <UploadProgress
+                  label="Enviando documento"
+                  description="Validando o PDF e vinculando o arquivo a esta procuração."
+                />
+              ) : null}
             </ModalBody>
 
             <ModalFooter>

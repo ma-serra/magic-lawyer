@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Avatar, Button, Spinner } from "@heroui/react";
+import { Avatar, Button } from "@heroui/react";
 import { Edit3, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { useSession } from "next-auth/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import { ImageEditorModal } from "./image-editor-modal";
 
@@ -24,8 +25,11 @@ export function AvatarUpload({
   disabled = false,
 }: AvatarUploadProps) {
   const { update: updateSession } = useSession();
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"upload" | "delete" | null>(
+    null,
+  );
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const isLoading = pendingAction !== null;
 
   const handleSaveAvatar = async (
     imageData: string | FormData | null,
@@ -33,7 +37,7 @@ export function AvatarUpload({
   ) => {
     if (!imageData) return;
 
-    setIsLoading(true);
+    setPendingAction("upload");
     setIsEditorOpen(false);
 
     try {
@@ -80,14 +84,14 @@ export function AvatarUpload({
     } catch (error) {
       toast.error("Erro ao salvar avatar");
     } finally {
-      setIsLoading(false);
+      setPendingAction(null);
     }
   };
 
   const handleDelete = async () => {
     if (!currentAvatarUrl) return;
 
-    setIsLoading(true);
+    setPendingAction("delete");
 
     try {
       const result = await deleteAvatar(currentAvatarUrl);
@@ -112,7 +116,7 @@ export function AvatarUpload({
     } catch (error) {
       toast.error("Erro ao remover avatar");
     } finally {
-      setIsLoading(false);
+      setPendingAction(null);
     }
   };
 
@@ -133,22 +137,14 @@ export function AvatarUpload({
   return (
     <>
       <div className="flex flex-col items-center gap-4">
-        <div className="relative">
-          <Avatar
-            isBordered
-            className="w-20 h-20"
-            color="primary"
-            name={userName}
-            size="lg"
-            src={currentAvatarUrl || undefined}
-          />
-
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
-              <Spinner color="white" size="sm" />
-            </div>
-          )}
-        </div>
+        <Avatar
+          isBordered
+          className="w-20 h-20"
+          color="primary"
+          name={userName}
+          size="lg"
+          src={currentAvatarUrl || undefined}
+        />
 
         <div className="flex gap-2">
           <Button
@@ -185,6 +181,14 @@ export function AvatarUpload({
             </p>
           )}
         </div>
+
+        {pendingAction === "upload" ? (
+          <UploadProgress
+            className="w-full max-w-56"
+            label="Enviando avatar"
+            description="Aguarde a atualização da foto no perfil."
+          />
+        ) : null}
       </div>
 
       <ImageEditorModal

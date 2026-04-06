@@ -41,6 +41,7 @@ import { ScrollShadow } from "@heroui/scroll-shadow";
 import { Spinner } from "@heroui/spinner";
 import { Pagination } from "@heroui/pagination";
 import { Select, SelectItem } from "@heroui/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   CheckCircle2,
   ShieldCheck,
@@ -1121,6 +1122,13 @@ export function DigitalCertificatesPanel({
                       )}
                     </AnimatePresence>
                   </motion.div>
+
+                  {isSubmitting ? (
+                    <UploadProgress
+                      label="Enviando certificado"
+                      description="Validando o arquivo e protegendo os dados sensíveis do certificado."
+                    />
+                  ) : null}
 
                   <Input
                     isDisabled={isSubmitting || !policyAllowsCurrent}

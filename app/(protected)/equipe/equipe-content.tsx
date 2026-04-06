@@ -37,6 +37,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import { useSession } from "next-auth/react";
 import { MapPin, History as HistoryIcon } from "lucide-react";
 import useSWR from "swr";
@@ -1208,6 +1209,7 @@ function UsuariosTab() {
     cargoId: "" as string | undefined,
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [permissionsForm, setPermissionsForm] = useState<Record<string, Record<string, boolean>>>({});
   const [permissoesEfetivas, setPermissoesEfetivas] = useState<
     Array<{
@@ -2561,7 +2563,7 @@ function UsuariosTab() {
                               <div className="flex gap-2">
                                 <Button
                                   color="primary"
-                                  isDisabled={!editFormData.avatarUrl}
+                                  isDisabled={!editFormData.avatarUrl || isUploadingAvatar}
                                   size="sm"
                                   startContent={<Image className="w-4 h-4" />}
                                   variant="bordered"
@@ -2575,25 +2577,33 @@ function UsuariosTab() {
                                     // Criar FormData com URL
                                     const formData = new FormData();
 
-                                    formData.append("url", editFormData.avatarUrl);
-                                    const result = await uploadAvatarUsuarioEquipe(selectedUsuario.id, formData);
+                                    setIsUploadingAvatar(true);
 
-                                    if (result.success && result.avatarUrl) {
-                                      setEditFormData({
-                                        ...editFormData,
-                                        avatarUrl: result.avatarUrl,
-                                      });
-                                      await loadData();
-                                      toast.success("Avatar atualizado!");
-                                    } else {
-                                      toast.error(result.error || "Erro ao atualizar avatar");
+                                    try {
+                                      formData.append("url", editFormData.avatarUrl);
+                                      const result = await uploadAvatarUsuarioEquipe(selectedUsuario.id, formData);
+
+                                      if (result.success && result.avatarUrl) {
+                                        setEditFormData({
+                                          ...editFormData,
+                                          avatarUrl: result.avatarUrl,
+                                        });
+                                        await loadData();
+                                        toast.success("Avatar atualizado!");
+                                      } else {
+                                        toast.error(result.error || "Erro ao atualizar avatar");
+                                      }
+                                    } catch (error) {
+                                      toast.error("Erro ao atualizar avatar");
+                                    } finally {
+                                      setIsUploadingAvatar(false);
                                     }
                                   }}
                                 >
                                   Salvar URL
                                 </Button>
                                 <label htmlFor="avatar-file-upload">
-                                  <Button as="span" color="secondary" size="sm" startContent={<Image className="w-4 h-4" />} variant="bordered">
+                                  <Button as="span" color="secondary" isDisabled={isUploadingAvatar} size="sm" startContent={<Image className="w-4 h-4" />} variant="bordered">
                                     Upload Arquivo
                                   </Button>
                                   <input
@@ -2609,6 +2619,8 @@ function UsuariosTab() {
                                       const reader = new FileReader();
 
                                       reader.onloadend = async () => {
+                                        setIsUploadingAvatar(true);
+
                                         try {
                                           const base64 = reader.result as string;
                                           const response = await fetch("/api/equipe/upload-avatar", {
@@ -2637,6 +2649,8 @@ function UsuariosTab() {
                                           }
                                         } catch (error) {
                                           toast.error("Erro ao fazer upload do avatar");
+                                        } finally {
+                                          setIsUploadingAvatar(false);
                                         }
                                       };
                                       reader.readAsDataURL(file);
@@ -2645,6 +2659,12 @@ function UsuariosTab() {
                                   />
                                 </label>
                               </div>
+                              {isUploadingAvatar ? (
+                                <UploadProgress
+                                  label="Enviando avatar"
+                                  description="A foto do membro da equipe está sendo atualizada."
+                                />
+                              ) : null}
                             </div>
                           </div>
                         </div>

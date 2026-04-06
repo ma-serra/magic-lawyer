@@ -156,6 +156,19 @@ interface DeleteFileInput {
   versaoId?: string;
 }
 
+interface UpdateExplorerDocumentInput {
+  documentoId: string;
+  clienteId: string;
+  processoId: string;
+  nome: string;
+  descricao?: string | null;
+  visivelParaCliente: boolean;
+  processoIds: string[];
+  contratoIds: string[];
+  causaId?: string | null;
+  targetFolderSegments?: string[];
+}
+
 interface DocumentExplorerLoadOptions {
   processoIdForTree?: string | null;
   includeCloudinaryTree?: boolean;
@@ -551,6 +564,20 @@ function isCloudinaryUrl(url: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+function getDocumentoResourceType(
+  contentType: string | null | undefined,
+): "image" | "video" | "raw" {
+  if (contentType?.startsWith("image/")) {
+    return "image";
+  }
+
+  if (contentType?.startsWith("video/")) {
+    return "video";
+  }
+
+  return "raw";
 }
 
 function mapDocumentoToFiles(
@@ -2103,6 +2130,442 @@ export async function deleteExplorerFolder(input: DeleteFolderInput) {
     return {
       success: false,
       error: "Erro ao deletar pasta",
+    };
+  }
+}
+
+export async function updateExplorerDocument(
+  input: UpdateExplorerDocumentInput,
+) {
+  try {
+    const session = await getSession();
+
+    if (!session?.user) {
+      return { success: false, error: "Não autorizado" };
+    }
+
+    const user = session.user as any as SessionUser;
+    if (!user.tenantId || !user.tenantSlug) {
+      return { success: false, error: "Tenant não encontrado" };
+    }
+
+    const canEditDocumentos = await hasExplorerPermission(user, "editar");
+    if (!canEditDocumentos) {
+      return {
+        success: false,
+        error: "Sem permissão para editar documentos",
+      };
+    }
+
+    const accessScopeResult = await getExplorerAccessScope(session, user);
+    if (!accessScopeResult.success) {
+      return { success: false, error: accessScopeResult.error };
+    }
+
+    let clienteWhere: Prisma.ClienteWhereInput = {
+      id: input.clienteId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.clienteFilter) {
+      clienteWhere = {
+        AND: [clienteWhere, accessScopeResult.scope.clienteFilter],
+      };
+    }
+
+    const cliente = await prisma.cliente.findFirst({
+      where: clienteWhere,
+      select: {
+        id: true,
+        nome: true,
+      },
+    });
+
+    let processoBaseWhere: Prisma.ProcessoWhereInput = {
+      id: input.processoId,
+      tenantId: user.tenantId,
+      clienteId: input.clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      processoBaseWhere = {
+        AND: [processoBaseWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
+
+    const processoBase = await prisma.processo.findFirst({
+      where: processoBaseWhere,
+      select: {
+        id: true,
+        numero: true,
+      },
+    });
+
+    if (!cliente || !processoBase) {
+      return { success: false, error: "Cliente ou processo não encontrado" };
+    }
+
+    let documentoWhere: Prisma.DocumentoWhereInput = {
+      id: input.documentoId,
+      tenantId: user.tenantId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.documentoFilter) {
+      documentoWhere = {
+        AND: [documentoWhere, accessScopeResult.scope.documentoFilter],
+      };
+    }
+
+    const documento = await prisma.documento.findFirst({
+      where: documentoWhere,
+      include: {
+        versoes: {
+          where: getActiveDocumentoVersaoWhere(),
+          orderBy: {
+            numeroVersao: "desc",
+          },
+        },
+        processosVinculados: {
+          select: {
+            processoId: true,
+          },
+        },
+        contratosVinculados: {
+          select: {
+            contratoId: true,
+          },
+        },
+      },
+    });
+
+    if (!documento) {
+      return { success: false, error: "Documento não encontrado" };
+    }
+
+    const documentBelongsToProcess =
+      documento.processoId === input.processoId ||
+      documento.processosVinculados.some(
+        (vinculo) => vinculo.processoId === input.processoId,
+      );
+
+    if (!documentBelongsToProcess) {
+      return {
+        success: false,
+        error: "Documento não pertence a este processo",
+      };
+    }
+
+    const nome = input.nome.trim();
+    if (!nome) {
+      return { success: false, error: "Informe o nome do documento" };
+    }
+
+    const processoIds = Array.from(
+      new Set([input.processoId, ...(input.processoIds || [])]),
+    );
+
+    let selectedProcessosWhere: Prisma.ProcessoWhereInput = {
+      id: { in: processoIds },
+      tenantId: user.tenantId,
+      clienteId: input.clienteId,
+      deletedAt: null,
+    };
+    if (accessScopeResult.scope.processoFilter) {
+      selectedProcessosWhere = {
+        AND: [selectedProcessosWhere, accessScopeResult.scope.processoFilter],
+      };
+    }
+
+    const processos = await prisma.processo.findMany({
+      where: selectedProcessosWhere,
+      select: {
+        id: true,
+      },
+    });
+
+    if (processos.length !== processoIds.length) {
+      return {
+        success: false,
+        error: "Há processos inválidos na vinculação selecionada",
+      };
+    }
+
+    const contratoIds = Array.from(new Set(input.contratoIds || []));
+    const contratos = contratoIds.length
+      ? await prisma.contrato.findMany({
+          where: {
+            id: { in: contratoIds },
+            tenantId: user.tenantId,
+            clienteId: input.clienteId,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            processoId: true,
+          },
+        })
+      : [];
+
+    if (contratos.length !== contratoIds.length) {
+      return {
+        success: false,
+        error: "Há contratos inválidos na vinculação selecionada",
+      };
+    }
+
+    const causaId = input.causaId?.trim() || null;
+    if (causaId) {
+      const causa = await prisma.causa.findFirst({
+        where: {
+          id: causaId,
+          tenantId: user.tenantId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!causa) {
+        return { success: false, error: "Causa não encontrada" };
+      }
+    }
+
+    const targetFolderSegments = (input.targetFolderSegments || [])
+      .map((segment) => sanitizeSegment(segment))
+      .filter(Boolean);
+
+    const baseFolder = buildProcessFolderBase(user.tenantSlug, cliente, processoBase);
+    const targetFolderPath = [baseFolder, ...targetFolderSegments].join("/");
+    const targetRelativeFolderPath = [
+      "clientes",
+      `${sanitizeSegment(cliente.nome)}-${cliente.id}`,
+      "processos",
+      `${sanitizeSegment(processoBase.numero)}-${processoBase.id}`,
+      ...targetFolderSegments,
+    ].join("/");
+
+    const metadata = ((documento.metadados as Record<string, any> | null) || {});
+    const currentDocumentPublicId =
+      (metadata.cloudinaryPublicId as string | undefined) ||
+      (isCloudinaryUrl(documento.url)
+        ? (extractPublicIdFromUrl(documento.url) ?? undefined)
+        : undefined);
+    const currentFolderSegments = normalizeFolderSegments(
+      user.tenantSlug,
+      currentDocumentPublicId,
+    );
+    const currentFolderPath = currentFolderSegments.join("/");
+    const folderChanged = currentFolderPath !== targetRelativeFolderPath;
+
+    const uploadService = UploadService.getInstance();
+    const updatedVersionMap = new Map<
+      string,
+      { url: string; publicId: string }
+    >();
+    let updatedDocumentAsset:
+      | {
+          url: string;
+          publicId: string;
+        }
+      | null = null;
+
+    if (folderChanged) {
+      if (!currentDocumentPublicId || !isCloudinaryUrl(documento.url)) {
+        return {
+          success: false,
+          error: "Este documento não pode ser movido porque o arquivo não está no Cloudinary",
+        };
+      }
+
+      const assetsToMove = [
+        {
+          key: "documento",
+          publicId: currentDocumentPublicId,
+          resourceType: getDocumentoResourceType(documento.contentType),
+        },
+        ...documento.versoes
+          .filter((versao) => versao.cloudinaryPublicId !== currentDocumentPublicId)
+          .map((versao) => ({
+            key: versao.id,
+            publicId: versao.cloudinaryPublicId,
+            resourceType: getDocumentoResourceType(documento.contentType),
+          })),
+      ];
+
+      for (const asset of assetsToMove) {
+        const fileIdentifier = asset.publicId.split("/").pop();
+
+        if (!fileIdentifier) {
+          continue;
+        }
+
+        const nextPublicId = `${targetFolderPath}/${fileIdentifier}`;
+        const renameResult = await uploadService.renameResource(
+          asset.publicId,
+          nextPublicId,
+          asset.resourceType,
+        );
+
+        if (!renameResult.success || !renameResult.url || !renameResult.publicId) {
+          return {
+            success: false,
+            error: renameResult.error || "Erro ao mover arquivo",
+          };
+        }
+
+        if (asset.key === "documento") {
+          updatedDocumentAsset = {
+            url: renameResult.url,
+            publicId: renameResult.publicId,
+          };
+        } else {
+          updatedVersionMap.set(asset.key, {
+            url: renameResult.url,
+            publicId: renameResult.publicId,
+          });
+        }
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.documento.update({
+        where: {
+          id: documento.id,
+        },
+        data: {
+          nome,
+          descricao: input.descricao?.trim() || null,
+          processoId: input.processoId,
+          contratoId: contratoIds[0] ?? null,
+          visivelParaCliente: input.visivelParaCliente,
+          visivelParaEquipe: true,
+          url: updatedDocumentAsset?.url || documento.url,
+          metadados: {
+            ...metadata,
+            folderPath: targetFolderPath,
+            subpastas: targetFolderSegments,
+            processos: processoIds,
+            contratos: contratoIds,
+            causaId,
+            cloudinaryPublicId:
+              updatedDocumentAsset?.publicId ||
+              metadata.cloudinaryPublicId ||
+              currentDocumentPublicId ||
+              null,
+          },
+        },
+      });
+
+      for (const versao of documento.versoes) {
+        const updatedVersion = updatedVersionMap.get(versao.id);
+
+        if (!updatedVersion) {
+          continue;
+        }
+
+        await tx.documentoVersao.update({
+          where: {
+            id: versao.id,
+          },
+          data: {
+            url: updatedVersion.url,
+            cloudinaryPublicId: updatedVersion.publicId,
+          },
+        });
+      }
+
+      await tx.processoDocumento.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          documentoId: documento.id,
+          processoId: {
+            notIn: processoIds,
+          },
+        },
+      });
+
+      await tx.processoDocumento.createMany({
+        data: processoIds.map((processoId) => ({
+          tenantId: user.tenantId,
+          processoId,
+          documentoId: documento.id,
+          createdById: user.id,
+          visivelParaCliente: input.visivelParaCliente,
+        })),
+        skipDuplicates: true,
+      });
+
+      await tx.processoDocumento.updateMany({
+        where: {
+          tenantId: user.tenantId,
+          documentoId: documento.id,
+          processoId: {
+            in: processoIds,
+          },
+        },
+        data: {
+          visivelParaCliente: input.visivelParaCliente,
+        },
+      });
+
+      await tx.contratoDocumento.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          documentoId: documento.id,
+          ...(contratoIds.length
+            ? {
+                contratoId: {
+                  notIn: contratoIds,
+                },
+              }
+            : {}),
+        },
+      });
+
+      for (const contrato of contratos) {
+        await tx.contratoDocumento.upsert({
+          where: {
+            contratoId_documentoId: {
+              contratoId: contrato.id,
+              documentoId: documento.id,
+            },
+          },
+          update: {
+            processoId: input.processoId || contrato.processoId || null,
+            causaId,
+          },
+          create: {
+            tenantId: user.tenantId,
+            contratoId: contrato.id,
+            documentoId: documento.id,
+            processoId: input.processoId || contrato.processoId || null,
+            causaId,
+          },
+        });
+      }
+    });
+
+    const processosToRevalidate = Array.from(
+      new Set([
+        input.processoId,
+        documento.processoId,
+        ...processoIds,
+        ...documento.processosVinculados.map((vinculo) => vinculo.processoId),
+      ]),
+    );
+
+    revalidatePath("/documentos");
+    for (const relatedProcessoId of processosToRevalidate) {
+      revalidatePath(`/processos/${relatedProcessoId}`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    logger.error("Erro ao atualizar documento no explorador:", error);
+
+    return {
+      success: false,
+      error: "Erro ao atualizar documento",
     };
   }
 }

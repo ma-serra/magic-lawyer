@@ -10,6 +10,7 @@ import { Divider } from "@heroui/divider";
 import { Input } from "@heroui/input";
 import { Tooltip } from "@heroui/react";
 import { addToast } from "@heroui/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   Edit2,
   Eye,
@@ -582,7 +583,7 @@ export function TenantBrandingForm({ initialData }: TenantBrandingFormProps) {
                     setFormData((prev) => ({ ...prev, logoUrl: value }))
                   }
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col items-start gap-2">
                   <input
                     ref={logoInputRef}
                     accept="image/png,image/jpeg,image/webp,image/svg+xml"
@@ -602,6 +603,13 @@ export function TenantBrandingForm({ initialData }: TenantBrandingFormProps) {
                     {isUploadingLogo ? "Enviando logo..." : "Enviar logo"}
                   </Button>
                   <span className="text-xs text-default-400">Max 4MB</span>
+                  {isUploadingLogo ? (
+                    <UploadProgress
+                      className="w-full max-w-sm"
+                      label="Enviando logo"
+                      description="Otimizando a imagem antes de aplicar ao escritório."
+                    />
+                  ) : null}
                 </div>
                 <Input
                   description="ICO/PNG/SVG recomendado."
@@ -612,7 +620,7 @@ export function TenantBrandingForm({ initialData }: TenantBrandingFormProps) {
                     setFormData((prev) => ({ ...prev, faviconUrl: value }))
                   }
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col items-start gap-2">
                   <input
                     ref={faviconInputRef}
                     accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
@@ -634,6 +642,13 @@ export function TenantBrandingForm({ initialData }: TenantBrandingFormProps) {
                     {isUploadingFavicon ? "Enviando favicon..." : "Enviar favicon"}
                   </Button>
                   <span className="text-xs text-default-400">Max 1MB</span>
+                  {isUploadingFavicon ? (
+                    <UploadProgress
+                      className="w-full max-w-sm"
+                      label="Enviando favicon"
+                      description="Preparando o ícone para publicação no navegador."
+                    />
+                  ) : null}
                 </div>
               </div>
 

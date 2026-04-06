@@ -23,6 +23,7 @@ import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import { title } from "@/components/primitives";
 import {
@@ -802,6 +803,12 @@ export default function NovoContratoPage() {
                 </div>
               )}
             </div>
+            {isSaving && selectedContratoArquivo ? (
+              <UploadProgress
+                label="Enviando contrato"
+                description="O PDF será salvo junto com o cadastro do contrato."
+              />
+            ) : null}
           </div>
 
           <Divider />

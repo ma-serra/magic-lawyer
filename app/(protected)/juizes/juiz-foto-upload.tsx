@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Avatar, Button, Spinner } from "@heroui/react";
+import { Avatar, Button } from "@heroui/react";
 import { Edit3, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import { uploadJuizFoto, deleteJuizFoto } from "@/app/actions/juizes";
 import { ImageEditorModal } from "@/components/image-editor-modal";
@@ -23,8 +24,11 @@ export function JuizFotoUpload({
   onFotoChange,
   disabled = false,
 }: JuizFotoUploadProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"upload" | "delete" | null>(
+    null,
+  );
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const isLoading = pendingAction !== null;
 
   const handleSaveFoto = async (
     imageData: string | FormData | null,
@@ -38,7 +42,7 @@ export function JuizFotoUpload({
       return;
     }
 
-    setIsLoading(true);
+    setPendingAction("upload");
     setIsEditorOpen(false);
 
     try {
@@ -74,14 +78,14 @@ export function JuizFotoUpload({
     } catch (error) {
       toast.error("Erro ao salvar foto");
     } finally {
-      setIsLoading(false);
+      setPendingAction(null);
     }
   };
 
   const handleDelete = async () => {
     if (!currentFotoUrl || !juizId) return;
 
-    setIsLoading(true);
+    setPendingAction("delete");
 
     try {
       const result = await deleteJuizFoto(juizId, currentFotoUrl);
@@ -95,7 +99,7 @@ export function JuizFotoUpload({
     } catch (error) {
       toast.error("Erro ao remover foto");
     } finally {
-      setIsLoading(false);
+      setPendingAction(null);
     }
   };
 
@@ -116,22 +120,14 @@ export function JuizFotoUpload({
   return (
     <>
       <div className="flex flex-col items-center gap-4 p-4 rounded-xl bg-background/50 border border-primary/20">
-        <div className="relative">
-          <Avatar
-            isBordered
-            className="w-24 h-24"
-            color="primary"
-            name={juizNome}
-            size="lg"
-            src={currentFotoUrl || undefined}
-          />
-
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
-              <Spinner color="white" size="sm" />
-            </div>
-          )}
-        </div>
+        <Avatar
+          isBordered
+          className="w-24 h-24"
+          color="primary"
+          name={juizNome}
+          size="lg"
+          src={currentFotoUrl || undefined}
+        />
 
         <div className="flex gap-2">
           <Button
@@ -175,6 +171,14 @@ export function JuizFotoUpload({
             </p>
           )}
         </div>
+
+        {pendingAction === "upload" ? (
+          <UploadProgress
+            className="w-full max-w-64"
+            label="Enviando foto"
+            description="A foto do juiz será atualizada assim que o envio terminar."
+          />
+        ) : null}
       </div>
 
       <ImageEditorModal

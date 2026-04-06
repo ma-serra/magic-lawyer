@@ -37,6 +37,7 @@ import {
   Tooltip,
   useDisclosure,
 } from "@heroui/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   AlertCircle,
   CheckCircle2,
@@ -1095,6 +1096,13 @@ export function SuporteContent() {
               ) : (
                 <p className="text-xs text-default-500">Nenhuma imagem selecionada.</p>
               )}
+
+              {isCreating && newImages.length > 0 ? (
+                <UploadProgress
+                  label="Enviando imagens do ticket"
+                  description="As imagens estão sendo anexadas à abertura do chamado."
+                />
+              ) : null}
             </div>
           </ModalBody>
           <ModalFooter>
@@ -1391,6 +1399,12 @@ export function SuporteContent() {
                         </div>
                       ))}
                     </div>
+                  ) : null}
+                  {isSendingReply && replyImages.length > 0 ? (
+                    <UploadProgress
+                      label="Enviando imagens da resposta"
+                      description="Os anexos estão sendo enviados junto com a sua mensagem."
+                    />
                   ) : null}
                   <div className="flex justify-end">
                     <Button

@@ -21,6 +21,7 @@ import {
   Switch,
   Textarea,
 } from "@heroui/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   ArrowLeft,
   ImagePlus,
@@ -693,6 +694,12 @@ export default function AdminSuporteChatFullscreenPage({
               </div>
             ))}
           </div>
+        ) : null}
+        {isSendingReply && replyImages.length > 0 ? (
+          <UploadProgress
+            label="Enviando imagens da resposta"
+            description="As imagens estão sendo anexadas ao ticket deste atendimento."
+          />
         ) : null}
         <Divider className="border-white/10" />
         <div className="flex flex-wrap items-center justify-between gap-2">

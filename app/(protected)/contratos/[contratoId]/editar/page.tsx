@@ -29,6 +29,7 @@ import {
   Upload,
   Trash2,
 } from "lucide-react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import Link from "next/link";
 import { toast } from "@/lib/toast";
 import { Spinner } from "@heroui/spinner";
@@ -730,6 +731,13 @@ export default function EditarContratoPage({
                   )}
                 </div>
               )}
+
+              {isSaving && selectedContratoArquivo ? (
+                <UploadProgress
+                  label="Enviando novo PDF"
+                  description="O contrato atualizado será salvo com o arquivo selecionado."
+                />
+              ) : null}
             </div>
 
             {/* Resumo */}

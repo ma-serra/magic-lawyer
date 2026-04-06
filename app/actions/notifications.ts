@@ -121,6 +121,11 @@ export async function getNotifications(
       take,
       include: {
         deliveries: {
+          where: {
+            status: {
+              not: "SKIPPED",
+            },
+          },
           select: {
             channel: true,
             status: true,
@@ -400,6 +405,7 @@ export async function markNewNotificationAsRead(
       },
       data: {
         status: "READ",
+        readAt: new Date(),
       },
     });
 

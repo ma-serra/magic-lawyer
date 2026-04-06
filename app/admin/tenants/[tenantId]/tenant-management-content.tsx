@@ -25,6 +25,7 @@ import {
   SelectItem,
   Pagination,
 } from "@heroui/react";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   Table,
   TableBody,
@@ -2187,6 +2188,13 @@ function BrandingTab({
               >
                 {isUploadingLogo ? "Enviando logo..." : "Enviar logo"}
               </Button>
+              {isUploadingLogo ? (
+                <UploadProgress
+                  className="mt-3"
+                  label="Enviando logo"
+                  description="Otimizando o arquivo de branding antes de salvar."
+                />
+              ) : null}
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <input
@@ -2209,6 +2217,13 @@ function BrandingTab({
               >
                 {isUploadingFavicon ? "Enviando favicon..." : "Enviar favicon"}
               </Button>
+              {isUploadingFavicon ? (
+                <UploadProgress
+                  className="mt-3"
+                  label="Enviando favicon"
+                  description="Preparando o ícone para aplicação no tenant."
+                />
+              ) : null}
             </div>
           </div>
         </div>

@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import useSWR from "swr";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import { AdvogadoHistorico } from "./components/advogado-historico";
 import { BulkExcelImportModal } from "@/components/bulk-excel-import-modal";
@@ -3226,34 +3227,29 @@ export default function AdvogadosContent() {
 	                                      handleSelectAdvogado(advogado.id)
                                     }
                                   />
-                                  <motion.div
-                                    className="group relative flex-shrink-0"
-                                    transition={{
-                                      type: "spring",
-                                      stiffness: 400,
-                                      damping: 10,
-                                    }}
-                                    whileHover={{ scale: 1.1, rotate: 5 }}
-                                  >
-                                    <Avatar
-                                      showFallback
-                                      className="bg-blue-500 text-white shadow-lg"
-                                      name={getInitials(nomeCompleto)}
-                                      size="lg"
-                                      src={advogado.usuario.avatarUrl || undefined}
-                                    />
-                                    {isUploadingAvatar &&
-                                      selectedAdvogadoForAvatar?.id ===
-                                        advogado.id && (
-                                        <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-                                          <Spinner color="white" size="sm" />
-                                        </div>
-                                      )}
-                                    <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                                  <div className="flex flex-col items-center gap-2">
+                                    <motion.div
+                                      className="group relative flex-shrink-0"
+                                      transition={{
+                                        type: "spring",
+                                        stiffness: 400,
+                                        damping: 10,
+                                      }}
+                                      whileHover={{ scale: 1.1, rotate: 5 }}
+                                    >
+                                      <Avatar
+                                        showFallback
+                                        className="bg-blue-500 text-white shadow-lg"
+                                        name={getInitials(nomeCompleto)}
+                                        size="lg"
+                                        src={advogado.usuario.avatarUrl || undefined}
+                                      />
+                                      <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
 	                                      <Button
 	                                        isIconOnly
 	                                        className="h-6 w-6 min-w-6"
 	                                        color="primary"
+	                                        isDisabled={isUploadingAvatar}
 	                                        onClick={(event) =>
 	                                          event.stopPropagation()
 	                                        }
@@ -3268,6 +3264,7 @@ export default function AdvogadosContent() {
 	                                          isIconOnly
 	                                          className="h-6 w-6 min-w-6"
 	                                          color="danger"
+	                                          isDisabled={isUploadingAvatar}
 	                                          onClick={(event) =>
 	                                            event.stopPropagation()
 	                                          }
@@ -3280,8 +3277,17 @@ export default function AdvogadosContent() {
                                           <Trash2 className="h-3 w-3" />
                                         </Button>
                                       )}
-                                    </div>
-                                  </motion.div>
+                                      </div>
+                                    </motion.div>
+                                    {isUploadingAvatar &&
+                                    selectedAdvogadoForAvatar?.id === advogado.id ? (
+                                      <UploadProgress
+                                        className="w-28"
+                                        ariaLabel={`Enviando avatar de ${nomeCompleto}`}
+                                        label="Enviando avatar"
+                                      />
+                                    ) : null}
+                                  </div>
                                 </div>
 
                                 <div className="w-full max-w-[220px] text-center sm:hidden">

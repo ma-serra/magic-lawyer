@@ -512,7 +512,14 @@ export async function getAdminAuditCenter(
       filters?.endDate,
     );
 
-    const [changeLogResult, operationalEventsRaw, supportTicketsRaw, tenantOptions] =
+    const [
+      changeLogResult,
+      operationalEventsRaw,
+      supportTicketsRaw,
+      tenantOptions,
+      notificationDispatchStats,
+      notificationDispatchFailures,
+    ] =
       await Promise.all([
         loadUnifiedAuditLogs({
           limit,
@@ -591,6 +598,21 @@ export async function getAdminAuditCenter(
             status: true,
           },
         }),
+        prisma.notificationDispatchAudit.aggregate({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(dateFilter ? { createdAt: dateFilter } : {}),
+          },
+          _count: { _all: true },
+          _max: { createdAt: true },
+        }),
+        prisma.notificationDispatchAudit.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(dateFilter ? { createdAt: dateFilter } : {}),
+            decision: "FAILED",
+          },
+        }),
       ]);
 
     const operationalEvents = operationalEventsRaw.map(mapOperationalEvent);
@@ -657,6 +679,18 @@ export async function getAdminAuditCenter(
       changeLogs: changeLogs as AdminAuditChangeEntry[],
       supportTickets,
     });
+    const categories = controlTower.categories.map((category) =>
+      category.key === "notifications"
+        ? {
+            ...category,
+            count: notificationDispatchStats._count._all,
+            errors: notificationDispatchFailures,
+            lastEventAt: notificationDispatchStats._max.createdAt
+              ? notificationDispatchStats._max.createdAt.toISOString()
+              : null,
+          }
+        : category,
+    );
 
     return {
       success: true,
@@ -671,7 +705,7 @@ export async function getAdminAuditCenter(
           status: tenant.status,
         })),
         overview: controlTower.overview,
-        categories: controlTower.categories,
+        categories,
         topActors: controlTower.topActors,
         topTenants: controlTower.topTenants,
         criticalEvents: controlTower.criticalEvents,

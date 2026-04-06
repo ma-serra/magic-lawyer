@@ -48,6 +48,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Image from "@tiptap/extension-image";
 
 import { ImageEditorModal } from "@/components/image-editor-modal";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import { uploadModeloPeticaoImage } from "@/app/actions/modelos-peticao";
 import {
   MODELO_PETICAO_PRESETS,
@@ -1563,9 +1564,11 @@ export function ModeloPeticaoDocumentWorkspace({
 
       {imageUploadPending ? (
         <div className="fixed bottom-6 right-6 z-50 rounded-2xl border border-default-200/80 bg-content1/95 px-4 py-3 shadow-lg backdrop-blur">
-          <p className="text-sm text-default-700 dark:text-default-200">
-            Enviando imagem do modelo...
-          </p>
+          <UploadProgress
+            className="w-72"
+            label="Enviando imagem do modelo"
+            description="A imagem será aplicada ao documento assim que o upload terminar."
+          />
         </div>
       ) : null}
     </>

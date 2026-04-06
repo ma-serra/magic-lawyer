@@ -22,6 +22,7 @@ import { Tabs, Tab } from "@heroui/tabs";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
 import { Checkbox } from "@heroui/checkbox";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import {
   ArrowLeft,
@@ -58,6 +59,7 @@ import {
   UserPlus,
   Search,
   RefreshCw,
+  MoreVertical,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -107,12 +109,20 @@ import {
 } from "@/app/actions/processo-deadline-preferences";
 import JuizModal from "@/components/juiz-modal";
 import { Modal } from "@/components/ui/modal";
-import { Select, SelectItem } from "@heroui/react";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownMenu,
+  DropdownTrigger,
+  Select,
+  SelectItem,
+} from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/searchable-select";
+import { ProcessoDocumentoOrganizerModal } from "@/components/processos/processo-documento-organizer-modal";
 import {
   buildPrazoWorkspaceSummary,
   formatPrazoRelativeLabel,
@@ -280,6 +290,14 @@ interface ProcessoDocumentoPreviewState {
   nome: string;
   contentType?: string | null;
   viewUrl: string;
+}
+
+interface ProcessoDocumentoOrganizerState {
+  id: string;
+  nome: string;
+  descricao?: string | null;
+  visivelParaCliente: boolean;
+  metadados?: unknown | null;
 }
 
 type RegimePrazoSelectItem = SearchableSelectOption;
@@ -778,11 +796,21 @@ export default function ProcessoDetalhesPage() {
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
   const [documentoPreview, setDocumentoPreview] =
     useState<ProcessoDocumentoPreviewState | null>(null);
+  const [documentoOrganizer, setDocumentoOrganizer] =
+    useState<ProcessoDocumentoOrganizerState | null>(null);
   const documentoInputRef = useRef<HTMLInputElement | null>(null);
   const [, startTransition] = useTransition();
   const { hasPermission: canUploadProcessoDocumentos } = usePermissionCheck(
     isCliente ? null : "documentos",
     isCliente ? null : "criar",
+    {
+      enabled: !isCliente,
+      enableEarlyAccess: true,
+    },
+  );
+  const { hasPermission: canEditProcessoDocumentos } = usePermissionCheck(
+    isCliente ? null : "documentos",
+    isCliente ? null : "editar",
     {
       enabled: !isCliente,
       enableEarlyAccess: true,
@@ -1208,6 +1236,10 @@ export default function ProcessoDetalhesPage() {
       contentType: doc.contentType ?? null,
       viewUrl: `/api/documentos/${doc.id}/view`,
     });
+  };
+
+  const handleOpenDocumentoOrganizer = (doc: ProcessoDocumentoOrganizerState) => {
+    setDocumentoOrganizer(doc);
   };
 
   const handleSolicitarAtualizacaoJusbrasil = async () => {
@@ -3376,15 +3408,25 @@ export default function ProcessoDetalhesPage() {
                   </div>
 
                   <div className="flex justify-end">
-                    <Button
-                      color="primary"
-                      isLoading={isUploadingDocumento}
-                      isDisabled={documentoUploads.length === 0}
-                      startContent={<UploadCloud className="h-4 w-4" />}
-                      onPress={handleUploadDocumento}
-                    >
-                      Anexar documentos
-                    </Button>
+                    <div className="w-full max-w-md space-y-3">
+                      {isUploadingDocumento ? (
+                        <UploadProgress
+                          label="Anexando documentos"
+                          description="Os arquivos estão sendo enviados para a pasta do processo e indexados no módulo de Documentos."
+                        />
+                      ) : null}
+                      <div className="flex justify-end">
+                        <Button
+                          color="primary"
+                          isLoading={isUploadingDocumento}
+                          isDisabled={documentoUploads.length === 0}
+                          startContent={<UploadCloud className="h-4 w-4" />}
+                          onPress={handleUploadDocumento}
+                        >
+                          Anexar documentos
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </CardBody>
               </Card>
@@ -3483,6 +3525,57 @@ export default function ProcessoDetalhesPage() {
                           >
                             Baixar
                           </Button>
+                          <Dropdown>
+                            <DropdownTrigger>
+                              <Button
+                                isIconOnly
+                                aria-label={`Ações do documento ${doc.nome}`}
+                                size="sm"
+                                variant="light"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownTrigger>
+                            <DropdownMenu aria-label={`Ações para ${doc.nome}`}>
+                              <DropdownItem
+                                key="view"
+                                startContent={<Eye className="h-4 w-4" />}
+                                onPress={() => handleOpenDocumentoPreview(doc)}
+                              >
+                                Visualizar
+                              </DropdownItem>
+                              <DropdownItem
+                                key="download"
+                                startContent={<Download className="h-4 w-4" />}
+                                onPress={() =>
+                                  window.open(
+                                    `/api/documentos/${doc.id}/view?download=1`,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Baixar
+                              </DropdownItem>
+                              {!isCliente && canEditProcessoDocumentos ? (
+                                <DropdownItem
+                                  key="organize"
+                                  startContent={<Edit className="h-4 w-4" />}
+                                  onPress={() =>
+                                    handleOpenDocumentoOrganizer({
+                                      id: doc.id,
+                                      nome: doc.nome,
+                                      descricao: doc.descricao,
+                                      visivelParaCliente: doc.visivelParaCliente,
+                                      metadados: doc.metadados,
+                                    })
+                                  }
+                                >
+                                  Editar e organizar
+                                </DropdownItem>
+                              ) : null}
+                            </DropdownMenu>
+                          </Dropdown>
                         </div>
                       )}
                     </CardBody>
@@ -3894,6 +3987,17 @@ export default function ProcessoDetalhesPage() {
           )
         ) : null}
       </Modal>
+
+      <ProcessoDocumentoOrganizerModal
+        clienteId={processo?.cliente?.id}
+        document={documentoOrganizer}
+        isOpen={Boolean(documentoOrganizer)}
+        processoId={processoId}
+        onClose={() => setDocumentoOrganizer(null)}
+        onSaved={async () => {
+          await Promise.all([mutateDocumentos(), mutate()]);
+        }}
+      />
 
       {/* Modal do Juiz */}
       {processo.juiz && (

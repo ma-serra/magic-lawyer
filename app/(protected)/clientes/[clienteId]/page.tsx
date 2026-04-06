@@ -41,6 +41,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 import {
   useClienteComProcessos,
@@ -2225,6 +2226,13 @@ export default function ClienteDetalhesPage() {
           </div>
 
           {/* Formulário */}
+          {isUploading ? (
+            <UploadProgress
+              label="Enviando documento"
+              description="O arquivo está sendo anexado ao cadastro do cliente."
+            />
+          ) : null}
+
           <Input
             isRequired
             label="Nome do Documento *"

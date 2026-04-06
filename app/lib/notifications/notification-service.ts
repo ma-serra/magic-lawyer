@@ -6,16 +6,24 @@ import { start } from "workflow/api";
 import { EmailChannel } from "./channels/email-channel";
 import { NotificationFactory } from "./domain/notification-factory";
 import { NotificationPolicy } from "./domain/notification-policy";
+import {
+  estimateNotificationDeliveryCost,
+  sortNotificationChannels,
+  summarizeNotificationPayload,
+} from "./notification-audit";
 import { getRedisInstance } from "./redis-singleton";
 import {
-  canDeliverTelegramToUser,
+  getActiveTelegramProvider,
+  getTelegramUserBinding,
   sendTelegramNotification,
 } from "./telegram-bot";
 import {
-  canDeliverWebPushToUser,
+  getActiveWebPushSubscriptions,
+  isWebPushConfigured,
   sendWebPushNotification,
 } from "./web-push";
 
+import type { Prisma } from "@/generated/prisma";
 import prisma from "@/app/lib/prisma";
 import { publishRealtimeEvent } from "@/app/lib/realtime/publisher";
 
@@ -35,6 +43,55 @@ export interface NotificationTemplate {
   title: string;
   message: string;
   variables?: Record<string, any>;
+}
+
+type DispatchAuditDecision = "CREATED" | "SUPPRESSED" | "FAILED";
+type DeliveryCostSource = "EXACT" | "ESTIMATED";
+type ChannelPlanStatus = "ATTEMPT" | "SKIP";
+
+type ChannelPlanEntry = {
+  channel: NotificationChannel;
+  provider: string;
+  status: ChannelPlanStatus;
+  requested: boolean;
+  reasonCode?: string;
+  reasonMessage?: string;
+  recipientTarget?: string | null;
+  recipientSnapshot?: Record<string, any> | null;
+};
+
+type ChannelResolutionResult = {
+  requestedChannels: NotificationChannel[];
+  resolvedChannels: NotificationChannel[];
+  channelPlans: ChannelPlanEntry[];
+};
+
+type DeliveryExecutionResult = {
+  success: boolean;
+  status?: "SENT" | "DELIVERED" | "READ";
+  messageId?: string;
+  error?: string;
+  metadata?: Record<string, any>;
+  reasonCode?: string;
+  reasonMessage?: string;
+  recipientTarget?: string | null;
+  recipientSnapshot?: Record<string, any> | null;
+  providerStatus?: string;
+  providerResponseCode?: string;
+  costAmount?: number;
+  costCurrency?: string;
+  costSource?: DeliveryCostSource;
+  sentAt?: Date;
+  deliveredAt?: Date;
+  readAt?: Date;
+};
+
+function asPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  return value as Prisma.InputJsonValue;
 }
 
 /**
@@ -123,99 +180,80 @@ export class NotificationService {
   static async processNotificationSync(
     event: NotificationEvent,
   ): Promise<void> {
+    let requestedChannels: NotificationChannel[] = [];
+    let resolvedChannels: NotificationChannel[] = [];
+    let dispatchRecorded = false;
+
     try {
       console.log(
-        `[NotificationService] 📱 Processando notificação ${event.type} para usuário ${event.userId}`,
+        `[NotificationService] Processando notificacao ${event.type} para usuario ${event.userId}`,
       );
 
-      // 1. Verificar se o usuário tem permissão para receber esta notificação
       const hasPermission = await this.checkUserPermission(event);
 
       if (!hasPermission) {
-        console.log(
-          `[NotificationService] Usuário ${event.userId} não tem permissão para receber ${event.type}`,
-        );
-
+        await this.recordDispatchAudit({
+          event,
+          decision: "SUPPRESSED",
+          requestedChannels: event.channels ?? [],
+          resolvedChannels: [],
+          reasonCode: "NO_PERMISSION",
+          reasonMessage:
+            "O usuario nao esta ativo ou nao pertence ao tenant deste evento.",
+        });
         return;
       }
 
-      // 2. Verificar preferências do usuário (usando Policy para validação)
       const preferences = await this.getUserPreferences(
         event.tenantId,
         event.userId,
         event.type,
       );
-
-      // Validar se evento pode ser desabilitado (Policy)
       const canDisable = NotificationPolicy.canDisableEvent(event.type);
 
       if (!preferences.enabled && canDisable) {
-        console.log(
-          `[NotificationService] Notificação ${event.type} desabilitada para usuário ${event.userId}`,
-        );
-
+        await this.recordDispatchAudit({
+          event,
+          decision: "SUPPRESSED",
+          requestedChannels: preferences.channels,
+          resolvedChannels: [],
+          reasonCode: "EVENT_DISABLED_BY_PREFERENCE",
+          reasonMessage:
+            "O usuario desabilitou este tipo de evento nas preferencias de notificacao.",
+        });
         return;
       }
 
-      // Eventos críticos não podem ser desabilitados (forçar enabled)
       if (!preferences.enabled && !canDisable) {
-        console.log(
-          `[NotificationService] Evento crítico ${event.type} não pode ser desabilitado, forçando ativação`,
-        );
         preferences.enabled = true;
       }
 
-      // 3. Gerar template da notificação
       const template =
         (await this.generateTemplate(event)) ??
         this.buildFallbackTemplate(event);
-
-      // 4. Substituir variáveis no template
       const { title, message } = this.replaceVariables(template, event.payload);
+      const resolution = await this.resolveChannelsForDelivery({
+        event,
+        preferenceChannels: preferences.channels,
+        urgency: event.urgency || preferences.urgency,
+      });
 
-      // 5. Determinar canais a usar
-      // - Se evento CRITICAL: sempre REALTIME + EMAIL (ignora preferências)
-      // - Se evento especificou canais explicitamente: usa os canais do evento (override)
-      // - Caso contrário: respeita preferências do usuário
-      let channelsToUse: NotificationChannel[];
+      requestedChannels = resolution.requestedChannels;
+      resolvedChannels = resolution.resolvedChannels;
 
-      if (event.urgency === "CRITICAL") {
-        // Eventos críticos sempre vão por REALTIME + EMAIL
-        channelsToUse = ["REALTIME", "EMAIL"];
-
-        if (event.channels?.includes("TELEGRAM")) {
-          channelsToUse.push("TELEGRAM");
-        }
-      } else if (event.channels && event.channels.length > 0) {
-        // Se o evento especificou canais explicitamente (override), usa eles
-        // Mas filtra para manter apenas canais habilitados nas preferências (exceto CRITICAL)
-        const enabledChannels = preferences.channels;
-        const shouldForceDeadlineTelegram =
-          event.type.startsWith("prazo.") && event.channels.includes("TELEGRAM");
-
-        channelsToUse = event.channels.filter((channel) =>
-          enabledChannels.includes(channel) ||
-          (shouldForceDeadlineTelegram && channel === "TELEGRAM"),
-        );
-
-        // Se após filtrar não sobrar nenhum, usa as preferências
-        if (channelsToUse.length === 0) {
-          channelsToUse = preferences.channels;
-        }
-      } else {
-        // Caso padrão: respeita preferências do usuário
-        channelsToUse = preferences.channels;
+      if (resolvedChannels.length === 0) {
+        await this.recordDispatchAudit({
+          event,
+          decision: "SUPPRESSED",
+          requestedChannels,
+          resolvedChannels,
+          reasonCode: "NO_CHANNELS_RESOLVED",
+          reasonMessage:
+            "A notificacao nao encontrou nenhum canal apto apos validar preferencia, provider e vinculos do destinatario.",
+        });
+        return;
       }
 
-      channelsToUse = await this.resolveChannelsForDelivery(
-        event.tenantId,
-        event.userId,
-        channelsToUse,
-        event.type,
-        event.urgency || preferences.urgency,
-      );
-
-      // 6. Salvar notificação no banco
       const notification = await prisma.notification.create({
         data: {
           tenantId: event.tenantId,
@@ -225,28 +263,46 @@ export class NotificationService {
           message,
           payload: event.payload,
           urgency: event.urgency || preferences.urgency,
-          channels: channelsToUse,
+          channels: resolvedChannels,
           expiresAt: this.calculateExpiration(
             event.urgency || preferences.urgency,
           ),
         },
       });
 
-      // 7. Enviar via canais configurados
-      await this.deliverNotification(notification, channelsToUse);
+      await this.recordDispatchAudit({
+        event,
+        decision: "CREATED",
+        notificationId: notification.id,
+        requestedChannels,
+        resolvedChannels,
+      });
+      dispatchRecorded = true;
+
+      await this.deliverNotification(notification, resolution.channelPlans);
 
       console.log(
-        `[NotificationService] Notificação ${notification.id} processada para usuário ${event.userId}`,
+        `[NotificationService] Notificacao ${notification.id} processada para usuario ${event.userId}`,
       );
     } catch (error) {
-      console.error(
-        `[NotificationService] Erro ao processar notificação:`,
-        error,
-      );
+      if (!dispatchRecorded) {
+        await this.recordDispatchAudit({
+          event,
+          decision: "FAILED",
+          requestedChannels,
+          resolvedChannels,
+          reasonCode: "PROCESSING_FAILED",
+          reasonMessage:
+            error instanceof Error
+              ? error.message
+              : "Falha desconhecida ao processar a notificacao.",
+        });
+      }
+
+      console.error("[NotificationService] Erro ao processar notificacao:", error);
       throw error;
     }
   }
-
   /**
    * Publica notificação para múltiplos usuários
    */
@@ -518,17 +574,47 @@ export class NotificationService {
   /**
    * Entrega a notificação pelos canais configurados
    */
+  private static async recordDispatchAudit(params: {
+    event: NotificationEvent;
+    decision: DispatchAuditDecision;
+    requestedChannels: NotificationChannel[];
+    resolvedChannels: NotificationChannel[];
+    notificationId?: string;
+    reasonCode?: string;
+    reasonMessage?: string;
+  }) {
+    await prisma.notificationDispatchAudit.create({
+      data: {
+        tenantId: params.event.tenantId,
+        userId: params.event.userId,
+        notificationId: params.notificationId,
+        eventType: params.event.type,
+        urgency: params.event.urgency || "MEDIUM",
+        payloadSummary: asPrismaJson(
+          summarizeNotificationPayload(params.event.payload),
+        ),
+        requestedChannels: sortNotificationChannels(params.requestedChannels),
+        resolvedChannels: sortNotificationChannels(params.resolvedChannels),
+        decision: params.decision,
+        reasonCode: params.reasonCode,
+        reasonMessage: params.reasonMessage?.slice(0, 500),
+      },
+    });
+  }
+
   private static async deliverNotification(
     notification: any,
-    channels: NotificationChannel[],
+    channelPlans: ChannelPlanEntry[],
   ): Promise<void> {
+    const channels = channelPlans.map((channelPlan) => channelPlan.channel);
+
     console.log(
       `[NotificationService] 📱 Processando canais: ${channels.join(",")}`,
     );
 
     await Promise.allSettled(
-      channels.map((channel) =>
-        this.processChannelDelivery(notification, channel),
+      channelPlans.map((channelPlan) =>
+        this.processChannelDelivery(notification, channelPlan),
       ),
     );
   }
@@ -549,29 +635,34 @@ export class NotificationService {
 
   private static async processChannelDelivery(
     notification: any,
-    channel: NotificationChannel,
+    channelPlan: ChannelPlanEntry,
   ): Promise<void> {
+    const channel = channelPlan.channel;
+    const provider = channelPlan.provider;
     console.log(`[NotificationService] 🔄 Processando canal: ${channel}`);
 
-    const provider = this.getProviderForChannel(channel);
     const delivery = await prisma.notificationDelivery.create({
       data: {
         notificationId: notification.id,
         channel,
         provider,
-        status: "PENDING",
+        status: channelPlan.status === "SKIP" ? "SKIPPED" : "PENDING",
+        recipientTarget: channelPlan.recipientTarget,
+        recipientSnapshot: asPrismaJson(channelPlan.recipientSnapshot),
+        reasonCode: channelPlan.status === "SKIP" ? channelPlan.reasonCode : null,
+        reasonMessage:
+          channelPlan.status === "SKIP"
+            ? channelPlan.reasonMessage?.slice(0, 500)
+            : null,
       },
     });
 
+    if (channelPlan.status === "SKIP") {
+      return;
+    }
+
     try {
-      let result:
-        | { success: true; messageId?: string; metadata?: Record<string, any> }
-        | {
-            success: false;
-            error?: string;
-            messageId?: string;
-            metadata?: Record<string, any>;
-          };
+      let result: DeliveryExecutionResult;
 
       switch (channel) {
         case "REALTIME":
@@ -587,17 +678,49 @@ export class NotificationService {
           result = await this.deliverPush(notification);
           break;
         default:
+          result = {
+            success: false,
+            error: `Canal ${channel} nao suportado`,
+            reasonCode: "CHANNEL_UNSUPPORTED",
+            reasonMessage: `Canal ${channel} nao suportado`,
+          };
+          break;
+          /* legacy unsupported branch
           result = { success: false, error: `Canal ${channel} não suportado` };
           break;
+      */
       }
+
+      const estimatedCost = estimateNotificationDeliveryCost(
+        channelPlan.channel,
+        channelPlan.provider,
+      );
+      const mergedRecipientSnapshot = {
+        ...(channelPlan.recipientSnapshot ?? {}),
+        ...(result.recipientSnapshot ?? {}),
+      };
 
       if (result.success) {
         await prisma.notificationDelivery.update({
           where: { id: delivery.id },
           data: {
-            status: "SENT",
+            status: result.status || "SENT",
             providerMessageId: result.messageId,
             metadata: result.metadata,
+            providerStatus: result.providerStatus || "ACCEPTED",
+            providerResponseCode: result.providerResponseCode,
+            recipientTarget: result.recipientTarget ?? channelPlan.recipientTarget,
+            recipientSnapshot: asPrismaJson(
+              Object.keys(mergedRecipientSnapshot).length > 0
+                ? mergedRecipientSnapshot
+                : undefined,
+            ),
+            sentAt: result.sentAt ?? new Date(),
+            deliveredAt: result.deliveredAt,
+            readAt: result.readAt,
+            costAmount: result.costAmount ?? estimatedCost?.amount,
+            costCurrency: result.costCurrency ?? estimatedCost?.currency,
+            costSource: result.costSource ?? estimatedCost?.source,
           },
         });
       } else {
@@ -606,24 +729,54 @@ export class NotificationService {
           data: {
             status: "FAILED",
             providerMessageId: result.messageId,
+            errorCode:
+              result.reasonCode?.slice(0, 100) ??
+              result.providerResponseCode?.slice(0, 100),
             errorMessage: result.error?.slice(0, 500),
             metadata: result.metadata,
+            reasonCode: result.reasonCode,
+            reasonMessage: result.reasonMessage?.slice(0, 500),
+            providerStatus: result.providerStatus || "ERROR",
+            providerResponseCode: result.providerResponseCode,
+            recipientTarget: result.recipientTarget ?? channelPlan.recipientTarget,
+            recipientSnapshot: asPrismaJson(
+              Object.keys(mergedRecipientSnapshot).length > 0
+                ? mergedRecipientSnapshot
+                : undefined,
+            ),
+            costAmount: result.costAmount ?? estimatedCost?.amount,
+            costCurrency: result.costCurrency ?? estimatedCost?.currency,
+            costSource: result.costSource ?? estimatedCost?.source,
           },
         });
       }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Erro desconhecido";
+      const estimatedCost = estimateNotificationDeliveryCost(
+        channelPlan.channel,
+        channelPlan.provider,
+      );
 
       await prisma.notificationDelivery.update({
         where: { id: delivery.id },
         data: {
           status: "FAILED",
+          errorCode: "PROCESSING_FAILED",
           errorMessage: message.slice(0, 500),
+          reasonCode: "PROCESSING_FAILED",
+          reasonMessage: "Falha durante a tentativa de entrega do canal.",
+          providerStatus: "ERROR",
+          costAmount: estimatedCost?.amount,
+          costCurrency: estimatedCost?.currency,
+          costSource: estimatedCost?.source,
         },
       });
 
-      console.error(`[NotificationService] Erro no canal ${channel}:`, error);
+      console.error(
+        `[NotificationService] Erro no canal ${channelPlan.channel}:`,
+        error,
+      );
     }
   }
 
@@ -1108,46 +1261,342 @@ export class NotificationService {
     };
   }
 
-  private static async resolveChannelsForDelivery(
-    tenantId: string,
-    userId: string,
-    channels: NotificationChannel[],
-    eventType: string,
-    urgency: NotificationUrgency,
-  ): Promise<NotificationChannel[]> {
-    const resolved = new Set<NotificationChannel>(channels);
+  private static upsertChannelPlan(
+    planMap: Map<NotificationChannel, ChannelPlanEntry>,
+    channel: NotificationChannel,
+    updates: Partial<ChannelPlanEntry>,
+  ) {
+    const current = planMap.get(channel);
 
-    if (NotificationPolicy.shouldMirrorToTelegram(eventType, urgency)) {
-      const canUseTelegram = await canDeliverTelegramToUser(tenantId, userId);
-
-      if (canUseTelegram) {
-        resolved.add("TELEGRAM");
-      }
-    }
-
-    if (resolved.has("TELEGRAM")) {
-      const canUseTelegram = await canDeliverTelegramToUser(tenantId, userId);
-
-      if (!canUseTelegram) {
-        resolved.delete("TELEGRAM");
-      }
-    }
-
-    if (resolved.has("PUSH")) {
-      const canUsePush = await canDeliverWebPushToUser(tenantId, userId);
-
-      if (!canUsePush) {
-        resolved.delete("PUSH");
-      }
-    }
-
-    if (resolved.size === 0) {
-      resolved.add("REALTIME");
-    }
-
-    return Array.from(resolved);
+    planMap.set(channel, {
+      channel,
+      provider: current?.provider || this.getProviderForChannel(channel),
+      requested: current?.requested || updates.requested || false,
+      status: updates.status || current?.status || "ATTEMPT",
+      reasonCode:
+        updates.status === "ATTEMPT"
+          ? updates.reasonCode
+          : updates.reasonCode ?? current?.reasonCode,
+      reasonMessage:
+        updates.status === "ATTEMPT"
+          ? updates.reasonMessage
+          : updates.reasonMessage ?? current?.reasonMessage,
+      recipientTarget: updates.recipientTarget ?? current?.recipientTarget,
+      recipientSnapshot: updates.recipientSnapshot ?? current?.recipientSnapshot,
+    });
   }
 
+  private static async inspectChannelAvailability(
+    tenantId: string,
+    userId: string,
+    channel: NotificationChannel,
+  ): Promise<
+    | {
+        canAttempt: true;
+        recipientTarget: string;
+        recipientSnapshot: Record<string, any>;
+      }
+    | {
+        canAttempt: false;
+        reasonCode: string;
+        reasonMessage: string;
+        recipientTarget?: string;
+        recipientSnapshot?: Record<string, any>;
+      }
+  > {
+    switch (channel) {
+      case "REALTIME":
+        return {
+          canAttempt: true,
+          recipientTarget: `user:${userId}`,
+          recipientSnapshot: { userId },
+        };
+      case "EMAIL": {
+        const user = await prisma.usuario.findUnique({
+          where: { id: userId },
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        });
+
+        if (!user?.email) {
+          return {
+            canAttempt: false,
+            reasonCode: "RECIPIENT_MISSING",
+            reasonMessage: "O usuario nao possui email configurado.",
+          };
+        }
+
+        if (!EmailChannel.isValidEmail(user.email)) {
+          return {
+            canAttempt: false,
+            reasonCode: "INVALID_RECIPIENT",
+            reasonMessage: `Email invalido: ${user.email}`,
+            recipientTarget: user.email,
+            recipientSnapshot: { email: user.email },
+          };
+        }
+
+        const credential =
+          (await prisma.tenantEmailCredential.findUnique({
+            where: { tenantId_type: { tenantId, type: "DEFAULT" } },
+            select: { id: true, fromAddress: true, fromName: true },
+          })) ||
+          (await prisma.tenantEmailCredential.findUnique({
+            where: { tenantId_type: { tenantId, type: "ADMIN" } },
+            select: { id: true, fromAddress: true, fromName: true },
+          }));
+
+        if (!credential) {
+          return {
+            canAttempt: false,
+            reasonCode: "PROVIDER_INACTIVE",
+            reasonMessage:
+              "O tenant nao possui credencial ativa de email para disparo.",
+            recipientTarget: user.email,
+            recipientSnapshot: { email: user.email },
+          };
+        }
+
+        const userName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+
+        return {
+          canAttempt: true,
+          recipientTarget: user.email,
+          recipientSnapshot: {
+            email: user.email,
+            userName,
+            credentialId: credential.id,
+            fromAddress: credential.fromAddress,
+            fromName: credential.fromName,
+          },
+        };
+      }
+      case "TELEGRAM": {
+        const [provider, binding] = await Promise.all([
+          getActiveTelegramProvider(tenantId),
+          getTelegramUserBinding(tenantId, userId),
+        ]);
+
+        if (!provider) {
+          return {
+            canAttempt: false,
+            reasonCode: "PROVIDER_INACTIVE",
+            reasonMessage: "Bot do Telegram nao configurado para o tenant.",
+          };
+        }
+
+        if (!binding.chatId) {
+          return {
+            canAttempt: false,
+            reasonCode: "NO_ACTIVE_BINDING",
+            reasonMessage: "O usuario nao vinculou um chat do Telegram.",
+            recipientSnapshot: {
+              telegramUsername: binding.username,
+              alertsEnabled: binding.alertsEnabled,
+            },
+          };
+        }
+
+        if (!binding.alertsEnabled) {
+          return {
+            canAttempt: false,
+            reasonCode: "DISABLED_BY_PREFERENCE",
+            reasonMessage: "Os alertas do Telegram foram desativados pelo usuario.",
+            recipientTarget: binding.chatId,
+            recipientSnapshot: {
+              chatId: binding.chatId,
+              telegramUsername: binding.username,
+              alertsEnabled: false,
+            },
+          };
+        }
+
+        return {
+          canAttempt: true,
+          recipientTarget: binding.chatId,
+          recipientSnapshot: {
+            chatId: binding.chatId,
+            telegramUsername: binding.username,
+            providerSource: provider.source,
+          },
+        };
+      }
+      case "PUSH": {
+        if (!isWebPushConfigured()) {
+          return {
+            canAttempt: false,
+            reasonCode: "PROVIDER_INACTIVE",
+            reasonMessage: "Web Push nao configurado no ambiente.",
+          };
+        }
+
+        const subscriptions = await getActiveWebPushSubscriptions({
+          tenantId,
+          userId,
+        });
+
+        if (subscriptions.length === 0) {
+          return {
+            canAttempt: false,
+            reasonCode: "NO_ACTIVE_BINDING",
+            reasonMessage: "O usuario nao possui dispositivo com push ativo.",
+          };
+        }
+
+        return {
+          canAttempt: true,
+          recipientTarget: `${subscriptions.length} dispositivo(s)`,
+          recipientSnapshot: {
+            totalSubscriptions: subscriptions.length,
+            endpointHashes: subscriptions.slice(0, 5).map((item) => item.endpointHash),
+            subscriptionIds: subscriptions.slice(0, 5).map((item) => item.id),
+          },
+        };
+      }
+      default:
+        return {
+          canAttempt: false,
+          reasonCode: "CHANNEL_UNSUPPORTED",
+          reasonMessage: `Canal ${channel} nao suportado`,
+        };
+    }
+  }
+
+  private static async resolveChannelsForDelivery(params: {
+    event: NotificationEvent;
+    preferenceChannels: NotificationChannel[];
+    urgency: NotificationUrgency;
+  }): Promise<ChannelResolutionResult> {
+    const planMap = new Map<NotificationChannel, ChannelPlanEntry>();
+    const explicitChannels = params.event.channels ?? [];
+
+    const addAttempt = (channel: NotificationChannel, requested = true) => {
+      this.upsertChannelPlan(planMap, channel, {
+        requested,
+        status: "ATTEMPT",
+        reasonCode: undefined,
+        reasonMessage: undefined,
+      });
+    };
+
+    const addSkip = (
+      channel: NotificationChannel,
+      reasonCode: string,
+      reasonMessage: string,
+    ) => {
+      this.upsertChannelPlan(planMap, channel, {
+        requested: true,
+        status: "SKIP",
+        reasonCode,
+        reasonMessage,
+      });
+    };
+
+    if (params.urgency === "CRITICAL") {
+      addAttempt("REALTIME");
+      addAttempt("EMAIL");
+
+      if (explicitChannels.includes("TELEGRAM")) {
+        addAttempt("TELEGRAM");
+      }
+    } else if (explicitChannels.length > 0) {
+      const enabledChannels = new Set(params.preferenceChannels);
+      const shouldForceDeadlineTelegram =
+        params.event.type.startsWith("prazo.") &&
+        explicitChannels.includes("TELEGRAM");
+
+      for (const channel of explicitChannels) {
+        if (
+          enabledChannels.has(channel) ||
+          (shouldForceDeadlineTelegram && channel === "TELEGRAM")
+        ) {
+          addAttempt(channel);
+        } else {
+          addSkip(
+            channel,
+            "DISABLED_BY_PREFERENCE",
+            `Canal ${channel} desabilitado pelas preferencias do usuario.`,
+          );
+        }
+      }
+
+      if (Array.from(planMap.values()).every((plan) => plan.status !== "ATTEMPT")) {
+        for (const channel of params.preferenceChannels) {
+          addAttempt(channel);
+        }
+      }
+    } else {
+      for (const channel of params.preferenceChannels) {
+        addAttempt(channel);
+      }
+    }
+
+    if (NotificationPolicy.shouldMirrorToTelegram(params.event.type, params.urgency)) {
+      const telegramPlan = planMap.get("TELEGRAM");
+
+      if (!telegramPlan || telegramPlan.status !== "ATTEMPT") {
+        addAttempt("TELEGRAM");
+      }
+    }
+
+    for (const plan of planMap.values()) {
+      if (plan.status !== "ATTEMPT") {
+        continue;
+      }
+
+      const inspection = await this.inspectChannelAvailability(
+        params.event.tenantId,
+        params.event.userId,
+        plan.channel,
+      );
+
+      if (!inspection.canAttempt) {
+        this.upsertChannelPlan(planMap, plan.channel, {
+          requested: plan.requested,
+          status: "SKIP",
+          reasonCode: inspection.reasonCode,
+          reasonMessage: inspection.reasonMessage,
+          recipientTarget: inspection.recipientTarget,
+          recipientSnapshot: inspection.recipientSnapshot,
+        });
+        continue;
+      }
+
+      this.upsertChannelPlan(planMap, plan.channel, {
+        requested: plan.requested,
+        status: "ATTEMPT",
+        recipientTarget: inspection.recipientTarget,
+        recipientSnapshot: inspection.recipientSnapshot,
+      });
+    }
+
+    const resolvedChannels = Array.from(planMap.values())
+      .filter((plan) => plan.status === "ATTEMPT")
+      .map((plan) => plan.channel);
+    const channelOrder = new Map(
+      sortNotificationChannels(Array.from(planMap.keys())).map((channel, index) => [
+        channel,
+        index,
+      ]),
+    );
+
+    return {
+      requestedChannels: sortNotificationChannels(
+        Array.from(planMap.values())
+          .filter((plan) => plan.requested)
+          .map((plan) => plan.channel),
+      ),
+      resolvedChannels: sortNotificationChannels(resolvedChannels),
+      channelPlans: Array.from(planMap.values()).sort(
+        (left, right) =>
+          (channelOrder.get(left.channel) ?? 999) -
+          (channelOrder.get(right.channel) ?? 999),
+      ),
+    };
+  }
   private static buildWildcardEventTypes(eventType: string): string[] {
     const wildcards: string[] = [];
     const segments = eventType.split(".");

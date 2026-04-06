@@ -36,6 +36,7 @@ import { CalendarDate, getLocalTimeZone } from "@internationalized/date";
 import {
   Activity,
   AlertTriangle,
+  BellRing,
   Building2,
   CalendarRange,
   Clock3,
@@ -57,6 +58,10 @@ import {
 } from "lucide-react";
 
 import {
+  getAdminNotificationAudit,
+  type NotificationAuditFilters,
+} from "@/app/actions/admin-notification-audit";
+import {
   getAdminAuditCenter,
   getAuditLogContext,
   type AdminAuditCenterFilters,
@@ -74,6 +79,10 @@ import {
   PeoplePageHeader,
   PeoplePanel,
 } from "@/components/people-ui";
+import {
+  NotificationAuditPanel,
+  type NotificationAuditPanelFilters,
+} from "./notification-audit-panel";
 import { toast } from "@/lib/toast";
 
 function formatCalendarRange(value?: RangeValue<CalendarDate> | null) {
@@ -249,6 +258,12 @@ const TAB_META: Record<
     description:
       "Disparos reais de email com remetente, destinatário, assunto, provider e resultado.",
   },
+  notifications: {
+    label: "NotificaÃ§Ãµes",
+    icon: <BellRing className="h-4 w-4" />,
+    description:
+      "Despacho, supressÃ£o, entrega por canal, custo, destinatÃ¡rio resolvido e evidÃªncia por provider.",
+  },
   webhooks: {
     label: "Webhooks",
     icon: <Webhook className="h-4 w-4" />,
@@ -274,6 +289,8 @@ export function AuditoriaContent() {
   const [selectedOperationalEvent, setSelectedOperationalEvent] =
     useState<AdminOperationalAuditEntry | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [notificationFilters, setNotificationFilters] =
+    useState<NotificationAuditPanelFilters>({});
 
   const filters: AdminAuditCenterFilters = useMemo(() => {
     const startIso = calendarRange?.start
@@ -394,7 +411,49 @@ export function AuditoriaContent() {
     try {
       setIsExporting(true);
 
-      if (selectedTab === "changes") {
+      if (selectedTab === "notifications") {
+        const notificationExportFilters: NotificationAuditFilters = {
+          ...filters,
+          ...notificationFilters,
+          limit: 1000,
+        };
+        const notificationAuditResponse = await getAdminNotificationAudit(
+          notificationExportFilters,
+        );
+
+        if (!notificationAuditResponse.success || !notificationAuditResponse.data) {
+          throw new Error(
+            notificationAuditResponse.error ||
+              "Falha ao exportar a trilha de notificaÃ§Ãµes.",
+          );
+        }
+
+        downloadCsv(
+          `auditoria-notificacoes-${new Date().toISOString()}.csv`,
+          notificationAuditResponse.data.rows.map((row) => ({
+            createdAt: row.createdAt,
+            tenant: row.tenantName,
+            tenantSlug: row.tenantSlug ?? "",
+            user: row.userName,
+            userEmail: row.userEmail ?? "",
+            eventType: row.eventType,
+            dispatchDecision: row.dispatchDecision,
+            channel: row.channel ?? "",
+            provider: row.provider ?? "",
+            status: row.status,
+            recipientTarget: row.recipientTarget ?? "",
+            reasonCode: row.reasonCode ?? "",
+            reasonLabel: row.reasonLabel,
+            providerMessageId: row.providerMessageId ?? "",
+            providerStatus: row.providerStatus ?? "",
+            providerResponseCode: row.providerResponseCode ?? "",
+            costAmount: row.costAmount ?? "",
+            costCurrency: row.costCurrency ?? "",
+            costSource: row.costSource ?? "",
+            notificationId: row.notificationId ?? "",
+          })),
+        );
+      } else if (selectedTab === "changes") {
         downloadCsv(
           `auditoria-alteracoes-${new Date().toISOString()}.csv`,
           changeLogs.map((log) => ({
@@ -1057,6 +1116,12 @@ export function AuditoriaContent() {
                         </Card>
                       </div>
                     </>
+                  ) : tabKey === "notifications" ? (
+                    <NotificationAuditPanel
+                      filters={filters}
+                      value={notificationFilters}
+                      onChange={setNotificationFilters}
+                    />
                   ) : tabKey === "changes" ? (
                     changeLogs.length ? (
                       <Table removeWrapper aria-label="Tabela de alterações auditadas">

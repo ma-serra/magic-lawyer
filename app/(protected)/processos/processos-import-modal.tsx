@@ -24,6 +24,7 @@ import {
 
 import { importarProcessosPlanilha } from "@/app/actions/processos-importacao";
 import { gerarPlanilhaModeloProcessos } from "@/app/actions/processos-template";
+import { UploadProgress } from "@/components/ui/upload-progress";
 
 interface ProcessosImportModalProps {
   isOpen: boolean;
@@ -344,6 +345,13 @@ export function ProcessosImportModal({
               </div>
             )}
           </div>
+
+          {isProcessing ? (
+            <UploadProgress
+              label="Importando planilha"
+              description="Estamos validando os dados e sincronizando processos e clientes."
+            />
+          ) : null}
 
           <div className="rounded-2xl border border-default-200/70 bg-default-50/80 p-4 dark:border-default-100/20 dark:bg-default-50/10">
             <div className="flex items-start justify-between gap-3">

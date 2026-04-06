@@ -173,6 +173,11 @@ export async function getAdminSecurityDashboard(
             },
           },
           deliveries: {
+            where: {
+              status: {
+                not: "SKIPPED",
+              },
+            },
             select: {
               channel: true,
               status: true,

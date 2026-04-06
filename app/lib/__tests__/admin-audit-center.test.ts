@@ -175,6 +175,9 @@ describe("admin audit center", () => {
     expect(
       dashboard.categories.find((item) => item.key === "crons")?.errors,
     ).toBe(1);
+    expect(
+      dashboard.categories.find((item) => item.key === "notifications")?.count,
+    ).toBe(0);
     expect(dashboard.topActors.map((actor) => actor.name)).toContain(
       "Admin RVB",
     );
@@ -189,6 +192,9 @@ describe("admin audit center", () => {
     expect(filterOperationalEventsByTab(operationalEvents, "emails")).toHaveLength(
       1,
     );
+    expect(
+      filterOperationalEventsByTab(operationalEvents, "notifications"),
+    ).toHaveLength(0);
     expect(filterOperationalEventsByTab(operationalEvents, "webhooks")).toHaveLength(
       0,
     );

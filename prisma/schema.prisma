@@ -4525,6 +4525,21 @@ enum NotificationChannel {
   @@schema("magiclawyer")
 }
 
+enum NotificationDispatchDecision {
+  CREATED
+  SUPPRESSED
+  FAILED
+
+  @@schema("magiclawyer")
+}
+
+enum NotificationCostSource {
+  EXACT
+  ESTIMATED
+
+  @@schema("magiclawyer")
+}
+
 model Notification {
   id        String                @id @default(cuid())
   tenantId  String
@@ -4543,12 +4558,37 @@ model Notification {
   tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user       Usuario                @relation(fields: [userId], references: [id], onDelete: Cascade)
   deliveries NotificationDelivery[]
+  dispatches NotificationDispatchAudit[]
 
   @@index([tenantId, userId])
   @@index([tenantId, type])
   @@index([tenantId, urgency])
   @@index([createdAt])
   @@index([expiresAt])
+  @@schema("magiclawyer")
+}
+
+model NotificationDispatchAudit {
+  id                String                       @id @default(cuid())
+  tenantId          String
+  userId            String
+  notificationId    String?
+  eventType         String
+  urgency           NotificationUrgency         @default(MEDIUM)
+  payloadSummary    Json?
+  requestedChannels NotificationChannel[]       @default([])
+  resolvedChannels  NotificationChannel[]       @default([])
+  decision          NotificationDispatchDecision
+  reasonCode        String?
+  reasonMessage     String?
+  createdAt         DateTime                    @default(now())
+
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId, eventType, createdAt, decision])
+  @@index([tenantId, decision, createdAt])
+  @@index([notificationId])
+  @@index([createdAt])
   @@schema("magiclawyer")
 }
 
@@ -4559,8 +4599,20 @@ model NotificationDelivery {
   provider          String
   providerMessageId String?
   status            NotificationDeliveryStatus @default(PENDING)
+  recipientTarget   String?
+  recipientSnapshot Json?
+  reasonCode        String?
+  reasonMessage     String?
   errorCode         String?
   errorMessage      String?
+  providerStatus    String?
+  providerResponseCode String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  costAmount        Decimal?                   @db.Decimal(12, 6)
+  costCurrency      String?
+  costSource        NotificationCostSource?
   metadata          Json?
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
@@ -4568,6 +4620,9 @@ model NotificationDelivery {
   notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
   @@index([notificationId])
+  @@index([notificationId, channel])
+  @@index([channel, status, createdAt])
+  @@index([provider, createdAt])
   @@index([providerMessageId])
   @@schema("magiclawyer")
 }
@@ -4849,6 +4904,7 @@ enum NotificationDeliveryStatus {
   DELIVERED
   READ
   FAILED
+  SKIPPED
 
   @@schema("magiclawyer")
 }

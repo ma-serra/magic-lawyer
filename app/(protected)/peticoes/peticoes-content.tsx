@@ -24,6 +24,7 @@ import {
   Pagination,
 } from "@heroui/react";
 import { toast } from "@/lib/toast";
+import { UploadProgress } from "@/components/ui/upload-progress";
 import {
   Search as MagnifyingGlassIcon,
   Filter as FilterIcon,
@@ -1688,6 +1689,13 @@ function PeticaoModal({
               ) : null}
             </div>
           )}
+
+          {uploading ? (
+            <UploadProgress
+              label="Enviando documento da petição"
+              description="O PDF está sendo salvo e vinculado à petição."
+            />
+          ) : null}
 
           {mode === "view" && peticao?.documento && (
             <div className="p-4 bg-primary-50 rounded-lg">
