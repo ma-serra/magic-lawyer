@@ -71,6 +71,11 @@ export class HybridNotificationService {
     const typeMapping: Record<string, string> = {
       "system.notification": "SISTEMA",
       "prazo.expiring": "PRAZO",
+      "prazo.expiring_7d": "PRAZO",
+      "prazo.expiring_3d": "PRAZO",
+      "prazo.expiring_1d": "PRAZO",
+      "prazo.expiring_2h": "PRAZO",
+      "prazo.expired": "PRAZO",
       "documento.uploaded": "DOCUMENTO",
       "mensagem.received": "MENSAGEM",
       "financeiro.payment": "FINANCEIRO",
@@ -122,22 +127,35 @@ export class HybridNotificationService {
     mensagem: string;
   } {
     const payload = event.payload;
+    const clientePrefix = payload.clienteNome
+      ? `Cliente ${payload.clienteNome}: `
+      : "";
+    const processoLabel = payload.processoNumero || payload.numero || "sem número";
 
     switch (event.type) {
       case "prazo.expiring":
+      case "prazo.expiring_7d":
+      case "prazo.expiring_3d":
+      case "prazo.expiring_1d":
+      case "prazo.expiring_2h":
         return {
           titulo: "Prazo Próximo do Vencimento",
-          mensagem: `Prazo "${payload.titulo || "sem título"}" vence em ${payload.diasRestantes || "poucos"} dias.`,
+          mensagem: `${clientePrefix}prazo "${payload.titulo || "sem título"}" do processo ${processoLabel} vence em ${payload.diasRestantes || "breve"}.`,
+        };
+      case "prazo.expired":
+        return {
+          titulo: "Prazo Vencido",
+          mensagem: `${clientePrefix}prazo "${payload.titulo || "sem título"}" do processo ${processoLabel} venceu.`,
         };
       case "prazo.created":
         return {
           titulo: "Novo Prazo Registrado",
-          mensagem: `Prazo "${payload.titulo || "sem título"}" foi vinculado ao processo ${payload.processoNumero || "sem número"}.`,
+          mensagem: `${clientePrefix}prazo "${payload.titulo || "sem título"}" foi vinculado ao processo ${processoLabel}.`,
         };
       case "prazo.updated":
         return {
           titulo: "Prazo Atualizado",
-          mensagem: `Prazo "${payload.titulo || "sem título"}" do processo ${payload.processoNumero || "sem número"} foi atualizado.`,
+          mensagem: `${clientePrefix}prazo "${payload.titulo || "sem título"}" do processo ${processoLabel} foi atualizado.`,
         };
 
       case "processo.created":

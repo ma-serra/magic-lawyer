@@ -565,6 +565,11 @@ export class DeadlineSchedulerService {
 
         try {
           const effectiveDate = getEffectiveDeadlineDate(prazo);
+          const clienteNome = (
+            prazo.processo as typeof prazo.processo & {
+              cliente?: { nome?: string | null } | null;
+            }
+          ).cliente?.nome;
           const event = NotificationFactory.createEvent(
             eventType,
             prazo.tenantId,
@@ -574,6 +579,7 @@ export class DeadlineSchedulerService {
               processoId: prazo.processo.id,
               processoNumero: prazo.processo.numero,
               numero: prazo.processo.numero,
+              ...(clienteNome ? { clienteNome } : {}),
               titulo: prazo.titulo,
               dataVencimento: effectiveDate.toISOString(),
               effectiveDate: effectiveDate.toISOString(),
@@ -644,6 +650,11 @@ export class DeadlineSchedulerService {
             id: true,
             numero: true,
             tenantId: true,
+            cliente: {
+              select: {
+                nome: true,
+              },
+            },
             advogadoResponsavel: {
               select: {
                 usuario: {
@@ -766,6 +777,11 @@ export class DeadlineSchedulerService {
         }
 
         try {
+          const clienteNome = (
+            prazo.processo as typeof prazo.processo & {
+              cliente?: { nome?: string | null } | null;
+            }
+          ).cliente?.nome;
           const event = NotificationFactory.createEvent(
             "prazo.expired",
             prazo.tenantId,
@@ -775,6 +791,7 @@ export class DeadlineSchedulerService {
               processoId: prazo.processo.id,
               processoNumero: prazo.processo.numero,
               numero: prazo.processo.numero,
+              ...(clienteNome ? { clienteNome } : {}),
               titulo: prazo.titulo,
               dataVencimento: effectiveDate.toISOString(),
               effectiveDate: effectiveDate.toISOString(),

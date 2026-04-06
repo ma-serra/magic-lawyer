@@ -516,6 +516,10 @@ export class NotificationService {
 
     // Substituir variáveis no formato {variavel}
     Object.entries(normalizedPayload).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+
       const regex = new RegExp(`{${key}}`, "g");
 
       title = title.replace(regex, String(value));
@@ -1162,12 +1166,12 @@ export class NotificationService {
       "prazo.created": {
         title: "Novo prazo registrado",
         message:
-          'Prazo "{titulo}" foi criado no processo {processoNumero} (vencimento: {dataVencimento})',
+          'Cliente {clienteNome}: o prazo "{titulo}" foi criado no processo {processoNumero} (vencimento: {dataVencimento}).',
       },
       "prazo.updated": {
         title: "Prazo atualizado",
         message:
-          'Prazo "{titulo}" do processo {processoNumero} foi atualizado',
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} foi atualizado.',
       },
       "prazo.digest_30d": {
         title: "Frente 1 · Prazos com vencimento em 30 dias",
@@ -1182,31 +1186,32 @@ export class NotificationService {
       "prazo.expiring_7d": {
         title: "Frente 2 · Prazo próximo do vencimento",
         message:
-          'Prazo "{titulo}" do processo {processoNumero} vence em 7 dias.',
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} vence em 7 dias ({dataVencimento}).',
       },
       "prazo.expiring": {
         title: "Prazo próximo do vencimento",
         message:
-          "Prazo do processo {processoNumero} está próximo do vencimento",
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} está próximo do vencimento.',
       },
       "prazo.expiring_3d": {
         title: "Frente 2 · Prazo muito próximo do vencimento",
         message:
-          'Prazo "{titulo}" do processo {processoNumero} vence em 3 dias.',
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} vence em 3 dias ({dataVencimento}).',
       },
       "prazo.expiring_1d": {
         title: "Frente 3 · Prazo crítico",
         message:
-          'Prazo "{titulo}" do processo {processoNumero} vence em 1 dia.',
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} vence em 1 dia ({dataVencimento}).',
       },
       "prazo.expiring_2h": {
         title: "Frente 3 · Prazo no limite",
         message:
-          'Prazo "{titulo}" do processo {processoNumero} vence em até 2 horas.',
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} vence em até 2 horas.',
       },
       "prazo.expired": {
         title: "Frente 3 · Prazo vencido",
-        message: 'Prazo "{titulo}" do processo {processoNumero} venceu.',
+        message:
+          'Cliente {clienteNome}: o prazo "{titulo}" do processo {processoNumero} venceu em {dataVencimento}.',
       },
       "cliente.created": {
         title: "Novo cliente cadastrado",

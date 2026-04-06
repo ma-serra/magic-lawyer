@@ -2,6 +2,11 @@ import { NotificationEvent } from "../types";
 
 import prisma from "@/app/lib/prisma";
 import { emailService } from "@/app/lib/email-service";
+import {
+  resolveNotificationActionText,
+  resolveNotificationUrl,
+  resolveTenantBaseUrl as resolveNotificationTenantBaseUrl,
+} from "@/app/lib/notifications/notification-links";
 
 /**
  * Canal de EMAIL para notificações
@@ -37,9 +42,11 @@ export class EmailChannel {
         ? this.generateActionLink(event, tenantBaseUrl)
         : undefined;
       const textoAcao =
-        tenantBaseUrl && linkAcao ? this.generateActionText(event) : undefined;
+        tenantBaseUrl && linkAcao
+          ? resolveNotificationActionText(event.type, event.payload)
+          : undefined;
 
-      const enrichedMessage = this.enrichMessage(message, event);
+      const enrichedMessage = this.enrichMessage(message, event, linkAcao);
 
       // Enviar email usando o novo serviço per-tenant
       const result = await emailService.sendNotificacaoAdvogado(
@@ -88,8 +95,8 @@ export class EmailChannel {
     if (!baseUrl) {
       return undefined;
     }
-
     const normalizedBase = baseUrl.replace(/\/+$/, "");
+    return resolveNotificationUrl(event.type, event.payload, baseUrl);
 
     switch (event.type) {
       case "processo.created":
@@ -215,75 +222,47 @@ export class EmailChannel {
       | null
       | undefined,
   ): string | undefined {
-    if (!tenant) {
-      return undefined;
-    }
-
-    const defaultBase =
-      process.env.NEXTAUTH_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "https://magiclawyer.vercel.app";
-
-    const getProtocol = (raw: string) => {
-      try {
-        const url = new URL(
-          raw.startsWith("http://") || raw.startsWith("https://")
-            ? raw
-            : `https://${raw}`,
-        );
-
-        return url.protocol || "https:";
-      } catch {
-        return "https:";
-      }
-    };
-
-    const ensureProtocol = (value: string, protocol: string) => {
-      if (/^https?:\/\//i.test(value)) {
-        return value;
-      }
-
-      return `${protocol}//${value}`;
-    };
-
-    const candidateDomain =
-      tenant.branding?.customDomainText?.trim() || tenant.domain?.trim();
-
-    if (candidateDomain) {
-      return ensureProtocol(candidateDomain, getProtocol(defaultBase));
-    }
-
-    if (!tenant.slug) {
-      return undefined;
-    }
-
-    try {
-      const base = new URL(
-        defaultBase.startsWith("http://") || defaultBase.startsWith("https://")
-          ? defaultBase
-          : `https://${defaultBase}`,
-      );
-      const host = base.host;
-      const protocol = base.protocol || "https:";
-
-      return `${protocol}//${tenant.slug}.${host}`;
-    } catch {
-      return undefined;
-    }
+    return resolveNotificationTenantBaseUrl(tenant);
   }
 
   private static enrichMessage(
     originalMessage: string,
     event: NotificationEvent,
+    actionUrl?: string,
   ): string {
     const details: string[] = [];
+    const payload = event.payload || {};
+
+    if (event.type.startsWith("prazo.")) {
+      if (payload.clienteNome) {
+        details.push(`Cliente: ${payload.clienteNome}`);
+      }
+
+      if (payload.processoNumero || payload.numero) {
+        details.push(`Processo: ${payload.processoNumero || payload.numero}`);
+      }
+
+      if (payload.titulo) {
+        details.push(`Prazo: ${payload.titulo}`);
+      }
+
+      const effectiveDate = this.formatDate(
+        payload.effectiveDate || payload.dataVencimento,
+      );
+
+      if (effectiveDate) {
+        details.push(`Vencimento: ${effectiveDate}`);
+      }
+
+      if (actionUrl) {
+        details.push(`Acesso direto: ${actionUrl}`);
+      }
+    }
 
     if (
       event.type === "andamento.created" ||
       event.type === "andamento.updated"
     ) {
-      const payload = event.payload || {};
-
       if (payload.processoNumero) {
         details.push(`Processo: ${payload.processoNumero}`);
       }
@@ -308,8 +287,6 @@ export class EmailChannel {
     }
 
     if (event.type === "access.login_new") {
-      const payload = event.payload || {};
-
       if (payload.locationLabel) {
         details.push(`Local aproximado: ${payload.locationLabel}`);
       }

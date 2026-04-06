@@ -1,5 +1,6 @@
 import prisma from "@/app/lib/prisma";
 import { ensureSharedOfficialHolidaysForScope } from "@/app/lib/feriados/sync";
+import { doesRitoProcessoUseBusinessDays } from "@/app/lib/processos/rito-processo";
 import {
   computeHolidayImpactFromCalendar,
   parseHolidayImpact,
@@ -7,7 +8,7 @@ import {
   type HolidayImpactSnapshot,
   type HolidayScopeInput,
 } from "@/app/lib/feriados/holiday-impact";
-import { ProcessoPrazoStatus, Prisma } from "@/generated/prisma";
+import { Prisma, ProcessoPrazoStatus, RitoProcesso } from "@/generated/prisma";
 
 function startOfDay(date: Date) {
   const copy = new Date(date);
@@ -150,13 +151,14 @@ async function listCalendarEntries(params: {
 export async function resolveHolidayImpactForPrazoDraft(params: {
   tenantId: string;
   baseDate: Date;
+  ritoProcesso?: RitoProcesso | null;
   regimePrazoId?: string | null;
   scope?: HolidayScopeInput;
   maxShiftDays?: number;
 }): Promise<HolidayImpactSnapshot> {
   const scope = params.scope ?? {};
 
-  if (!params.regimePrazoId) {
+  if (!params.ritoProcesso && !params.regimePrazoId) {
     return computeHolidayImpactFromCalendar({
       baseDate: params.baseDate,
       contarDiasUteis: false,
@@ -164,18 +166,26 @@ export async function resolveHolidayImpactForPrazoDraft(params: {
     });
   }
 
-  const regime = await prisma.regimePrazo.findFirst({
-    where: {
-      id: params.regimePrazoId,
-      OR: [{ tenantId: params.tenantId }, { tenantId: null }],
-    },
-    select: {
-      id: true,
-      contarDiasUteis: true,
-    },
-  });
+  let contarDiasUteis = false;
 
-  if (!regime?.contarDiasUteis) {
+  if (params.ritoProcesso) {
+    contarDiasUteis = doesRitoProcessoUseBusinessDays(params.ritoProcesso);
+  } else if (params.regimePrazoId) {
+    const regime = await prisma.regimePrazo.findFirst({
+      where: {
+        id: params.regimePrazoId,
+        OR: [{ tenantId: params.tenantId }, { tenantId: null }],
+      },
+      select: {
+        id: true,
+        contarDiasUteis: true,
+      },
+    });
+
+    contarDiasUteis = Boolean(regime?.contarDiasUteis);
+  }
+
+  if (!contarDiasUteis) {
     return computeHolidayImpactFromCalendar({
       baseDate: params.baseDate,
       contarDiasUteis: false,
@@ -203,6 +213,7 @@ export async function recomputeHolidayImpactsForOpenDeadlines(params: {
   tenantId?: string | null;
   year?: number;
   scope?: HolidayScopeInput;
+  ritoProcesso?: RitoProcesso | null;
   regimePrazoId?: string | null;
 }) {
   const todayStart = startOfDay(new Date());
@@ -258,6 +269,7 @@ export async function recomputeHolidayImpactsForOpenDeadlines(params: {
       ],
       processo: {
         deletedAt: null,
+        ...(params.ritoProcesso ? { ritoProcesso: params.ritoProcesso } : {}),
         ...(normalizedUf
           ? {
               tribunal: {
@@ -284,6 +296,7 @@ export async function recomputeHolidayImpactsForOpenDeadlines(params: {
       holidayImpact: true,
       processo: {
         select: {
+          ritoProcesso: true,
           tribunalId: true,
           comarca: true,
           tribunal: {
@@ -302,6 +315,7 @@ export async function recomputeHolidayImpactsForOpenDeadlines(params: {
     const nextImpact = await resolveHolidayImpactForPrazoDraft({
       tenantId: prazo.tenantId,
       baseDate: prazo.prorrogadoPara ?? prazo.dataVencimento,
+      ritoProcesso: prazo.processo.ritoProcesso,
       regimePrazoId: prazo.regimePrazoId,
       scope: buildHolidayScopeFromProcess({
         tribunalId: prazo.processo.tribunalId,

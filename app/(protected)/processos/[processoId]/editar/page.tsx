@@ -60,6 +60,10 @@ import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
+import {
+  normalizeLegacyRitoToRitoProcesso,
+  RITO_PROCESSO_OPTIONS,
+} from "@/app/lib/processos/rito-processo";
 
 function buildTribunalLabel(tribunal?: {
   sigla?: string | null;
@@ -243,6 +247,18 @@ export default function EditarProcessoPage() {
   const juizKeys = useMemo(
     () => new Set(juizesDoFormulario.map((juiz) => juiz.id)),
     [juizesDoFormulario],
+  );
+  const ritoProcessoOptions = useMemo(
+    () =>
+      [
+        { key: "__none__", label: "Selecione o rito", textValue: "Selecione o rito" },
+        ...RITO_PROCESSO_OPTIONS.map((item) => ({
+          key: item.value,
+          label: item.label,
+          textValue: item.label,
+        })),
+      ],
+    [],
   );
 
   const fases = useMemo(() => Object.values(ProcessoFase), []);
@@ -479,7 +495,10 @@ export default function EditarProcessoPage() {
       vara: processo.vara || "",
       comarca: processo.comarca || "",
       foro: processo.foro || "",
-      rito: processo.rito || "",
+      ritoProcesso:
+        processo.ritoProcesso ??
+        normalizeLegacyRitoToRitoProcesso(processo.rito) ??
+        undefined,
       numeroInterno: processo.numeroInterno || "",
       pastaCompartilhadaUrl: processo.pastaCompartilhadaUrl || "",
       clienteId: processo.cliente.id,
@@ -585,6 +604,12 @@ export default function EditarProcessoPage() {
       return;
     }
 
+    if (!formData.ritoProcesso) {
+      toast.error("Selecione o rito do processo");
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -608,7 +633,7 @@ export default function EditarProcessoPage() {
       payload.classeProcessual = formData.classeProcessual?.trim()
         ? formData.classeProcessual.trim()
         : undefined;
-      payload.rito = formData.rito?.trim() ? formData.rito.trim() : undefined;
+      payload.ritoProcesso = formData.ritoProcesso;
       payload.vara = formData.vara?.trim() ? formData.vara.trim() : undefined;
       payload.comarca = formData.comarca?.trim()
         ? formData.comarca.trim()
@@ -1202,14 +1227,22 @@ export default function EditarProcessoPage() {
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                description="Procedimento aplicado ao caso (ordinario, sumario, especial etc.)."
-                label="Rito"
-                placeholder="Ex: Ordinario, Sumario"
-                value={formData.rito || ""}
-                onValueChange={(value) =>
+              <SearchableSelect
+                items={ritoProcessoOptions}
+                label="Rito do processo"
+                placeholder="Selecione o rito"
+                selectedKey={formData.ritoProcesso ?? "__none__"}
+                onSelectionChange={(value) =>
                   setFormData((prev) =>
-                    prev ? { ...prev, rito: value } : prev,
+                    prev
+                      ? {
+                          ...prev,
+                          ritoProcesso:
+                            value && value !== "__none__"
+                              ? (value as ProcessoCreateInput["ritoProcesso"])
+                              : undefined,
+                        }
+                      : prev,
                   )
                 }
               />

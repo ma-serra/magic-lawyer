@@ -6,11 +6,13 @@ import logger from "@/lib/logger";
 import {
   Prisma,
   ProcessoArquivamentoTipo,
-  ProcessoStatus,
   ProcessoFase,
   ProcessoGrau,
-  ProcessoPrazoStatus,
   ProcessoPolo,
+  ProcessoPrazoStatus,
+  ProcessoStatus,
+  RitoProcesso,
+  TipoPrazoLegal,
 } from "@/generated/prisma";
 import {
   extractChangedFieldsFromDiff,
@@ -61,6 +63,11 @@ import {
   parseHolidayImpact,
   type HolidayImpactSnapshot,
 } from "@/app/lib/feriados/holiday-impact";
+import {
+  getLegacyRitoProcessoLabel,
+  getPrazoLegalRule,
+  normalizeLegacyRitoToRitoProcesso,
+} from "@/app/lib/processos/rito-processo";
 import {
   buildJusbrasilProcessUserCustom,
   ensureJusbrasilProcessMonitorBestEffort,
@@ -319,6 +326,7 @@ export interface Processo {
   segredoJustica: boolean;
   valorCausa: number | null;
   rito: string | null;
+  ritoProcesso: RitoProcesso | null;
   clienteId: string;
   clienteIds?: string[];
   advogadoResponsavelId: string | null;
@@ -391,6 +399,7 @@ export interface ProcessoPrazo {
   titulo: string;
   descricao: string | null;
   fundamentoLegal: string | null;
+  tipoPrazoLegal: TipoPrazoLegal | null;
   status: ProcessoPrazoStatus;
   dataVencimento: Date;
   dataCumprimento: Date | null;
@@ -930,6 +939,8 @@ async function ensureProcessMutationAccess(
       foro: true,
       prazoPrincipal: true,
       valorCausa: true,
+      rito: true,
+      ritoProcesso: true,
       areaId: true,
       tribunalId: true,
       juizId: true,
@@ -1300,6 +1311,7 @@ function buildPrazoAuditSnapshot(prazo: {
   titulo: string;
   descricao?: string | null;
   fundamentoLegal?: string | null;
+  tipoPrazoLegal?: TipoPrazoLegal | null;
   status: ProcessoPrazoStatus;
   dataVencimento: Date | string;
   prorrogadoPara?: Date | string | null;
@@ -1314,6 +1326,7 @@ function buildPrazoAuditSnapshot(prazo: {
     titulo: prazo.titulo ?? null,
     descricao: prazo.descricao ?? null,
     fundamentoLegal: prazo.fundamentoLegal ?? null,
+    tipoPrazoLegal: prazo.tipoPrazoLegal ?? null,
     status: prazo.status ?? null,
     dataVencimento: normalizeAuditDate(prazo.dataVencimento),
     prorrogadoPara: normalizeAuditDate(prazo.prorrogadoPara ?? null),
@@ -1353,6 +1366,7 @@ function buildPrazoAuditDiff(
 async function buildPrazoHolidayImpact(params: {
   tenantId: string;
   processo: {
+    ritoProcesso?: RitoProcesso | null;
     tribunalId?: string | null;
     comarca?: string | null;
     tribunal?: {
@@ -1366,6 +1380,7 @@ async function buildPrazoHolidayImpact(params: {
   return resolveHolidayImpactForPrazoDraft({
     tenantId: params.tenantId,
     baseDate: params.prorrogadoPara ?? params.dataVencimento,
+    ritoProcesso: params.processo.ritoProcesso ?? null,
     regimePrazoId: params.regimePrazoId ?? null,
     scope: buildHolidayScopeFromProcess({
       tribunalId: params.processo.tribunalId ?? null,
@@ -1386,6 +1401,38 @@ function buildPrazoHolidayNotificationPayload(
     holidayImpact,
     holidayImpactSummary: holidayImpact.summary,
     detailLines: buildHolidayImpactDetailLines(holidayImpact),
+  };
+}
+
+function resolveCanonicalRitoProcesso(input: {
+  ritoProcesso?: RitoProcesso | null;
+  rito?: string | null;
+}) {
+  return input.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(input.rito);
+}
+
+function buildLegacyRitoValue(ritoProcesso?: RitoProcesso | null) {
+  return getLegacyRitoProcessoLabel(ritoProcesso) ?? null;
+}
+
+function resolvePrazoPayloadDefaults(params: {
+  ritoProcesso: RitoProcesso;
+  titulo?: string | null;
+  fundamentoLegal?: string | null;
+  tipoPrazoLegal?: TipoPrazoLegal | null;
+}) {
+  const rule = getPrazoLegalRule({
+    ritoProcesso: params.ritoProcesso,
+    tipoPrazoLegal: params.tipoPrazoLegal ?? null,
+  });
+
+  const titulo = params.titulo?.trim() || rule?.tituloPadrao || "";
+  const fundamentoLegal =
+    params.fundamentoLegal?.trim() || rule?.fundamentoLegal || null;
+
+  return {
+    titulo,
+    fundamentoLegal,
   };
 }
 
@@ -2744,6 +2791,7 @@ export interface ProcessoCreateInput {
   segredoJustica?: boolean;
   valorCausa?: number;
   rito?: string;
+  ritoProcesso?: RitoProcesso;
   clienteId?: string;
   clienteIds?: string[];
   advogadoResponsavelId?: string;
@@ -2780,6 +2828,7 @@ export interface ProcessoPrazoInput {
   titulo: string;
   descricao?: string;
   fundamentoLegal?: string;
+  tipoPrazoLegal?: TipoPrazoLegal | null;
   dataVencimento: Date | string;
   prorrogadoPara?: Date | string | null;
   dataCumprimento?: Date | string | null;
@@ -2966,6 +3015,15 @@ export async function createProcesso(data: ProcessoCreateInput) {
       return { success: false, error: "Já existe um processo com este número" };
     }
 
+    const canonicalRitoProcesso = resolveCanonicalRitoProcesso(data);
+
+    if (!canonicalRitoProcesso) {
+      return {
+        success: false,
+        error: "Defina o rito do processo para salvar o cadastro",
+      };
+    }
+
     const normalizedStatus = data.status || ProcessoStatus.RASCUNHO;
     const normalizedArquivamentoTipo = normalizeArquivamentoTipo(
       normalizedStatus,
@@ -3000,7 +3058,8 @@ export async function createProcesso(data: ProcessoCreateInput) {
           dataDistribuicao,
           segredoJustica: data.segredoJustica || false,
           valorCausa: data.valorCausa,
-          rito: data.rito,
+          rito: buildLegacyRitoValue(canonicalRitoProcesso),
+          ritoProcesso: canonicalRitoProcesso,
           clienteId: normalizedLinks.clienteId!,
           advogadoResponsavelId: normalizedLinks.advogadoResponsavelId,
           juizId: data.juizId,
@@ -3382,6 +3441,18 @@ export async function updateProcesso(
       }
     }
 
+    const canonicalRitoProcesso =
+      data.ritoProcesso !== undefined || data.rito !== undefined
+        ? resolveCanonicalRitoProcesso(data)
+        : processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
+
+    if (!canonicalRitoProcesso) {
+      return {
+        success: false,
+        error: "Defina o rito do processo antes de salvar as alterações",
+      };
+    }
+
     const effectiveStatus = data.status ?? processo.status;
     const effectiveArquivamentoTipo =
       data.arquivamentoTipo !== undefined
@@ -3425,7 +3496,10 @@ export async function updateProcesso(
     if (data.valorCausa !== undefined)
       updatePayload.valorCausa =
         data.valorCausa === null ? null : data.valorCausa;
-    if (data.rito !== undefined) updatePayload.rito = data.rito || null;
+    if (data.rito !== undefined || data.ritoProcesso !== undefined) {
+      updatePayload.rito = buildLegacyRitoValue(canonicalRitoProcesso);
+      updatePayload.ritoProcesso = canonicalRitoProcesso;
+    }
     if (data.clienteId !== undefined || data.clienteIds !== undefined)
       updatePayload.clienteId = normalizedLinks.clienteId!;
     if (
@@ -4055,8 +4129,11 @@ export async function createProcessoPrazo(
   input: ProcessoPrazoInput,
 ) {
   try {
-    if (!input?.titulo) {
-      return { success: false, error: "Título do prazo é obrigatório" };
+    if (!input?.titulo && !input?.tipoPrazoLegal) {
+      return {
+        success: false,
+        error: "Título do prazo é obrigatório quando não houver tipo legal",
+      };
     }
 
     if (!input?.dataVencimento) {
@@ -4078,7 +4155,6 @@ export async function createProcessoPrazo(
       uf: processo.tribunal?.uf ?? null,
       municipio: processo.comarca ?? null,
     };
-
     const parsedDataVencimento = parseDateInput(
       input.dataVencimento,
       "Data de vencimento",
@@ -4177,6 +4253,30 @@ export async function createProcessoPrazo(
       }
     }
 
+    const ritoProcesso =
+      processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
+
+    if (!ritoProcesso) {
+      return {
+        success: false,
+        error: "Defina o rito do processo antes de cadastrar prazos automáticos",
+      };
+    }
+
+    const prazoPayload = resolvePrazoPayloadDefaults({
+      ritoProcesso,
+      titulo: input.titulo,
+      fundamentoLegal: input.fundamentoLegal,
+      tipoPrazoLegal: input.tipoPrazoLegal ?? null,
+    });
+
+    if (!prazoPayload.titulo) {
+      return {
+        success: false,
+        error: "Informe o título do prazo ou selecione um tipo legal de prazo",
+      };
+    }
+
     const regimePrazoId = input.regimePrazoId ?? null;
 
     if (regimePrazoId) {
@@ -4198,6 +4298,7 @@ export async function createProcessoPrazo(
 
     const deadlineValidation = await validateDeadlineWithRegime({
       tenantId,
+      ritoProcesso,
       regimePrazoId,
       data: parsedDataVencimento.date,
       scope,
@@ -4222,9 +4323,10 @@ export async function createProcessoPrazo(
       data: {
         tenantId,
         processoId,
-        titulo: input.titulo,
+        titulo: prazoPayload.titulo,
         descricao: input.descricao || null,
-        fundamentoLegal: input.fundamentoLegal || null,
+        fundamentoLegal: prazoPayload.fundamentoLegal,
+        tipoPrazoLegal: input.tipoPrazoLegal ?? null,
         status: input.status || ProcessoPrazoStatus.ABERTO,
         dataVencimento: parsedDataVencimento.date,
         prorrogadoPara: parsedProrrogadoPara.date,
@@ -4255,6 +4357,9 @@ export async function createProcessoPrazo(
           prazoId: prazo.id,
           processoId,
           processoNumero: processo.numero,
+          ...(processo.cliente?.nome
+            ? { clienteNome: processo.cliente.nome }
+            : {}),
           titulo: prazo.titulo,
           dataVencimento: prazo.dataVencimento.toISOString(),
           effectiveDate: holidayImpact.effectiveDate,
@@ -4274,6 +4379,7 @@ export async function createProcessoPrazo(
     try {
       const snapshot = buildPrazoAuditSnapshot({
         ...prazo,
+        tipoPrazoLegal: prazo.tipoPrazoLegal ?? null,
         regimePrazoId: prazo.regimePrazo?.id ?? null,
         holidayImpact: parseHolidayImpact(prazo.holidayImpact),
       });
@@ -4333,6 +4439,15 @@ export async function updateProcessoPrazo(
       uf: processo.tribunal?.uf ?? null,
       municipio: processo.comarca ?? null,
     };
+    const ritoProcesso =
+      processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
+
+    if (!ritoProcesso) {
+      return {
+        success: false,
+        error: "Defina o rito do processo antes de editar este prazo",
+      };
+    }
 
     const prazoAnterior = await prisma.processoPrazo.findFirst({
       where: {
@@ -4354,6 +4469,8 @@ export async function updateProcessoPrazo(
       updateData.descricao = input.descricao ?? null;
     if (input.fundamentoLegal !== undefined)
       updateData.fundamentoLegal = input.fundamentoLegal ?? null;
+    if (input.tipoPrazoLegal !== undefined)
+      updateData.tipoPrazoLegal = input.tipoPrazoLegal ?? null;
     if (input.status !== undefined) updateData.status = input.status;
 
     const parsedDataVencimento =
@@ -4522,6 +4639,19 @@ export async function updateProcessoPrazo(
       input.regimePrazoId !== undefined
         ? input.regimePrazoId
         : prazoAnterior.regimePrazo?.id ?? null;
+    const proximoTipoPrazoLegal =
+      input.tipoPrazoLegal !== undefined
+        ? input.tipoPrazoLegal ?? null
+        : prazoAnterior.tipoPrazoLegal ?? null;
+    const prazoPayload = resolvePrazoPayloadDefaults({
+      ritoProcesso,
+      titulo: input.titulo ?? prazoAnterior.titulo,
+      fundamentoLegal:
+        input.fundamentoLegal !== undefined
+          ? input.fundamentoLegal
+          : prazoAnterior.fundamentoLegal,
+      tipoPrazoLegal: proximoTipoPrazoLegal,
+    });
     const proximaDataVencimento =
       parsedDataVencimento?.date ?? prazoAnterior.dataVencimento;
     const proximoProrrogadoPara =
@@ -4531,6 +4661,7 @@ export async function updateProcessoPrazo(
 
     const deadlineValidation = await validateDeadlineWithRegime({
       tenantId,
+      ritoProcesso,
       regimePrazoId: proximoRegimePrazoId ?? null,
       data: proximaDataVencimento,
       scope,
@@ -4551,6 +4682,17 @@ export async function updateProcessoPrazo(
       prorrogadoPara: proximoProrrogadoPara,
     });
 
+    if (!prazoPayload.titulo) {
+      return {
+        success: false,
+        error: "Informe o título do prazo ou selecione um tipo legal de prazo",
+      };
+    }
+
+    updateData.titulo = prazoPayload.titulo;
+    if (input.fundamentoLegal === undefined || input.tipoPrazoLegal !== undefined) {
+      updateData.fundamentoLegal = prazoPayload.fundamentoLegal;
+    }
     updateData.holidayImpact = holidayImpact;
 
     const atualizado = await prisma.processoPrazo.update({
@@ -4561,11 +4703,13 @@ export async function updateProcessoPrazo(
 
     const previousSnapshot = buildPrazoAuditSnapshot({
       ...prazoAnterior,
+      tipoPrazoLegal: prazoAnterior.tipoPrazoLegal ?? null,
       regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
       holidayImpact: parseHolidayImpact(prazoAnterior.holidayImpact),
     });
     const currentSnapshot = buildPrazoAuditSnapshot({
       ...atualizado,
+      tipoPrazoLegal: atualizado.tipoPrazoLegal ?? null,
       regimePrazoId: atualizado.regimePrazo?.id ?? null,
       holidayImpact: parseHolidayImpact(atualizado.holidayImpact),
     });
@@ -4589,6 +4733,9 @@ export async function updateProcessoPrazo(
             prazoId: atualizado.id,
             processoId: prazo.processoId,
             processoNumero: processo.numero,
+            ...(processo.cliente?.nome
+              ? { clienteNome: processo.cliente.nome }
+              : {}),
             titulo: atualizado.titulo,
             dataVencimento: atualizado.dataVencimento.toISOString(),
             effectiveDate: holidayImpact.effectiveDate,
@@ -4684,6 +4831,7 @@ export async function deleteProcessoPrazo(prazoId: string) {
     try {
       const snapshot = buildPrazoAuditSnapshot({
         ...prazoAnterior,
+        tipoPrazoLegal: prazoAnterior.tipoPrazoLegal ?? null,
         regimePrazoId: prazoAnterior.regimePrazo?.id ?? null,
         holidayImpact: parseHolidayImpact(prazoAnterior.holidayImpact),
       });

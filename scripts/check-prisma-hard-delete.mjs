@@ -28,7 +28,11 @@ function readBaseline() {
   if (!Array.isArray(parsed.entries)) {
     throw new Error("Baseline inválida: propriedade `entries` ausente.");
   }
-  return new Set(parsed.entries.map((entry) => normalizeEntry(entry)));
+  return new Set(
+    parsed.entries.map((entry) =>
+      normalizeEntry(typeof entry === "string" ? entry : entry?.entry),
+    ),
+  );
 }
 
 function collectHardDeleteEntries() {

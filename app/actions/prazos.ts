@@ -11,7 +11,8 @@ import {
 } from "@/app/lib/processos/processo-vinculos";
 import { backfillManagedPrazoPrincipalForWhere } from "@/app/lib/processos/prazo-principal-sync";
 import { parseHolidayImpact, type HolidayImpactSnapshot } from "@/app/lib/feriados/holiday-impact";
-import { Prisma, ProcessoPrazoStatus, UserRole } from "@/generated/prisma";
+import { Prisma, ProcessoPrazoStatus, RitoProcesso, TipoPrazoLegal, UserRole } from "@/generated/prisma";
+import { normalizeLegacyRitoToRitoProcesso } from "@/app/lib/processos/rito-processo";
 
 type PrazoWorkspaceHorizon =
   | "all"
@@ -38,6 +39,7 @@ export type PrazoWorkspaceItem = {
   titulo: string;
   descricao: string | null;
   fundamentoLegal: string | null;
+  tipoPrazoLegal: TipoPrazoLegal | null;
   status: ProcessoPrazoStatus;
   dataVencimento: string;
   dataCumprimento: string | null;
@@ -62,6 +64,8 @@ export type PrazoWorkspaceItem = {
   processo: {
     id: string;
     numero: string;
+    rito: string | null;
+    ritoProcesso: RitoProcesso | null;
     clienteNome: string;
     advogadoResponsavelNome: string | null;
   };
@@ -291,6 +295,8 @@ function serializePrazoItem(
         select: {
           id: true;
           numero: true;
+          rito: true;
+          ritoProcesso: true;
           cliente: {
             select: {
               nome: true;
@@ -327,6 +333,7 @@ function serializePrazoItem(
     titulo: prazo.titulo,
     descricao: prazo.descricao ?? null,
     fundamentoLegal: prazo.fundamentoLegal ?? null,
+    tipoPrazoLegal: prazo.tipoPrazoLegal ?? null,
     status: prazo.status,
     dataVencimento: prazo.dataVencimento.toISOString(),
     dataCumprimento: prazo.dataCumprimento?.toISOString() ?? null,
@@ -357,6 +364,10 @@ function serializePrazoItem(
     processo: {
       id: prazo.processo.id,
       numero: prazo.processo.numero,
+      rito: prazo.processo.rito ?? null,
+      ritoProcesso:
+        prazo.processo.ritoProcesso ??
+        normalizeLegacyRitoToRitoProcesso(prazo.processo.rito),
       clienteNome: prazo.processo.cliente.nome,
       advogadoResponsavelNome,
     },
@@ -489,6 +500,8 @@ export async function getPrazosWorkspace(
               select: {
                 id: true,
                 numero: true,
+                rito: true,
+                ritoProcesso: true,
                 cliente: { select: { nome: true } },
                 advogadoResponsavel: {
                   select: {
@@ -540,6 +553,8 @@ export async function getPrazosWorkspace(
               select: {
                 id: true,
                 numero: true,
+                rito: true,
+                ritoProcesso: true,
                 cliente: { select: { nome: true } },
                 advogadoResponsavel: {
                   select: {
@@ -591,6 +606,8 @@ export async function getPrazosWorkspace(
                   select: {
                     id: true,
                     numero: true,
+                    rito: true,
+                    ritoProcesso: true,
                     cliente: { select: { nome: true } },
                     advogadoResponsavel: {
                       select: {

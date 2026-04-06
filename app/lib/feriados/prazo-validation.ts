@@ -1,15 +1,17 @@
 import prisma from "@/app/lib/prisma";
-import { TipoFeriado } from "@/generated/prisma";
 import { ensureSharedOfficialHolidaysForScope } from "@/app/lib/feriados/sync";
+import { doesRitoProcessoUseBusinessDays, getRitoProcessoLabel } from "@/app/lib/processos/rito-processo";
 import {
   holidayMatchesScope,
   isSameDateOrRecurringMatch,
   isWeekendDate,
   type HolidayScope,
 } from "@/app/lib/feriados/scope";
+import { RitoProcesso, TipoFeriado } from "@/generated/prisma";
 
 export interface DeadlineRegimeValidationInput {
   tenantId: string;
+  ritoProcesso?: RitoProcesso | null;
   regimePrazoId?: string | null;
   data: Date;
   scope?: HolidayScope;
@@ -36,20 +38,29 @@ function formatPtBrDate(date: Date) {
   return date.toLocaleDateString("pt-BR");
 }
 
-export async function validateDeadlineWithRegime({
-  tenantId,
-  regimePrazoId,
-  data,
-  scope = {},
-}: DeadlineRegimeValidationInput): Promise<DeadlineRegimeValidationResult> {
-  if (!regimePrazoId) {
-    return { valid: true };
+async function resolveBusinessDayRule(params: {
+  tenantId: string;
+  ritoProcesso?: RitoProcesso | null;
+  regimePrazoId?: string | null;
+}) {
+  if (params.ritoProcesso) {
+    return {
+      contarDiasUteis: doesRitoProcessoUseBusinessDays(params.ritoProcesso),
+      label: `o rito "${getRitoProcessoLabel(params.ritoProcesso)}"`,
+    };
+  }
+
+  if (!params.regimePrazoId) {
+    return {
+      contarDiasUteis: false,
+      label: "a regra de prazo selecionada",
+    };
   }
 
   const regime = await prisma.regimePrazo.findFirst({
     where: {
-      id: regimePrazoId,
-      OR: [{ tenantId }, { tenantId: null }],
+      id: params.regimePrazoId,
+      OR: [{ tenantId: params.tenantId }, { tenantId: null }],
     },
     select: {
       id: true,
@@ -60,19 +71,45 @@ export async function validateDeadlineWithRegime({
 
   if (!regime) {
     return {
-      valid: false,
+      invalid: true as const,
       error: "Regime de prazo inválido para este escritório.",
     };
   }
 
-  if (!regime.contarDiasUteis) {
+  return {
+    contarDiasUteis: regime.contarDiasUteis,
+    label: `o regime "${regime.nome}"`,
+  };
+}
+
+export async function validateDeadlineWithRegime({
+  tenantId,
+  ritoProcesso,
+  regimePrazoId,
+  data,
+  scope = {},
+}: DeadlineRegimeValidationInput): Promise<DeadlineRegimeValidationResult> {
+  const rule = await resolveBusinessDayRule({
+    tenantId,
+    ritoProcesso,
+    regimePrazoId,
+  });
+
+  if ("invalid" in rule) {
+    return {
+      valid: false,
+      error: rule.error,
+    };
+  }
+
+  if (!rule.contarDiasUteis) {
     return { valid: true };
   }
 
   if (isWeekendDate(data)) {
     return {
       valid: false,
-      error: `A data ${formatPtBrDate(data)} cai em final de semana e o regime "${regime.nome}" exige dias úteis.`,
+      error: `A data ${formatPtBrDate(data)} cai em final de semana e ${rule.label} exige dias úteis.`,
     };
   }
 
@@ -133,7 +170,7 @@ export async function validateDeadlineWithRegime({
   if (feriadoAplicavel) {
     return {
       valid: false,
-      error: `A data ${formatPtBrDate(data)} coincide com feriado (${feriadoAplicavel.nome}) e o regime "${regime.nome}" exige dias úteis.`,
+      error: `A data ${formatPtBrDate(data)} coincide com feriado (${feriadoAplicavel.nome}) e ${rule.label} exige dias úteis.`,
     };
   }
 

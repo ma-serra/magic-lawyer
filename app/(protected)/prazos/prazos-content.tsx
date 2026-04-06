@@ -52,6 +52,10 @@ import {
   type PrazoOperationalBucket,
 } from "@/app/lib/prazos/workspace";
 import { ProcessoPrazoStatus } from "@/generated/prisma";
+import {
+  getRitoProcessoLabel,
+  getTipoPrazoLegalLabel,
+} from "@/app/lib/processos/rito-processo";
 import { toast } from "@/lib/toast";
 
 const STATUS_OPTIONS: SearchableSelectOption[] = [
@@ -209,9 +213,14 @@ function PrazoDetailsModal({
             <Chip color={getBucketTone(bucket)} size="sm" variant="flat">
               {getBucketLabel(bucket)}
             </Chip>
-            {prazo.regimePrazo ? (
+            {prazo.tipoPrazoLegal ? (
               <Chip size="sm" variant="bordered">
-                {prazo.regimePrazo.nome}
+                {getTipoPrazoLegalLabel(prazo.tipoPrazoLegal)}
+              </Chip>
+            ) : null}
+            {prazo.processo.ritoProcesso ? (
+              <Chip size="sm" variant="flat">
+                {getRitoProcessoLabel(prazo.processo.ritoProcesso)}
               </Chip>
             ) : null}
           </div>
@@ -262,6 +271,11 @@ function PrazoDetailsModal({
             <PrazoDetailField
               label="Fundamento jurídico"
               value={prazo.fundamentoLegal ?? "Não informado"}
+            />
+            <PrazoDetailField
+              label="Tipo legal"
+              value={getTipoPrazoLegalLabel(prazo.tipoPrazoLegal) ?? "Não informado"}
+              helper={getRitoProcessoLabel(prazo.processo.ritoProcesso) ?? undefined}
             />
             <PrazoDetailField
               label="Data de cumprimento"
@@ -547,7 +561,7 @@ export function PrazosContent() {
     <div className="space-y-6">
       <PeoplePageHeader
         title="Central de prazos"
-        description="Uma carteira própria para o escritório operar vencimentos, donos, regimes e urgências sem depender de entrar processo por processo."
+        description="Uma carteira própria para o escritório operar vencimentos, donos, ritos e urgências sem depender de entrar processo por processo."
         tag="Operacional jurídico"
         actions={
           <>
@@ -562,9 +576,9 @@ export function PrazosContent() {
             <Button
               startContent={<Clock3 className="h-4 w-4" />}
               variant="bordered"
-              onPress={() => router.push("/regimes-prazo")}
+              onPress={() => router.push("/configuracoes/feriados")}
             >
-              Regimes de prazo
+              Calendário de feriados
             </Button>
           </>
         }
@@ -926,9 +940,14 @@ export function PrazosContent() {
                           >
                             {getBucketLabel(bucket)}
                           </Chip>
-                          {prazo.regimePrazo ? (
+                          {prazo.tipoPrazoLegal ? (
                             <Chip size="sm" variant="bordered">
-                              {prazo.regimePrazo.nome}
+                              {getTipoPrazoLegalLabel(prazo.tipoPrazoLegal)}
+                            </Chip>
+                          ) : null}
+                          {prazo.processo.ritoProcesso ? (
+                            <Chip size="sm" variant="flat">
+                              {getRitoProcessoLabel(prazo.processo.ritoProcesso)}
                             </Chip>
                           ) : null}
                         </div>

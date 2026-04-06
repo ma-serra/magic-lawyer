@@ -84,6 +84,8 @@ import {
   JuizStatus,
   JuizNivel,
   JuizTipoAutoridade,
+  RitoProcesso,
+  TipoPrazoLegal,
 } from "@/generated/prisma";
 import { DateUtils } from "@/app/lib/date-utils";
 import {
@@ -101,7 +103,6 @@ import {
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
-import { listRegimesPrazo } from "@/app/actions/regimes-prazo";
 import { getUsuariosParaSelect } from "@/app/actions/usuarios";
 import {
   getProcessDeadlineNotificationPreference,
@@ -130,6 +131,14 @@ import {
 } from "@/app/lib/prazos/workspace";
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
+import {
+  buildPrazoLegalHint,
+  getPrazoLegalRule,
+  getRitoProcessoLabel,
+  getTipoPrazoLegalLabel,
+  normalizeLegacyRitoToRitoProcesso,
+  TIPO_PRAZO_LEGAL_OPTIONS,
+} from "@/app/lib/processos/rito-processo";
 
 type ParteFormState = {
   tipoPolo: ProcessoPolo;
@@ -264,18 +273,11 @@ const prazoFormInitial = {
   dataVencimento: "",
   descricao: "",
   fundamentoLegal: "",
-  regimePrazoId: "",
+  tipoPrazoLegal: "",
   responsavelId: "",
   origemMovimentacaoId: "",
   origemEventoId: "",
 };
-
-interface RegimePrazoOption {
-  id: string;
-  nome: string;
-  tipo: string;
-  tenantId: string | null;
-}
 
 interface ResponsavelOption {
   id: string;
@@ -300,7 +302,7 @@ interface ProcessoDocumentoOrganizerState {
   metadados?: unknown | null;
 }
 
-type RegimePrazoSelectItem = SearchableSelectOption;
+type TipoPrazoLegalSelectItem = SearchableSelectOption;
 type ResponsavelPrazoSelectItem = SearchableSelectOption;
 type PrazoOrigemSelectItem = SearchableSelectOption;
 
@@ -706,23 +708,6 @@ export default function ProcessoDetalhesPage() {
   const { procuracoes: procuracoesDisponiveis } = useProcuracoesDisponiveis(
     processo?.cliente?.id ?? null,
   );
-  const { data: regimesPrazo = [], isLoading: isLoadingRegimesPrazo } = useSWR(
-    isCliente ? null : "processo-prazos-regimes",
-    async (): Promise<RegimePrazoOption[]> => {
-      const result = await listRegimesPrazo();
-
-      if (!result.success) {
-        return [];
-      }
-
-      return (result.regimes || []).map((regime) => ({
-        id: regime.id,
-        nome: regime.nome,
-        tipo: regime.tipo,
-        tenantId: regime.tenantId ?? null,
-      }));
-    },
-  );
   const {
     data: responsaveisPrazo = [],
     isLoading: isLoadingResponsaveisPrazo,
@@ -755,6 +740,10 @@ export default function ProcessoDetalhesPage() {
   const deadlineAlertsMuted =
     prazoNotificationPreference?.success &&
     prazoNotificationPreference.data?.deadlineAlertsMuted === true;
+  const processoRitoProcesso =
+    processo?.ritoProcesso ??
+    normalizeLegacyRitoToRitoProcesso(processo?.rito ?? null);
+  const processoRitoLabel = getRitoProcessoLabel(processoRitoProcesso);
   const holidayProcessEnabled =
     holidayExperienceRollout?.surfaces.find((surface) => surface.key === "process")
       ?.enabled ?? false;
@@ -764,6 +753,15 @@ export default function ProcessoDetalhesPage() {
   const [editingParteForm, setEditingParteForm] =
     useState<ParteFormState>(parteFormInitial);
   const [prazoForm, setPrazoForm] = useState(prazoFormInitial);
+  const prazoLegalHint = useMemo(
+    () =>
+      buildPrazoLegalHint({
+        ritoProcesso: processoRitoProcesso,
+        tipoPrazoLegal:
+          (prazoForm.tipoPrazoLegal as TipoPrazoLegal | "") || null,
+      }),
+    [prazoForm.tipoPrazoLegal, processoRitoProcesso],
+  );
   const [prazoSearch, setPrazoSearch] = useState("");
   const [prazoStatusFilter, setPrazoStatusFilter] = useState<string>("all");
   const [selectedProcuracaoId, setSelectedProcuracaoId] = useState<string>("");
@@ -901,17 +899,16 @@ export default function ProcessoDetalhesPage() {
     selectedAutoridadeId && autoridadeIdSet.has(selectedAutoridadeId)
       ? [selectedAutoridadeId]
       : [];
-  const regimePrazoItems = useMemo<RegimePrazoSelectItem[]>(
+  const tipoPrazoLegalItems = useMemo<TipoPrazoLegalSelectItem[]>(
     () => [
-      { key: "__none__", label: "Sem regime" },
-      ...regimesPrazo.map((regime) => ({
-        key: regime.id,
-        label: regime.nome,
-        textValue: `${regime.nome} ${regime.tipo}`,
-        description: regime.tipo,
+      { key: "__none__", label: "Sem automação legal" },
+      ...TIPO_PRAZO_LEGAL_OPTIONS.map((tipo) => ({
+        key: tipo.value,
+        label: tipo.label,
+        textValue: tipo.label,
       })),
     ],
-    [regimesPrazo],
+    [],
   );
   const responsavelPrazoItems = useMemo<ResponsavelPrazoSelectItem[]>(
     () => [
@@ -984,9 +981,10 @@ export default function ProcessoDetalhesPage() {
           prazo.titulo,
           prazo.descricao ?? "",
           prazo.fundamentoLegal ?? "",
+          getTipoPrazoLegalLabel(prazo.tipoPrazoLegal) ?? "",
+          processoRitoLabel ?? "",
           prazo.responsavel?.firstName ?? "",
           prazo.responsavel?.lastName ?? "",
-          prazo.regimePrazo?.nome ?? "",
           prazo.origemMovimentacao?.titulo ?? "",
           prazo.origemEvento?.titulo ?? "",
         ].join(" "),
@@ -994,7 +992,7 @@ export default function ProcessoDetalhesPage() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [prazoSearch, prazoStatusFilter, prazosOrdenados]);
+  }, [prazoSearch, prazoStatusFilter, prazosOrdenados, processoRitoLabel]);
   const buildPrazoWorkspaceHref = (prazoId?: string) => {
     const params = new URLSearchParams({
       processoId,
@@ -1365,7 +1363,14 @@ export default function ProcessoDetalhesPage() {
 
   const handleCreatePrazo = async () => {
     if (!prazoForm.titulo.trim()) {
-      toast.error("Informe o título do prazo");
+      if (!prazoForm.tipoPrazoLegal) {
+        toast.error("Informe o título do prazo ou selecione um tipo legal");
+        return;
+      }
+    }
+
+    if (!processoRitoProcesso) {
+      toast.error("Defina o rito do processo antes de criar um prazo");
 
       return;
     }
@@ -1383,7 +1388,8 @@ export default function ProcessoDetalhesPage() {
         dataVencimento: prazoForm.dataVencimento,
         descricao: prazoForm.descricao.trim() || undefined,
         fundamentoLegal: prazoForm.fundamentoLegal.trim() || undefined,
-        regimePrazoId: prazoForm.regimePrazoId || null,
+        tipoPrazoLegal:
+          (prazoForm.tipoPrazoLegal as TipoPrazoLegal | "") || null,
         responsavelId: prazoForm.responsavelId || null,
         origemMovimentacaoId: prazoForm.origemMovimentacaoId || null,
         origemEventoId: prazoForm.origemEventoId || null,
@@ -2080,13 +2086,13 @@ export default function ProcessoDetalhesPage() {
                     </div>
                   )}
 
-                  {processo.rito && (
+                  {processoRitoLabel && (
                     <div>
                       <p className="text-xs font-semibold uppercase text-default-400">
-                        Rito
+                        Rito do processo
                       </p>
                       <p className="mt-1 text-sm text-default-600">
-                        {processo.rito}
+                        {processoRitoLabel}
                       </p>
                     </div>
                   )}
@@ -2927,6 +2933,12 @@ export default function ProcessoDetalhesPage() {
                                   {prazo.fundamentoLegal}
                                 </p>
                               )}
+                              {prazo.tipoPrazoLegal && (
+                                <p className="text-xs text-default-500">
+                                  <strong>Tipo legal:</strong>{" "}
+                                  {getTipoPrazoLegalLabel(prazo.tipoPrazoLegal)}
+                                </p>
+                              )}
                               {prazo.responsavel && (
                                 <p className="text-xs text-default-500">
                                   <strong>Responsável:</strong>{" "}
@@ -2934,10 +2946,10 @@ export default function ProcessoDetalhesPage() {
                                   {prazo.responsavel.lastName}
                                 </p>
                               )}
-                              {prazo.regimePrazo && (
+                              {processoRitoLabel && (
                                 <p className="text-xs text-default-500">
-                                  <strong>Regime:</strong>{" "}
-                                  {prazo.regimePrazo.nome}
+                                  <strong>Rito:</strong>{" "}
+                                  {processoRitoLabel}
                                 </p>
                               )}
                               {prazo.origemMovimentacao && (
@@ -3066,16 +3078,30 @@ export default function ProcessoDetalhesPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <SearchableSelect
-                      items={regimePrazoItems}
-                      isLoading={isLoadingRegimesPrazo}
-                      label="Regime de prazo"
-                      placeholder="Selecione um regime"
-                      selectedKey={prazoForm.regimePrazoId || "__none__"}
+                      items={tipoPrazoLegalItems}
+                      label="Tipo legal do prazo"
+                      placeholder="Selecione o ato processual"
+                      selectedKey={prazoForm.tipoPrazoLegal || "__none__"}
                       onSelectionChange={(value) => {
+                        const nextTipoPrazoLegal =
+                          value && value !== "__none__" ? value : "";
+                        const rule = getPrazoLegalRule({
+                          ritoProcesso: processoRitoProcesso,
+                          tipoPrazoLegal:
+                            (nextTipoPrazoLegal as TipoPrazoLegal | "") || null,
+                        });
+
                         setPrazoForm((prev) => ({
                           ...prev,
-                          regimePrazoId:
-                            value && value !== "__none__" ? value : "",
+                          tipoPrazoLegal: nextTipoPrazoLegal,
+                          titulo:
+                            rule && (!prev.titulo.trim() || prev.tipoPrazoLegal !== nextTipoPrazoLegal)
+                              ? rule.tituloPadrao
+                              : prev.titulo,
+                          fundamentoLegal:
+                            rule && (!prev.fundamentoLegal.trim() || prev.tipoPrazoLegal !== nextTipoPrazoLegal)
+                              ? rule.fundamentoLegal
+                              : prev.fundamentoLegal,
                         }));
                       }}
                     />
@@ -3094,6 +3120,16 @@ export default function ProcessoDetalhesPage() {
                         }));
                       }}
                     />
+                  </div>
+
+                  <div className="rounded-2xl border border-default-200 bg-default-50/80 p-3 text-xs text-default-600">
+                    <p className="font-semibold text-foreground">
+                      Rito aplicado: {processoRitoLabel ?? "Defina no cadastro do processo"}
+                    </p>
+                    <p className="mt-1">
+                      {prazoLegalHint ??
+                        "Selecione o tipo legal para sugerir fundamento e regra-base de contagem."}
+                    </p>
                   </div>
 
 

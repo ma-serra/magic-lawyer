@@ -416,20 +416,6 @@ export function useProfileNavigation() {
       });
     }
 
-    if (
-      !isCliente &&
-      (permissions.canManageOfficeSettings || isSecretaria || isAdvogado)
-    ) {
-      items.push({
-        label: "Regimes de prazo",
-        href: "/regimes-prazo",
-        icon: "Clock",
-        description: "Regras de contagem aplicadas aos prazos",
-        section: "Operacional",
-        requiredModules: ["regimes-prazo"],
-      });
-    }
-
     if (permissions.canViewFinancialData || isFinanceiro) {
       items.push({
         label: "Financeiro",

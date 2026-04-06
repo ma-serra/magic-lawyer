@@ -61,6 +61,7 @@ import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
 import { ClienteCreateModal } from "@/components/clientes/cliente-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
+import { RITO_PROCESSO_OPTIONS } from "@/app/lib/processos/rito-processo";
 
 function buildTribunalLabel(tribunal?: {
   sigla?: string | null;
@@ -97,7 +98,6 @@ export function NovoProcessoContent() {
     vara: "",
     comarca: "",
     foro: "",
-    rito: "",
     numeroInterno: "",
     pastaCompartilhadaUrl: "",
     clienteId: clienteIdParam || "",
@@ -264,6 +264,18 @@ export function NovoProcessoContent() {
   const advogadoKeys = useMemo(
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
+  );
+  const ritoProcessoOptions = useMemo(
+    () =>
+      [
+        { key: "__none__", label: "Selecione o rito", textValue: "Selecione o rito" },
+        ...RITO_PROCESSO_OPTIONS.map((item) => ({
+          key: item.value,
+          label: item.label,
+          textValue: item.label,
+        })),
+      ],
+    [],
   );
   const tribunalKeys = useMemo(
     () => new Set((tribunais || []).map((tribunal) => tribunal.id)),
@@ -550,6 +562,12 @@ export function NovoProcessoContent() {
       return;
     }
 
+    if (!formData.ritoProcesso) {
+      toast.error("Selecione o rito do processo");
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -568,7 +586,7 @@ export function NovoProcessoContent() {
         payload.descricao = formData.descricao.trim();
       if (formData.classeProcessual?.trim())
         payload.classeProcessual = formData.classeProcessual.trim();
-      if (formData.rito?.trim()) payload.rito = formData.rito.trim();
+      if (formData.ritoProcesso) payload.ritoProcesso = formData.ritoProcesso;
       if (formData.vara?.trim()) payload.vara = formData.vara.trim();
       if (formData.comarca?.trim()) payload.comarca = formData.comarca.trim();
       if (formData.foro?.trim()) payload.foro = formData.foro.trim();
@@ -1141,13 +1159,19 @@ export function NovoProcessoContent() {
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                description="Procedimento aplicado ao caso (ordinário, sumário, especial etc.)."
-                label="Rito"
-                placeholder="Ex: Ordinário, Sumário"
-                value={formData.rito || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, rito: value }))
+              <SearchableSelect
+                items={ritoProcessoOptions}
+                label="Rito do processo"
+                placeholder="Selecione o rito"
+                selectedKey={formData.ritoProcesso ?? "__none__"}
+                onSelectionChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ritoProcesso:
+                      value && value !== "__none__"
+                        ? (value as ProcessoCreateInput["ritoProcesso"])
+                        : undefined,
+                  }))
                 }
               />
 

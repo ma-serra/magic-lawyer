@@ -1,6 +1,20 @@
 {
   "entries": [
-    "app/lib/processos/processo-vinculos.ts:156:await tx.processoCliente.deleteMany({",
-    "app/lib/processos/processo-vinculos.ts:222:await tx.processoResponsavel.deleteMany({"
+    {
+      "entry": "app/lib/processos/processo-vinculos.ts:156:await tx.processoCliente.deleteMany({",
+      "reason": "Limpeza controlada da tabela de vínculo antes de recriar a lista atual de clientes relacionados ao processo."
+    },
+    {
+      "entry": "app/lib/processos/processo-vinculos.ts:222:await tx.processoResponsavel.deleteMany({",
+      "reason": "Limpeza controlada da tabela de vínculo antes de recriar a lista atual de responsáveis do processo."
+    },
+    {
+      "entry": "app/actions/documentos-explorer.ts:2477:await tx.processoDocumento.deleteMany({",
+      "reason": "Remove vínculos de documento com processos não selecionados na reorganização do documento, preservando o documento principal."
+    },
+    {
+      "entry": "app/actions/documentos-explorer.ts:2511:await tx.contratoDocumento.deleteMany({",
+      "reason": "Remove vínculos de documento com contratos não selecionados na reorganização do documento, preservando o documento principal."
+    }
   ]
 }

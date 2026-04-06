@@ -1,6 +1,11 @@
 import crypto from "crypto";
 
 import prisma from "@/app/lib/prisma";
+import {
+  resolveNotificationActionText,
+  resolveNotificationUrl,
+  resolveTenantBaseUrl,
+} from "@/app/lib/notifications/notification-links";
 import { getRedisInstance } from "@/app/lib/notifications/redis-singleton";
 import {
   getGlobalTelegramProviderContext,
@@ -273,6 +278,8 @@ function buildTelegramMessage(params: {
   type: string;
   urgency?: string;
   payload?: Record<string, unknown> | null;
+  actionUrl?: string | null;
+  actionText?: string | null;
 }) {
   const payload = params.payload ?? {};
   const badge = getUrgencyBadge(params.urgency);
@@ -295,7 +302,7 @@ function buildTelegramMessage(params: {
   addRow("Origem", payload.sourceLabel);
   addRow("Modificado por", payload.actorName);
   addRow(
-    "Data da movimentação",
+    payload.dataMovimentacao ? "Data da movimentação" : "Data do vencimento",
     payload.dataMovimentacao || payload.dataVencimento,
   );
   addRow("Status", payload.statusSummary || payload.statusLabel || payload.status);
@@ -310,6 +317,13 @@ function buildTelegramMessage(params: {
           ...detailLines.map((line) => `• ${escapeTelegramHtml(line)}`),
         ].join("\n")
       : "";
+  const actionBlock =
+    params.actionUrl && params.actionText
+      ? [
+          "",
+          `<a href="${escapeTelegramHtml(params.actionUrl)}">${escapeTelegramHtml(params.actionText)}</a>`,
+        ].join("\n")
+      : "";
 
   return [
     `${badge.icon} <b>${escapeTelegramHtml(params.title.trim())}</b>`,
@@ -318,6 +332,7 @@ function buildTelegramMessage(params: {
     escapeTelegramHtml(params.message.trim()),
     ...(rows.length > 0 ? ["", ...rows] : []),
     detailBlock,
+    actionBlock,
     "",
     "<i>Magic Lawyer</i>",
   ]
@@ -1058,9 +1073,17 @@ export async function sendTelegramNotification(params: {
   urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
   payload?: Record<string, unknown> | null;
 }) : Promise<TelegramSendMessageResult> {
-  const [provider, binding] = await Promise.all([
+  const [provider, binding, tenant] = await Promise.all([
     getActiveTelegramProvider(params.tenantId),
     getTelegramUserBinding(params.tenantId, params.userId),
+    prisma.tenant.findUnique({
+      where: { id: params.tenantId },
+      select: {
+        slug: true,
+        domain: true,
+        branding: { select: { customDomainText: true } },
+      },
+    }),
   ]);
 
   if (!provider) {
@@ -1077,6 +1100,17 @@ export async function sendTelegramNotification(params: {
     };
   }
 
+  const tenantBaseUrl = resolveTenantBaseUrl(tenant);
+  const actionUrl = resolveNotificationUrl(
+    params.type,
+    params.payload ?? {},
+    tenantBaseUrl,
+  );
+  const actionText = resolveNotificationActionText(
+    params.type,
+    params.payload ?? {},
+  );
+
   const body = new URLSearchParams({
     chat_id: binding.chatId,
     text: buildTelegramMessage({
@@ -1085,6 +1119,8 @@ export async function sendTelegramNotification(params: {
       type: params.type,
       urgency: params.urgency,
       payload: params.payload,
+      actionUrl,
+      actionText,
     }),
     parse_mode: "HTML",
     disable_web_page_preview: "true",

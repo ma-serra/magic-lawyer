@@ -1118,6 +1118,7 @@ model Processo {
   segredoJustica        Boolean                                  @default(false)
   valorCausa            Decimal?                                 @db.Decimal(14, 2)
   rito                  String?
+  ritoProcesso          RitoProcesso?
   clienteId             String
   advogadoResponsavelId String?
   juizId                String?
@@ -1159,6 +1160,7 @@ model Processo {
   @@index([tenantId, status])
   @@index([tenantId, status, arquivamentoTipo])
   @@index([tenantId, clienteId])
+  @@index([tenantId, ritoProcesso])
   @@index([tenantId, createdAt])
   @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
@@ -1239,6 +1241,7 @@ model ProcessoPrazo {
   titulo               String
   descricao            String?
   fundamentoLegal      String?
+  tipoPrazoLegal       TipoPrazoLegal?
   status               ProcessoPrazoStatus   @default(ABERTO)
   dataVencimento       DateTime
   dataCumprimento      DateTime?
@@ -1269,6 +1272,7 @@ model ProcessoPrazo {
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
   @@index([tenantId, dataVencimento])
+  @@index([tenantId, tipoPrazoLegal])
   @@index([regimePrazoId])
   @@index([origemEventoId])
   @@index([causaId])
@@ -3367,6 +3371,24 @@ enum ProcessoPrazoStatus {
   CONCLUIDO
   PRORROGADO
   CANCELADO
+
+  @@schema("magiclawyer")
+}
+
+enum RitoProcesso {
+  JUSTICA_COMUM
+  JUIZADO_ESPECIAL
+
+  @@schema("magiclawyer")
+}
+
+enum TipoPrazoLegal {
+  CONTESTACAO
+  MANIFESTACAO
+  APELACAO_RECURSO
+  CONTRARRAZOES
+  EMBARGOS_DECLARACAO
+  JUNTADA_DOCUMENTOS
 
   @@schema("magiclawyer")
 }

@@ -1934,23 +1934,9 @@ function CreateDiligenciaModal({
             <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Prazo e responsável</h4>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                aria-label="Regime de prazo"
-                isLoading={loadingRegimes}
-                label="Regime de prazo"
-                placeholder="Opcional"
-                selectedKeys={selectedRegimeKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
-                  setState((prev) => ({ ...prev, regimePrazoId: value || "" }));
-                }}
-              >
-                {regimes.map((regime) => (
-                  <SelectItem key={regime.id} textValue={regime.nome}>
-                    {regime.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              <div className="rounded-xl border border-default-200 bg-default-50/70 p-3 text-xs text-default-600">
+                Diligências avulsas não pedem mais regime de prazo. Quando houver processo vinculado, a regra-base passa a seguir o rito do processo.
+              </div>
 
               <DateInput
                 aria-label="Prazo previsto da diligência"
@@ -2258,23 +2244,9 @@ function EditDiligenciaModal({
           <section className="space-y-3 rounded-2xl border border-divider/70 bg-content2/20 p-4">
             <h4 className="text-sm font-semibold text-foreground">Prazo e responsável</h4>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                aria-label="Regime de prazo"
-                isLoading={loadingRegimes}
-                label="Regime de prazo"
-                placeholder="Opcional"
-                selectedKeys={selectedRegimeKeys}
-                onSelectionChange={(keys) => {
-                  const [value] = Array.from(keys) as string[];
-                  setState((prev) => ({ ...prev, regimePrazoId: value || "" }));
-                }}
-              >
-                {regimes.map((regime) => (
-                  <SelectItem key={regime.id} textValue={regime.nome}>
-                    {regime.nome}
-                  </SelectItem>
-                ))}
-              </Select>
+              <div className="rounded-xl border border-default-200 bg-default-50/70 p-3 text-xs text-default-600">
+                O regime manual ficou legado. Se a diligência estiver vinculada a um processo, a referência agora é o rito do processo.
+              </div>
 
               <DateInput
                 aria-label="Prazo previsto da diligência"
@@ -2414,11 +2386,6 @@ function DiligenciaDetalhesModal({
               label="Causa"
               value={diligencia.causa ? diligencia.causa.nome : "Não vinculada"}
               icon={<AlertTriangle className="h-4 w-4" />}
-            />
-            <InfoLine
-              label="Regime de prazo"
-              value={diligencia.regimePrazo ? diligencia.regimePrazo.nome : "Não vinculado"}
-              icon={<Clock className="h-4 w-4" />}
             />
             <InfoLine
               label="Criada em"
