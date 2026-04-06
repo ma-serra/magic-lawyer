@@ -28,6 +28,7 @@ export type PrazosWorkspaceFilters = {
   horizon?: PrazoWorkspaceHorizon;
   responsavelId?: string | null;
   processoId?: string | null;
+  prazoId?: string | null;
   page?: number;
   perPage?: number;
 };
@@ -79,6 +80,7 @@ type PrazosWorkspaceResponse = {
   };
   items: PrazoWorkspaceItem[];
   highlights: PrazoWorkspaceItem[];
+  focusedPrazo?: PrazoWorkspaceItem | null;
   filters: {
     processos: Array<{
       id: string;
@@ -455,7 +457,7 @@ export async function getPrazosWorkspace(
         ? [{ dataCumprimento: "desc" as const }, { dataVencimento: "desc" as const }]
         : [{ dataVencimento: "asc" as const }];
 
-    const [total, itemsRaw, highlightsRaw, processosRaw, responsaveisRaw, abertos, vencidos, venceHoje, proximos7Dias, proximos30Dias, concluidos, semResponsavel] =
+    const [total, itemsRaw, highlightsRaw, focusedPrazoRaw, processosRaw, responsaveisRaw, abertos, vencidos, venceHoje, proximos7Dias, proximos30Dias, concluidos, semResponsavel] =
       await Promise.all([
         prisma.processoPrazo.count({ where }),
         prisma.processoPrazo.findMany({
@@ -555,6 +557,56 @@ export async function getPrazosWorkspace(
           orderBy: [{ dataVencimento: "asc" }],
           take: 6,
         }),
+        filters.prazoId
+          ? prisma.processoPrazo.findFirst({
+              where: {
+                ...baseWhere,
+                id: filters.prazoId,
+                ...(filters.processoId ? { processoId: filters.processoId } : {}),
+              },
+              include: {
+                responsavel: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+                regimePrazo: {
+                  select: {
+                    id: true,
+                    nome: true,
+                    tipo: true,
+                  },
+                },
+                origemMovimentacao: {
+                  select: {
+                    id: true,
+                    titulo: true,
+                    dataMovimentacao: true,
+                  },
+                },
+                processo: {
+                  select: {
+                    id: true,
+                    numero: true,
+                    cliente: { select: { nome: true } },
+                    advogadoResponsavel: {
+                      select: {
+                        usuario: {
+                          select: {
+                            firstName: true,
+                            lastName: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            })
+          : Promise.resolve(null),
         prisma.processo.findMany({
           where: {
             ...processWhere,
@@ -648,6 +700,7 @@ export async function getPrazosWorkspace(
 
     const items = itemsRaw.map(serializePrazoItem);
     const highlights = highlightsRaw.map(serializePrazoItem);
+    const focusedPrazo = focusedPrazoRaw ? serializePrazoItem(focusedPrazoRaw) : null;
 
     return {
       success: true,
@@ -664,6 +717,7 @@ export async function getPrazosWorkspace(
         },
         items,
         highlights,
+        focusedPrazo,
         filters: {
           processos: processosRaw.map((processo) => ({
             id: processo.id,

@@ -73,7 +73,6 @@ import { useJuizes, useJuizesCatalogoPorNome } from "@/app/hooks/use-juizes";
 import { usePermissionCheck } from "@/app/hooks/use-permission-check";
 import { useProcuracoesDisponiveis } from "@/app/hooks/use-clientes";
 import { useHolidayExperienceRollout } from "@/app/hooks/use-holiday-experience";
-import { title } from "@/components/primitives";
 import {
   ProcessoStatus,
   ProcessoPolo,
@@ -525,19 +524,24 @@ const getStatusLabel = (
   arquivamentoTipo?: "PROVISORIO" | "DEFINITIVO" | null,
 ) => getProcessoStatusLabel(status, arquivamentoTipo);
 
+const PROCESSO_HEADER_CHIP_CLASS_NAME = "max-w-full text-[11px] sm:text-xs";
+const PROCESSO_PRAZO_PRINCIPAL_MARKER =
+  "[SISTEMA] PRAZO_PRINCIPAL_PROCESSO";
+const PROCESSO_PRAZO_PRINCIPAL_TITULO = "Prazo principal do processo";
+
 const getStatusIcon = (status: ProcessoStatus) => {
   switch (status) {
     case ProcessoStatus.EM_ANDAMENTO:
-      return <Clock className="h-4 w-4" />;
+      return <Clock className="h-3.5 w-3.5" />;
     case ProcessoStatus.ENCERRADO:
-      return <CheckCircle className="h-4 w-4" />;
+      return <CheckCircle className="h-3.5 w-3.5" />;
     case ProcessoStatus.ARQUIVADO:
-      return <FileText className="h-4 w-4" />;
+      return <FileText className="h-3.5 w-3.5" />;
     case ProcessoStatus.SUSPENSO:
-      return <AlertCircle className="h-4 w-4" />;
+      return <AlertCircle className="h-3.5 w-3.5" />;
     case ProcessoStatus.RASCUNHO:
     default:
-      return <FileWarning className="h-4 w-4" />;
+      return <FileWarning className="h-3.5 w-3.5" />;
   }
 };
 
@@ -963,6 +967,40 @@ export default function ProcessoDetalhesPage() {
       return haystack.includes(normalizedSearch);
     });
   }, [prazoSearch, prazoStatusFilter, prazosOrdenados]);
+  const buildPrazoWorkspaceHref = (prazoId?: string) => {
+    const params = new URLSearchParams({
+      processoId,
+    });
+
+    if (prazoId) {
+      params.set("prazoId", prazoId);
+    }
+
+    return `/processos/prazos?${params.toString()}`;
+  };
+  const prazoPrincipalHref = useMemo(() => {
+    if (!processo?.prazoPrincipal) {
+      return undefined;
+    }
+
+    const prazoPrincipalTimestamp = new Date(processo.prazoPrincipal).getTime();
+    const prazoPrincipalItem =
+      prazosOrdenados.find(
+        (prazo) => prazo.fundamentoLegal === PROCESSO_PRAZO_PRINCIPAL_MARKER,
+      ) ??
+      prazosOrdenados.find(
+        (prazo) => prazo.titulo === PROCESSO_PRAZO_PRINCIPAL_TITULO,
+      ) ??
+      prazosOrdenados.find(
+        (prazo) => new Date(prazo.dataVencimento).getTime() === prazoPrincipalTimestamp,
+      );
+
+    if (prazoPrincipalItem) {
+      return buildPrazoWorkspaceHref(prazoPrincipalItem.id);
+    }
+
+    return buildPrazoWorkspaceHref();
+  }, [buildPrazoWorkspaceHref, processo?.prazoPrincipal, prazosOrdenados]);
 
   const {
     opcoes: catalogoGlobalAutoridades,
@@ -1728,8 +1766,9 @@ export default function ProcessoDetalhesPage() {
           Voltar
         </Button>
         {!isCliente && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button
+              className="w-full sm:w-auto"
               isLoading={isSolicitandoAtualizacaoJusbrasil}
               startContent={
                 isSolicitandoAtualizacaoJusbrasil ? null : (
@@ -1743,6 +1782,7 @@ export default function ProcessoDetalhesPage() {
             </Button>
             <Button
               as={Link}
+              className="w-full sm:w-auto"
               href={`/processos/${processoId}/editar`}
               startContent={<Edit className="h-4 w-4" />}
               variant="bordered"
@@ -1754,28 +1794,37 @@ export default function ProcessoDetalhesPage() {
       </div>
 
       <Card className="border border-default-200">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-start gap-4">
-            <div className="rounded-2xl bg-primary/10 p-3">
-              <Scale className="h-6 w-6 text-primary" />
+        <CardHeader className="flex flex-col gap-3 sm:gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 items-start gap-3 sm:gap-4 xl:flex-1">
+            <div className="rounded-xl bg-primary/10 p-2.5 sm:rounded-2xl sm:p-3">
+              <Scale className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-default-400">
-                Processo
-              </p>
-              <h1 className={title({ size: "md" })}>{processo.numero}</h1>
-              {processo.numeroCnj && processo.numeroCnj !== processo.numero ? (
-                <p className="text-xs text-default-500">CNJ: {processo.numeroCnj}</p>
-              ) : null}
-              {processo.titulo && (
-                <p className="mt-1 text-sm text-default-500">{processo.titulo}</p>
-              )}
+            <div className="min-w-0 flex-1 space-y-2 sm:space-y-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-default-400 sm:text-xs">
+                  Processo
+                </p>
+                <h1 className="break-all text-xl font-semibold leading-[1.05] tracking-tight sm:text-2xl md:text-3xl xl:text-[2.35rem] 2xl:text-[3rem]">
+                  {processo.numero}
+                </h1>
+                {processo.numeroCnj && processo.numeroCnj !== processo.numero ? (
+                  <p className="text-[11px] text-default-500 sm:text-xs">
+                    CNJ: {processo.numeroCnj}
+                  </p>
+                ) : null}
+                {processo.titulo && (
+                  <p className="mt-1 text-xs text-default-500 sm:text-sm">
+                    {processo.titulo}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2 xl:max-w-[28rem] xl:justify-end">
             <Chip
+              className={PROCESSO_HEADER_CHIP_CLASS_NAME}
               color={getStatusColor(processo.status)}
-              size="lg"
+              size="sm"
               startContent={getStatusIcon(processo.status)}
               variant="flat"
             >
@@ -1783,8 +1832,9 @@ export default function ProcessoDetalhesPage() {
             </Chip>
             {faseLabel && (
               <Chip
+                className={PROCESSO_HEADER_CHIP_CLASS_NAME}
                 color="secondary"
-                size="lg"
+                size="sm"
                 startContent={<Flag className="h-3 w-3" />}
                 variant="flat"
               >
@@ -1793,8 +1843,9 @@ export default function ProcessoDetalhesPage() {
             )}
             {grauLabel && (
               <Chip
+                className={PROCESSO_HEADER_CHIP_CLASS_NAME}
                 color="default"
-                size="lg"
+                size="sm"
                 startContent={<Layers className="h-3 w-3" />}
                 variant="flat"
               >
@@ -1802,7 +1853,12 @@ export default function ProcessoDetalhesPage() {
               </Chip>
             )}
             {processo.segredoJustica && (
-              <Chip color="warning" size="lg" variant="flat">
+              <Chip
+                className={PROCESSO_HEADER_CHIP_CLASS_NAME}
+                color="warning"
+                size="sm"
+                variant="flat"
+              >
                 Segredo de Justiça
               </Chip>
             )}
@@ -1868,6 +1924,7 @@ export default function ProcessoDetalhesPage() {
               )}
               {processo.prazoPrincipal && (
                 <InfoItem
+                  href={prazoPrincipalHref}
                   icon={Clock}
                   label="Prazo principal"
                   highlight
@@ -2871,7 +2928,19 @@ export default function ProcessoDetalhesPage() {
                               )}
                             </div>
                             {!isCliente && (
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  as={Link}
+                                  color="primary"
+                                  href={buildPrazoWorkspaceHref(prazo.id)}
+                                  size="sm"
+                                  startContent={
+                                    <ExternalLink className="h-3 w-3" />
+                                  }
+                                  variant="bordered"
+                                >
+                                  Abrir na central
+                                </Button>
                                 {prazo.status !==
                                   ProcessoPrazoStatus.CONCLUIDO && (
                                   <Button

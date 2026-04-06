@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   AlertTriangle,
@@ -326,6 +326,9 @@ function PrazoDetailsModal({
 
 export function PrazosContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusedPrazoId = searchParams.get("prazoId");
+  const processoIdFromUrl = searchParams.get("processoId");
   const { hasPermission: canEditPrazos } = usePermissionCheck(
     "processos",
     "editar",
@@ -337,7 +340,9 @@ export function PrazosContent() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [horizon, setHorizon] = useState<string>("all");
-  const [processoId, setProcessoId] = useState<string | null>(null);
+  const [processoId, setProcessoId] = useState<string | null>(
+    processoIdFromUrl,
+  );
   const [responsavelId, setResponsavelId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(12);
@@ -345,10 +350,23 @@ export function PrazosContent() {
   const [selectedPrazo, setSelectedPrazo] = useState<PrazoWorkspaceItem | null>(
     null,
   );
+  const [autoOpenedFocusedPrazoId, setAutoOpenedFocusedPrazoId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     setPage(1);
   }, [search, status, horizon, processoId, responsavelId, perPage]);
+
+  useEffect(() => {
+    setProcessoId(processoIdFromUrl);
+  }, [processoIdFromUrl]);
+
+  useEffect(() => {
+    if (!focusedPrazoId) {
+      setAutoOpenedFocusedPrazoId(null);
+    }
+  }, [focusedPrazoId]);
 
   const swrKey = useMemo(
     () => [
@@ -357,11 +375,21 @@ export function PrazosContent() {
       status,
       horizon,
       processoId,
+      focusedPrazoId,
       responsavelId,
       page,
       perPage,
     ],
-    [search, status, horizon, processoId, responsavelId, page, perPage],
+    [
+      search,
+      status,
+      horizon,
+      processoId,
+      focusedPrazoId,
+      responsavelId,
+      page,
+      perPage,
+    ],
   );
 
   const { data, error, isLoading, mutate } = useSWR(swrKey, async () => {
@@ -378,6 +406,7 @@ export function PrazosContent() {
         | "future"
         | "completed",
       processoId,
+      prazoId: focusedPrazoId,
       responsavelId,
       page,
       perPage,
@@ -429,6 +458,26 @@ export function PrazosContent() {
       setSelectedPrazo(refreshedPrazo);
     }
   }, [data, selectedPrazo]);
+
+  useEffect(() => {
+    if (
+      !focusedPrazoId ||
+      !data?.focusedPrazo ||
+      autoOpenedFocusedPrazoId === focusedPrazoId
+    ) {
+      return;
+    }
+
+    setSelectedPrazo(data.focusedPrazo);
+    setAutoOpenedFocusedPrazoId(focusedPrazoId);
+
+    const timeoutId = window.setTimeout(() => {
+      const target = document.getElementById(`prazo-workspace-${focusedPrazoId}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [autoOpenedFocusedPrazoId, data?.focusedPrazo, focusedPrazoId]);
 
   const handleOpenProcessoPrazo = (nextProcessoId: string, prazoId: string) => {
     router.push(`/processos/${nextProcessoId}?tab=prazos&prazoId=${encodeURIComponent(prazoId)}`);
@@ -649,17 +698,23 @@ export function PrazosContent() {
           />
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
-            {data.highlights.map((prazo) => {
-              const bucket = getPrazoOperationalBucket({
-                status: prazo.status,
-                dataVencimento: prazo.dataVencimento,
-                responsavelId: prazo.responsavelId,
-              });
+              {data.highlights.map((prazo) => {
+                const bucket = getPrazoOperationalBucket({
+                  status: prazo.status,
+                  dataVencimento: prazo.dataVencimento,
+                  responsavelId: prazo.responsavelId,
+                });
+                const isFocusedPrazo = focusedPrazoId === prazo.id;
 
               return (
                 <div
+                  id={`prazo-workspace-${prazo.id}`}
                   key={prazo.id}
-                  className="rounded-3xl border border-default-200/80 bg-default-50/80 p-4 shadow-sm transition-colors hover:border-primary/40 dark:border-white/10 dark:bg-white/[0.04]"
+                  className={`rounded-3xl border bg-default-50/80 p-4 shadow-sm transition-colors dark:bg-white/[0.04] ${
+                    isFocusedPrazo
+                      ? "border-primary/50 ring-2 ring-primary/20 dark:border-primary/40"
+                      : "border-default-200/80 hover:border-primary/40 dark:border-white/10"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <button
@@ -838,11 +893,17 @@ export function PrazosContent() {
                   dataVencimento: prazo.dataVencimento,
                   responsavelId: prazo.responsavelId,
                 });
+                const isFocusedPrazo = focusedPrazoId === prazo.id;
 
                 return (
                   <div
+                    id={`prazo-workspace-${prazo.id}`}
                     key={prazo.id}
-                    className="rounded-3xl border border-default-200/80 bg-default-50/80 p-4 shadow-sm transition-colors hover:border-primary/40 dark:border-white/10 dark:bg-white/[0.04]"
+                    className={`rounded-3xl border bg-default-50/80 p-4 shadow-sm transition-colors dark:bg-white/[0.04] ${
+                      isFocusedPrazo
+                        ? "border-primary/50 ring-2 ring-primary/20 dark:border-primary/40"
+                        : "border-default-200/80 hover:border-primary/40 dark:border-white/10"
+                    }`}
                   >
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <button
