@@ -259,10 +259,10 @@ const TAB_META: Record<
       "Disparos reais de email com remetente, destinatário, assunto, provider e resultado.",
   },
   notifications: {
-    label: "NotificaÃ§Ãµes",
+    label: "Notificações",
     icon: <BellRing className="h-4 w-4" />,
     description:
-      "Despacho, supressÃ£o, entrega por canal, custo, destinatÃ¡rio resolvido e evidÃªncia por provider.",
+      "Despacho, supressão, entrega por canal, custo, destinatário resolvido e evidência por provider.",
   },
   webhooks: {
     label: "Webhooks",
@@ -424,7 +424,7 @@ export function AuditoriaContent() {
         if (!notificationAuditResponse.success || !notificationAuditResponse.data) {
           throw new Error(
             notificationAuditResponse.error ||
-              "Falha ao exportar a trilha de notificaÃ§Ãµes.",
+              "Falha ao exportar a trilha de notificações.",
           );
         }
 

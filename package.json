@@ -42,6 +42,7 @@
     "feriados:seed:free": "npx tsx scripts/seed-feriados-free.ts",
     "jusbrasil:backfill:process-monitors": "npx tsx scripts/jusbrasil-backfill-process-monitors.ts",
     "jusbrasil:backfill:prazos": "npx tsx scripts/backfill-jusbrasil-prazos.ts",
+    "check:mojibake": "node scripts/check-mojibake.mjs",
     "polling:status": "npx tsx scripts/polling-control.ts --status",
     "polling:off": "npx tsx scripts/polling-control.ts --off",
     "polling:on": "npx tsx scripts/polling-control.ts --on",
