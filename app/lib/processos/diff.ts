@@ -91,6 +91,7 @@ const FASE_LABEL: Partial<Record<ProcessoFase, string>> = {
   [ProcessoFase.PETICAO_INICIAL]: "Petição inicial",
   [ProcessoFase.CITACAO]: "Citação",
   [ProcessoFase.INSTRUCAO]: "Instrução",
+  [ProcessoFase.ALEGACOES_FINAIS]: "Alegações finais",
   [ProcessoFase.SENTENCA]: "Sentença",
   [ProcessoFase.RECURSO]: "Recurso",
   [ProcessoFase.EXECUCAO]: "Execução",

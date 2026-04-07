@@ -3,6 +3,7 @@
 import { getSession } from "@/app/lib/auth";
 import { logAudit, toAuditJson } from "@/app/lib/audit/log";
 import { checkPermission } from "@/app/actions/equipe";
+import { CAUSAS_PROCESSUAIS_PADRAO } from "@/app/lib/processos/causa-processual-defaults";
 import { revalidatePath } from "next/cache";
 import prisma from "@/app/lib/prisma";
 import logger from "@/lib/logger";
@@ -1154,6 +1155,41 @@ function normalizeSearch(search?: string | null) {
   return typeof search === "string" ? search.trim() : "";
 }
 
+async function ensureDefaultCausasSeeded(tenantId: string) {
+  const existing = await prisma.causa.findMany({
+    where: {
+      tenantId,
+      nome: {
+        in: CAUSAS_PROCESSUAIS_PADRAO.map((item) => item.nome),
+      },
+    },
+    select: {
+      nome: true,
+    },
+  });
+
+  const existingNames = new Set(existing.map((item) => item.nome));
+  const missing = CAUSAS_PROCESSUAIS_PADRAO.filter(
+    (item) => !existingNames.has(item.nome),
+  );
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  await prisma.causa.createMany({
+    data: missing.map((item) => ({
+      tenantId,
+      nome: item.nome,
+      codigoCnj: item.codigoCnj ?? null,
+      descricao: item.descricao ?? null,
+      ativo: true,
+      isOficial: false,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 async function canManageCausas(
   action: "visualizar" | "criar" | "editar",
 ): Promise<boolean> {
@@ -1535,6 +1571,8 @@ export async function listCausas(params: CausasListParams = {}) {
     if (!canList && !isAdminOrSuperAdmin(user.role)) {
       return { success: false, error: "Sem permissão para visualizar causas" };
     }
+
+    await ensureDefaultCausasSeeded(user.tenantId);
 
     const normalizedSearch = normalizeSearch(params.search);
     const normalizedStatus = normalizeStatusFilter(params.status);

@@ -269,12 +269,24 @@ export function AuthorityQuickCreateModal({
           />
 
           <SearchableSelect
-            description="Digite para buscar o tribunal"
+            description="Digite a sigla ou o nome do tribunal"
             emptyContent="Nenhum tribunal encontrado"
             items={tribunalOptions}
             isVirtualized={false}
             label="Tribunal"
+            listboxProps={{
+              className: "max-h-72 overflow-y-auto",
+            }}
             placeholder="Digite para buscar o tribunal"
+            popoverProps={{
+              classNames: {
+                base: "z-[12000]",
+                content: "z-[12000]",
+              },
+              offset: 8,
+              placement: "bottom",
+              shouldFlip: false,
+            }}
             selectedKey={formState.tribunalId || "NONE"}
             onSelectionChange={(selectedKey) =>
               setFormState((prev) => ({

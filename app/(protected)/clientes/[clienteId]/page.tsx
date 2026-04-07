@@ -306,6 +306,24 @@ export default function ClienteDetalhesPage() {
       : principais;
   };
 
+  const formatAssuntosResumo = (processo: (typeof processosItems)[number]) => {
+    const nomes = Array.isArray((processo as any).causasVinculadas)
+      ? (processo as any).causasVinculadas
+          .map((item: any) => item?.causa?.nome)
+          .filter(Boolean)
+      : [];
+
+    if (nomes.length === 0) {
+      return null;
+    }
+
+    const principais = nomes.slice(0, 2).join(", ");
+
+    return nomes.length > 2
+      ? `${principais} +${nomes.length - 2}`
+      : principais;
+  };
+
   const processosFiltrados = useMemo(() => {
     const normalizedSearch = processosSearch.trim().toLowerCase();
 
@@ -327,6 +345,8 @@ export default function ClienteDetalhesPage() {
         processo.numero,
         processo.numeroCnj,
         processo.titulo,
+        (processo as any).classeProcessual,
+        formatAssuntosResumo(processo),
         processo.area?.nome,
         advogadoNome,
         getProcessoStatusLabel(
@@ -586,6 +606,8 @@ export default function ClienteDetalhesPage() {
         return "Citação";
       case ProcessoFase.INSTRUCAO:
         return "Instrução";
+      case ProcessoFase.ALEGACOES_FINAIS:
+        return "Alegações finais";
       case ProcessoFase.SENTENCA:
         return "Sentença";
       case ProcessoFase.RECURSO:
@@ -1196,7 +1218,7 @@ export default function ClienteDetalhesPage() {
                         isClearable
                         className="flex-1"
                         label="Buscar processos"
-                        placeholder="Numero, CNJ, titulo, area ou advogado"
+                        placeholder="Numero, CNJ, titulo, classe, assunto, area ou advogado"
                         value={processosSearch}
                         onValueChange={setProcessosSearch}
                         onClear={() => setProcessosSearch("")}
@@ -1331,6 +1353,22 @@ export default function ClienteDetalhesPage() {
                       </CardHeader>
                       <Divider />
                       <CardBody className="gap-3 pt-3">
+                        {(processo as any).classeProcessual && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <Scale className="h-3 w-3 text-default-400" />
+                            <span className="text-default-600">
+                              Classe: {(processo as any).classeProcessual}
+                            </span>
+                          </div>
+                        )}
+                        {formatAssuntosResumo(processo) && (
+                          <div className="flex items-start gap-2 text-xs">
+                            <FileText className="mt-0.5 h-3 w-3 text-default-400" />
+                            <span className="text-default-600">
+                              Assuntos: {formatAssuntosResumo(processo)}
+                            </span>
+                          </div>
+                        )}
                         {processo.area && (
                           <div className="flex items-center gap-2 text-xs">
                             <Briefcase className="h-3 w-3 text-default-400" />

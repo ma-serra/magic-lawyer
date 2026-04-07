@@ -257,6 +257,88 @@ export async function syncProcessoResponsaveis(
   }
 }
 
+export async function syncProcessoCausas(
+  tx: Prisma.TransactionClient,
+  params: {
+    tenantId: string;
+    processoId: string;
+    causaIds: string[];
+  },
+) {
+  const causaIds = uniqueOrderedProcessoRelationIds(params.causaIds);
+  const existing = await tx.processoCausa.findMany({
+    where: {
+      tenantId: params.tenantId,
+      processoId: params.processoId,
+    },
+    select: {
+      id: true,
+      causaId: true,
+    },
+  });
+
+  if (causaIds.length > 0) {
+    const causas = await tx.causa.findMany({
+      where: {
+        tenantId: params.tenantId,
+        id: {
+          in: causaIds,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (causas.length !== causaIds.length) {
+      throw new Error(
+        "Um ou mais assuntos informados não pertencem ao seu escritório",
+      );
+    }
+  }
+
+  const selected = new Set(causaIds);
+  const toDelete = existing
+    .filter((item) => !selected.has(item.causaId))
+    .map((item) => item.id);
+
+  if (toDelete.length > 0) {
+    await tx.processoCausa.deleteMany({
+      where: {
+        id: {
+          in: toDelete,
+        },
+      },
+    });
+  }
+
+  for (const [index, causaId] of causaIds.entries()) {
+    const current = existing.find((item) => item.causaId === causaId);
+    const principal = index === 0;
+
+    if (current) {
+      await tx.processoCausa.update({
+        where: {
+          id: current.id,
+        },
+        data: {
+          principal,
+        },
+      });
+      continue;
+    }
+
+    await tx.processoCausa.create({
+      data: {
+        tenantId: params.tenantId,
+        processoId: params.processoId,
+        causaId,
+        principal,
+      },
+    });
+  }
+}
+
 export async function ensureProcessoClientePartes(
   tx: Prisma.TransactionClient,
   params: {

@@ -12,6 +12,10 @@ import {
   updateAreaProcesso,
 } from "@/app/actions/areas-processo";
 import {
+  ProcessAreaFormFields,
+  type AreaProcessoFormValue,
+} from "@/components/processos/process-area-form-fields";
+import {
   PeopleEntityCard,
   PeopleEntityCardBody,
   PeopleMetricCard,
@@ -31,32 +35,13 @@ type AreaProcessoItem = {
   };
 };
 
-type AreaFormData = {
-  nome: string;
-  slug: string;
-  descricao: string;
-  ordem: number;
-  ativo: boolean;
-};
-
-const DEFAULT_FORM: AreaFormData = {
+const DEFAULT_FORM: AreaProcessoFormValue = {
   nome: "",
   slug: "",
   descricao: "",
   ordem: 100,
   ativo: true,
 };
-
-function toSlug(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 export default function AreasProcessoPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -65,7 +50,7 @@ export default function AreasProcessoPage() {
 
   const [editingArea, setEditingArea] = useState<AreaProcessoItem | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [formData, setFormData] = useState<AreaFormData>(DEFAULT_FORM);
+  const [formData, setFormData] = useState<AreaProcessoFormValue>(DEFAULT_FORM);
 
   const [savingForm, setSavingForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -468,72 +453,13 @@ export default function AreasProcessoPage() {
             {editingArea ? "Editar área de processo" : "Nova área de processo"}
           </ModalHeader>
           <ModalBody className="space-y-4">
-            <Input
-              isRequired
-              description="Nome exibido no cadastro e filtros de processos."
-              label="Nome da área"
-              placeholder="Ex.: Direito Civil"
-              value={formData.nome}
-              variant="bordered"
-              onValueChange={(nome) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  nome,
-                  slug: editingArea ? prev.slug : toSlug(nome),
-                }))
-              }
+            <ProcessAreaFormFields
+              disabled={savingForm}
+              mode="full"
+              syncSlugOnNameChange={!editingArea}
+              value={formData}
+              onChange={setFormData}
             />
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                isRequired
-                description="Identificador técnico usado internamente."
-                label="Slug"
-                placeholder="direito-civil"
-                value={formData.slug}
-                variant="bordered"
-                onValueChange={(slug) =>
-                  setFormData((prev) => ({ ...prev, slug: toSlug(slug) }))
-                }
-              />
-              <Input
-                description="Números menores aparecem primeiro."
-                label="Ordem"
-                min={0}
-                placeholder="100"
-                type="number"
-                value={String(formData.ordem)}
-                variant="bordered"
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    ordem: Number.parseInt(event.target.value || "100", 10) || 100,
-                  }))
-                }
-              />
-            </div>
-
-            <Textarea
-              description="Opcional. Ajuda o time a entender quando usar esta área."
-              label="Descrição interna"
-              minRows={3}
-              placeholder="Descreva escopo e contexto desta área."
-              value={formData.descricao}
-              variant="bordered"
-              onValueChange={(descricao) =>
-                setFormData((prev) => ({ ...prev, descricao }))
-              }
-            />
-
-            <div className="rounded-xl border border-white/10 px-3 py-3">
-              <Switch
-                isSelected={formData.ativo}
-                size="sm"
-                onValueChange={(ativo) => setFormData((prev) => ({ ...prev, ativo }))}
-              >
-                Área ativa para novos processos
-              </Switch>
-            </div>
           </ModalBody>
           <ModalFooter>
             <Button isDisabled={savingForm} variant="light" onPress={closeModal}>

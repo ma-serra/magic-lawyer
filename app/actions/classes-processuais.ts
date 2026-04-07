@@ -75,30 +75,84 @@ async function getSessionUser() {
 }
 
 async function ensureDefaultClassesProcessuaisSeeded() {
-  const count = await prisma.classeProcessual.count({
+  const existing = await prisma.classeProcessual.findMany({
     where: {
       tenantId: null,
+      slug: {
+        in: CLASSES_PROCESSUAIS_PADRAO.map((item) => item.slug),
+      },
+    },
+    select: {
+      id: true,
+      slug: true,
+      nome: true,
+      descricao: true,
+      ordem: true,
+      ativo: true,
       global: true,
-      deletedAt: null,
+      deletedAt: true,
     },
   });
 
-  if (count > 0) {
-    return;
+  const existingBySlug = new Map(existing.map((item) => [item.slug, item]));
+  const toCreate = CLASSES_PROCESSUAIS_PADRAO.filter(
+    (item) => !existingBySlug.has(item.slug),
+  );
+
+  if (toCreate.length > 0) {
+    await prisma.classeProcessual.createMany({
+      data: toCreate.map((item) => ({
+        tenantId: null,
+        slug: item.slug,
+        nome: item.nome,
+        descricao: item.descricao,
+        ordem: item.ordem,
+        ativo: true,
+        global: true,
+      })),
+      skipDuplicates: true,
+    });
   }
 
-  await prisma.classeProcessual.createMany({
-    data: CLASSES_PROCESSUAIS_PADRAO.map((item) => ({
-      tenantId: null,
-      slug: item.slug,
-      nome: item.nome,
-      descricao: item.descricao,
-      ordem: item.ordem,
-      ativo: true,
-      global: true,
-    })),
-    skipDuplicates: true,
+  const toRestore = CLASSES_PROCESSUAIS_PADRAO.filter((item) => {
+    const existingItem = existingBySlug.get(item.slug);
+
+    if (!existingItem) {
+      return false;
+    }
+
+    return (
+      existingItem.deletedAt !== null ||
+      existingItem.ativo !== true ||
+      existingItem.global !== true ||
+      existingItem.nome !== item.nome ||
+      existingItem.descricao !== item.descricao ||
+      existingItem.ordem !== item.ordem
+    );
   });
+
+  for (const item of toRestore) {
+    const existingItem = existingBySlug.get(item.slug);
+
+    if (!existingItem) {
+      continue;
+    }
+
+    await prisma.classeProcessual.update({
+      where: { id: existingItem.id },
+      data: {
+        nome: item.nome,
+        descricao: item.descricao,
+        ordem: item.ordem,
+        ativo: true,
+        global: true,
+        deletedAt: null,
+        deletedByActorType: null,
+        deletedByActorId: null,
+        deleteReason: null,
+      },
+    });
+  }
 }
 
 function buildMergedClassesProcessuais<T extends {

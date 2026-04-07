@@ -37,6 +37,7 @@ import { useClientesParaSelect } from "@/app/hooks/use-clientes";
 import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { useJuizes } from "@/app/hooks/use-juizes";
 import { useProcessoDetalhado } from "@/app/hooks/use-processos";
+import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
 import {
   listComarcasPorTribunal,
@@ -44,6 +45,7 @@ import {
   listVarasPorTribunal,
 } from "@/app/actions/tribunais";
 import { listClassesProcessuais } from "@/app/actions/classes-processuais";
+import { listCausas } from "@/app/actions/causas";
 import {
   updateProcesso,
   type ProcessoCreateInput,
@@ -59,6 +61,10 @@ import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
+import { ProcessAreaQuickCreateModal } from "@/components/processos/process-area-quick-create-modal";
+import { ProcessClassQuickCreateModal } from "@/components/processos/process-class-quick-create-modal";
+import { ProcessCauseQuickCreateModal } from "@/components/processos/process-cause-quick-create-modal";
+import { ProcessClassificationSection } from "@/components/processos/process-classification-section";
 import type { JuizSerializado } from "@/app/actions/juizes";
 import {
   normalizeLegacyRitoToRitoProcesso,
@@ -80,6 +86,7 @@ export default function EditarProcessoPage() {
   const params = useParams();
   const router = useRouter();
   const processoId = params.processoId as string;
+  const { permissions, isAdmin, isSuperAdmin } = useUserPermissions();
 
   const { processo, isLoading, isError, mutate } =
     useProcessoDetalhado(processoId);
@@ -93,9 +100,16 @@ export default function EditarProcessoPage() {
   const [formData, setFormData] = useState<ProcessoCreateInput | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
+  const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isCauseModalOpen, setIsCauseModalOpen] = useState(false);
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
-  const { data: areasData, isLoading: isLoadingAreas } = useSWR(
+  const {
+    data: areasData,
+    isLoading: isLoadingAreas,
+    mutate: mutateAreas,
+  } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
   );
@@ -122,8 +136,20 @@ export default function EditarProcessoPage() {
   const {
     data: classesProcessuaisData,
     isLoading: isLoadingClassesProcessuais,
+    mutate: mutateClassesProcessuais,
   } = useSWR("classes-processuais-select", () =>
     listClassesProcessuais({ ativo: true }),
+  );
+  const {
+    data: causasData,
+    isLoading: isLoadingCausas,
+    mutate: mutateCausas,
+  } = useSWR("causas-processo-select", () =>
+    listCausas({
+      status: "ativas",
+      orderBy: "nome",
+      orderDirection: "asc",
+    }),
   );
   const areas = useMemo(() => {
     if (!areasData?.success) {
@@ -160,6 +186,13 @@ export default function EditarProcessoPage() {
 
     return classesProcessuaisData.classes ?? [];
   }, [classesProcessuaisData]);
+  const causas = useMemo(() => {
+    if (!causasData?.success) {
+      return [];
+    }
+
+    return causasData.causas ?? [];
+  }, [causasData]);
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente) => cliente.id)),
     [clientes],
@@ -167,6 +200,33 @@ export default function EditarProcessoPage() {
   const areaKeys = useMemo(
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
+  );
+  const causaOptions = useMemo(() => {
+    const baseOptions = causas.map((causa) => ({
+      id: causa.id,
+      nome: causa.nome,
+      codigoCnj: causa.codigoCnj ?? null,
+      descricao: causa.descricao ?? null,
+    }));
+    const currentItems =
+      processo?.causasVinculadas
+        ?.map((item) => item.causa)
+        .filter(Boolean)
+        .filter(
+          (causa) => !baseOptions.some((option) => option.id === causa.id),
+        )
+        .map((causa) => ({
+          id: causa.id,
+          nome: causa.nome,
+          codigoCnj: causa.codigoCnj ?? null,
+          descricao: causa.descricao ?? null,
+        })) ?? [];
+
+    return [...currentItems, ...baseOptions];
+  }, [causas, processo?.causasVinculadas]);
+  const causaOptionKeys = useMemo(
+    () => new Set(causaOptions.map((causa) => causa.id)),
+    [causaOptions],
   );
   const classProcessualOptions = useMemo(() => {
     const baseOptions = classesProcessuais.map((classe) => ({
@@ -263,6 +323,10 @@ export default function EditarProcessoPage() {
 
   const fases = useMemo(() => Object.values(ProcessoFase), []);
   const graus = useMemo(() => Object.values(ProcessoGrau), []);
+  const canQuickCreateArea =
+    isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
+  const canQuickCreateCatalog =
+    isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
   const selectedClienteKeys = useMemo(
     () =>
       formData
@@ -291,6 +355,15 @@ export default function EditarProcessoPage() {
   );
   const selectedAreaKeys =
     formData?.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const selectedCausaKeys = useMemo(
+    () =>
+      formData
+        ? (formData.causaIds ?? []).filter((causaId) =>
+            causaOptionKeys.has(causaId),
+          )
+        : [],
+    [causaOptionKeys, formData],
+  );
   const selectedArquivamentoKeys =
     formData?.arquivamentoTipo && formData.status === ProcessoStatus.ARQUIVADO
       ? [formData.arquivamentoTipo]
@@ -460,6 +533,13 @@ export default function EditarProcessoPage() {
 
     return varaOptions.find((item) => item.label === currentValue)?.key ?? null;
   }, [formData?.vara, varaOptions]);
+  const assuntosSelecionadosResumo = useMemo(() => {
+    const names = causaOptions
+      .filter((causa) => selectedCausaKeys.includes(causa.id))
+      .map((causa) => causa.nome);
+
+    return names.join(" • ");
+  }, [causaOptions, selectedCausaKeys]);
 
   useEffect(() => {
     if (!processo || formData) return;
@@ -489,6 +569,8 @@ export default function EditarProcessoPage() {
       status: processo.status,
       arquivamentoTipo: processo.arquivamentoTipo ?? null,
       classeProcessual: processo.classeProcessual || "",
+      causaIds:
+        processo.causasVinculadas?.map((item) => item.causa.id) ?? [],
       orgaoJulgador:
         processo.orgaoJulgador ||
         buildTribunalLabel(processo.tribunal || undefined),
@@ -539,6 +621,8 @@ export default function EditarProcessoPage() {
         return "Citação";
       case ProcessoFase.INSTRUCAO:
         return "Instrução";
+      case ProcessoFase.ALEGACOES_FINAIS:
+        return "Alegações finais";
       case ProcessoFase.SENTENCA:
         return "Sentença";
       case ProcessoFase.RECURSO:
@@ -633,6 +717,7 @@ export default function EditarProcessoPage() {
       payload.classeProcessual = formData.classeProcessual?.trim()
         ? formData.classeProcessual.trim()
         : undefined;
+      payload.causaIds = selectedCausaKeys;
       payload.ritoProcesso = formData.ritoProcesso;
       payload.vara = formData.vara?.trim() ? formData.vara.trim() : undefined;
       payload.comarca = formData.comarca?.trim()
@@ -1084,203 +1169,40 @@ export default function EditarProcessoPage() {
                 </Select>
               ) : null}
 
-              <div className="space-y-2">
-                <SearchableSelect
-                  description="Classe processual padrao do escritorio. Configure o catalogo em Configuracoes."
-                  emptyContent="Nenhuma classe processual cadastrada"
-                  isClearable
-                  isDisabled={!formData}
-                  isLoading={isLoadingClassesProcessuais}
-                  items={classProcessualOptions}
-                  label="Classe Processual"
-                  placeholder="Selecione uma classe processual"
-                  selectedKey={selectedClasseProcessualKey}
-                  onSelectionChange={(key) => {
-                    setFormData((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            classeProcessual:
-                              classProcessualOptions.find(
-                                (item) => item.key === key,
-                              )?.label ?? undefined,
-                          }
-                        : prev,
-                    );
-                  }}
-                />
-                <div className="flex justify-end">
-                  <Button
-                    as={Link}
-                    color="primary"
-                    href="/configuracoes?tab=classes-processuais"
-                    size="sm"
-                    variant="light"
-                  >
-                    Gerenciar classes processuais
-                  </Button>
-                </div>
-              </div>
-
-              <Select
-                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
-                isClearable
-                isLoading={isLoadingAreas}
-                label="Área do processo"
-                placeholder="Selecione uma área"
-                selectedKeys={selectedAreaKeys}
-                onSelectionChange={(keys) => {
-                  const selectedKey = Array.from(keys)[0] as string | undefined;
-
-                  setFormData((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          areaId: selectedKey || undefined,
-                        }
-                      : prev,
-                  );
-                }}
-              >
-                {areas.map((area) => (
-                  <SelectItem key={area.id} textValue={area.nome}>
-                    {area.nome}
-                  </SelectItem>
-                ))}
-              </Select>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                description="Etapa do processo para orientar prazos e prioridade."
-                label="Fase processual"
-                placeholder="Selecione a fase"
-                selectedKeys={formData.fase ? [formData.fase] : []}
-                startContent={<Flag className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-
+              <ProcessClassificationSection
+                areas={areas}
+                canQuickCreateArea={canQuickCreateArea}
+                canQuickCreateCatalog={canQuickCreateCatalog}
+                causas={causaOptions}
+                classProcessualOptions={classProcessualOptions}
+                fases={fases}
+                formatGrauLabel={formatGrauLabel}
+                getFaseLabel={getFaseLabel}
+                grauDescription={grauDescription}
+                graus={graus}
+                isLoadingAreas={isLoadingAreas}
+                isLoadingCausas={isLoadingCausas}
+                isLoadingClassesProcessuais={isLoadingClassesProcessuais}
+                isLoadingTribunais={isLoadingTribunais}
+                ritoProcessoOptions={RITO_PROCESSO_OPTIONS}
+                tribunalOptions={tribunalOptions}
+                value={formData}
+                onOpenAreaModal={() => setIsAreaModalOpen(true)}
+                onOpenCauseModal={() => setIsCauseModalOpen(true)}
+                onOpenClassModal={() => setIsClassModalOpen(true)}
+                onPatch={(patch) =>
                   setFormData((prev) =>
                     prev
                       ? {
                           ...prev,
-                          fase: key ? (key as ProcessoFase) : undefined,
-                        }
-                      : prev,
-                  );
-                }}
-              >
-                {fases.map((fase) => (
-                  <SelectItem key={fase} textValue={getFaseLabel(fase)}>{getFaseLabel(fase)}</SelectItem>
-                ))}
-              </Select>
-
-              <Select
-                description="Instância de tramitação (1º grau, 2º grau ou tribunal superior)."
-                label="Grau"
-                classNames={{ helperWrapper: "hidden" }}
-                placeholder="Selecione o grau"
-                selectedKeys={formData.grau ? [formData.grau] : []}
-                startContent={<Layers className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-
-                  setFormData((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          grau: key ? (key as ProcessoGrau) : undefined,
-                        }
-                      : prev,
-                  );
-                }}
-              >
-                {graus.map((grau) => (
-                  <SelectItem key={grau} textValue={formatGrauLabel(grau)}>{formatGrauLabel(grau)}</SelectItem>
-                ))}
-              </Select>
-              <p className="text-tiny text-default-400">{grauDescription}</p>
-            </div>
-
-            <SearchableSelect
-              description="Por padrao, herda o mesmo tribunal acima. Se precisar, selecione outro."
-              emptyContent="Nenhum tribunal encontrado"
-              isLoading={isLoadingTribunais}
-              isVirtualized={false}
-              items={tribunalOptions}
-              label="Orgao Julgador"
-              placeholder="Digite para buscar o orgao julgador"
-              selectedKey={selectedOrgaoJulgadorKey}
-              startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(selectedKey) =>
-                setFormData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        orgaoJulgador:
-                          tribunalOptions.find((item) => item.key === selectedKey)
-                            ?.label || "",
-                      }
-                    : prev,
-                )
-              }
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SearchableSelect
-                items={ritoProcessoOptions}
-                label="Rito do processo"
-                placeholder="Selecione o rito"
-                selectedKey={formData.ritoProcesso ?? "__none__"}
-                onSelectionChange={(value) =>
-                  setFormData((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          ritoProcesso:
-                            value && value !== "__none__"
-                              ? (value as ProcessoCreateInput["ritoProcesso"])
-                              : undefined,
+                          ...patch,
                         }
                       : prev,
                   )
                 }
               />
-
-              <Input
-                description="Valor economico da acao, quando houver."
-                label="Valor da Causa (R$)"
-                placeholder="0,00"
-                startContent={
-                  <DollarSign className="h-4 w-4 text-default-400" />
-                }
-                type="number"
-                value={
-                  formData.valorCausa !== undefined &&
-                  !Number.isNaN(formData.valorCausa)
-                    ? String(formData.valorCausa)
-                    : ""
-                }
-                onValueChange={(value) => {
-                  const normalized = value.replace(/,/g, ".");
-                  const numericValue =
-                    normalized.trim() === "" ? undefined : Number(normalized);
-
-                  setFormData((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          valorCausa:
-                            numericValue !== undefined &&
-                            !Number.isNaN(numericValue)
-                              ? numericValue
-                              : undefined,
-                        }
-                      : prev,
-                  );
-                }}
-              />
-            </div>
 
           </div>
 
@@ -1450,6 +1372,56 @@ export default function EditarProcessoPage() {
           );
           await mutateJuizes();
           setIsAuthorityModalOpen(false);
+        }}
+      />
+      <ProcessClassQuickCreateModal
+        isOpen={isClassModalOpen}
+        onClose={() => setIsClassModalOpen(false)}
+        onCreated={async (classe) => {
+          await mutateClassesProcessuais();
+          setFormData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  classeProcessual: classe.nome,
+                }
+              : prev,
+          );
+          setIsClassModalOpen(false);
+        }}
+      />
+      <ProcessCauseQuickCreateModal
+        isOpen={isCauseModalOpen}
+        onClose={() => setIsCauseModalOpen(false)}
+        onCreated={async (causa) => {
+          await mutateCausas();
+          setFormData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  causaIds: Array.from(
+                    new Set([...(prev.causaIds ?? []), causa.id]),
+                  ),
+                }
+              : prev,
+          );
+          setIsCauseModalOpen(false);
+        }}
+      />
+      <ProcessAreaQuickCreateModal
+        isOpen={isAreaModalOpen}
+        onClose={() => setIsAreaModalOpen(false)}
+        onCreated={async (area) => {
+          await mutateAreas();
+          setFormData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  areaId: area.id,
+                }
+              : prev,
+          );
+          setIsAreaModalOpen(false);
         }}
       />
     </div>

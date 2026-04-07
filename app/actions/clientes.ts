@@ -123,6 +123,7 @@ export interface ClienteComProcessos extends Cliente {
     status: string;
     arquivamentoTipo: string | null;
     areaId: string | null;
+    classeProcessual: string | null;
     valorCausa: number | null;
     dataDistribuicao: Date | null;
     prazoPrincipal: Date | null;
@@ -156,6 +157,18 @@ export interface ClienteComProcessos extends Cliente {
         email?: string | null;
         avatarUrl?: string | null;
       } | null;
+    }>;
+    causasVinculadas?: Array<{
+      id: string;
+      causaId: string;
+      principal: boolean;
+      causa: {
+        id: string;
+        nome: string;
+        codigoCnj: string | null;
+        descricao: string | null;
+        ativo: boolean;
+      };
     }>;
     _count: {
       documentos: number;
@@ -652,6 +665,20 @@ export async function getClienteComProcessos(clienteId: string): Promise<{
             },
             ...processoClientesRelacionadosInclude,
             ...processoResponsaveisRelacionadosInclude,
+            causasVinculadas: {
+              include: {
+                causa: {
+                  select: {
+                    id: true,
+                    nome: true,
+                    codigoCnj: true,
+                    descricao: true,
+                    ativo: true,
+                  },
+                },
+              },
+              orderBy: [{ principal: "desc" }, { createdAt: "asc" }],
+            },
             _count: {
               select: {
                 documentos: { where: { deletedAt: null } },
@@ -767,6 +794,20 @@ export async function getClienteComProcessos(clienteId: string): Promise<{
         },
         ...processoClientesRelacionadosInclude,
         ...processoResponsaveisRelacionadosInclude,
+        causasVinculadas: {
+          include: {
+            causa: {
+              select: {
+                id: true,
+                nome: true,
+                codigoCnj: true,
+                descricao: true,
+                ativo: true,
+              },
+            },
+          },
+          orderBy: [{ principal: "desc" }, { createdAt: "asc" }],
+        },
         _count: {
           select: {
             documentos: { where: { deletedAt: null } },
@@ -951,6 +992,13 @@ function trimOptional(value?: string | null): string | undefined {
   return parsed ? parsed : undefined;
 }
 
+function hasClientePrimaryPhoneContact(input: {
+  telefone?: string | null;
+  celular?: string | null;
+}) {
+  return Boolean(trimOptional(input.telefone) || trimOptional(input.celular));
+}
+
 function hasEnderecoData(endereco?: EnderecoPrincipalInput) {
   if (!endereco) {
     return false;
@@ -1054,6 +1102,13 @@ export async function createCliente(data: ClienteCreateInput): Promise<{
     }
 
     // Validar email se for criar usuário
+    if (!hasClientePrimaryPhoneContact(clienteData)) {
+      return {
+        success: false,
+        error: "Informe ao menos um telefone ou celular do cliente",
+      };
+    }
+
     if (criarUsuario && !clienteData.email) {
       return {
         success: false,
@@ -1351,6 +1406,24 @@ export async function updateCliente(
       return {
         success: false,
         error: enderecoValidationError,
+      };
+    }
+
+    if (
+      !hasClientePrimaryPhoneContact({
+        telefone:
+          clienteData.telefone !== undefined
+            ? clienteData.telefone
+            : existingCliente.telefone,
+        celular:
+          clienteData.celular !== undefined
+            ? clienteData.celular
+            : existingCliente.celular,
+      })
+    ) {
+      return {
+        success: false,
+        error: "Informe ao menos um telefone ou celular do cliente",
       };
     }
 

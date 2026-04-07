@@ -40,6 +40,7 @@ import {
   processoClienteResumoSelect,
   processoClientesRelacionadosInclude,
   processoResponsaveisRelacionadosInclude,
+  syncProcessoCausas,
   syncProcessoClientes,
   syncProcessoResponsaveis,
   uniqueOrderedProcessoRelationIds,
@@ -97,6 +98,26 @@ import { mapJusbrasilTribprocProcessoToProcesso } from "@/lib/api/juridical/jusb
  *
  * NOTA: NÃO exportado porque "use server" files só podem exportar async functions
  */
+const processoCausasInclude = {
+  causasVinculadas: {
+    include: {
+      causa: {
+        select: {
+          id: true,
+          nome: true,
+          codigoCnj: true,
+          descricao: true,
+          ativo: true,
+        },
+      },
+    },
+    orderBy: [
+      { principal: "desc" },
+      { createdAt: "asc" },
+    ] as Prisma.ProcessoCausaOrderByWithRelationInput[],
+  },
+} as const;
+
 const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
   {
     include: {
@@ -133,6 +154,7 @@ const processoDetalhadoInclude = Prisma.validator<Prisma.ProcessoDefaultArgs>()(
       },
       ...processoClientesRelacionadosInclude,
       ...processoResponsaveisRelacionadosInclude,
+      ...processoCausasInclude,
       juiz: {
         select: {
           id: true,
@@ -361,6 +383,20 @@ export interface Processo {
       email: string | null;
       avatarUrl?: string | null;
     } | null;
+  }>;
+  causasVinculadas?: Array<{
+    id: string;
+    tenantId?: string;
+    processoId?: string;
+    causaId: string;
+    principal: boolean;
+    causa: {
+      id: string;
+      nome: string;
+      codigoCnj: string | null;
+      descricao?: string | null;
+      ativo?: boolean;
+    };
   }>;
 }
 
@@ -1633,6 +1669,7 @@ export async function getAllProcessos(): Promise<{
         },
         ...processoClientesRelacionadosInclude,
         ...processoResponsaveisRelacionadosInclude,
+        ...processoCausasInclude,
         partes: {
           select: {
             id: true,
@@ -1820,6 +1857,7 @@ export async function getProcessosDoClienteLogado(): Promise<{
         },
         ...processoClientesRelacionadosInclude,
         ...processoResponsaveisRelacionadosInclude,
+        ...processoCausasInclude,
         partes: {
           select: {
             id: true,
@@ -1988,6 +2026,7 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
         },
         ...processoClientesRelacionadosInclude,
         ...processoResponsaveisRelacionadosInclude,
+        ...processoCausasInclude,
         partes: {
           select: {
             id: true,
@@ -2783,6 +2822,7 @@ export interface ProcessoCreateInput {
   grau?: ProcessoGrau;
   areaId?: string;
   classeProcessual?: string;
+  causaIds?: string[];
   vara?: string;
   comarca?: string;
   foro?: string;
@@ -2801,6 +2841,7 @@ export interface ProcessoCreateInput {
   numeroInterno?: string;
   pastaCompartilhadaUrl?: string;
   prazoPrincipal?: Date | string;
+  partesIniciais?: Array<Pick<ProcessoParteInput, "tipoPolo" | "nome">>;
 }
 
 export interface ProcessoUpdateInput extends Partial<ProcessoCreateInput> {
@@ -2840,6 +2881,15 @@ export interface ProcessoPrazoInput {
 }
 
 export interface ProcessoPrazoUpdateInput extends Partial<ProcessoPrazoInput> {}
+
+function sanitizeProcessoPartesIniciais(
+  partes?: ProcessoCreateInput["partesIniciais"],
+) {
+  return (partes ?? []).map((parte) => ({
+    tipoPolo: parte?.tipoPolo ?? ProcessoPolo.AUTOR,
+    nome: parte?.nome?.trim() ?? "",
+  }));
+}
 
 export async function createProcesso(data: ProcessoCreateInput) {
   try {
@@ -3036,6 +3086,16 @@ export async function createProcesso(data: ProcessoCreateInput) {
     const prazoPrincipal = data.prazoPrincipal
       ? new Date(data.prazoPrincipal)
       : null;
+    const causaIds = uniqueOrderedProcessoRelationIds(data.causaIds ?? []);
+    const partesIniciais = sanitizeProcessoPartesIniciais(data.partesIniciais);
+    const parteSemNomeIndex = partesIniciais.findIndex((parte) => !parte.nome);
+
+    if (parteSemNomeIndex !== -1) {
+      return {
+        success: false,
+        error: `Informe o nome da parte adicional ${parteSemNomeIndex + 1}`,
+      };
+    }
 
     const processo = await prisma.$transaction(async (tx) => {
       const criado = await tx.processo.create({
@@ -3078,6 +3138,7 @@ export async function createProcesso(data: ProcessoCreateInput) {
           },
           ...processoClientesRelacionadosInclude,
           ...processoResponsaveisRelacionadosInclude,
+          ...processoCausasInclude,
           juiz: true,
           tribunal: true,
         },
@@ -3099,6 +3160,21 @@ export async function createProcesso(data: ProcessoCreateInput) {
         processoId: criado.id,
         clienteIds: normalizedLinks.clienteIds,
       });
+      await syncProcessoCausas(tx, {
+        tenantId: user.tenantId,
+        processoId: criado.id,
+        causaIds,
+      });
+      if (partesIniciais.length > 0) {
+        await tx.processoParte.createMany({
+          data: partesIniciais.map((parte) => ({
+            tenantId: user.tenantId,
+            processoId: criado.id,
+            tipoPolo: parte.tipoPolo,
+            nome: parte.nome,
+          })),
+        });
+      }
       await syncManagedPrazoPrincipalForProcess(tx, {
         tenantId: user.tenantId,
         processoId: criado.id,
@@ -3524,6 +3600,10 @@ export async function updateProcesso(
       updatePayload.prazoPrincipal !== undefined
         ? ((updatePayload.prazoPrincipal as Date | null) ?? null)
         : (processo.prazoPrincipal ?? null);
+    const causaIds =
+      data.causaIds !== undefined
+        ? uniqueOrderedProcessoRelationIds(data.causaIds)
+        : null;
 
     const atualizado = await prisma.$transaction(async (tx) => {
       const processoAtualizado = await tx.processo.update({
@@ -3546,6 +3626,7 @@ export async function updateProcesso(
           },
           ...processoClientesRelacionadosInclude,
           ...processoResponsaveisRelacionadosInclude,
+          ...processoCausasInclude,
           juiz: true,
           tribunal: true,
         },
@@ -3567,6 +3648,13 @@ export async function updateProcesso(
         processoId,
         clienteIds: normalizedLinks.clienteIds,
       });
+      if (causaIds !== null) {
+        await syncProcessoCausas(tx, {
+          tenantId,
+          processoId,
+          causaIds,
+        });
+      }
       await syncManagedPrazoPrincipalForProcess(tx, {
         tenantId,
         processoId,

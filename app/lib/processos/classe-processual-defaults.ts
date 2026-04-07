@@ -153,4 +153,58 @@ export const CLASSES_PROCESSUAIS_PADRAO: ClasseProcessualDefault[] = [
     descricao: "Cumprimento de ato determinado por tribunal ou órgão superior.",
     ordem: 240,
   },
+  {
+    slug: "acao-penal",
+    nome: "Ação Penal",
+    descricao: "Classe criminal para processamento de ação penal.",
+    ordem: 250,
+  },
+  {
+    slug: "inquerito-policial",
+    nome: "Inquérito Policial",
+    descricao: "Procedimento investigativo da fase pré-processual penal.",
+    ordem: 260,
+  },
+  {
+    slug: "habeas-corpus",
+    nome: "Habeas Corpus",
+    descricao: "Remédio constitucional voltado à liberdade de locomoção.",
+    ordem: 270,
+  },
+  {
+    slug: "execucao-penal",
+    nome: "Execução Penal",
+    descricao: "Cumprimento e acompanhamento da pena na fase executória.",
+    ordem: 280,
+  },
+  {
+    slug: "medida-cautelar-criminal",
+    nome: "Medida Cautelar Criminal",
+    descricao: "Pedidos cautelares em matéria penal.",
+    ordem: 290,
+  },
+  {
+    slug: "carta-precatoria-criminal",
+    nome: "Carta Precatória Criminal",
+    descricao: "Carta de cooperação judicial em matéria criminal.",
+    ordem: 300,
+  },
+  {
+    slug: "reclamacao-trabalhista",
+    nome: "Reclamação Trabalhista",
+    descricao: "Classe base para demandas trabalhistas individuais ou plúrimas.",
+    ordem: 310,
+  },
+  {
+    slug: "execucao-trabalhista",
+    nome: "Execução Trabalhista",
+    descricao: "Fase executiva das decisões na Justiça do Trabalho.",
+    ordem: 320,
+  },
+  {
+    slug: "mandado-de-seguranca-trabalhista",
+    nome: "Mandado de Segurança Trabalhista",
+    descricao: "Controle judicial de ato ilegal ou abusivo em matéria trabalhista.",
+    ordem: 330,
+  },
 ];

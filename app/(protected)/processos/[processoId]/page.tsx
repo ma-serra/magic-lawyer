@@ -573,6 +573,8 @@ const getFaseLabel = (fase: ProcessoFase) => {
       return "Citação";
     case ProcessoFase.INSTRUCAO:
       return "Instrução";
+    case ProcessoFase.ALEGACOES_FINAIS:
+      return "Alegações finais";
     case ProcessoFase.SENTENCA:
       return "Sentença";
     case ProcessoFase.RECURSO:
@@ -2086,6 +2088,27 @@ export default function ProcessoDetalhesPage() {
                     </div>
                   )}
 
+                  {Array.isArray(processo.causasVinculadas) &&
+                    processo.causasVinculadas.length > 0 && (
+                      <div className="md:col-span-2">
+                        <p className="text-xs font-semibold uppercase text-default-400">
+                          Assuntos do processo
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {processo.causasVinculadas.map((item) => (
+                            <Chip
+                              key={item.id}
+                              color={item.principal ? "primary" : "default"}
+                              size="sm"
+                              variant="flat"
+                            >
+                              {item.causa.nome}
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                   {processoRitoLabel && (
                     <div>
                       <p className="text-xs font-semibold uppercase text-default-400">
@@ -2625,9 +2648,15 @@ export default function ProcessoDetalhesPage() {
             {!isCliente && canUploadProcessoDocumentos && (
               <Card className="border border-default-200">
                 <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Plus className="h-4 w-4" /> Nova Parte
-                  </h3>
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Plus className="h-4 w-4" /> Nova Parte do Processo
+                    </h3>
+                    <p className="text-sm text-default-500">
+                      Adicione ou ajuste autor, reu, reclamado e demais partes
+                      do caso.
+                    </p>
+                  </div>
                 </CardHeader>
                 <Divider />
                 <CardBody className="space-y-4">

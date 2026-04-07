@@ -1,227 +1,148 @@
-const DEFAULT_CAUSAS = [
-  {
-    nome: "Ameaça",
-    codigoCnj: "000104",
-    descricao: "Casos envolvendo ameaça ou coação",
-  },
-  {
-    nome: "Danos Morais",
-    codigoCnj: "000235",
-    descricao: "Reparação de danos morais em esfera cível",
-  },
-  {
-    nome: "Contratos de Honorários",
-    codigoCnj: null,
-    descricao: "Gestão e execução de contratos de honorários",
-  },
+export type CausaProcessualDefault = {
+  nome: string;
+  codigoCnj?: string | null;
+  descricao?: string | null;
+};
+
+export const CAUSAS_PROCESSUAIS_PADRAO: CausaProcessualDefault[] = [
   {
     nome: "Cobrança",
-    codigoCnj: null,
     descricao: "Pedidos cíveis de cobrança em geral.",
   },
   {
     nome: "Inadimplemento contratual",
-    codigoCnj: null,
     descricao: "Discussão sobre descumprimento de obrigações contratuais.",
   },
   {
     nome: "Rescisão contratual",
-    codigoCnj: null,
     descricao: "Pedidos de rescisão ou resolução de contrato.",
   },
   {
     nome: "Indenização por danos morais",
-    codigoCnj: null,
     descricao: "Pedidos indenizatórios por dano moral.",
   },
   {
     nome: "Indenização por danos materiais",
-    codigoCnj: null,
     descricao: "Pedidos indenizatórios por dano material.",
   },
   {
     nome: "Direito do consumidor - Vício do produto ou serviço",
-    codigoCnj: null,
     descricao: "Demandas consumeristas por vício do produto ou serviço.",
   },
   {
     nome: "Família - Alimentos",
-    codigoCnj: null,
     descricao: "Pedidos de alimentos.",
   },
   {
     nome: "Família - Guarda",
-    codigoCnj: null,
     descricao: "Pedidos relacionados à guarda.",
   },
   {
     nome: "Família - Divórcio",
-    codigoCnj: null,
     descricao: "Pedidos de divórcio.",
   },
   {
     nome: "Crime contra a Administração Pública - Peculato",
-    codigoCnj: null,
     descricao: "Apuração criminal de peculato.",
   },
   {
     nome: "Crime contra a Administração Pública - Corrupção ativa",
-    codigoCnj: null,
     descricao: "Apuração criminal de corrupção ativa.",
   },
   {
     nome: "Crime contra a Administração Pública - Corrupção passiva",
-    codigoCnj: null,
     descricao: "Apuração criminal de corrupção passiva.",
   },
   {
     nome: "Crime contra a Administração Pública - Fraude em licitação",
-    codigoCnj: null,
     descricao: "Apuração criminal de fraude em licitação.",
   },
   {
     nome: "Crimes contra o patrimônio - Furto",
-    codigoCnj: null,
     descricao: "Apuração criminal de furto.",
   },
   {
     nome: "Crimes contra o patrimônio - Roubo",
-    codigoCnj: null,
     descricao: "Apuração criminal de roubo.",
   },
   {
     nome: "Crimes contra o patrimônio - Estelionato",
-    codigoCnj: null,
     descricao: "Apuração criminal de estelionato.",
   },
   {
     nome: "Crimes contra o patrimônio - Apropriação indébita",
-    codigoCnj: null,
     descricao: "Apuração criminal de apropriação indébita.",
   },
   {
     nome: "Crimes contra o patrimônio - Receptação",
-    codigoCnj: null,
     descricao: "Apuração criminal de receptação.",
   },
   {
     nome: "Crimes contra o patrimônio - Extorsão",
-    codigoCnj: null,
     descricao: "Apuração criminal de extorsão.",
   },
   {
     nome: "Crimes contra o patrimônio - Extorsão mediante sequestro",
-    codigoCnj: null,
     descricao: "Apuração criminal de extorsão mediante sequestro.",
   },
   {
     nome: "Crimes contra a vida - Tentativa de homicídio",
-    codigoCnj: null,
     descricao: "Apuração criminal de tentativa de homicídio.",
   },
   {
     nome: "Crimes contra a vida - Homicídio",
-    codigoCnj: null,
     descricao: "Apuração criminal de homicídio.",
   },
   {
     nome: "Crimes contra a vida - Feminicídio",
-    codigoCnj: null,
     descricao: "Apuração criminal de feminicídio.",
   },
   {
     nome: "Crimes relacionados às drogas - Tráfico de drogas",
-    codigoCnj: null,
     descricao: "Apuração criminal de tráfico de drogas.",
   },
   {
     nome: "Crimes relacionados às drogas - Associação para o tráfico",
-    codigoCnj: null,
     descricao: "Apuração criminal de associação para o tráfico.",
   },
   {
     nome: "Outros - Crimes diversos",
-    codigoCnj: null,
     descricao: "Assunto genérico para crimes não mapeados no catálogo.",
   },
   {
     nome: "Verbas rescisórias",
-    codigoCnj: null,
     descricao: "Pedidos trabalhistas de verbas rescisórias.",
   },
   {
     nome: "Horas extras",
-    codigoCnj: null,
     descricao: "Pedidos trabalhistas de horas extras.",
   },
   {
     nome: "Férias",
-    codigoCnj: null,
     descricao: "Pedidos trabalhistas ligados a férias.",
   },
   {
     nome: "FGTS",
-    codigoCnj: null,
     descricao: "Pedidos relacionados a FGTS.",
   },
   {
     nome: "Reconhecimento de vínculo empregatício",
-    codigoCnj: null,
     descricao: "Pedidos de reconhecimento de vínculo empregatício.",
   },
   {
     nome: "Indenização trabalhista por dano moral",
-    codigoCnj: null,
     descricao: "Pedidos trabalhistas de dano moral.",
   },
   {
     nome: "Adicional de insalubridade",
-    codigoCnj: null,
     descricao: "Pedidos de adicional de insalubridade.",
   },
   {
     nome: "Adicional de periculosidade",
-    codigoCnj: null,
     descricao: "Pedidos de adicional de periculosidade.",
   },
   {
     nome: "Rescisão indireta",
-    codigoCnj: null,
     descricao: "Pedidos de rescisão indireta.",
   },
 ];
-
-module.exports = async function seedCausas(prisma) {
-  const tenants = await prisma.tenant.findMany({
-    where: {
-      status: "ACTIVE",
-    },
-    select: { id: true },
-  });
-
-  for (const tenant of tenants) {
-    for (const causa of DEFAULT_CAUSAS) {
-      await prisma.causa.upsert({
-        where: {
-          tenantId_nome: {
-            tenantId: tenant.id,
-            nome: causa.nome,
-          },
-        },
-        update: {
-          codigoCnj: causa.codigoCnj,
-          descricao: causa.descricao,
-          ativo: true,
-          isOficial: false,
-        },
-        create: {
-          tenantId: tenant.id,
-          nome: causa.nome,
-          codigoCnj: causa.codigoCnj,
-          descricao: causa.descricao,
-          isOficial: false,
-        },
-      });
-    }
-  }
-};

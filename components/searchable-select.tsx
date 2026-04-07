@@ -21,6 +21,7 @@ export type SearchableSelectOption = {
 type SearchableSelectProps = {
   items: SearchableSelectOption[];
   selectedKey?: string | null;
+  customValue?: string;
   id?: string;
   label?: string;
   placeholder?: string;
@@ -42,10 +43,12 @@ type SearchableSelectProps = {
   isLoading?: boolean;
   isClearable?: boolean;
   isVirtualized?: boolean;
+  allowsCustomValue?: boolean;
   ariaLabel?: string;
   ariaLabelledby?: string;
   testId?: string;
   onSelectionChange: (key: string | null) => void;
+  onCustomValueChange?: (value: string) => void;
 };
 
 function normalizeSearchText(value: string) {
@@ -74,6 +77,7 @@ function findExactMatch(items: SearchableSelectOption[], value: string) {
 export function SearchableSelect({
   items,
   selectedKey,
+  customValue,
   id,
   label,
   placeholder,
@@ -95,10 +99,12 @@ export function SearchableSelect({
   isLoading = false,
   isClearable = true,
   isVirtualized,
+  allowsCustomValue = false,
   ariaLabel,
   ariaLabelledby,
   testId,
   onSelectionChange,
+  onCustomValueChange,
 }: SearchableSelectProps) {
   const itemKeys = new Set(items.map((item) => item.key));
   const normalizedSelectedKey =
@@ -114,7 +120,9 @@ export function SearchableSelect({
         : undefined,
     [items, normalizedSelectedKey],
   );
-  const [inputValue, setInputValue] = useState(selectedItem?.label ?? "");
+  const resolvedSelectedLabel =
+    selectedItem?.label ?? (allowsCustomValue ? customValue ?? "" : "");
+  const [inputValue, setInputValue] = useState(resolvedSelectedLabel);
   const filteredItems = useMemo(() => {
     const normalizedInput = normalizeSearchText(inputValue);
 
@@ -133,16 +141,28 @@ export function SearchableSelect({
   }, [inputValue, items, selectedItem]);
 
   useEffect(() => {
-    setInputValue(selectedItem?.label ?? "");
-  }, [selectedItem?.key, selectedItem?.label]);
+    setInputValue(resolvedSelectedLabel);
+  }, [resolvedSelectedLabel]);
 
   const handleInputBlur = (event: FocusEvent<HTMLInputElement>) => {
     inputProps?.onBlur?.(event);
+    const trimmedValue = inputValue.trim();
 
-    const exactMatch = findExactMatch(items, inputValue);
+    const exactMatch = findExactMatch(items, trimmedValue);
     if (exactMatch && exactMatch.key !== normalizedSelectedKey) {
       setInputValue(exactMatch.label);
       onSelectionChange(exactMatch.key);
+      return;
+    }
+
+    if (allowsCustomValue) {
+      setInputValue(trimmedValue);
+
+      if (normalizedSelectedKey !== undefined && !exactMatch) {
+        onSelectionChange(null);
+      }
+
+      onCustomValueChange?.(trimmedValue);
       return;
     }
 
@@ -151,7 +171,7 @@ export function SearchableSelect({
 
   return (
     <Autocomplete
-      allowsCustomValue={false}
+      allowsCustomValue={allowsCustomValue}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledby}
       className={className}
@@ -189,9 +209,18 @@ export function SearchableSelect({
       variant={variant}
       onClear={() => {
         setInputValue("");
+        if (allowsCustomValue) {
+          onSelectionChange(null);
+          onCustomValueChange?.("");
+        }
       }}
       onInputChange={(value) => {
         setInputValue(value);
+
+        if (allowsCustomValue) {
+          onCustomValueChange?.(value);
+          return;
+        }
 
         const exactMatch = findExactMatch(items, value);
         if (exactMatch && exactMatch.key !== normalizedSelectedKey) {

@@ -37,6 +37,10 @@ import {
   updateClasseProcessual,
 } from "@/app/actions/classes-processuais";
 import {
+  ProcessClassFormFields,
+  type ClasseProcessualFormValue,
+} from "@/components/processos/process-class-form-fields";
+import {
   PeopleEntityCard,
   PeopleEntityCardBody,
   PeopleMetricCard,
@@ -58,36 +62,13 @@ type ClasseTenant = ClasseGlobal & {
   tenantId: string | null;
 };
 
-type ClasseFormData = {
-  nome: string;
-  slug: string;
-  descricao: string;
-  ordem: number;
-  ativo: boolean;
-};
-
-const DEFAULT_FORM: ClasseFormData = {
+const DEFAULT_FORM: ClasseProcessualFormValue = {
   nome: "",
   slug: "",
   descricao: "",
   ordem: 1000,
   ativo: true,
 };
-
-function normalizeText(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function toSlug(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 export default function ClassesProcessuaisPage() {
   const [activeTab, setActiveTab] = useState<"globais" | "customizadas">(
@@ -98,7 +79,7 @@ export default function ClassesProcessuaisPage() {
     useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<ClasseFormData>(DEFAULT_FORM);
+  const [formData, setFormData] = useState<ClasseProcessualFormValue>(DEFAULT_FORM);
   const [savingForm, setSavingForm] = useState(false);
   const [updatingGlobalId, setUpdatingGlobalId] = useState<string | null>(null);
   const [updatingCustomId, setUpdatingCustomId] = useState<string | null>(null);
@@ -625,56 +606,13 @@ export default function ClassesProcessuaisPage() {
             {editingId ? "Editar classe processual" : "Nova classe processual"}
           </ModalHeader>
           <ModalBody className="space-y-4">
-            <Input
-              isRequired
-              label="Nome"
-              placeholder="Ex: Procedimento comum estratégico"
-              value={formData.nome}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  nome: value,
-                  slug: editingId ? prev.slug : toSlug(value),
-                }))
-              }
+            <ProcessClassFormFields
+              disabled={savingForm}
+              mode="full"
+              syncSlugOnNameChange={!editingId}
+              value={formData}
+              onChange={setFormData}
             />
-            <Input
-              isRequired
-              label="Slug"
-              placeholder="procedimento-comum-estrategico"
-              value={formData.slug}
-              onValueChange={(value) =>
-                setFormData((prev) => ({ ...prev, slug: toSlug(value) }))
-              }
-            />
-            <Input
-              label="Ordem"
-              type="number"
-              value={String(formData.ordem)}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  ordem: Number(value || 0),
-                }))
-              }
-            />
-            <Textarea
-              label="Descrição"
-              minRows={3}
-              placeholder="Explique quando essa classe deve ser usada."
-              value={formData.descricao}
-              onValueChange={(value) =>
-                setFormData((prev) => ({ ...prev, descricao: value }))
-              }
-            />
-            <Switch
-              isSelected={formData.ativo}
-              onValueChange={(checked) =>
-                setFormData((prev) => ({ ...prev, ativo: checked }))
-              }
-            >
-              Criar já como ativa
-            </Switch>
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={closeModal}>

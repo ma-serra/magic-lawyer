@@ -133,6 +133,13 @@ function normalizeEnderecoPrincipalForPayload(
   return hasEndereco ? payload : undefined;
 }
 
+function hasPrimaryPhoneContact(input: {
+  telefone?: string | null;
+  celular?: string | null;
+}) {
+  return Boolean(input.telefone?.trim() || input.celular?.trim());
+}
+
 type EnderecoPrincipalField = keyof NonNullable<
   ClienteCreateInput["enderecoPrincipal"]
 >;
@@ -172,7 +179,7 @@ export function ClienteCreateModal({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isSearchingCep, setIsSearchingCep] = useState(false);
-  const [criarUsuario, setCriarUsuario] = useState(true);
+  const [criarUsuario, setCriarUsuario] = useState(false);
   const [credenciaisModal, setCredenciaisModal] = useState<{
     email: string;
     maskedEmail: string;
@@ -191,7 +198,7 @@ export function ClienteCreateModal({
 
   const resetForm = useCallback(() => {
     setFormState(INITIAL_CLIENTE_FORM_STATE);
-    setCriarUsuario(true);
+    setCriarUsuario(false);
     setIsSearchingCep(false);
   }, []);
 
@@ -401,6 +408,11 @@ export function ClienteCreateModal({
   const handleCreateCliente = useCallback(async () => {
     if (!formState.nome) {
       toast.error("Nome e obrigatorio");
+      return;
+    }
+
+    if (!hasPrimaryPhoneContact(formState)) {
+      toast.error("Informe ao menos um telefone ou celular");
       return;
     }
 
@@ -821,10 +833,28 @@ export function ClienteCreateModal({
               >
                 <div className="space-y-6">
                   <ModalSectionCard
-                    description="Telefones e email do cliente"
+                    description="Informe ao menos um telefone. O email so e obrigatorio se criar acesso."
                     title="Informacoes de Contato"
                   >
                     <div className="space-y-4">
+                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                        <Checkbox
+                          isSelected={criarUsuario}
+                          onValueChange={setCriarUsuario}
+                        >
+                          <div>
+                            <p className="text-sm font-semibold">
+                              Criar acesso do cliente ao sistema
+                            </p>
+                            <p className="mt-1 text-xs text-default-500">
+                              {criarUsuario
+                                ? "O cliente recebera link de primeiro acesso por email."
+                                : "O cadastro ficara sem login por enquanto."}
+                            </p>
+                          </div>
+                        </Checkbox>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <Input
                           description={
@@ -925,43 +955,6 @@ export function ClienteCreateModal({
                       </div>
                     </ModalSectionCard>
                   ) : null}
-                </div>
-              </Tab>
-
-              <Tab
-                key="acesso"
-                title={
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-md bg-purple-100 p-1 dark:bg-purple-900">
-                      <KeyIcon className="h-4 w-4 text-purple-600 dark:text-purple-300" />
-                    </div>
-                    <span>Acesso</span>
-                  </div>
-                }
-              >
-                <div className="space-y-6">
-                  <ModalSectionCard
-                    description="Configure se o cliente tera acesso ao sistema"
-                    title="Usuario de Acesso"
-                  >
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                      <Checkbox
-                        isSelected={criarUsuario}
-                        onValueChange={setCriarUsuario}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold">
-                            Criar usuario de acesso ao sistema
-                          </p>
-                          <p className="mt-1 text-xs text-default-500">
-                            {criarUsuario
-                              ? "Um usuario sera criado e recebera link de primeiro acesso por email"
-                              : "O cliente nao tera acesso ao sistema"}
-                          </p>
-                        </div>
-                      </Checkbox>
-                    </div>
-                  </ModalSectionCard>
                 </div>
               </Tab>
 

@@ -34,6 +34,10 @@ import {
   type CausasListParams,
 } from "@/app/actions/causas";
 import {
+  ProcessCauseFormFields,
+  type CausaProcessualFormValue,
+} from "@/components/processos/process-cause-form-fields";
+import {
   PeopleMetricCard,
   PeoplePageHeader,
   PeoplePanel,
@@ -75,12 +79,6 @@ interface CausasPagedResponse {
   };
 }
 
-interface FormState {
-  nome: string;
-  codigoCnj: string;
-  descricao: string;
-}
-
 function getSingleSelectionKey(value: unknown): string | undefined {
   if (!value || value === "all") {
     return undefined;
@@ -111,14 +109,14 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
   });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
-  const [createForm, setCreateForm] = useState<FormState>({
+  const [createForm, setCreateForm] = useState<CausaProcessualFormValue>({
     nome: "",
     codigoCnj: "",
     descricao: "",
   });
   const [editingCausa, setEditingCausa] = useState<CausaDto | null>(null);
   const [detailCausa, setDetailCausa] = useState<CausaDto | null>(null);
-  const [editForm, setEditForm] = useState<FormState>({
+  const [editForm, setEditForm] = useState<CausaProcessualFormValue>({
     nome: "",
     codigoCnj: "",
     descricao: "",
@@ -693,41 +691,10 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
         description="Preencha o cadastro inicial. O nome deve ser único por tenant."
       >
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              isRequired
-              label="Nome"
-              placeholder="Ex.: Ameaça, Ação de Divórcio..."
-              value={createForm.nome}
-              onValueChange={(value) =>
-                setCreateForm((prev) => ({
-                  ...prev,
-                  nome: value,
-                }))
-              }
-            />
-            <Input
-              label="Código CNJ"
-              placeholder="Opcional"
-              value={createForm.codigoCnj}
-              onValueChange={(value) =>
-                setCreateForm((prev) => ({
-                  ...prev,
-                  codigoCnj: value,
-                }))
-              }
-            />
-          </div>
-          <Textarea
-            label="Descrição"
-            placeholder="Observação breve para uso interno"
-            value={createForm.descricao}
-            onValueChange={(value) =>
-              setCreateForm((prev) => ({
-                ...prev,
-                descricao: value,
-              }))
-            }
+          <ProcessCauseFormFields
+            disabled={isCreating || isLoading}
+            value={createForm}
+            onChange={setCreateForm}
           />
           <div className="flex flex-wrap justify-end gap-2">
             <Button
@@ -894,36 +861,10 @@ export function CausasContent({ canSyncOficiais = false }: CausasContentProps) {
                 ) : null}
               </ModalHeader>
               <ModalBody className="space-y-3">
-                <Input
-                  isRequired
-                  label="Nome"
-                  value={editForm.nome}
-                  onValueChange={(value) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      nome: value,
-                    }))
-                  }
-                />
-                <Input
-                  label="Código CNJ"
-                  value={editForm.codigoCnj}
-                  onValueChange={(value) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      codigoCnj: value,
-                    }))
-                  }
-                />
-                <Textarea
-                  label="Descrição"
-                  value={editForm.descricao}
-                  onValueChange={(value) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      descricao: value,
-                    }))
-                  }
+                <ProcessCauseFormFields
+                  disabled={isSaving}
+                  value={editForm}
+                  onChange={setEditForm}
                 />
               </ModalBody>
               <ModalFooter>

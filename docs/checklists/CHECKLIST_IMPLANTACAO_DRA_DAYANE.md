@@ -1,19 +1,22 @@
-# ✅ Checklist de Implantação - Dra. Dayane
+# Checklist de Implantação - Dra. Dayane
 
-Este documento consolida apenas itens de trabalho levantados na reunião de implantação com a Dra. Dayane.
+Este documento consolida apenas os itens levantados na implantação da Dra. Dayane.
 
-Use este checklist para validar o que já foi entregue, o que já foi testado e o que ainda está pendente.
+Use este checklist para separar:
+- o que já foi validado em reunião ou em uso real
+- o que já foi implementado e validado no código/testes locais
+- o que ainda depende de homologação operacional ou implementação adicional
 
-### 🔗 **CHECKLISTS RELACIONADOS:**
-- **[CHECKLIST_TOTAL_MAGICLAWYER.md](./CHECKLIST_TOTAL_MAGICLAWYER.md)** - checklist global do produto e referência principal de progresso
+### Checklists relacionados
+- [CHECKLIST_TOTAL_MAGICLAWYER.md](./CHECKLIST_TOTAL_MAGICLAWYER.md) - checklist global do produto e referência principal de progresso
 
-**Última atualização:** 06/04/2026  
-**Origem:** reunião de implantação com a Dra. Dayane  
-**Status:** revisão do pacote publicado em `main` entre 03/04/2026 e 06/04/2026 concluída; validação operacional segue em andamento
+**Última atualização:** 07/04/2026  
+**Origem:** reunião de implantação com a Dra. Dayane e feedbacks operacionais enviados entre 03/04/2026 e 07/04/2026  
+**Status:** checklist revisado com critério separado de produção/evidência, código/testes locais e homologação operacional
 
 ---
 
-## ✅ Pacote revisado nesta atualização
+## Pacote revisado nesta atualização
 
 - [x] 03/04/2026 `662447a` - `release: v1.0.14-beta.4`
 - [x] 03/04/2026 `08adcb6` - `release: deploy support, process, and UX updates`
@@ -21,11 +24,11 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 - [x] 06/04/2026 `a8ef070` - `feat: melhora responsividade e navegacao de prazos do processo`
 - [x] 06/04/2026 `bdc2277` - `feat: ship document workflow and notification audit`
 - [x] 06/04/2026 `8447fd5` - `fix: add mojibake scanner and audit copy repair`
-- [x] 06/04/2026 `0481b13` - `feat: formalize rito processual and deadline context` (preview de homologação)
+- [x] 06/04/2026 `0481b13` - `feat: formalize rito processual and deadline context`
 
 ---
 
-## ✅ Validado na reunião
+## Validado na reunião
 
 - [x] Cadastro básico de cliente realizado durante a reunião.
 - [x] Cadastro básico de processo realizado durante a reunião.
@@ -38,7 +41,14 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 
 ---
 
-## ✅ Validado no código e testes locais
+## Validado com a Dra. Dayane após a reunião
+
+- [x] Dra. Dayane validou em 06/04/2026 a frequência atual da régua de notificações de prazo, sem necessidade de aumentar ou diminuir os alertas neste momento.
+- [x] A Dra. Dayane confirmou em 07/04/2026 que a frequência de notificações está adequada para o uso atual.
+
+---
+
+## Validado no código e testes locais
 
 ### Perfil, escritório e notificações
 
@@ -65,10 +75,29 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 - [x] Corrigir o erro de redirecionamento ao salvar a edição do processo.
 - [x] Criar tipo de registro específico para solicitações feitas ao cliente.
 - [x] Completar o cadastro da autoridade com os campos que ficaram pendentes no teste.
+- [x] Corrigir o seletor de tribunal no modal rápido de autoridade para busca e rolagem no próprio modal.
 - [x] Permitir editar partes vinculadas ao processo sem remover o vínculo.
+- [x] Permitir cadastrar múltiplas partes já no fluxo de novo processo, incluindo réu, reclamado, autor extra e equivalentes.
 - [x] Corrigir a exibição do grau do processo nas listagens e formulários.
 - [x] Melhorar a aba de documentos do processo para renomear, mover, criar pasta e vincular documentos.
 - [x] Padronizar barra de progresso nos uploads de documentos, fotos, anexos e importações.
+- [x] Tornar o e-mail opcional no cadastro de cliente quando não houver criação de acesso.
+- [x] Exigir telefone ou celular no cadastro de cliente como contato mínimo obrigatório.
+- [x] Mover a criação de acesso do cliente para checkbox inline no mesmo formulário de cadastro.
+- [x] Permitir criar área do processo direto do formulário de novo/editar processo, sem ir para Configurações.
+- [x] Adicionar a fase processual "Alegações finais" no fluxo de processos.
+- [x] Separar "Classe processual" de "Assuntos do processo" no cadastro e edição do processo.
+- [x] Reusar o catálogo de causas como base de "Assuntos do processo" com multiseleção.
+- [x] Permitir criar classe processual direto do formulário de processo.
+- [x] Permitir criar assunto do processo direto do formulário de processo.
+- [x] Exibir links de criação rápida abaixo dos campos de área, classe processual e assuntos do processo, sem exigir ida prévia a Configurações.
+- [x] Exibir classe processual e assuntos do processo separadamente nas telas principais de processo e na visão do cliente.
+- [x] Expandir o catálogo padrão de classes processuais com opções cíveis, criminais e trabalhistas mais comuns para uso imediato no escritório.
+- [x] Expandir o catálogo padrão de assuntos do processo com base nas sugestões práticas da Dra. Dayane.
+- [x] Persistir em banco o catálogo padrão de classes e assuntos do processo, com seed real para tenants novos e backfill idempotente para tenants existentes.
+- [x] Reutilizar componentes tipados nos formulários de área, classe e assunto entre páginas próprias e modais rápidos, evitando divergência de campos.
+- [x] Reutilizar a seção de classificação do processo entre os fluxos de novo processo e editar processo.
+- [x] Permitir busca com sugestão e digitação livre no campo "Órgão Julgador".
 
 ### Prazos e agenda
 
@@ -110,7 +139,10 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 - [x] `npm run prisma:push` executado com sucesso em 06/04/2026 para sincronizar a auditoria de notificações de forma aditiva.
 - [x] Pacote complementar publicado em `main` em 06/04/2026, sem alteração da versão do `package.json`.
 - [x] `npm test -- notification-links.test.ts notification-policy-telegram.test.ts deadline-digests.test.ts` executado com sucesso em 06/04/2026.
-- [x] Branch de preview `preview/full-tree-20260406` publicada em 06/04/2026 para homologação do pacote com rito do processo e notificações enriquecidas.
+- [x] Deploy de produção atual publicado com sucesso na `main` em 06/04/2026, com check da Vercel concluído para o commit `544c704`.
+- [x] `npm run typecheck` executado com sucesso em 07/04/2026.
+- [x] `npm run check:mojibake` executado com sucesso em 07/04/2026.
+- [x] `npm test` executado com sucesso em 07/04/2026.
 
 ### Suporte e implantação
 
@@ -118,35 +150,22 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 
 ---
 
-## 📋 Pendências ou itens que ainda exigem validação operacional
+## Pendências técnicas
 
 ### Perfil, escritório e notificações
 
 - [ ] Finalizar a integração de notificações por WhatsApp.
-- [ ] Refinar os canais ativos por usuário: e-mail, Telegram, WhatsApp e in-app.
-- [ ] Homologar com a Dra. Dayane a nova auditoria de notificações e validar quais canais devem ser priorizados no uso real.
-- [ ] Revisar com a Dra. Dayane se a régua de alertas de prazo deve manter a antecedência atual ou ser ajustada.
-- [ ] Homologar com a Dra. Dayane o novo texto das notificações com cliente e link direto para o prazo.
+- [ ] Refinar os canais ativos por usuário com o WhatsApp fechado no fluxo principal: e-mail, Telegram, WhatsApp e in-app.
 
 ### Processos e cadastros
 
 - [ ] Ajustar responsividade para notebooks com resolução 1366x768 em todos os fluxos principais.
-- [ ] Garantir que edição e atualização do processo funcionem sem mensagem de erro em fluxo real.
 - [ ] Permitir vincular partes já existentes sem recadastrar manualmente.
-- [ ] Homologar em uso real o novo fluxo de organização de documentos na aba do processo.
+- [ ] Fazer limpeza assistida dos cadastros antigos em que classe processual foi usada como assunto.
 
 ### Prazos e agenda
 
 - [ ] Remover ou ocultar a recorrência da agenda para o uso jurídico padrão.
-- [ ] Homologar com a Dra. Dayane a navegação do prazo principal e a leitura da aba de prazos no processo.
-- [ ] Homologar com a Dra. Dayane o novo fluxo de rito do processo e tipo legal do prazo.
-
-### Relatórios, cliente e documentos
-
-- [ ] Validar o fluxo de primeiro acesso do cliente com envio estável por e-mail no ambiente real.
-- [ ] Validar o fluxo para o cliente anexar documentos pelo portal.
-- [ ] Criar tutorial curto para o cliente anexar documentos.
-- [ ] Criar tutoriais curtos por módulo para advogado e equipe.
 
 ### Petições e modelos
 
@@ -158,15 +177,52 @@ Use este checklist para validar o que já foi entregue, o que já foi testado e 
 - [ ] Resolver a reativação e estabilização da integração com o Juiz Brasil.
 - [ ] Definir o provedor final da integração de WhatsApp.
 - [ ] Avaliar integração com Apple Calendar, caso Google Calendar não seja o calendário principal da usuária.
+
+### Relatórios, cliente e documentos
+
+- [ ] Criar tutorial curto para o cliente anexar documentos.
+- [ ] Criar tutoriais curtos por módulo para advogado e equipe.
+
+---
+
+## Pendências de homologação / uso real
+
+### Perfil, escritório e notificações
+
+- [ ] Homologar com a Dra. Dayane a nova auditoria de notificações e validar quais canais devem ser priorizados no uso real.
+
+### Processos e cadastros
+
+- [ ] Garantir que edição e atualização do processo funcionem sem mensagem de erro em fluxo real.
+- [ ] Homologar em uso real o novo fluxo de organização de documentos na aba do processo.
+- [ ] Homologar em uso real o cadastro de múltiplas partes no novo processo.
+- [ ] Homologar em uso real o novo cadastro de cliente com e-mail opcional e acesso inline.
+- [ ] Homologar com a Dra. Dayane o novo fluxo de classe processual + assuntos do processo.
+- [ ] Homologar com a Dra. Dayane a criação rápida inline de área, classe e assunto no formulário do processo.
+- [ ] Homologar com a Dra. Dayane o novo catálogo jurídico padrão de classes e assuntos no cadastro de processos reais.
+- [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão Julgador".
+
+### Prazos e agenda
+
+- [ ] Homologar com a Dra. Dayane a navegação do prazo principal e a leitura da aba de prazos no processo.
+- [ ] Homologar com a Dra. Dayane o novo fluxo de rito do processo e tipo legal do prazo.
+- [ ] Confirmar em uso real a nova fase processual "Alegações finais" nos cadastros do escritório.
+
+### Relatórios, cliente e documentos
+
+- [ ] Validar o fluxo de primeiro acesso do cliente com envio estável por e-mail no ambiente real.
+- [ ] Validar o fluxo para o cliente anexar documentos pelo portal.
+
+### Integrações e implantação
+
 - [ ] Validar novos testes com processos reais e mais movimentados.
 - [ ] Manter o fluxo de suporte assistido para implantação quando houver bloqueio técnico no computador da usuária.
 
 ---
 
-## 📝 Observações
+## Observações
 
-- Nesta atualização, `[x]` significa item validado em reunião, no produto por leitura de código, por revisão dos commits publicados em `main` ou por testes locais.
-- O checklist usa dois níveis: validação técnica e validação operacional.
-- "Feito no código" não significa que o item já foi homologado pela Dra. Dayane em uso real.
-- Itens marcados como pendentes podem já ter backend ou UI parcial, mas ainda exigem validação operacional, ajuste fino de UX ou integração externa.
-- A revisão de 06/04/2026 considerou o pacote publicado entre sexta-feira, 03/04/2026, e segunda-feira, 06/04/2026.
+- Neste checklist, `[x]` em **Validado na reunião** ou **Validado com a Dra. Dayane** significa item com evidência operacional.
+- Neste checklist, `[x]` em **Validado no código e testes locais** significa item implementado e revisado tecnicamente, mas que ainda pode depender de homologação em uso real.
+- O checklist separa explicitamente `pendência técnica` de `homologação / uso real` para evitar falso pendente de item já implementado.
+- A revisão de 07/04/2026 incorpora os feedbacks operacionais enviados pela Dra. Dayane após o início do uso real do sistema.

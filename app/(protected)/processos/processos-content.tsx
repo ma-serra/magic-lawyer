@@ -264,6 +264,24 @@ export function ProcessosContent({
       : principais;
   };
 
+  const formatAssuntosResumo = (processo: any) => {
+    const nomes = Array.isArray(processo?.causasVinculadas)
+      ? processo.causasVinculadas
+          .map((item: any) => item?.causa?.nome)
+          .filter(Boolean)
+      : [];
+
+    if (nomes.length === 0) {
+      return null;
+    }
+
+    const principais = nomes.slice(0, 2).join(", ");
+
+    return nomes.length > 2
+      ? `${principais} +${nomes.length - 2}`
+      : principais;
+  };
+
   const getFaseLabel = (fase?: ProcessoFase | null) => {
     if (!fase) return "-";
     switch (fase) {
@@ -273,6 +291,8 @@ export function ProcessosContent({
         return "Citação";
       case ProcessoFase.INSTRUCAO:
         return "Instrução";
+      case ProcessoFase.ALEGACOES_FINAIS:
+        return "Alegações finais";
       case ProcessoFase.SENTENCA:
         return "Sentença";
       case ProcessoFase.RECURSO:
@@ -421,6 +441,8 @@ export function ProcessosContent({
         const matchBusca =
           processo.numero.toLowerCase().includes(busca) ||
           processo.titulo?.toLowerCase().includes(busca) ||
+          processo.classeProcessual?.toLowerCase().includes(busca) ||
+          formatAssuntosResumo(processo)?.toLowerCase().includes(busca) ||
           getProcessoClientes(processo).some((cliente: any) =>
             cliente.nome?.toLowerCase().includes(busca),
           ) ||
@@ -731,7 +753,7 @@ export function ProcessosContent({
                 </Button>
               )
             }
-            placeholder="Buscar por número, título, cliente ou advogado..."
+            placeholder="Buscar por número, título, classe, assunto, cliente ou advogado..."
             startContent={<Search className="h-4 w-4 text-default-400" />}
             value={filtros.busca}
             onChange={(e) =>
@@ -1193,6 +1215,22 @@ export function ProcessosContent({
                         </CardHeader>
                         <Divider />
                         <CardBody className="gap-3 pt-3">
+                          {processo.classeProcessual ? (
+                            <div className="flex items-center gap-2 text-xs">
+                              <Scale className="h-3 w-3 text-default-400" />
+                              <span className="text-default-600">
+                                Classe: {processo.classeProcessual}
+                              </span>
+                            </div>
+                          ) : null}
+                          {formatAssuntosResumo(processo) ? (
+                            <div className="flex items-start gap-2 text-xs">
+                              <FileText className="mt-0.5 h-3 w-3 text-default-400" />
+                              <span className="text-default-600">
+                                Assuntos: {formatAssuntosResumo(processo)}
+                              </span>
+                            </div>
+                          ) : null}
                           {processo.area && (
                             <div className="flex items-center gap-2 text-xs">
                               <Briefcase className="h-3 w-3 text-default-400" />
@@ -1337,6 +1375,7 @@ export function ProcessosContent({
                   <div className="divide-y divide-default-200">
                     {processosPaginados.map((processo: any) => {
                       const advogadoNome = formatResponsaveisResumo(processo);
+                      const assuntosResumo = formatAssuntosResumo(processo);
                       const prazoPrincipal = processo.prazoPrincipal &&
                         DateUtils.isValid(processo.prazoPrincipal)
                         ? DateUtils.formatDate(processo.prazoPrincipal)
@@ -1394,6 +1433,16 @@ export function ProcessosContent({
                                 {processo.area?.nome ?? "Área não informada"}
                                 {processo.comarca ? ` • ${processo.comarca}` : ""}
                               </p>
+                              {processo.classeProcessual ? (
+                                <p className="mt-1 text-xs text-default-400">
+                                  Classe: {processo.classeProcessual}
+                                </p>
+                              ) : null}
+                              {assuntosResumo ? (
+                                <p className="mt-1 text-xs text-default-400">
+                                  Assuntos: {assuntosResumo}
+                                </p>
+                              ) : null}
                             </div>
 
                             <div className="min-w-0">

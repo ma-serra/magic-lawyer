@@ -25,7 +25,6 @@ import {
 import { Divider } from "@heroui/divider";
 import { Avatar } from "@heroui/avatar";
 import { Textarea } from "@heroui/input";
-import { Checkbox } from "@heroui/checkbox";
 import { Badge } from "@heroui/badge";
 import { Tooltip } from "@heroui/tooltip";
 import { Skeleton } from "@heroui/skeleton";
@@ -189,6 +188,13 @@ function normalizeEnderecoPrincipalForPayload(
     payload.estado;
 
   return hasEndereco ? payload : undefined;
+}
+
+function hasPrimaryPhoneContact(input: {
+  telefone?: string | null;
+  celular?: string | null;
+}) {
+  return Boolean(input.telefone?.trim() || input.celular?.trim());
 }
 
 type EnderecoPrincipalField = keyof NonNullable<
@@ -850,6 +856,12 @@ export function ClientesContent() {
 
     if (!formState.nome) {
       toast.error("Nome é obrigatório");
+
+      return;
+    }
+
+    if (!hasPrimaryPhoneContact(formState)) {
+      toast.error("Informe ao menos um telefone ou celular");
 
       return;
     }
@@ -1906,7 +1918,7 @@ export function ClientesContent() {
               >
                 <div className="space-y-6">
                   <ModalSectionCard
-                    description="Telefones e email do cliente"
+                    description="Informe ao menos um telefone ou celular do cliente."
                     title="Informações de Contato"
                   >
                     <div className="space-y-4">

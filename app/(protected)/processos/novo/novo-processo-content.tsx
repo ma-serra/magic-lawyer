@@ -26,6 +26,8 @@ import {
   Users,
   FileText,
   X,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -46,19 +48,26 @@ import {
 } from "@/app/actions/tribunais";
 import { listAreasProcesso } from "@/app/actions/areas-processo";
 import { listClassesProcessuais } from "@/app/actions/classes-processuais";
+import { listCausas } from "@/app/actions/causas";
 import {
   ProcessoArquivamentoTipo,
   ProcessoStatus,
   ProcessoFase,
   ProcessoGrau,
+  ProcessoPolo,
 } from "@/generated/prisma";
 import { useClientesParaSelect } from "@/app/hooks/use-clientes";
 import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
 import { useJuizes } from "@/app/hooks/use-juizes";
+import { useUserPermissions } from "@/app/hooks/use-user-permissions";
 import { Select, SelectItem } from "@heroui/react";
 import { DateInput } from "@/components/ui/date-input";
 import { SearchableSelect } from "@/components/searchable-select";
 import { AuthorityQuickCreateModal } from "@/components/processos/authority-quick-create-modal";
+import { ProcessAreaQuickCreateModal } from "@/components/processos/process-area-quick-create-modal";
+import { ProcessClassQuickCreateModal } from "@/components/processos/process-class-quick-create-modal";
+import { ProcessCauseQuickCreateModal } from "@/components/processos/process-cause-quick-create-modal";
+import { ProcessClassificationSection } from "@/components/processos/process-classification-section";
 import { ClienteCreateModal } from "@/components/clientes/cliente-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
 import { RITO_PROCESSO_OPTIONS } from "@/app/lib/processos/rito-processo";
@@ -74,14 +83,25 @@ function buildTribunalLabel(tribunal?: {
   return tribunal.sigla ? `${tribunal.sigla} - ${tribunal.nome}` : tribunal.nome;
 }
 
+type ParteInicialDraft = NonNullable<ProcessoCreateInput["partesIniciais"]>[number];
+
+const INITIAL_PARTE_ADICIONAL: ParteInicialDraft = {
+  tipoPolo: ProcessoPolo.REU,
+  nome: "",
+};
+
 export function NovoProcessoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const clienteIdParam = searchParams.get("clienteId");
+  const { permissions, isAdmin, isSuperAdmin } = useUserPermissions();
 
   const [isSaving, setIsSaving] = useState(false);
   const [isClienteModalOpen, setIsClienteModalOpen] = useState(false);
   const [isAuthorityModalOpen, setIsAuthorityModalOpen] = useState(false);
+  const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isCauseModalOpen, setIsCauseModalOpen] = useState(false);
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
   const [advogadoPickerKey, setAdvogadoPickerKey] = useState<string | null>(
     null,
@@ -94,6 +114,7 @@ export function NovoProcessoContent() {
     status: ProcessoStatus.RASCUNHO,
     arquivamentoTipo: null,
     classeProcessual: "",
+    causaIds: [],
     orgaoJulgador: "",
     vara: "",
     comarca: "",
@@ -107,6 +128,7 @@ export function NovoProcessoContent() {
     advogadoResponsavelIds: [],
     juizId: "",
     tribunalId: "",
+    partesIniciais: [],
   });
 
   // Buscar clientes para o select (apenas se não veio de um cliente)
@@ -134,7 +156,11 @@ export function NovoProcessoContent() {
 
     return Array.from(byId.values());
   }, [inlineJuizes, juizesDisponiveis]);
-  const { data: areasData, isLoading: isLoadingAreas } = useSWR(
+  const {
+    data: areasData,
+    isLoading: isLoadingAreas,
+    mutate: mutateAreas,
+  } = useSWR(
     "areas-processo-select",
     () => listAreasProcesso({ ativo: true }),
   );
@@ -161,8 +187,20 @@ export function NovoProcessoContent() {
   const {
     data: classesProcessuaisData,
     isLoading: isLoadingClassesProcessuais,
+    mutate: mutateClassesProcessuais,
   } = useSWR("classes-processuais-select", () =>
     listClassesProcessuais({ ativo: true }),
+  );
+  const {
+    data: causasData,
+    isLoading: isLoadingCausas,
+    mutate: mutateCausas,
+  } = useSWR("causas-processo-select", () =>
+    listCausas({
+      status: "ativas",
+      orderBy: "nome",
+      orderDirection: "asc",
+    }),
   );
   const areas = useMemo(() => {
     if (!areasData?.success) {
@@ -199,6 +237,13 @@ export function NovoProcessoContent() {
 
     return classesProcessuaisData.classes ?? [];
   }, [classesProcessuaisData]);
+  const causas = useMemo(() => {
+    if (!causasData?.success) {
+      return [];
+    }
+
+    return causasData.causas ?? [];
+  }, [causasData]);
 
   const clienteKeys = useMemo(
     () => new Set((clientes || []).map((cliente) => cliente.id)),
@@ -207,6 +252,10 @@ export function NovoProcessoContent() {
   const areaKeys = useMemo(
     () => new Set((areas || []).map((area) => area.id)),
     [areas],
+  );
+  const causaOptionKeys = useMemo(
+    () => new Set(causas.map((causa) => causa.id)),
+    [causas],
   );
   const classProcessualOptions = useMemo(() => {
     const baseOptions = classesProcessuais.map((classe) => ({
@@ -317,6 +366,13 @@ export function NovoProcessoContent() {
     formData.juizId && juizKeys.has(formData.juizId) ? [formData.juizId] : [];
   const selectedAreaKeys =
     formData.areaId && areaKeys.has(formData.areaId) ? [formData.areaId] : [];
+  const selectedCausaKeys = useMemo(
+    () =>
+      (formData.causaIds ?? []).filter((causaId) =>
+        causaOptionKeys.has(causaId),
+      ),
+    [causaOptionKeys, formData.causaIds],
+  );
   const selectedArquivamentoKeys =
     formData.arquivamentoTipo && formData.status === ProcessoStatus.ARQUIVADO
       ? [formData.arquivamentoTipo]
@@ -486,6 +542,18 @@ export function NovoProcessoContent() {
       ),
     [advogadoOptions, selectedAdvogadoKeys],
   );
+  const assuntosSelecionadosResumo = useMemo(() => {
+    const names = causas
+      .filter((causa) => selectedCausaKeys.includes(causa.id))
+      .map((causa) => causa.nome);
+
+    return names.join(" • ");
+  }, [causas, selectedCausaKeys]);
+  const polos = useMemo(() => Object.values(ProcessoPolo), []);
+  const canQuickCreateArea =
+    isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
+  const canQuickCreateCatalog =
+    isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
 
   const fases = Object.values(ProcessoFase);
   const graus = Object.values(ProcessoGrau);
@@ -498,6 +566,8 @@ export function NovoProcessoContent() {
         return "Citação";
       case ProcessoFase.INSTRUCAO:
         return "Instrução";
+      case ProcessoFase.ALEGACOES_FINAIS:
+        return "Alegações finais";
       case ProcessoFase.SENTENCA:
         return "Sentença";
       case ProcessoFase.RECURSO:
@@ -568,6 +638,20 @@ export function NovoProcessoContent() {
       return;
     }
 
+    const partesIniciais = (formData.partesIniciais ?? []).map((parte) => ({
+      tipoPolo: parte.tipoPolo,
+      nome: (parte.nome ?? "").trim(),
+    }));
+    const parteSemNomeIndex = partesIniciais.findIndex((parte) => !parte.nome);
+
+    if (parteSemNomeIndex !== -1) {
+      toast.error(
+        `Informe o nome da parte adicional ${parteSemNomeIndex + 1}`,
+      );
+
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -586,6 +670,7 @@ export function NovoProcessoContent() {
         payload.descricao = formData.descricao.trim();
       if (formData.classeProcessual?.trim())
         payload.classeProcessual = formData.classeProcessual.trim();
+      payload.causaIds = selectedCausaKeys;
       if (formData.ritoProcesso) payload.ritoProcesso = formData.ritoProcesso;
       if (formData.vara?.trim()) payload.vara = formData.vara.trim();
       if (formData.comarca?.trim()) payload.comarca = formData.comarca.trim();
@@ -614,6 +699,7 @@ export function NovoProcessoContent() {
       }
       if (formData.juizId) payload.juizId = formData.juizId;
       if (formData.tribunalId) payload.tribunalId = formData.tribunalId;
+      if (partesIniciais.length > 0) payload.partesIniciais = partesIniciais;
       if (formData.status === ProcessoStatus.ARQUIVADO) {
         payload.arquivamentoTipo = formData.arquivamentoTipo ?? null;
       }
@@ -767,6 +853,119 @@ export function NovoProcessoContent() {
               >
                 Nao tem cliente? Criar novo cliente
               </Button>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-default-200 bg-default-50/60 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-default-700">
+                    Partes adicionais do processo
+                  </h4>
+                  <p className="text-xs text-default-500">
+                    Cadastre reus, reclamados, autores extras e outras partes ja
+                    no primeiro cadastro.
+                  </p>
+                </div>
+                <Button
+                  color="secondary"
+                  size="sm"
+                  startContent={<Plus className="h-4 w-4" />}
+                  variant="flat"
+                  onPress={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      partesIniciais: [
+                        ...(prev.partesIniciais ?? []),
+                        { ...INITIAL_PARTE_ADICIONAL },
+                      ],
+                    }))
+                  }
+                >
+                  Adicionar parte
+                </Button>
+              </div>
+
+              {(formData.partesIniciais ?? []).length > 0 ? (
+                <div className="space-y-3">
+                  {(formData.partesIniciais ?? []).map((parte, index) => (
+                    <div
+                      key={`${parte.tipoPolo}-${index}`}
+                      className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]"
+                    >
+                      <Select
+                        label={`Tipo da parte ${index + 1}`}
+                        selectedKeys={[parte.tipoPolo]}
+                        onSelectionChange={(keys) => {
+                          const key = Array.from(keys)[0] as
+                            | ProcessoPolo
+                            | undefined;
+
+                          setFormData((prev) => ({
+                            ...prev,
+                            partesIniciais: (prev.partesIniciais ?? []).map(
+                              (item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      tipoPolo: key ?? item.tipoPolo,
+                                    }
+                                  : item,
+                            ),
+                          }));
+                        }}
+                      >
+                        {polos.map((polo) => (
+                          <SelectItem key={polo} textValue={polo}>
+                            {polo}
+                          </SelectItem>
+                        ))}
+                      </Select>
+
+                      <Input
+                        isRequired
+                        label={`Nome da parte ${index + 1}`}
+                        placeholder="Nome completo da parte"
+                        value={parte.nome}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            partesIniciais: (prev.partesIniciais ?? []).map(
+                              (item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, nome: value }
+                                  : item,
+                            ),
+                          }))
+                        }
+                      />
+
+                      <div className="flex items-end">
+                        <Button
+                          isIconOnly
+                          aria-label={`Remover parte adicional ${index + 1}`}
+                          color="danger"
+                          variant="light"
+                          onPress={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              partesIniciais: (prev.partesIniciais ?? []).filter(
+                                (_, itemIndex) => itemIndex !== index,
+                              ),
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-default-500">
+                  Use este bloco quando o processo tiver mais de uma parte alem
+                  dos clientes vinculados.
+                </p>
+              )}
             </div>
 
             <SearchableSelect
@@ -1038,172 +1237,36 @@ export function NovoProcessoContent() {
                 </Select>
               ) : null}
 
-              <div className="space-y-2">
-                <SearchableSelect
-                  description="Catálogo de classes processuais do escritório. Se faltar alguma, cadastre em Configurações."
-                  emptyContent="Nenhuma classe processual encontrada"
-                  isLoading={isLoadingClassesProcessuais}
-                  items={classProcessualOptions}
-                  label="Classe Processual"
-                  placeholder="Digite para buscar a classe"
-                  selectedKey={selectedClasseProcessualKey}
-                  startContent={<FileText className="h-4 w-4 text-default-400" />}
-                  onSelectionChange={(selectedKey) => {
-                    const option = classProcessualOptions.find(
-                      (item) => item.key === selectedKey,
-                    );
-
-                    setFormData((prev) => ({
-                      ...prev,
-                      classeProcessual: option?.label || "",
-                    }));
-                  }}
-                />
-                <div className="flex justify-end">
-                  <Button
-                    as={Link}
-                    color="secondary"
-                    href="/configuracoes?tab=classes-processuais"
-                    size="sm"
-                    variant="light"
-                  >
-                    Gerenciar classes processuais
-                  </Button>
-                </div>
-              </div>
-
-              <Select
-                description="Classificação por área de atuação (opcional). Configure áreas em Configurações."
-                isClearable
-                isLoading={isLoadingAreas}
-                label="Área do processo"
-                placeholder="Selecione uma área"
-                selectedKeys={selectedAreaKeys}
-                onSelectionChange={(keys) => {
-                  const selectedKey = Array.from(keys)[0] as string | undefined;
-
-                  setFormData((prev) => ({
-                    ...prev,
-                    areaId: selectedKey || undefined,
-                  }));
-                }}
-              >
-                {areas.map((area) => (
-                  <SelectItem key={area.id} textValue={area.nome}>
-                    {area.nome}
-                  </SelectItem>
-                ))}
-              </Select>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                description="Etapa do processo para orientar prazos e prioridade."
-                label="Fase processual"
-                placeholder="Selecione a fase"
-                selectedKeys={formData.fase ? [formData.fase] : []}
-                startContent={<Flag className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-
+              <ProcessClassificationSection
+                areas={areas}
+                canQuickCreateArea={canQuickCreateArea}
+                canQuickCreateCatalog={canQuickCreateCatalog}
+                causas={causas}
+                classProcessualOptions={classProcessualOptions}
+                fases={fases}
+                getFaseLabel={getFaseLabel}
+                grauDescription={grauDescription}
+                graus={graus}
+                isLoadingAreas={isLoadingAreas}
+                isLoadingCausas={isLoadingCausas}
+                isLoadingClassesProcessuais={isLoadingClassesProcessuais}
+                isLoadingTribunais={isLoadingTribunais}
+                ritoProcessoOptions={RITO_PROCESSO_OPTIONS}
+                tribunalOptions={tribunalOptions}
+                value={formData}
+                formatGrauLabel={formatGrauLabel}
+                onOpenAreaModal={() => setIsAreaModalOpen(true)}
+                onOpenCauseModal={() => setIsCauseModalOpen(true)}
+                onOpenClassModal={() => setIsClassModalOpen(true)}
+                onPatch={(patch) =>
                   setFormData((prev) => ({
                     ...prev,
-                    fase: key ? (key as ProcessoFase) : undefined,
-                  }));
-                }}
-              >
-                {fases.map((fase) => (
-                  <SelectItem key={fase} textValue={getFaseLabel(fase)}>{getFaseLabel(fase)}</SelectItem>
-                ))}
-              </Select>
-
-              <Select
-                description={grauDescription}
-                label="Grau"
-                placeholder="Selecione o grau"
-                selectedKeys={formData.grau ? [formData.grau] : []}
-                startContent={<Layers className="h-4 w-4 text-default-400" />}
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-
-                  setFormData((prev) => ({
-                    ...prev,
-                    grau: key ? (key as ProcessoGrau) : undefined,
-                  }));
-                }}
-              >
-                {graus.map((grau) => (
-                  <SelectItem key={grau} textValue={formatGrauLabel(grau)}>{formatGrauLabel(grau)}</SelectItem>
-                ))}
-              </Select>
-            </div>
-
-            <SearchableSelect
-              description="Por padrao, herda o mesmo tribunal acima. Se precisar, selecione outro."
-              emptyContent="Nenhum tribunal encontrado"
-              isLoading={isLoadingTribunais}
-              isVirtualized={false}
-              items={tribunalOptions}
-              label="Orgao Julgador"
-              placeholder="Digite para buscar o orgao julgador"
-              selectedKey={selectedOrgaoJulgadorKey}
-              startContent={<Landmark className="h-4 w-4 text-default-400" />}
-              onSelectionChange={(selectedKey) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  orgaoJulgador:
-                    tribunalOptions.find((item) => item.key === selectedKey)
-                      ?.label || "",
-                }))
-              }
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SearchableSelect
-                items={ritoProcessoOptions}
-                label="Rito do processo"
-                placeholder="Selecione o rito"
-                selectedKey={formData.ritoProcesso ?? "__none__"}
-                onSelectionChange={(value) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    ritoProcesso:
-                      value && value !== "__none__"
-                        ? (value as ProcessoCreateInput["ritoProcesso"])
-                        : undefined,
+                    ...patch,
                   }))
                 }
               />
-
-              <Input
-                description="Valor econômico da ação, quando houver."
-                label="Valor da Causa (R$)"
-                placeholder="0,00"
-                startContent={
-                  <DollarSign className="h-4 w-4 text-default-400" />
-                }
-                type="number"
-                value={
-                  formData.valorCausa !== undefined &&
-                  !Number.isNaN(formData.valorCausa)
-                    ? String(formData.valorCausa)
-                    : ""
-                }
-                onValueChange={(value) => {
-                  const normalized = value.replace(/,/g, ".");
-                  const numericValue =
-                    normalized.trim() === "" ? undefined : Number(normalized);
-
-                  setFormData((prev) => ({
-                    ...prev,
-                    valorCausa:
-                      numericValue !== undefined && !Number.isNaN(numericValue)
-                        ? numericValue
-                        : undefined,
-                  }));
-                }}
-              />
-            </div>
           </div>
 
           <Divider />
@@ -1420,6 +1483,48 @@ export function NovoProcessoContent() {
           }));
           await mutateJuizes();
           setIsAuthorityModalOpen(false);
+        }}
+      />
+      <ProcessClassQuickCreateModal
+        isOpen={isClassModalOpen}
+        onClose={() => setIsClassModalOpen(false)}
+        onCreated={async (classe) => {
+          await mutateClassesProcessuais();
+          setFormData((prev) => ({
+            ...prev,
+            classeProcessual: classe.nome,
+          }));
+          setIsClassModalOpen(false);
+        }}
+      />
+      <ProcessCauseQuickCreateModal
+        isOpen={isCauseModalOpen}
+        onClose={() => setIsCauseModalOpen(false)}
+        onCreated={async (causa) => {
+          await mutateCausas();
+          setFormData((prev) => {
+            const nextIds = Array.from(
+              new Set([...(prev.causaIds ?? []), causa.id]),
+            );
+
+            return {
+              ...prev,
+              causaIds: nextIds,
+            };
+          });
+          setIsCauseModalOpen(false);
+        }}
+      />
+      <ProcessAreaQuickCreateModal
+        isOpen={isAreaModalOpen}
+        onClose={() => setIsAreaModalOpen(false)}
+        onCreated={async (area) => {
+          await mutateAreas();
+          setFormData((prev) => ({
+            ...prev,
+            areaId: area.id,
+          }));
+          setIsAreaModalOpen(false);
         }}
       />
     </div>
