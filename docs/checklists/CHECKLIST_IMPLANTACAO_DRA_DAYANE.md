@@ -25,6 +25,8 @@ Use este checklist para separar:
 - [x] 06/04/2026 `bdc2277` - `feat: ship document workflow and notification audit`
 - [x] 06/04/2026 `8447fd5` - `fix: add mojibake scanner and audit copy repair`
 - [x] 06/04/2026 `0481b13` - `feat: formalize rito processual and deadline context`
+- [x] 07/04/2026 `042b76a` - `feat: improve process intake and legal catalogs`
+- [x] 07/04/2026 `404bea7` - `chore: allow controlled process cause cleanup`
 
 ---
 
@@ -143,6 +145,8 @@ Use este checklist para separar:
 - [x] `npm run typecheck` executado com sucesso em 07/04/2026.
 - [x] `npm run check:mojibake` executado com sucesso em 07/04/2026.
 - [x] `npm test` executado com sucesso em 07/04/2026.
+- [x] `npm run repo:hygiene` executado com sucesso em 07/04/2026 antes do deploy de produção.
+- [x] Deploy de produção atual publicado com sucesso na `main` em 07/04/2026, com status `Ready` na Vercel para o commit `404bea7`.
 
 ### Suporte e implantação
 
