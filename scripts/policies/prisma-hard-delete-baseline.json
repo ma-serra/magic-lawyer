@@ -9,6 +9,10 @@
       "reason": "Limpeza controlada da tabela de vínculo antes de recriar a lista atual de responsáveis do processo."
     },
     {
+      "entry": "app/lib/processos/processo-vinculos.ts:306:await tx.processoCausa.deleteMany({",
+      "reason": "Limpeza controlada da tabela de vínculo de assuntos do processo antes de recriar a lista atual selecionada no cadastro."
+    },
+    {
       "entry": "app/actions/documentos-explorer.ts:2477:await tx.processoDocumento.deleteMany({",
       "reason": "Remove vínculos de documento com processos não selecionados na reorganização do documento, preservando o documento principal."
     },
