@@ -64,7 +64,8 @@ playwright-report/
 test-results/
 dump.rdb
 
-# business/source documents are only allowed under contratoreal/
+# local business/source documents
+/contratoreal/
 *.pdf
 *.doc
 *.docx
@@ -83,5 +84,3 @@ dump.rdb
 *.avi
 *.mkv
 *.heic
-!contratoreal/
-!contratoreal/**
