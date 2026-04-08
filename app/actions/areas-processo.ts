@@ -1,6 +1,7 @@
 "use server";
 
 import { getSession } from "@/app/lib/auth";
+import { AREAS_PROCESSO_PADRAO } from "@/app/lib/processos/area-processo-defaults";
 import prisma from "@/app/lib/prisma";
 import { buildSoftDeletePayload } from "@/app/lib/soft-delete";
 import logger from "@/lib/logger";
@@ -54,6 +55,87 @@ function canManageAreasProcesso(user: any) {
   );
 }
 
+async function ensureDefaultAreasProcessoSeeded(tenantId: string) {
+  const existing = await prisma.areaProcesso.findMany({
+    where: {
+      tenantId,
+      slug: {
+        in: AREAS_PROCESSO_PADRAO.map((item) => item.slug),
+      },
+    },
+    select: {
+      id: true,
+      slug: true,
+      nome: true,
+      descricao: true,
+      ordem: true,
+      ativo: true,
+      deletedAt: true,
+    },
+  });
+
+  const existingBySlug = new Map(existing.map((item) => [item.slug, item]));
+  const toCreate = AREAS_PROCESSO_PADRAO.filter(
+    (item) => !existingBySlug.has(item.slug),
+  );
+
+  if (toCreate.length > 0) {
+    await prisma.areaProcesso.createMany({
+      data: toCreate.map((item) => ({
+        tenantId,
+        slug: item.slug,
+        nome: item.nome,
+        descricao: item.descricao,
+        ordem: item.ordem,
+        ativo: true,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  for (const item of AREAS_PROCESSO_PADRAO) {
+    const existingItem = existingBySlug.get(item.slug);
+
+    if (!existingItem) {
+      continue;
+    }
+
+    const data: Record<string, unknown> = {};
+
+    if (existingItem.deletedAt !== null || existingItem.ativo !== true) {
+      data.nome = item.nome;
+      data.descricao = item.descricao;
+      data.ordem = item.ordem;
+      data.ativo = true;
+      data.deletedAt = null;
+      data.deletedByActorType = null;
+      data.deletedByActorId = null;
+      data.deleteReason = null;
+    } else {
+      if (!existingItem.nome?.trim()) {
+        data.nome = item.nome;
+      }
+
+      if (!existingItem.descricao?.trim()) {
+        data.descricao = item.descricao;
+      }
+
+      if (existingItem.ordem == null) {
+        data.ordem = item.ordem;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      continue;
+    }
+
+    await prisma.areaProcesso.update({
+      where: { id: existingItem.id },
+      data,
+    });
+  }
+}
+
 export async function listAreasProcesso(params?: { ativo?: boolean }) {
   try {
     const session = await getSession();
@@ -67,6 +149,8 @@ export async function listAreasProcesso(params?: { ativo?: boolean }) {
     if (!user.tenantId) {
       return { success: false, error: "Tenant não encontrado" };
     }
+
+    await ensureDefaultAreasProcessoSeeded(user.tenantId);
 
     const where: any = {
       tenantId: user.tenantId,

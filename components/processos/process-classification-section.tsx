@@ -261,7 +261,7 @@ export function ProcessClassificationSection({
         </div>
 
         <Select
-          description="Classificação por área de atuação (opcional)."
+          description="Classificação por área de atuação do escritório. As áreas padrão do tenant aparecem aqui."
           isClearable
           isLoading={isLoadingAreas}
           label="Área do processo"
@@ -339,13 +339,13 @@ export function ProcessClassificationSection({
       <SearchableSelect
         allowsCustomValue
         customValue={value.orgaoJulgador || ""}
-        description="Sugere tribunais por sigla e nome, mas também aceita digitação livre do órgão julgador."
+        description="Informe o órgão julgador do processo. Você pode usar sigla, nome completo ou texto livre."
         emptyContent="Nenhuma sugestão encontrada. Você pode manter o texto digitado."
         isLoading={isLoadingTribunais}
         isVirtualized={false}
         items={tribunalOptions}
-        label="Órgão Julgador"
-        placeholder="Digite a sigla ou nome do órgão julgador"
+        label="Órgão julgador"
+        placeholder="Digite a sigla, o nome ou o órgão julgador"
         selectedKey={selectedOrgaoJulgadorKey}
         startContent={<Landmark className="h-4 w-4 text-default-400" />}
         onCustomValueChange={(orgaoJulgador) =>

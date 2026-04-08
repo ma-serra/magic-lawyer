@@ -100,6 +100,8 @@ Use este checklist para separar:
 - [x] Reutilizar componentes tipados nos formulários de área, classe e assunto entre páginas próprias e modais rápidos, evitando divergência de campos.
 - [x] Reutilizar a seção de classificação do processo entre os fluxos de novo processo e editar processo.
 - [x] Permitir busca com sugestão e digitação livre no campo "Órgão Julgador".
+- [x] Padronizar a linguagem do fluxo de processo para "Autoridade do caso", separando esse conceito do campo textual "Órgão julgador".
+- [x] Sincronizar em runtime as áreas padrão do processo no tenant, para que escritórios existentes recebam o catálogo no próprio banco sem depender de criação manual.
 
 ### Prazos e agenda
 
@@ -204,7 +206,9 @@ Use este checklist para separar:
 - [ ] Homologar com a Dra. Dayane o novo fluxo de classe processual + assuntos do processo.
 - [ ] Homologar com a Dra. Dayane a criação rápida inline de área, classe e assunto no formulário do processo.
 - [ ] Homologar com a Dra. Dayane o novo catálogo jurídico padrão de classes e assuntos no cadastro de processos reais.
-- [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão Julgador".
+- [ ] Homologar com a Dra. Dayane a nova linguagem de "Autoridade do caso" e a distinção prática entre autoridade, tribunal e órgão julgador.
+- [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão julgador".
+- [ ] Confirmar em uso real o catálogo de áreas padrão já sincronizado no tenant.
 
 ### Prazos e agenda
 

@@ -178,8 +178,9 @@ export function AuthorityQuickCreateModal({
     >
       <div className="space-y-4">
         <p className="text-sm text-default-500">
-          Cadastre a autoridade sem sair do processo. Ao salvar, ela ja fica
-          disponivel para selecao neste formulario.
+          Cadastre a autoridade do caso sem sair do processo. O tribunal aqui é
+          opcional, e o órgão julgador textual continua disponível no
+          formulário principal do processo.
         </p>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -269,11 +270,11 @@ export function AuthorityQuickCreateModal({
           />
 
           <SearchableSelect
-            description="Digite a sigla ou o nome do tribunal"
+            description="Opcional. Digite a sigla ou o nome do tribunal"
             emptyContent="Nenhum tribunal encontrado"
             items={tribunalOptions}
             isVirtualized={false}
-            label="Tribunal"
+            label="Tribunal de referência (opcional)"
             listboxProps={{
               className: "max-h-72 overflow-y-auto",
             }}

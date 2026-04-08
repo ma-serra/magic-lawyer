@@ -1032,13 +1032,13 @@ export default function EditarProcessoPage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SearchableSelect
-              description="Juiz responsável para rastrear padrão de decisões e produtividade."
+              description="Selecione a autoridade do caso para histórico, estratégia e acompanhamento do processo."
               emptyContent="Nenhuma autoridade encontrada"
               isLoading={isLoadingJuizes}
               isRequired
               items={juizOptions}
-              label="Juiz do Caso *"
-              placeholder="Selecione o juiz responsável pelo caso"
+              label="Autoridade do caso *"
+              placeholder="Selecione a autoridade responsável pelo caso"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -1055,19 +1055,19 @@ export default function EditarProcessoPage() {
                 variant="light"
                 onPress={() => setIsAuthorityModalOpen(true)}
               >
-                Nao encontrou a autoridade? Cadastre agora
+                Não encontrou a autoridade? Cadastre agora
               </Button>
             </div>
 
             <SearchableSelect
-              description="Tribunal onde o processo tramita."
+              description="Tribunal de referência do processo e da autoridade do caso."
               emptyContent="Nenhum tribunal encontrado"
               isLoading={isLoadingTribunais}
               isRequired
               isVirtualized={false}
               items={tribunalOptions}
-              label="Tribunal *"
-              placeholder="Selecione o tribunal"
+              label="Tribunal do caso *"
+              placeholder="Digite para buscar o tribunal"
               selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>

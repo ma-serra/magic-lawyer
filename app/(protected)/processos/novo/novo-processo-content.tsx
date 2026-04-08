@@ -970,12 +970,12 @@ export function NovoProcessoContent() {
 
             <SearchableSelect
               isRequired
-              description="Obrigatório para análise de perfil de julgamento e histórico estratégico."
+              description="Selecione a autoridade do caso para histórico, estratégia e acompanhamento do processo."
               emptyContent="Nenhuma autoridade encontrada"
               items={juizOptions}
               isLoading={isLoadingJuizes}
-              label="Autoridade do Caso *"
-              placeholder="Selecione o juiz ou promotor responsável"
+              label="Autoridade do caso *"
+              placeholder="Selecione a autoridade responsável pelo caso"
               selectedKey={selectedJuizKeys[0] ?? null}
               startContent={<Gavel className="h-4 w-4 text-default-400" />}
               onSelectionChange={(selectedKey) =>
@@ -993,18 +993,18 @@ export function NovoProcessoContent() {
                 variant="light"
                 onPress={() => setIsAuthorityModalOpen(true)}
               >
-                Nao encontrou a autoridade? Cadastre agora
+                Não encontrou a autoridade? Cadastre agora
               </Button>
             </div>
 
             <SearchableSelect
-              description="Tribunal ao qual o processo esta vinculado. Digite para encontrar mais rapido."
+              description="Tribunal de referência do processo e da autoridade do caso."
               emptyContent="Nenhum tribunal encontrado"
               items={tribunalOptions}
               isLoading={isLoadingTribunais}
               isRequired
               isVirtualized={false}
-              label="Tribunal *"
+              label="Tribunal do caso *"
               placeholder="Digite para buscar o tribunal"
               selectedKey={selectedTribunalKeys[0] ?? null}
               startContent={<Landmark className="h-4 w-4 text-default-400" />}
