@@ -15,9 +15,15 @@ import {
 
 import type { ProcessoCreateInput } from "@/app/actions/processos";
 import {
+  ProcedimentoProcessual,
   ProcessoFase,
   ProcessoGrau,
 } from "@/generated/prisma";
+import {
+  doesAreaRequireProcedimento,
+  getProcedimentoProcessualOptions,
+  isProcedimentoCompatibleWithArea,
+} from "@/app/lib/processos/procedimento-processual";
 import {
   SearchableSelect,
   type SearchableSelectOption,
@@ -31,24 +37,20 @@ export type ProcessoClassificationValue = Pick<
   | "fase"
   | "grau"
   | "orgaoJulgador"
-  | "ritoProcesso"
+  | "procedimentoProcessual"
   | "valorCausa"
 >;
 
 type AreaOption = {
   id: string;
   nome: string;
+  slug: string;
 };
 
 type CausaOption = {
   id: string;
   nome: string;
   codigoCnj?: string | null;
-};
-
-type RitoOption = {
-  value: NonNullable<ProcessoCreateInput["ritoProcesso"]>;
-  label: string;
 };
 
 type ProcessClassificationSectionProps = {
@@ -62,7 +64,6 @@ type ProcessClassificationSectionProps = {
   isLoadingAreas?: boolean;
   tribunalOptions: SearchableSelectOption[];
   isLoadingTribunais?: boolean;
-  ritoProcessoOptions: RitoOption[];
   fases: ProcessoFase[];
   graus: ProcessoGrau[];
   getFaseLabel: (fase: ProcessoFase) => string;
@@ -86,7 +87,6 @@ export function ProcessClassificationSection({
   isLoadingAreas = false,
   tribunalOptions,
   isLoadingTribunais = false,
-  ritoProcessoOptions,
   fases,
   graus,
   getFaseLabel,
@@ -132,6 +132,10 @@ export function ProcessClassificationSection({
       .join(", ");
   }, [causas, selectedCausaKeys]);
   const selectedAreaKeys = value.areaId ? [value.areaId] : [];
+  const selectedArea = useMemo(
+    () => areas.find((area) => area.id === value.areaId),
+    [areas, value.areaId],
+  );
   const selectedOrgaoJulgadorKey = useMemo(() => {
     const currentValue = value.orgaoJulgador?.trim();
 
@@ -145,26 +149,22 @@ export function ProcessClassificationSection({
 
     return match?.key ?? null;
   }, [tribunalOptions, value.orgaoJulgador]);
-  const ritoOptions = useMemo<SearchableSelectOption[]>(
-    () =>
-      ritoProcessoOptions.map((option) => ({
-        key: option.value,
-        label: option.label,
-        textValue: option.label,
-      })),
-    [ritoProcessoOptions],
+  const procedimentoOptions = useMemo(
+    () => getProcedimentoProcessualOptions(selectedArea?.slug),
+    [selectedArea?.slug],
   );
+  const procedimentoRequired = doesAreaRequireProcedimento(selectedArea?.slug);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <SearchableSelect
-            description="Classe da ação ou do procedimento. Os assuntos jurídicos ficam no campo abaixo."
+            description="Classe da acao. Os assuntos juridicos do caso ficam no campo abaixo."
             emptyContent="Nenhuma classe processual encontrada"
             isLoading={isLoadingClassesProcessuais}
             items={classProcessualOptions}
-            label="Classe Processual"
+            label="Classe processual"
             placeholder="Digite para buscar a classe"
             selectedKey={selectedClasseProcessualKey}
             startContent={<FileText className="h-4 w-4 text-default-400" />}
@@ -186,7 +186,7 @@ export function ProcessClassificationSection({
                 variant="light"
                 onPress={onOpenClassModal}
               >
-                Não encontrou a classe? Criar agora
+                Nao encontrou a classe? Criar agora
               </Button>
             ) : null}
             <Button
@@ -203,7 +203,7 @@ export function ProcessClassificationSection({
 
         <div className="space-y-2 lg:col-span-2">
           <Select
-            description="Temas jurídicos do caso. Você pode selecionar mais de um assunto."
+            description="Temas juridicos do caso. Voce pode selecionar mais de um assunto."
             isLoading={isLoadingCausas}
             label="Assuntos do processo"
             placeholder="Selecione um ou mais assuntos"
@@ -245,7 +245,7 @@ export function ProcessClassificationSection({
                 variant="light"
                 onPress={onOpenCauseModal}
               >
-                Não encontrou o assunto? Criar agora
+                Nao encontrou o assunto? Criar agora
               </Button>
             ) : null}
             <Button
@@ -261,16 +261,25 @@ export function ProcessClassificationSection({
         </div>
 
         <Select
-          description="Classificação por área de atuação do escritório. As áreas padrão do tenant aparecem aqui."
+          description="Classificacao por area de atuacao do escritorio."
           isClearable
           isLoading={isLoadingAreas}
-          label="Área do processo"
-          placeholder="Selecione uma área"
+          label="Area do processo"
+          placeholder="Selecione uma area"
           selectedKeys={selectedAreaKeys}
           onSelectionChange={(keys) => {
             const selectedKey = Array.from(keys)[0] as string | undefined;
+            const nextArea = areas.find((area) => area.id === selectedKey);
+            const shouldClearProcedimento = !isProcedimentoCompatibleWithArea({
+              areaSlug: nextArea?.slug,
+              procedimentoProcessual: value.procedimentoProcessual ?? null,
+            });
+
             onPatch({
               areaId: selectedKey || undefined,
+              ...(shouldClearProcedimento
+                ? { procedimentoProcessual: undefined }
+                : {}),
             });
           }}
         >
@@ -288,7 +297,7 @@ export function ProcessClassificationSection({
               variant="light"
               onPress={onOpenAreaModal}
             >
-              Não encontrou a área? Criar agora
+              Nao encontrou a area? Criar agora
             </Button>
           </div>
         ) : null}
@@ -339,18 +348,16 @@ export function ProcessClassificationSection({
       <SearchableSelect
         allowsCustomValue
         customValue={value.orgaoJulgador || ""}
-        description="Informe o órgão julgador do processo. Você pode usar sigla, nome completo ou texto livre."
-        emptyContent="Nenhuma sugestão encontrada. Você pode manter o texto digitado."
+        description="Informe o orgao julgador institucional. Voce pode usar sigla, nome completo ou texto livre."
+        emptyContent="Nenhuma sugestao encontrada. Voce pode manter o texto digitado."
         isLoading={isLoadingTribunais}
         isVirtualized={false}
         items={tribunalOptions}
-        label="Órgão julgador"
-        placeholder="Digite a sigla, o nome ou o órgão julgador"
+        label="Orgao julgador"
+        placeholder="Digite a sigla, o nome ou o orgao julgador"
         selectedKey={selectedOrgaoJulgadorKey}
         startContent={<Landmark className="h-4 w-4 text-default-400" />}
-        onCustomValueChange={(orgaoJulgador) =>
-          onPatch({ orgaoJulgador })
-        }
+        onCustomValueChange={(orgaoJulgador) => onPatch({ orgaoJulgador })}
         onSelectionChange={(selectedKey) =>
           onPatch({
             orgaoJulgador:
@@ -361,22 +368,43 @@ export function ProcessClassificationSection({
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <SearchableSelect
-          items={ritoOptions}
-          label="Rito do processo"
-          placeholder="Selecione o rito"
-          selectedKey={value.ritoProcesso ?? null}
-          onSelectionChange={(selectedKey) =>
-            onPatch({
-              ritoProcesso: selectedKey
-                ? (selectedKey as ProcessoCreateInput["ritoProcesso"])
-                : undefined,
-            })
+        <Select
+          description={
+            procedimentoRequired
+              ? "Selecione o rito ou procedimento compativel com a area escolhida."
+              : "Selecione primeiro uma area com procedimento configurado."
           }
-        />
+          isDisabled={procedimentoOptions.length === 0}
+          isRequired={procedimentoRequired}
+          label="Rito / Procedimento da area"
+          placeholder={
+            procedimentoOptions.length > 0
+              ? "Selecione o rito / procedimento"
+              : "Sem opcoes para esta area"
+          }
+          selectedKeys={
+            value.procedimentoProcessual
+              ? [value.procedimentoProcessual]
+              : []
+          }
+          onSelectionChange={(keys) => {
+            const key = Array.from(keys)[0];
+            onPatch({
+              procedimentoProcessual: key
+                ? (key as ProcedimentoProcessual)
+                : undefined,
+            });
+          }}
+        >
+          {procedimentoOptions.map((option) => (
+            <SelectItem key={option.value} textValue={option.label}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </Select>
 
         <Input
-          description="Valor econômico da ação, quando houver."
+          description="Valor economico da acao, quando houver."
           label="Valor da Causa (R$)"
           placeholder="0,00"
           startContent={<DollarSign className="h-4 w-4 text-default-400" />}

@@ -30,7 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
 import { Spinner } from "@heroui/spinner";
 import { Chip } from "@heroui/chip";
@@ -70,7 +70,8 @@ import { ProcessCauseQuickCreateModal } from "@/components/processos/process-cau
 import { ProcessClassificationSection } from "@/components/processos/process-classification-section";
 import { ClienteCreateModal } from "@/components/clientes/cliente-create-modal";
 import type { JuizSerializado } from "@/app/actions/juizes";
-import { RITO_PROCESSO_OPTIONS } from "@/app/lib/processos/rito-processo";
+import { doesAreaRequireProcedimento } from "@/app/lib/processos/procedimento-processual";
+import { resolveAutoSelectedJudicialLocation } from "@/app/lib/tribunais/judicial-location-defaults";
 
 function buildTribunalLabel(tribunal?: {
   sigla?: string | null;
@@ -118,7 +119,6 @@ export function NovoProcessoContent() {
     orgaoJulgador: "",
     vara: "",
     comarca: "",
-    foro: "",
     numeroInterno: "",
     pastaCompartilhadaUrl: "",
     clienteId: clienteIdParam || "",
@@ -314,18 +314,6 @@ export function NovoProcessoContent() {
     () => new Set((advogados || []).map((advogado) => advogado.id)),
     [advogados],
   );
-  const ritoProcessoOptions = useMemo(
-    () =>
-      [
-        { key: "__none__", label: "Selecione o rito", textValue: "Selecione o rito" },
-        ...RITO_PROCESSO_OPTIONS.map((item) => ({
-          key: item.value,
-          label: item.label,
-          textValue: item.label,
-        })),
-      ],
-    [],
-  );
   const tribunalKeys = useMemo(
     () => new Set((tribunais || []).map((tribunal) => tribunal.id)),
     [tribunais],
@@ -438,9 +426,11 @@ export function NovoProcessoContent() {
   const comarcaOptions = useMemo(
     () => {
       const baseOptions = comarcas.map((comarca) => ({
-        key: comarca,
-        label: comarca,
-        textValue: comarca,
+        key: comarca.id,
+        label: comarca.label,
+        textValue: [comarca.sigla || "", comarca.nome, comarca.label]
+          .filter(Boolean)
+          .join(" "),
       }));
       const currentValue = formData.comarca?.trim();
 
@@ -466,9 +456,11 @@ export function NovoProcessoContent() {
   const varaOptions = useMemo(
     () => {
       const baseOptions = varas.map((vara) => ({
-        key: vara,
-        label: vara,
-        textValue: vara,
+        key: vara.id,
+        label: vara.label,
+        textValue: [vara.sigla || "", vara.nome, vara.label]
+          .filter(Boolean)
+          .join(" "),
       }));
       const currentValue = formData.vara?.trim();
 
@@ -491,22 +483,6 @@ export function NovoProcessoContent() {
     },
     [formData.vara, varas],
   );
-  const selectedOrgaoJulgadorKey = useMemo(() => {
-    const currentValue = formData.orgaoJulgador?.trim();
-
-    if (!currentValue) {
-      return selectedTribunalKeys[0] ?? null;
-    }
-
-    const matched = tribunalOptions.find(
-      (item) =>
-        item.label.localeCompare(currentValue, "pt-BR", {
-          sensitivity: "accent",
-        }) === 0,
-    );
-
-    return matched?.key ?? null;
-  }, [formData.orgaoJulgador, selectedTribunalKeys, tribunalOptions]);
   const selectedComarcaKey = useMemo(() => {
     const currentValue = formData.comarca?.trim();
 
@@ -554,6 +530,10 @@ export function NovoProcessoContent() {
     isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
   const canQuickCreateCatalog =
     isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
+  const selectedArea = useMemo(
+    () => areas.find((area) => area.id === formData.areaId),
+    [areas, formData.areaId],
+  );
 
   const fases = Object.values(ProcessoFase);
   const graus = Object.values(ProcessoGrau);
@@ -607,6 +587,43 @@ export function NovoProcessoContent() {
     }
   };
 
+  useEffect(() => {
+    if (!formData.tribunalId || formData.comarca?.trim() || comarcas.length === 0) {
+      return;
+    }
+
+    const autoridadeSelecionada = juizesDoFormulario.find(
+      (juiz) => juiz.id === formData.juizId,
+    );
+    const autoSelectedComarca = resolveAutoSelectedJudicialLocation(comarcas, [
+      autoridadeSelecionada?.comarca,
+      formData.orgaoJulgador,
+    ]);
+
+    if (!autoSelectedComarca) {
+      return;
+    }
+
+    setFormData((prev) => {
+      if (prev.comarca?.trim()) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        comarca: autoSelectedComarca.label,
+        vara: "",
+      };
+    });
+  }, [
+    comarcas,
+    formData.comarca,
+    formData.juizId,
+    formData.orgaoJulgador,
+    formData.tribunalId,
+    juizesDoFormulario,
+  ]);
+
   const handleSubmit = async () => {
     if (!formData.numero.trim()) {
       toast.error("Número do processo é obrigatório");
@@ -632,8 +649,11 @@ export function NovoProcessoContent() {
       return;
     }
 
-    if (!formData.ritoProcesso) {
-      toast.error("Selecione o rito do processo");
+    if (
+      doesAreaRequireProcedimento(selectedArea?.slug) &&
+      !formData.procedimentoProcessual
+    ) {
+      toast.error("Selecione o rito / procedimento compatível com a área");
 
       return;
     }
@@ -671,10 +691,10 @@ export function NovoProcessoContent() {
       if (formData.classeProcessual?.trim())
         payload.classeProcessual = formData.classeProcessual.trim();
       payload.causaIds = selectedCausaKeys;
-      if (formData.ritoProcesso) payload.ritoProcesso = formData.ritoProcesso;
+      if (formData.procedimentoProcessual)
+        payload.procedimentoProcessual = formData.procedimentoProcessual;
       if (formData.vara?.trim()) payload.vara = formData.vara.trim();
       if (formData.comarca?.trim()) payload.comarca = formData.comarca.trim();
-      if (formData.foro?.trim()) payload.foro = formData.foro.trim();
       if (formData.orgaoJulgador?.trim())
         payload.orgaoJulgador = formData.orgaoJulgador.trim();
       if (formData.numeroInterno?.trim())
@@ -1253,7 +1273,6 @@ export function NovoProcessoContent() {
                 isLoadingCausas={isLoadingCausas}
                 isLoadingClassesProcessuais={isLoadingClassesProcessuais}
                 isLoadingTribunais={isLoadingTribunais}
-                ritoProcessoOptions={RITO_PROCESSO_OPTIONS}
                 tribunalOptions={tribunalOptions}
                 value={formData}
                 formatGrauLabel={formatGrauLabel}
@@ -1279,13 +1298,13 @@ export function NovoProcessoContent() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <SearchableSelect
-                description="Comarca vinculada ao tribunal selecionado."
+                description="Comarca ou seção judiciária vinculada ao tribunal selecionado."
                 emptyContent="Nenhuma comarca encontrada"
                 isDisabled={!formData.tribunalId}
                 isLoading={isLoadingComarcas}
                 items={comarcaOptions}
-                label="Comarca"
-                placeholder="Digite para buscar a comarca"
+                label="Comarca / Seção"
+                placeholder="Digite para buscar a comarca ou seção"
                 selectedKey={selectedComarcaKey}
                 startContent={<MapPin className="h-4 w-4 text-default-400" />}
                 onSelectionChange={(selectedKey) => {
@@ -1297,25 +1316,23 @@ export function NovoProcessoContent() {
                     ...prev,
                     comarca: option?.label || "",
                     vara: "",
-                  }));
+                    }));
                 }}
-              />
-
-              <Input
-                description="Foro ou regional do tribunal."
-                label="Foro"
-                placeholder="Ex: Foro Central"
-                value={formData.foro || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, foro: value }))
-                }
               />
             </div>
 
             <SearchableSelect
-              description="Vara ou juizado disponível para a comarca selecionada."
-              emptyContent="Nenhuma vara encontrada"
-              isDisabled={!formData.tribunalId || !formData.comarca}
+              description={
+                isLoadingVaras
+                  ? "Carregando varas da comarca ou seção selecionada."
+                  : "Vara ou juizado disponível para a comarca selecionada."
+              }
+              emptyContent={
+                isLoadingVaras ? "Carregando varas..." : "Nenhuma vara encontrada"
+              }
+              isDisabled={
+                !formData.tribunalId || !formData.comarca || isLoadingVaras
+              }
               isLoading={isLoadingVaras}
               items={varaOptions}
               label="Vara"

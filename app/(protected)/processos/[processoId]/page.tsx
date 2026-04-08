@@ -139,6 +139,7 @@ import {
   normalizeLegacyRitoToRitoProcesso,
   TIPO_PRAZO_LEGAL_OPTIONS,
 } from "@/app/lib/processos/rito-processo";
+import { getProcedimentoProcessualLabel } from "@/app/lib/processos/procedimento-processual";
 
 type ParteFormState = {
   tipoPolo: ProcessoPolo;
@@ -745,7 +746,12 @@ export default function ProcessoDetalhesPage() {
   const processoRitoProcesso =
     processo?.ritoProcesso ??
     normalizeLegacyRitoToRitoProcesso(processo?.rito ?? null);
+  const processoProcedimentoLabel = getProcedimentoProcessualLabel(
+    processo?.procedimentoProcessual ?? null,
+  );
   const processoRitoLabel = getRitoProcessoLabel(processoRitoProcesso);
+  const processoProcedimentoOuRitoLabel =
+    processoProcedimentoLabel ?? processoRitoLabel;
   const holidayProcessEnabled =
     holidayExperienceRollout?.surfaces.find((surface) => surface.key === "process")
       ?.enabled ?? false;
@@ -984,7 +990,7 @@ export default function ProcessoDetalhesPage() {
           prazo.descricao ?? "",
           prazo.fundamentoLegal ?? "",
           getTipoPrazoLegalLabel(prazo.tipoPrazoLegal) ?? "",
-          processoRitoLabel ?? "",
+          processoProcedimentoOuRitoLabel ?? "",
           prazo.responsavel?.firstName ?? "",
           prazo.responsavel?.lastName ?? "",
           prazo.origemMovimentacao?.titulo ?? "",
@@ -994,7 +1000,12 @@ export default function ProcessoDetalhesPage() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [prazoSearch, prazoStatusFilter, prazosOrdenados, processoRitoLabel]);
+  }, [
+    prazoSearch,
+    prazoStatusFilter,
+    prazosOrdenados,
+    processoProcedimentoOuRitoLabel,
+  ]);
   const buildPrazoWorkspaceHref = (prazoId?: string) => {
     const params = new URLSearchParams({
       processoId,
@@ -1369,12 +1380,6 @@ export default function ProcessoDetalhesPage() {
         toast.error("Informe o título do prazo ou selecione um tipo legal");
         return;
       }
-    }
-
-    if (!processoRitoProcesso) {
-      toast.error("Defina o rito do processo antes de criar um prazo");
-
-      return;
     }
 
     if (!prazoForm.dataVencimento) {
@@ -1945,7 +1950,7 @@ export default function ProcessoDetalhesPage() {
                 </InfoItem>
               )}
               {processo.comarca && (
-                <InfoItem icon={MapPin} label="Comarca">
+                <InfoItem icon={MapPin} label="Comarca / Seção">
                   {processo.comarca}
                 </InfoItem>
               )}
@@ -2109,13 +2114,13 @@ export default function ProcessoDetalhesPage() {
                       </div>
                     )}
 
-                  {processoRitoLabel && (
+                  {processoProcedimentoOuRitoLabel && (
                     <div>
                       <p className="text-xs font-semibold uppercase text-default-400">
-                        Rito do processo
+                        Rito / Procedimento da área
                       </p>
                       <p className="mt-1 text-sm text-default-600">
-                        {processoRitoLabel}
+                        {processoProcedimentoOuRitoLabel}
                       </p>
                     </div>
                   )}
@@ -2134,7 +2139,7 @@ export default function ProcessoDetalhesPage() {
                   {processo.foro && (
                     <div>
                       <p className="text-xs font-semibold uppercase text-default-400">
-                        Foro
+                        Foro (legado)
                       </p>
                       <p className="mt-1 text-sm text-default-600">
                         {processo.foro}
@@ -2975,10 +2980,10 @@ export default function ProcessoDetalhesPage() {
                                   {prazo.responsavel.lastName}
                                 </p>
                               )}
-                              {processoRitoLabel && (
+                              {processoProcedimentoOuRitoLabel && (
                                 <p className="text-xs text-default-500">
-                                  <strong>Rito:</strong>{" "}
-                                  {processoRitoLabel}
+                                  <strong>Procedimento:</strong>{" "}
+                                  {processoProcedimentoOuRitoLabel}
                                 </p>
                               )}
                               {prazo.origemMovimentacao && (
@@ -3153,11 +3158,15 @@ export default function ProcessoDetalhesPage() {
 
                   <div className="rounded-2xl border border-default-200 bg-default-50/80 p-3 text-xs text-default-600">
                     <p className="font-semibold text-foreground">
-                      Rito aplicado: {processoRitoLabel ?? "Defina no cadastro do processo"}
+                      Procedimento do processo:{" "}
+                      {processoProcedimentoOuRitoLabel ??
+                        "Defina no cadastro do processo"}
                     </p>
                     <p className="mt-1">
                       {prazoLegalHint ??
-                        "Selecione o tipo legal para sugerir fundamento e regra-base de contagem."}
+                        (processoRitoLabel
+                          ? "Selecione o tipo legal para sugerir fundamento e regra-base de contagem."
+                          : "Para procedimentos sem regra automatica, informe titulo e fundamento manualmente quando necessario.")}
                     </p>
                   </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
@@ -72,6 +72,7 @@ function resolveReferenceLink(item: {
 }
 
 export function CriticalDeadlinePopup() {
+  const pathname = usePathname();
   const router = useRouter();
   const { subscribe } = useRealtime();
   const { notifications, markAs, mutate } = useNotifications({ limit: 30 });
@@ -119,6 +120,16 @@ export function CriticalDeadlinePopup() {
   const processDeadlineMuted =
     processPreference?.success &&
     processPreference.data?.deadlineAlertsMuted === true;
+  const shouldSuppressBlockingModal = useMemo(() => {
+    if (!pathname) {
+      return false;
+    }
+
+    return (
+      pathname === "/processos/novo" ||
+      /^\/processos\/[^/]+\/editar$/.test(pathname)
+    );
+  }, [pathname]);
 
   useEffect(() => {
     const unsubscribe = subscribe("notification.new", () => {
@@ -142,6 +153,10 @@ export function CriticalDeadlinePopup() {
   }, [current?.id]);
 
   if (!current) {
+    return null;
+  }
+
+  if (shouldSuppressBlockingModal) {
     return null;
   }
 

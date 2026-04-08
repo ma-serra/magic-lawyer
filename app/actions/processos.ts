@@ -5,6 +5,7 @@ import prisma, { convertAllDecimalFields } from "@/app/lib/prisma";
 import logger from "@/lib/logger";
 import {
   Prisma,
+  ProcedimentoProcessual,
   ProcessoArquivamentoTipo,
   ProcessoFase,
   ProcessoGrau,
@@ -64,6 +65,14 @@ import {
   parseHolidayImpact,
   type HolidayImpactSnapshot,
 } from "@/app/lib/feriados/holiday-impact";
+import {
+  deriveRitoProcessoFromProcedimento,
+  doesAreaRequireProcedimento,
+  getProcedimentoProcessualLabel,
+  inferProcedimentoProcessual,
+  isProcedimentoCompatibleWithArea,
+  resolveAreaProcedimentoGroup,
+} from "@/app/lib/processos/procedimento-processual";
 import {
   getLegacyRitoProcessoLabel,
   getPrazoLegalRule,
@@ -348,6 +357,7 @@ export interface Processo {
   segredoJustica: boolean;
   valorCausa: number | null;
   rito: string | null;
+  procedimentoProcessual: ProcedimentoProcessual | null;
   ritoProcesso: RitoProcesso | null;
   clienteId: string;
   clienteIds?: string[];
@@ -976,6 +986,7 @@ async function ensureProcessMutationAccess(
       prazoPrincipal: true,
       valorCausa: true,
       rito: true,
+      procedimentoProcessual: true,
       ritoProcesso: true,
       areaId: true,
       tribunalId: true,
@@ -1035,6 +1046,7 @@ async function ensureProcessMutationAccess(
         select: {
           id: true,
           nome: true,
+          slug: true,
         },
       },
       tribunal: {
@@ -1440,27 +1452,110 @@ function buildPrazoHolidayNotificationPayload(
   };
 }
 
-function resolveCanonicalRitoProcesso(input: {
+async function resolveAreaSlugForMutation(params: {
+  tenantId: string;
+  areaId?: string | null;
+}) {
+  if (!params.areaId) {
+    return null;
+  }
+
+  const area = await prisma.areaProcesso.findFirst({
+    where: {
+      id: params.areaId,
+      tenantId: params.tenantId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      slug: true,
+    },
+  });
+
+  if (!area) {
+    throw new Error("Area do processo nao encontrada");
+  }
+
+  return area.slug;
+}
+
+function resolveCanonicalProcedureConfig(input: {
+  areaSlug?: string | null;
+  procedimentoProcessual?: ProcedimentoProcessual | null;
   ritoProcesso?: RitoProcesso | null;
   rito?: string | null;
 }) {
-  return input.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(input.rito);
+  const procedimentoProcessual = inferProcedimentoProcessual({
+    areaSlug: input.areaSlug ?? null,
+    procedimentoProcessual: input.procedimentoProcessual ?? null,
+    ritoProcesso: input.ritoProcesso ?? null,
+    rito: input.rito ?? null,
+  });
+
+  const ritoProcesso =
+    deriveRitoProcessoFromProcedimento(procedimentoProcessual) ??
+    (resolveAreaProcedimentoGroup(input.areaSlug) === "civel"
+      ? input.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(input.rito)
+      : null);
+
+  return {
+    procedimentoProcessual,
+    ritoProcesso,
+  };
 }
 
-function buildLegacyRitoValue(ritoProcesso?: RitoProcesso | null) {
-  return getLegacyRitoProcessoLabel(ritoProcesso) ?? null;
+function validateProcedureCompatibility(params: {
+  areaSlug?: string | null;
+  procedimentoProcessual?: ProcedimentoProcessual | null;
+}) {
+  if (
+    params.procedimentoProcessual &&
+    !isProcedimentoCompatibleWithArea({
+      areaSlug: params.areaSlug ?? null,
+      procedimentoProcessual: params.procedimentoProcessual,
+    })
+  ) {
+    return "O rito / procedimento selecionado nao e compativel com a area do processo";
+  }
+
+  if (
+    doesAreaRequireProcedimento(params.areaSlug ?? null) &&
+    !params.procedimentoProcessual
+  ) {
+    return "Defina o rito / procedimento compativel com a area do processo";
+  }
+
+  return null;
+}
+
+function buildLegacyRitoValue(params: {
+  procedimentoProcessual?: ProcedimentoProcessual | null;
+  ritoProcesso?: RitoProcesso | null;
+  fallbackRito?: string | null;
+}) {
+  if (params.procedimentoProcessual) {
+    return (
+      getProcedimentoProcessualLabel(params.procedimentoProcessual) ??
+      params.fallbackRito ??
+      null
+    );
+  }
+
+  return getLegacyRitoProcessoLabel(params.ritoProcesso) ?? params.fallbackRito ?? null;
 }
 
 function resolvePrazoPayloadDefaults(params: {
-  ritoProcesso: RitoProcesso;
+  ritoProcesso?: RitoProcesso | null;
   titulo?: string | null;
   fundamentoLegal?: string | null;
   tipoPrazoLegal?: TipoPrazoLegal | null;
 }) {
-  const rule = getPrazoLegalRule({
-    ritoProcesso: params.ritoProcesso,
-    tipoPrazoLegal: params.tipoPrazoLegal ?? null,
-  });
+  const rule = params.ritoProcesso
+    ? getPrazoLegalRule({
+        ritoProcesso: params.ritoProcesso,
+        tipoPrazoLegal: params.tipoPrazoLegal ?? null,
+      })
+    : null;
 
   const titulo = params.titulo?.trim() || rule?.tituloPadrao || "";
   const fundamentoLegal =
@@ -2825,11 +2920,11 @@ export interface ProcessoCreateInput {
   causaIds?: string[];
   vara?: string;
   comarca?: string;
-  foro?: string;
   orgaoJulgador?: string;
   dataDistribuicao?: Date | string;
   segredoJustica?: boolean;
   valorCausa?: number;
+  procedimentoProcessual?: ProcedimentoProcessual;
   rito?: string;
   ritoProcesso?: RitoProcesso;
   clienteId?: string;
@@ -3047,6 +3142,29 @@ export async function createProcesso(data: ProcessoCreateInput) {
       }
     }
 
+    const areaSlug = await resolveAreaSlugForMutation({
+      tenantId: user.tenantId,
+      areaId: data.areaId ?? null,
+    });
+    const canonicalProcedureConfig = resolveCanonicalProcedureConfig({
+      areaSlug,
+      procedimentoProcessual: data.procedimentoProcessual ?? null,
+      ritoProcesso: data.ritoProcesso ?? null,
+      rito: data.rito ?? null,
+    });
+    const procedimentoValidationError = validateProcedureCompatibility({
+      areaSlug,
+      procedimentoProcessual:
+        canonicalProcedureConfig.procedimentoProcessual ?? null,
+    });
+
+    if (procedimentoValidationError) {
+      return {
+        success: false,
+        error: procedimentoValidationError,
+      };
+    }
+
     // Verificar se número do processo já existe
     const advogadosResponsaveisSelecionados =
       await resolveAdvogadosResponsaveisValidos(
@@ -3063,15 +3181,6 @@ export async function createProcesso(data: ProcessoCreateInput) {
 
     if (processoExistente) {
       return { success: false, error: "Já existe um processo com este número" };
-    }
-
-    const canonicalRitoProcesso = resolveCanonicalRitoProcesso(data);
-
-    if (!canonicalRitoProcesso) {
-      return {
-        success: false,
-        error: "Defina o rito do processo para salvar o cadastro",
-      };
     }
 
     const normalizedStatus = data.status || ProcessoStatus.RASCUNHO;
@@ -3113,13 +3222,19 @@ export async function createProcesso(data: ProcessoCreateInput) {
           classeProcessual: data.classeProcessual,
           vara: data.vara,
           comarca: data.comarca,
-          foro: data.foro,
           orgaoJulgador: data.orgaoJulgador,
           dataDistribuicao,
           segredoJustica: data.segredoJustica || false,
           valorCausa: data.valorCausa,
-          rito: buildLegacyRitoValue(canonicalRitoProcesso),
-          ritoProcesso: canonicalRitoProcesso,
+          procedimentoProcessual:
+            canonicalProcedureConfig.procedimentoProcessual ?? null,
+          rito: buildLegacyRitoValue({
+            procedimentoProcessual:
+              canonicalProcedureConfig.procedimentoProcessual ?? null,
+            ritoProcesso: canonicalProcedureConfig.ritoProcesso ?? null,
+            fallbackRito: data.rito ?? null,
+          }),
+          ritoProcesso: canonicalProcedureConfig.ritoProcesso ?? null,
           clienteId: normalizedLinks.clienteId!,
           advogadoResponsavelId: normalizedLinks.advogadoResponsavelId,
           juizId: data.juizId,
@@ -3517,15 +3632,35 @@ export async function updateProcesso(
       }
     }
 
-    const canonicalRitoProcesso =
-      data.ritoProcesso !== undefined || data.rito !== undefined
-        ? resolveCanonicalRitoProcesso(data)
-        : processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
+    const targetAreaId =
+      data.areaId !== undefined ? data.areaId || null : processo.areaId || null;
+    const targetAreaSlug = await resolveAreaSlugForMutation({
+      tenantId,
+      areaId: targetAreaId,
+    });
+    const canonicalProcedureConfig = resolveCanonicalProcedureConfig({
+      areaSlug: targetAreaSlug ?? processo.area?.slug ?? null,
+      procedimentoProcessual:
+        data.procedimentoProcessual !== undefined
+          ? data.procedimentoProcessual ?? null
+          : processo.procedimentoProcessual ?? null,
+      ritoProcesso:
+        data.ritoProcesso !== undefined
+          ? data.ritoProcesso ?? null
+          : processo.ritoProcesso ?? null,
+      rito:
+        data.rito !== undefined ? data.rito ?? null : processo.rito ?? null,
+    });
+    const procedimentoValidationError = validateProcedureCompatibility({
+      areaSlug: targetAreaSlug ?? processo.area?.slug ?? null,
+      procedimentoProcessual:
+        canonicalProcedureConfig.procedimentoProcessual ?? null,
+    });
 
-    if (!canonicalRitoProcesso) {
+    if (procedimentoValidationError) {
       return {
         success: false,
-        error: "Defina o rito do processo antes de salvar as alterações",
+        error: procedimentoValidationError,
       };
     }
 
@@ -3559,7 +3694,6 @@ export async function updateProcesso(
     if (data.vara !== undefined) updatePayload.vara = data.vara || null;
     if (data.comarca !== undefined)
       updatePayload.comarca = data.comarca || null;
-    if (data.foro !== undefined) updatePayload.foro = data.foro || null;
     if (data.orgaoJulgador !== undefined)
       updatePayload.orgaoJulgador = data.orgaoJulgador || null;
     if (data.dataDistribuicao !== undefined) {
@@ -3572,9 +3706,22 @@ export async function updateProcesso(
     if (data.valorCausa !== undefined)
       updatePayload.valorCausa =
         data.valorCausa === null ? null : data.valorCausa;
-    if (data.rito !== undefined || data.ritoProcesso !== undefined) {
-      updatePayload.rito = buildLegacyRitoValue(canonicalRitoProcesso);
-      updatePayload.ritoProcesso = canonicalRitoProcesso;
+    if (
+      data.areaId !== undefined ||
+      data.procedimentoProcessual !== undefined ||
+      data.rito !== undefined ||
+      data.ritoProcesso !== undefined
+    ) {
+      updatePayload.procedimentoProcessual =
+        canonicalProcedureConfig.procedimentoProcessual ?? null;
+      updatePayload.rito = buildLegacyRitoValue({
+        procedimentoProcessual:
+          canonicalProcedureConfig.procedimentoProcessual ?? null,
+        ritoProcesso: canonicalProcedureConfig.ritoProcesso ?? null,
+        fallbackRito:
+          data.rito !== undefined ? data.rito ?? null : processo.rito ?? null,
+      });
+      updatePayload.ritoProcesso = canonicalProcedureConfig.ritoProcesso ?? null;
     }
     if (data.clienteId !== undefined || data.clienteIds !== undefined)
       updatePayload.clienteId = normalizedLinks.clienteId!;
@@ -4344,13 +4491,6 @@ export async function createProcessoPrazo(
     const ritoProcesso =
       processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
 
-    if (!ritoProcesso) {
-      return {
-        success: false,
-        error: "Defina o rito do processo antes de cadastrar prazos automáticos",
-      };
-    }
-
     const prazoPayload = resolvePrazoPayloadDefaults({
       ritoProcesso,
       titulo: input.titulo,
@@ -4529,13 +4669,6 @@ export async function updateProcessoPrazo(
     };
     const ritoProcesso =
       processo.ritoProcesso ?? normalizeLegacyRitoToRitoProcesso(processo.rito);
-
-    if (!ritoProcesso) {
-      return {
-        success: false,
-        error: "Defina o rito do processo antes de editar este prazo",
-      };
-    }
 
     const prazoAnterior = await prisma.processoPrazo.findFirst({
       where: {

@@ -62,6 +62,7 @@ import { DateUtils } from "@/app/lib/date-utils";
 import { Modal } from "@/components/ui/modal";
 import { anexarDocumentoCliente } from "@/app/actions/clientes";
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
+import { getProcedimentoProcessualLabel } from "@/app/lib/processos/procedimento-processual";
 
 const TAB_PAGE_SIZES = {
   processos: 6,
@@ -324,6 +325,10 @@ export default function ClienteDetalhesPage() {
       : principais;
   };
 
+  const formatProcedimentoResumo = (processo: (typeof processosItems)[number]) =>
+    getProcedimentoProcessualLabel((processo as any).procedimentoProcessual) ??
+    null;
+
   const processosFiltrados = useMemo(() => {
     const normalizedSearch = processosSearch.trim().toLowerCase();
 
@@ -346,6 +351,7 @@ export default function ClienteDetalhesPage() {
         processo.numeroCnj,
         processo.titulo,
         (processo as any).classeProcessual,
+        formatProcedimentoResumo(processo),
         formatAssuntosResumo(processo),
         processo.area?.nome,
         advogadoNome,
@@ -1366,6 +1372,14 @@ export default function ClienteDetalhesPage() {
                             <FileText className="mt-0.5 h-3 w-3 text-default-400" />
                             <span className="text-default-600">
                               Assuntos: {formatAssuntosResumo(processo)}
+                            </span>
+                          </div>
+                        )}
+                        {formatProcedimentoResumo(processo) && (
+                          <div className="flex items-start gap-2 text-xs">
+                            <Scale className="mt-0.5 h-3 w-3 text-default-400" />
+                            <span className="text-default-600">
+                              Procedimento: {formatProcedimentoResumo(processo)}
                             </span>
                           </div>
                         )}

@@ -67,9 +67,10 @@ import { ProcessCauseQuickCreateModal } from "@/components/processos/process-cau
 import { ProcessClassificationSection } from "@/components/processos/process-classification-section";
 import type { JuizSerializado } from "@/app/actions/juizes";
 import {
-  normalizeLegacyRitoToRitoProcesso,
-  RITO_PROCESSO_OPTIONS,
-} from "@/app/lib/processos/rito-processo";
+  doesAreaRequireProcedimento,
+  inferProcedimentoProcessual,
+} from "@/app/lib/processos/procedimento-processual";
+import { resolveAutoSelectedJudicialLocation } from "@/app/lib/tribunais/judicial-location-defaults";
 
 function buildTribunalLabel(tribunal?: {
   sigla?: string | null;
@@ -308,18 +309,6 @@ export default function EditarProcessoPage() {
     () => new Set(juizesDoFormulario.map((juiz) => juiz.id)),
     [juizesDoFormulario],
   );
-  const ritoProcessoOptions = useMemo(
-    () =>
-      [
-        { key: "__none__", label: "Selecione o rito", textValue: "Selecione o rito" },
-        ...RITO_PROCESSO_OPTIONS.map((item) => ({
-          key: item.value,
-          label: item.label,
-          textValue: item.label,
-        })),
-      ],
-    [],
-  );
 
   const fases = useMemo(() => Object.values(ProcessoFase), []);
   const graus = useMemo(() => Object.values(ProcessoGrau), []);
@@ -446,9 +435,11 @@ export default function EditarProcessoPage() {
   const comarcaOptions = useMemo(
     () => {
       const baseOptions = comarcas.map((comarca) => ({
-        key: comarca,
-        label: comarca,
-        textValue: comarca,
+        key: comarca.id,
+        label: comarca.label,
+        textValue: [comarca.sigla || "", comarca.nome, comarca.label]
+          .filter(Boolean)
+          .join(" "),
       }));
       const currentValue = formData?.comarca?.trim();
 
@@ -474,9 +465,11 @@ export default function EditarProcessoPage() {
   const varaOptions = useMemo(
     () => {
       const baseOptions = varas.map((vara) => ({
-        key: vara,
-        label: vara,
-        textValue: vara,
+        key: vara.id,
+        label: vara.label,
+        textValue: [vara.sigla || "", vara.nome, vara.label]
+          .filter(Boolean)
+          .join(" "),
       }));
       const currentValue = formData?.vara?.trim();
 
@@ -499,22 +492,6 @@ export default function EditarProcessoPage() {
     },
     [formData?.vara, varas],
   );
-  const selectedOrgaoJulgadorKey = useMemo(() => {
-    const currentValue = formData?.orgaoJulgador?.trim();
-
-    if (!currentValue) {
-      return selectedTribunalKeys[0] ?? null;
-    }
-
-    const matched = tribunalOptions.find(
-      (item) =>
-        item.label.localeCompare(currentValue, "pt-BR", {
-          sensitivity: "accent",
-        }) === 0,
-    );
-
-    return matched?.key ?? null;
-  }, [formData?.orgaoJulgador, selectedTribunalKeys, tribunalOptions]);
   const selectedComarcaKey = useMemo(() => {
     const currentValue = formData?.comarca?.trim();
 
@@ -533,6 +510,10 @@ export default function EditarProcessoPage() {
 
     return varaOptions.find((item) => item.label === currentValue)?.key ?? null;
   }, [formData?.vara, varaOptions]);
+  const selectedArea = useMemo(
+    () => areas.find((area) => area.id === formData?.areaId),
+    [areas, formData?.areaId],
+  );
   const assuntosSelecionadosResumo = useMemo(() => {
     const names = causaOptions
       .filter((causa) => selectedCausaKeys.includes(causa.id))
@@ -576,11 +557,13 @@ export default function EditarProcessoPage() {
         buildTribunalLabel(processo.tribunal || undefined),
       vara: processo.vara || "",
       comarca: processo.comarca || "",
-      foro: processo.foro || "",
-      ritoProcesso:
-        processo.ritoProcesso ??
-        normalizeLegacyRitoToRitoProcesso(processo.rito) ??
-        undefined,
+      procedimentoProcessual:
+        inferProcedimentoProcessual({
+          areaSlug: processo.area?.slug ?? null,
+          procedimentoProcessual: processo.procedimentoProcessual ?? null,
+          ritoProcesso: processo.ritoProcesso ?? null,
+          rito: processo.rito ?? null,
+        }) ?? undefined,
       numeroInterno: processo.numeroInterno || "",
       pastaCompartilhadaUrl: processo.pastaCompartilhadaUrl || "",
       clienteId: processo.cliente.id,
@@ -612,6 +595,36 @@ export default function EditarProcessoPage() {
 
     window.location.replace(redirectTo);
   }, [redirectTo]);
+
+  useEffect(() => {
+    if (!formData?.tribunalId || formData.comarca?.trim() || comarcas.length === 0) {
+      return;
+    }
+
+    const autoridadeSelecionada = juizesDoFormulario.find(
+      (juiz) => juiz.id === formData.juizId,
+    );
+    const autoSelectedComarca = resolveAutoSelectedJudicialLocation(comarcas, [
+      autoridadeSelecionada?.comarca,
+      formData.orgaoJulgador,
+    ]);
+
+    if (!autoSelectedComarca) {
+      return;
+    }
+
+    setFormData((prev) => {
+      if (!prev || prev.comarca?.trim()) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        comarca: autoSelectedComarca.label,
+        vara: "",
+      };
+    });
+  }, [comarcas, formData, juizesDoFormulario]);
 
   const getFaseLabel = (fase: ProcessoFase) => {
     switch (fase) {
@@ -688,8 +701,11 @@ export default function EditarProcessoPage() {
       return;
     }
 
-    if (!formData.ritoProcesso) {
-      toast.error("Selecione o rito do processo");
+    if (
+      doesAreaRequireProcedimento(selectedArea?.slug) &&
+      !formData.procedimentoProcessual
+    ) {
+      toast.error("Selecione o rito / procedimento compatível com a área");
 
       return;
     }
@@ -718,12 +734,11 @@ export default function EditarProcessoPage() {
         ? formData.classeProcessual.trim()
         : undefined;
       payload.causaIds = selectedCausaKeys;
-      payload.ritoProcesso = formData.ritoProcesso;
+      payload.procedimentoProcessual = formData.procedimentoProcessual;
       payload.vara = formData.vara?.trim() ? formData.vara.trim() : undefined;
       payload.comarca = formData.comarca?.trim()
         ? formData.comarca.trim()
         : undefined;
-      payload.foro = formData.foro?.trim() ? formData.foro.trim() : undefined;
       payload.orgaoJulgador = formData.orgaoJulgador?.trim()
         ? formData.orgaoJulgador.trim()
         : undefined;
@@ -1186,7 +1201,6 @@ export default function EditarProcessoPage() {
                 isLoadingCausas={isLoadingCausas}
                 isLoadingClassesProcessuais={isLoadingClassesProcessuais}
                 isLoadingTribunais={isLoadingTribunais}
-                ritoProcessoOptions={RITO_PROCESSO_OPTIONS}
                 tribunalOptions={tribunalOptions}
                 value={formData}
                 onOpenAreaModal={() => setIsAreaModalOpen(true)}
@@ -1215,13 +1229,13 @@ export default function EditarProcessoPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <SearchableSelect
-                description="Comarca vinculada ao tribunal selecionado."
+                description="Comarca ou seção judiciária vinculada ao tribunal selecionado."
                 emptyContent="Nenhuma comarca encontrada"
                 isDisabled={!formData.tribunalId}
                 isLoading={isLoadingComarcas}
                 items={comarcaOptions}
-                label="Comarca"
-                placeholder="Digite para buscar a comarca"
+                label="Comarca / Seção"
+                placeholder="Digite para buscar a comarca ou seção"
                 selectedKey={selectedComarcaKey}
                 startContent={<MapPin className="h-4 w-4 text-default-400" />}
                 onSelectionChange={(selectedKey) => {
@@ -1240,24 +1254,18 @@ export default function EditarProcessoPage() {
                   );
                 }}
               />
-
-              <Input
-                description="Foro ou regional do tribunal."
-                label="Foro"
-                placeholder="Ex: Foro Central"
-                value={formData.foro || ""}
-                onValueChange={(value) =>
-                  setFormData((prev) =>
-                    prev ? { ...prev, foro: value } : prev,
-                  )
-                }
-              />
             </div>
 
             <SearchableSelect
-              description="Vara ou juizado disponível para a comarca selecionada."
-              emptyContent="Nenhuma vara encontrada"
-              isDisabled={!formData.tribunalId || !formData.comarca}
+              description={
+                isLoadingVaras
+                  ? "Carregando varas da comarca ou seção selecionada."
+                  : "Vara ou juizado disponível para a comarca selecionada."
+              }
+              emptyContent={
+                isLoadingVaras ? "Carregando varas..." : "Nenhuma vara encontrada"
+              }
+              isDisabled={!formData.tribunalId || !formData.comarca || isLoadingVaras}
               isLoading={isLoadingVaras}
               items={varaOptions}
               label="Vara"

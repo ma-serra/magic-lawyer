@@ -107,6 +107,8 @@ Use este checklist para separar:
 - [x] Adotar no fluxo principal o modelo `Área do processo + Rito / Procedimento da área`.
 - [x] Filtrar o campo `Rito / Procedimento da área` de acordo com a área selecionada, cobrindo cível, penal e trabalhista.
 - [x] Remover o campo `Foro` do formulário principal de novo/editar processo, mantendo compatibilidade apenas no banco e na leitura legada.
+- [x] Suprimir o popup crítico de prazo nas telas de novo/editar processo para não bloquear o cadastro operacional.
+- [x] Completar em banco o catálogo judicial de `TRF1 -> SJPA` com varas persistidas para uso real no formulário de processos.
 
 ### Prazos e agenda
 
@@ -160,6 +162,7 @@ Use este checklist para separar:
 - [x] `npm run typecheck` executado com sucesso em 08/04/2026.
 - [x] `npm run check:mojibake` executado com sucesso em 08/04/2026.
 - [x] `npm test` executado com sucesso em 08/04/2026.
+- [x] Teste visual local executado em 08/04/2026 no tenant `ml-test`, sem gravar processo e sem poluir a base da Dra. Dayane, validando ausência de popup bloqueante e seleção `TRF1 -> SJPA -> 8A VARA FEDERAL DE JUIZADO ESPECIAL CIVEL`.
 
 ### Suporte e implantação
 
@@ -221,6 +224,7 @@ Use este checklist para separar:
 - [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão julgador".
 - [ ] Confirmar em uso real o catálogo de áreas padrão já sincronizado no tenant.
 - [ ] Homologar em uso real o novo carregamento automático de `Comarca / Seção` por tribunal, incluindo o cenário `TRF1 -> SJPA`.
+- [ ] Homologar em uso real que o popup crítico de prazo não volta a bloquear o cadastro de novo/editar processo no tenant da Dra. Dayane.
 - [ ] Homologar com a Dra. Dayane o novo modelo `Área do processo + Rito / Procedimento da área`, incluindo o caso penal ordinário.
 
 ### Prazos e agenda

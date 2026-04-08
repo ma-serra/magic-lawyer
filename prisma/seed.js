@@ -35,6 +35,7 @@ const { seedDadosBancarios } = require("./seeds/dadosBancarios");
 const { seedAuditLogs } = require("./seeds/auditLogs");
 const { seedRecebimentos } = require("./seeds/seed-recebimentos");
 const { seedFuncionarios } = require("./seeds/funcionarios");
+const seedTribunalLocalidades = require("./seeds/tribunalLocalidades");
 
 const prisma = new PrismaClient();
 const shouldSeedRecebimentos = process.argv.includes("--with-recebimentos");
@@ -307,6 +308,13 @@ async function main() {
     } catch (error) {
       console.warn("⚠️ Juízes já criados:", error.message);
     }
+  }
+
+  console.log("\n🗺️ Sincronizando localidades judiciais padrão...\n");
+  try {
+    await seedTribunalLocalidades(prisma);
+  } catch (error) {
+    console.warn("⚠️ Localidades judiciais já sincronizadas:", error.message);
   }
 
   console.log("\n⚙️ Criando configurações de preço...\n");

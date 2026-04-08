@@ -27,6 +27,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { SearchableSelect } from "@/components/searchable-select";
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
+import { getProcedimentoProcessualLabel } from "@/app/lib/processos/procedimento-processual";
 
 interface ProcessoFiltros {
   busca: string;
@@ -282,6 +283,9 @@ export function ProcessosContent({
       : principais;
   };
 
+  const formatProcedimentoResumo = (processo: any) =>
+    getProcedimentoProcessualLabel(processo?.procedimentoProcessual) ?? null;
+
   const getFaseLabel = (fase?: ProcessoFase | null) => {
     if (!fase) return "-";
     switch (fase) {
@@ -442,6 +446,7 @@ export function ProcessosContent({
           processo.numero.toLowerCase().includes(busca) ||
           processo.titulo?.toLowerCase().includes(busca) ||
           processo.classeProcessual?.toLowerCase().includes(busca) ||
+          formatProcedimentoResumo(processo)?.toLowerCase().includes(busca) ||
           formatAssuntosResumo(processo)?.toLowerCase().includes(busca) ||
           getProcessoClientes(processo).some((cliente: any) =>
             cliente.nome?.toLowerCase().includes(busca),
@@ -1231,6 +1236,14 @@ export function ProcessosContent({
                               </span>
                             </div>
                           ) : null}
+                          {formatProcedimentoResumo(processo) ? (
+                            <div className="flex items-start gap-2 text-xs">
+                              <Scale className="mt-0.5 h-3 w-3 text-default-400" />
+                              <span className="text-default-600">
+                                Procedimento: {formatProcedimentoResumo(processo)}
+                              </span>
+                            </div>
+                          ) : null}
                           {processo.area && (
                             <div className="flex items-center gap-2 text-xs">
                               <Briefcase className="h-3 w-3 text-default-400" />
@@ -1436,6 +1449,11 @@ export function ProcessosContent({
                               {processo.classeProcessual ? (
                                 <p className="mt-1 text-xs text-default-400">
                                   Classe: {processo.classeProcessual}
+                                </p>
+                              ) : null}
+                              {formatProcedimentoResumo(processo) ? (
+                                <p className="mt-1 text-xs text-default-400">
+                                  Procedimento: {formatProcedimentoResumo(processo)}
                                 </p>
                               ) : null}
                               {assuntosResumo ? (

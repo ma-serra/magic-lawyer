@@ -1022,12 +1022,55 @@ model Tribunal {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   juizes             Juiz[]
+  localidades        TribunalLocalidade[]
   processos          Processo[]
+  varas              TribunalVara[]
   feriados           Feriado[]
   tenant             Tenant?    @relation(fields: [tenantId], references: [id])
 
   @@unique([nome, uf])
   @@index([tenantId, deletedAt])
+  @@schema("magiclawyer")
+}
+
+model TribunalLocalidade {
+  id         String          @id @default(cuid())
+  tribunalId String
+  slug       String
+  nome       String
+  sigla      String?
+  tipo       String?
+  ativo      Boolean         @default(true)
+  ordem      Int?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  tribunal   Tribunal        @relation(fields: [tribunalId], references: [id], onDelete: Cascade)
+  varas      TribunalVara[]
+
+  @@unique([tribunalId, slug])
+  @@index([tribunalId, ativo])
+  @@index([tribunalId, nome])
+  @@schema("magiclawyer")
+}
+
+model TribunalVara {
+  id           String             @id @default(cuid())
+  tribunalId   String
+  localidadeId String
+  slug         String
+  nome         String
+  sigla        String?
+  tipo         String?
+  ativo        Boolean            @default(true)
+  ordem        Int?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  tribunal     Tribunal           @relation(fields: [tribunalId], references: [id], onDelete: Cascade)
+  localidade   TribunalLocalidade @relation(fields: [localidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([localidadeId, slug])
+  @@index([tribunalId, localidadeId, ativo])
+  @@index([tribunalId, nome])
   @@schema("magiclawyer")
 }
 
@@ -1118,6 +1161,7 @@ model Processo {
   segredoJustica        Boolean                                  @default(false)
   valorCausa            Decimal?                                 @db.Decimal(14, 2)
   rito                  String?
+  procedimentoProcessual ProcedimentoProcessual?
   ritoProcesso          RitoProcesso?
   clienteId             String
   advogadoResponsavelId String?
@@ -1161,6 +1205,7 @@ model Processo {
   @@index([tenantId, status, arquivamentoTipo])
   @@index([tenantId, clienteId])
   @@index([tenantId, ritoProcesso])
+  @@index([tenantId, procedimentoProcessual])
   @@index([tenantId, createdAt])
   @@index([tenantId, deletedAt])
   @@schema("magiclawyer")
@@ -3379,6 +3424,20 @@ enum ProcessoPrazoStatus {
 enum RitoProcesso {
   JUSTICA_COMUM
   JUIZADO_ESPECIAL
+
+  @@schema("magiclawyer")
+}
+
+enum ProcedimentoProcessual {
+  CIVEL_PROCEDIMENTO_COMUM_ORDINARIO
+  CIVEL_PROCEDIMENTOS_ESPECIAIS
+  CIVEL_JUIZADO_ESPECIAL
+  PENAL_ORDINARIO
+  PENAL_SUMARIO
+  PENAL_SUMARISSIMO
+  TRABALHISTA_ORDINARIO
+  TRABALHISTA_SUMARIO
+  TRABALHISTA_SUMARISSIMO
 
   @@schema("magiclawyer")
 }

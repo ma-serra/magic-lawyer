@@ -6,6 +6,7 @@ import {
   ProcessoGrau,
   ProcessoStatus,
 } from "@/generated/prisma";
+import { getProcedimentoProcessualLabel } from "@/app/lib/processos/procedimento-processual";
 
 type ProcessoWithRelations = Processo & {
   cliente?: {
@@ -577,6 +578,14 @@ const descriptors: DiffDescriptor[] = [
     getAfter: (p) => p.classeProcessual,
   },
   {
+    field: "procedimentoProcessual",
+    label: "Rito / procedimento da área",
+    getBefore: (p) => p.procedimentoProcessual,
+    getAfter: (p) => p.procedimentoProcessual,
+    format: (value) =>
+      getProcedimentoProcessualLabel(value as never) ?? DEFAULT_NULL_TEXT,
+  },
+  {
     field: "vara",
     label: "Vara",
     getBefore: (p) => p.vara,
@@ -590,7 +599,7 @@ const descriptors: DiffDescriptor[] = [
   },
   {
     field: "foro",
-    label: "Foro",
+    label: "Foro (legado)",
     getBefore: (p) => p.foro,
     getAfter: (p) => p.foro,
   },
