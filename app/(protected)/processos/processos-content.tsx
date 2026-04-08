@@ -12,6 +12,7 @@ import {
   Scale, Briefcase, Calendar, Clock, AlertCircle, CheckCircle, XCircle, User, FileText, Plus, Search, Filter, X, Eye, Edit, DollarSign, MapPin, Shield, Building2, Users, Copy, UploadCloud, RefreshCw, LayoutGrid, List as ListIcon, } from "lucide-react";
 import Link from "next/link";
 
+import type { Processo as ProcessoDTO } from "@/app/actions/processos";
 import { useAllProcessos } from "@/app/hooks/use-processos";
 import { useClientesParaSelect } from "@/app/hooks/use-clientes";
 import { useAdvogadosParaSelect } from "@/app/hooks/use-advogados-select";
@@ -26,6 +27,8 @@ import { Pagination, Select, SelectItem } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DateRangeInput } from "@/components/ui/date-range-input";
 import { SearchableSelect } from "@/components/searchable-select";
+import { ProcessoAudienciasModal } from "@/components/processos/processo-audiencias-modal";
+import { ProcessoAudienciasTriggerButton } from "@/components/processos/processo-audiencias-trigger-button";
 import { getProcessoStatusLabel } from "@/app/lib/processos/diff";
 import { getProcedimentoProcessualLabel } from "@/app/lib/processos/procedimento-processual";
 
@@ -105,11 +108,20 @@ const FilterToggleButton = ({
 interface ProcessosContentProps {
   canCreateProcesso: boolean;
   canSyncOab: boolean;
+  canCreateAgendaEvento: boolean;
+  canEditAgendaEvento: boolean;
 }
+
+type ProcessoAudienciasModalContext = Pick<
+  ProcessoDTO,
+  "id" | "numero" | "titulo" | "clienteId" | "advogadoResponsavelId"
+>;
 
 export function ProcessosContent({
   canCreateProcesso,
   canSyncOab,
+  canCreateAgendaEvento,
+  canEditAgendaEvento,
 }: ProcessosContentProps) {
 
   const {
@@ -142,6 +154,8 @@ export function ProcessosContent({
   const [mostrarModalImportacao, setMostrarModalImportacao] = useState(false);
   const [mostrarModalSincronizacaoOab, setMostrarModalSincronizacaoOab] =
     useState(false);
+  const [processoAudienciasModal, setProcessoAudienciasModal] =
+    useState<ProcessoAudienciasModalContext | null>(null);
   const [modoVisualizacao, setModoVisualizacao] = useState<"cards" | "lista">(
     "cards",
   );
@@ -170,6 +184,24 @@ export function ProcessosContent({
         timeout: 3000,
       });
     }
+  };
+
+  const handleOpenProcessoAudiencias = (
+    processo: ProcessoDTO,
+    e?: React.MouseEvent,
+  ) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    setProcessoAudienciasModal({
+      id: processo.id,
+      numero: processo.numero,
+      titulo: processo.titulo,
+      clienteId: processo.clienteId,
+      advogadoResponsavelId: processo.advogadoResponsavelId,
+    });
   };
 
   const getStatusColor = (status: ProcessoStatus) => {
@@ -1354,6 +1386,15 @@ export function ProcessosContent({
                             <Chip size="sm" variant="flat">
                               {processo._count.eventos} eventos
                             </Chip>
+                            {processo.audienciasCount > 0 ? (
+                              <ProcessoAudienciasTriggerButton
+                                count={processo.audienciasCount}
+                                preventNavigation
+                                onPress={() =>
+                                  handleOpenProcessoAudiencias(processo)
+                                }
+                              />
+                            ) : null}
                           </div>
                         </CardBody>
                       </Card>
@@ -1530,13 +1571,21 @@ export function ProcessosContent({
                             </div>
 
                             <div className="flex items-center justify-between gap-2 md:justify-end">
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 <Chip size="sm" variant="flat">
                                   {processo._count.documentos} docs
                                 </Chip>
                                 <Chip size="sm" variant="flat">
                                   {processo._count.eventos} eventos
                                 </Chip>
+                                {processo.audienciasCount > 0 ? (
+                                  <ProcessoAudienciasTriggerButton
+                                    count={processo.audienciasCount}
+                                    onPress={() =>
+                                      handleOpenProcessoAudiencias(processo)
+                                    }
+                                  />
+                                ) : null}
                               </div>
                               <Button
                                 as={Link}
@@ -1581,6 +1630,23 @@ export function ProcessosContent({
         onClose={() => setMostrarModalSincronizacaoOab(false)}
         onSynced={() => refreshProcessos()}
       />
+      {processoAudienciasModal ? (
+        <ProcessoAudienciasModal
+          advogadoResponsavelId={processoAudienciasModal.advogadoResponsavelId}
+          canComplete={canEditAgendaEvento}
+          canCreate={canCreateAgendaEvento}
+          canEdit={canEditAgendaEvento}
+          clienteId={processoAudienciasModal.clienteId}
+        isOpen={Boolean(processoAudienciasModal)}
+        processoId={processoAudienciasModal.id}
+        processoNumero={processoAudienciasModal.numero}
+        processoTitulo={processoAudienciasModal.titulo}
+        onChanged={async () => {
+          await refreshProcessos();
+        }}
+        onClose={() => setProcessoAudienciasModal(null)}
+      />
+      ) : null}
     </div>
   );
 }

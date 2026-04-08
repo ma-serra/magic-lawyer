@@ -367,6 +367,7 @@ export interface Processo {
   tribunalId: string | null;
   tags: Prisma.JsonValue | null;
   origemSincronizacaoExterna?: boolean;
+  audienciasCount: number;
   prazoPrincipal: Date | null;
   numeroInterno: string | null;
   pastaCompartilhadaUrl: string | null;
@@ -624,6 +625,53 @@ function haveSameIdMembership(a: string[], b: string[]) {
     uniqueOrderedProcessoRelationIds(values).sort().join("|");
 
   return normalize(a) === normalize(b);
+}
+
+async function attachAudienciasCountToProcessos<T extends { id: string }>(
+  tenantId: string,
+  processos: T[],
+): Promise<Array<T & { audienciasCount: number }>> {
+  if (processos.length === 0) {
+    return [];
+  }
+
+  const processoIds = processesIds(processos);
+
+  const groupedAudiencias = await prisma.evento.groupBy({
+    by: ["processoId"],
+    where: {
+      tenantId,
+      deletedAt: null,
+      tipo: "AUDIENCIA",
+      processoId: {
+        in: processoIds,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  const audienciasCountByProcessoId = new Map(
+    groupedAudiencias
+      .filter(
+        (
+          item,
+        ): item is typeof item & {
+          processoId: string;
+        } => typeof item.processoId === "string",
+      )
+      .map((item) => [item.processoId, item._count._all]),
+  );
+
+  return processos.map((processo) => ({
+    ...processo,
+    audienciasCount: audienciasCountByProcessoId.get(processo.id) ?? 0,
+  }));
+}
+
+function processesIds<T extends { id: string }>(processos: T[]) {
+  return processos.map((processo) => processo.id);
 }
 
 type TenantJudgeOverlayForProcess = {
@@ -1504,6 +1552,8 @@ function resolveCanonicalProcedureConfig(input: {
   };
 }
 
+type ProcessoListBase = Omit<Processo, "audienciasCount">;
+
 function validateProcedureCompatibility(params: {
   areaSlug?: string | null;
   procedimentoProcessual?: ProcedimentoProcessual | null;
@@ -1848,7 +1898,7 @@ export async function getAllProcessos(): Promise<{
     // Convert Decimal objects to numbers and serialize
     const convertedProcessos = processos.map((p) =>
       convertAllDecimalFields(p),
-    ) as Processo[];
+    ) as unknown as ProcessoListBase[];
 
     // Force conversion to plain objects with explicit number conversion
     const serialized = JSON.parse(
@@ -1867,23 +1917,30 @@ export async function getAllProcessos(): Promise<{
       }),
     );
 
-    const processosDecorated = decorateProcessosWithVinculos(serialized).map(
-      (processo) => ({
-        ...processo,
-        origemSincronizacaoExterna:
-          hasExternalSyncTag(processo.tags) ||
-          syncedProcessNumbers.has(
-            normalizeProcessNumberForMatch(processo.numero),
-          ) ||
-          syncedProcessNumbers.has(
-            normalizeProcessNumberForMatch(processo.numeroCnj),
-          ),
-      }),
-    ) as unknown as Processo[];
+    const processosDecorated = (
+      decorateProcessosWithVinculos(serialized) as Array<
+        ProcessoListBase & { id: string }
+      >
+    ).map((processo) => ({
+      ...processo,
+      origemSincronizacaoExterna:
+        hasExternalSyncTag(processo.tags) ||
+        syncedProcessNumbers.has(
+          normalizeProcessNumberForMatch(processo.numero),
+        ) ||
+        syncedProcessNumbers.has(
+          normalizeProcessNumberForMatch(processo.numeroCnj),
+        ),
+    }));
+
+    const processosWithAudienciasCount = await attachAudienciasCountToProcessos(
+      user.tenantId,
+      processosDecorated,
+    );
 
     return {
       success: true,
-      processos: processosDecorated,
+      processos: processosWithAudienciasCount as Processo[],
     };
   } catch (error) {
     logger.error("Erro ao buscar processos:", error);
@@ -2006,7 +2063,7 @@ export async function getProcessosDoClienteLogado(): Promise<{
 
     const convertedProcessos = processos.map((p) =>
       convertAllDecimalFields(p),
-    ) as Processo[];
+    ) as unknown as ProcessoListBase[];
 
     // Force conversion to plain objects with explicit number conversion
     const serialized = JSON.parse(
@@ -2025,9 +2082,16 @@ export async function getProcessosDoClienteLogado(): Promise<{
       }),
     );
 
+    const processosWithAudienciasCount = await attachAudienciasCountToProcessos(
+      user.tenantId,
+      decorateProcessosWithVinculos(serialized) as Array<
+        ProcessoListBase & { id: string }
+      >,
+    );
+
     return {
       success: true,
-      processos: decorateProcessosWithVinculos(serialized),
+      processos: processosWithAudienciasCount as Processo[],
     };
   } catch (error) {
     logger.error("Erro ao buscar processos do cliente:", error);
@@ -2173,7 +2237,7 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
 
     const convertedProcessos = processos.map((p) =>
       convertAllDecimalFields(p),
-    ) as Processo[];
+    ) as unknown as ProcessoListBase[];
 
     // Force conversion to plain objects with explicit number conversion
     const serialized = JSON.parse(
@@ -2192,9 +2256,16 @@ export async function getProcessosDoCliente(clienteId: string): Promise<{
       }),
     );
 
+    const processosWithAudienciasCount = await attachAudienciasCountToProcessos(
+      user.tenantId,
+      decorateProcessosWithVinculos(serialized) as Array<
+        ProcessoListBase & { id: string }
+      >,
+    );
+
     return {
       success: true,
-      processos: decorateProcessosWithVinculos(serialized),
+      processos: processosWithAudienciasCount as Processo[],
     };
   } catch (error) {
     logger.error("Erro ao buscar processos do cliente:", error);

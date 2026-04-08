@@ -34,7 +34,14 @@ export default async function ProcessosPage() {
       ? await isJusbrasilIntegrationEnabledForTenant(tenantId)
       : false;
 
-    return <ProcessosContent canCreateProcesso canSyncOab={canSyncOab} />;
+    return (
+      <ProcessosContent
+        canCreateAgendaEvento
+        canCreateProcesso
+        canEditAgendaEvento
+        canSyncOab={canSyncOab}
+      />
+    );
   }
 
   // Para outros roles, verificar permissão processos.visualizar
@@ -45,9 +52,17 @@ export default async function ProcessosPage() {
       redirect("/dashboard");
     }
 
-    const [canCreateProcesso, canEditProcesso, jusbrasilEnabled] = await Promise.all([
+    const [
+      canCreateProcesso,
+      canEditProcesso,
+      canCreateAgendaEvento,
+      canEditAgendaEvento,
+      jusbrasilEnabled,
+    ] = await Promise.all([
       checkPermission("processos", "criar"),
       checkPermission("processos", "editar"),
+      checkPermission("agenda", "criar"),
+      checkPermission("agenda", "editar"),
       tenantId
         ? isJusbrasilIntegrationEnabledForTenant(tenantId)
         : Promise.resolve(false),
@@ -55,7 +70,9 @@ export default async function ProcessosPage() {
 
     return (
       <ProcessosContent
+        canCreateAgendaEvento={canCreateAgendaEvento}
         canCreateProcesso={canCreateProcesso}
+        canEditAgendaEvento={canEditAgendaEvento}
         canSyncOab={canEditProcesso && jusbrasilEnabled}
       />
     );

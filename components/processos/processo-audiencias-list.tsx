@@ -6,6 +6,7 @@ import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
 import {
   Calendar,
+  CheckCircle2,
   Edit,
   ExternalLink,
   Gavel,
@@ -48,12 +49,15 @@ export interface ProcessoAudienciasOverview {
 interface ProcessoAudienciasListProps {
   audiencias: ProcessoAudienciaListItem[];
   canCreate?: boolean;
+  canComplete?: boolean;
+  completingId?: string | null;
   emptyTitle?: string;
   emptyDescription?: string;
   emptyActionLabel?: string;
   now?: Date;
   onCreate?: () => void;
   onEdit?: (audiencia: ProcessoAudienciaListItem) => void;
+  onComplete?: (audiencia: ProcessoAudienciaListItem) => void;
 }
 
 function toDate(value: Date | string) {
@@ -81,6 +85,10 @@ function getResponsavelLabel(audiencia: ProcessoAudienciaListItem) {
   const lastName = audiencia.advogadoResponsavel?.usuario?.lastName?.trim();
 
   return [firstName, lastName].filter(Boolean).join(" ").trim();
+}
+
+function canCompleteAudiencia(status?: EventoStatus | string | null) {
+  return status !== EventoStatus.REALIZADO && status !== EventoStatus.CANCELADO;
 }
 
 function sortAscByStartDate(
@@ -117,12 +125,20 @@ export function deriveProcessoAudienciasOverview(
 
 function AudienciaCard({
   audiencia,
+  canComplete,
+  completingId,
   onEdit,
+  onComplete,
 }: {
   audiencia: ProcessoAudienciaListItem;
+  canComplete?: boolean;
+  completingId?: string | null;
   onEdit?: (audiencia: ProcessoAudienciaListItem) => void;
+  onComplete?: (audiencia: ProcessoAudienciaListItem) => void;
 }) {
   const responsavel = getResponsavelLabel(audiencia);
+  const isCompleting = completingId === audiencia.id;
+  const showCompleteAction = canCompleteAudiencia(audiencia.status) && canComplete;
 
   return (
     <Card className="border border-default-200">
@@ -151,16 +167,36 @@ function AudienciaCard({
             </div>
           </div>
 
-          {onEdit ? (
-            <Button
-              color="primary"
-              size="sm"
-              startContent={<Edit className="h-3.5 w-3.5" />}
-              variant="flat"
-              onPress={() => onEdit(audiencia)}
-            >
-              Editar
-            </Button>
+          {onEdit || showCompleteAction ? (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {showCompleteAction && onComplete ? (
+                <Button
+                  color="success"
+                  isLoading={isCompleting}
+                  size="sm"
+                  startContent={
+                    isCompleting ? undefined : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )
+                  }
+                  variant="flat"
+                  onPress={() => onComplete(audiencia)}
+                >
+                  Concluir
+                </Button>
+              ) : null}
+              {onEdit ? (
+                <Button
+                  color="primary"
+                  size="sm"
+                  startContent={<Edit className="h-3.5 w-3.5" />}
+                  variant="flat"
+                  onPress={() => onEdit(audiencia)}
+                >
+                  Editar
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
@@ -204,17 +240,23 @@ function AudienciaCard({
 }
 
 function AudienciaSection({
+  canComplete,
+  completingId,
   title,
   description,
   icon,
   items,
   onEdit,
+  onComplete,
 }: {
+  canComplete?: boolean;
+  completingId?: string | null;
   title: string;
   description: string;
   icon: typeof Calendar;
   items: ProcessoAudienciaListItem[];
   onEdit?: (audiencia: ProcessoAudienciaListItem) => void;
+  onComplete?: (audiencia: ProcessoAudienciaListItem) => void;
 }) {
   const Icon = icon;
 
@@ -238,7 +280,10 @@ function AudienciaSection({
           <AudienciaCard
             key={audiencia.id}
             audiencia={audiencia}
+            canComplete={canComplete}
+            completingId={completingId}
             onEdit={onEdit}
+            onComplete={onComplete}
           />
         ))}
       </div>
@@ -249,12 +294,15 @@ function AudienciaSection({
 export function ProcessoAudienciasList({
   audiencias,
   canCreate = false,
+  canComplete = false,
+  completingId = null,
   emptyTitle = "Nenhuma audiência cadastrada",
   emptyDescription = "Assim que uma audiência for registrada na agenda com vínculo a este processo, ela aparecerá aqui.",
   emptyActionLabel = "Nova audiência",
   now,
   onCreate,
   onEdit,
+  onComplete,
 }: ProcessoAudienciasListProps) {
   const overview = deriveProcessoAudienciasOverview(audiencias, now);
 
@@ -293,7 +341,10 @@ export function ProcessoAudienciasList({
           icon={Calendar}
           items={overview.proximas}
           title="Próximas audiências"
+          canComplete={canComplete}
+          completingId={completingId}
           onEdit={onEdit}
+          onComplete={onComplete}
         />
       ) : null}
 
@@ -305,7 +356,10 @@ export function ProcessoAudienciasList({
             icon={History}
             items={overview.historico}
             title="Histórico de audiências"
+            canComplete={canComplete}
+            completingId={completingId}
             onEdit={onEdit}
+            onComplete={onComplete}
           />
         </>
       ) : null}

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import {
   deriveProcessoAudienciasOverview,
@@ -87,5 +88,28 @@ describe("ProcessoAudienciasList", () => {
     expect(screen.getByText("Audiência de instrução")).toBeTruthy();
     expect(screen.getAllByText("1").length).toBeGreaterThan(0);
     expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+  });
+  it("exibe a aÃ§Ã£o de concluir apenas para audiÃªncias elegÃ­veis", async () => {
+    const user = userEvent.setup();
+    const onComplete = jest.fn();
+
+    render(
+      <ProcessoAudienciasList
+        audiencias={audiencias}
+        canComplete
+        now={new Date("2026-04-08T12:00:00.000Z")}
+        onComplete={onComplete}
+      />,
+    );
+
+    const completeButtons = screen.getAllByText(/Concluir/i);
+
+    expect(completeButtons).toHaveLength(2);
+
+    await user.click(completeButtons[0]);
+
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "aud-1" }),
+    );
   });
 });

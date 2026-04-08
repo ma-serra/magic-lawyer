@@ -101,7 +101,6 @@ import {
   updateProcesso,
   solicitarAtualizacaoJusbrasilProcesso,
   type ProcessoParte,
-  type ProcessoEvento,
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
@@ -126,12 +125,14 @@ import {
   type SearchableSelectOption,
 } from "@/components/searchable-select";
 import { ProcessoDocumentoOrganizerModal } from "@/components/processos/processo-documento-organizer-modal";
-import EventoForm from "@/components/evento-form";
 import {
   deriveProcessoAudienciasOverview,
-  type ProcessoAudienciaListItem,
   ProcessoAudienciasList,
 } from "@/components/processos/processo-audiencias-list";
+import {
+  ProcessoAudienciasModal,
+  type ProcessoAudienciasModalMode,
+} from "@/components/processos/processo-audiencias-modal";
 import {
   buildPrazoWorkspaceSummary,
   formatPrazoRelativeLabel,
@@ -818,9 +819,8 @@ export default function ProcessoDetalhesPage() {
     setIsSolicitandoAtualizacaoJusbrasil,
   ] = useState(false);
   const [isAudienciasModalOpen, setIsAudienciasModalOpen] = useState(false);
-  const [isAudienciaFormOpen, setIsAudienciaFormOpen] = useState(false);
-  const [audienciaEditando, setAudienciaEditando] =
-    useState<ProcessoEvento | null>(null);
+  const [audienciasModalMode, setAudienciasModalMode] =
+    useState<ProcessoAudienciasModalMode>("list");
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
   const [documentoPreview, setDocumentoPreview] =
     useState<ProcessoDocumentoPreviewState | null>(null);
@@ -1281,31 +1281,15 @@ export default function ProcessoDetalhesPage() {
       mutate();
     });
 
-  const handleOpenAudienciasModal = () => {
+  const handleOpenAudienciasModal = (
+    mode: ProcessoAudienciasModalMode = "list",
+  ) => {
+    setAudienciasModalMode(mode);
     setIsAudienciasModalOpen(true);
   };
 
-  const handleCloseAudienciaForm = () => {
-    setIsAudienciaFormOpen(false);
-    setAudienciaEditando(null);
-  };
-
   const handleCreateAudiencia = () => {
-    setAudienciaEditando(null);
-    setIsAudienciasModalOpen(false);
-    setIsAudienciaFormOpen(true);
-  };
-
-  const handleEditAudiencia = (audiencia: ProcessoAudienciaListItem) => {
-    setAudienciaEditando(audiencia as ProcessoEvento);
-    setIsAudienciasModalOpen(false);
-    setIsAudienciaFormOpen(true);
-  };
-
-  const handleAudienciaFormSuccess = async () => {
-    await Promise.all([mutate(), mutateEventos()]);
-    setIsAudienciaFormOpen(false);
-    setAudienciaEditando(null);
+    handleOpenAudienciasModal("create");
   };
 
   const isDocumentoPreviewInline = (
@@ -2962,7 +2946,7 @@ export default function ProcessoDetalhesPage() {
                             isDisabled={audiencias.length === 0}
                             size="sm"
                             variant="flat"
-                            onPress={handleOpenAudienciasModal}
+                            onPress={() => handleOpenAudienciasModal()}
                           >
                             Ver todas
                           </Button>
@@ -3988,7 +3972,7 @@ export default function ProcessoDetalhesPage() {
                     color="primary"
                     isDisabled={audiencias.length === 0}
                     variant="flat"
-                    onPress={handleOpenAudienciasModal}
+                    onPress={() => handleOpenAudienciasModal()}
                   >
                     Ver todas
                   </Button>
@@ -4014,7 +3998,6 @@ export default function ProcessoDetalhesPage() {
                 audiencias={audiencias}
                 canCreate={canManageAudiencias}
                 onCreate={handleCreateAudiencia}
-                onEdit={canEditAudiencias ? handleEditAudiencia : undefined}
               />
             )}
           </div>
@@ -4230,7 +4213,7 @@ export default function ProcessoDetalhesPage() {
             ) : null}
           </>
         }
-        isOpen={isAudienciasModalOpen}
+        isOpen={false}
         size="2xl"
         title="Audiências do processo"
         onClose={() => setIsAudienciasModalOpen(false)}
@@ -4240,23 +4223,25 @@ export default function ProcessoDetalhesPage() {
             audiencias={audiencias}
             canCreate={canManageAudiencias}
             onCreate={handleCreateAudiencia}
-            onEdit={canEditAudiencias ? handleEditAudiencia : undefined}
           />
         </div>
       </Modal>
 
-      <EventoForm
-        copy={audienciaFormCopy}
-        evento={audienciaEditando || undefined}
-        isOpen={isAudienciaFormOpen}
-        locks={{
-          tipo: true,
-          processo: true,
-          cliente: true,
+      <ProcessoAudienciasModal
+        advogadoResponsavelId={audienciaFormPreset.advogadoResponsavelId}
+        canComplete={canEditAudiencias}
+        canCreate={canManageAudiencias}
+        canEdit={canEditAudiencias}
+        clienteId={audienciaFormPreset.clienteId}
+        defaultMode={audienciasModalMode}
+        isOpen={isAudienciasModalOpen}
+        processoId={processoId}
+        processoNumero={processo.numero}
+        processoTitulo={processo.titulo}
+        onChanged={async () => {
+          await Promise.all([mutate(), mutateEventos()]);
         }}
-        onClose={handleCloseAudienciaForm}
-        onSuccess={handleAudienciaFormSuccess}
-        preset={audienciaFormPreset}
+        onClose={() => setIsAudienciasModalOpen(false)}
       />
 
       <Modal
