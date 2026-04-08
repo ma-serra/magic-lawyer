@@ -121,6 +121,9 @@ Use este checklist para separar:
 - [x] Revisar o uso do horário final do evento para conflito de agenda e organização do advogado.
 - [x] Criar atalho do prazo principal para abrir a área de prazos do processo.
 - [x] Melhorar a responsividade e a leitura da área de prazos no contexto do processo.
+- [x] Adicionar no processo um resumo de audiências com próxima audiência, contadores e ações rápidas no card principal de prazos.
+- [x] Criar a aba `Audiências` no processo, separada da aba `Eventos`, com listagem de próximas audiências e histórico.
+- [x] Reutilizar o modal de evento como modal contextual de audiência já vinculado ao processo, com tipo, cliente e processo travados.
 - [x] Substituir o conceito operacional de "regime de prazo" por "rito do processo" no fluxo principal.
 - [x] Adicionar "tipo legal do prazo" com sugestão automática de fundamento e regra-base por rito.
 - [x] Permitir prazo manual mesmo quando o processo ainda não possui regra automática de prazo pelo CPC, evitando bloqueio indevido em fluxos penal e trabalhista.
@@ -162,6 +165,7 @@ Use este checklist para separar:
 - [x] `npm run typecheck` executado com sucesso em 08/04/2026.
 - [x] `npm run check:mojibake` executado com sucesso em 08/04/2026.
 - [x] `npm test` executado com sucesso em 08/04/2026.
+- [x] `npx jest --runInBand --runTestsByPath "app/(protected)/agenda/__tests__/agenda-content.test.tsx" "components/__tests__/evento-form.test.tsx" "components/processos/__tests__/processo-audiencias-list.test.tsx"` executado com sucesso em 08/04/2026.
 - [x] Teste visual local executado em 08/04/2026 no tenant `ml-test`, sem gravar processo e sem poluir a base da Dra. Dayane, validando ausência de popup bloqueante e seleção `TRF1 -> SJPA -> 8A VARA FEDERAL DE JUIZADO ESPECIAL CIVEL`.
 
 ### Suporte e implantação
@@ -232,6 +236,7 @@ Use este checklist para separar:
 - [ ] Homologar com a Dra. Dayane a navegação do prazo principal e a leitura da aba de prazos no processo.
 - [ ] Homologar com a Dra. Dayane o novo fluxo de rito do processo e tipo legal do prazo.
 - [ ] Homologar com a Dra. Dayane a nova visão principal `Geral` da agenda, validando a leitura mensal de todos os eventos e o uso dos filtros inline no fluxo real.
+- [ ] Homologar com a Dra. Dayane a nova aba `Audiências` no processo, incluindo o card-resumo, o modal `Ver todas` e a criação de nova audiência já vinculada ao processo.
 - [ ] Confirmar em uso real a nova fase processual "Alegações finais" nos cadastros do escritório.
 
 ### Relatórios, cliente e documentos

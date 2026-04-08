@@ -86,6 +86,7 @@ import {
   JuizTipoAutoridade,
   RitoProcesso,
   TipoPrazoLegal,
+  EventoTipo,
 } from "@/generated/prisma";
 import { DateUtils } from "@/app/lib/date-utils";
 import {
@@ -100,6 +101,7 @@ import {
   updateProcesso,
   solicitarAtualizacaoJusbrasilProcesso,
   type ProcessoParte,
+  type ProcessoEvento,
 } from "@/app/actions/processos";
 import { createJuizTenant } from "@/app/actions/juizes";
 import { uploadDocumentoExplorer } from "@/app/actions/documentos-explorer";
@@ -124,6 +126,12 @@ import {
   type SearchableSelectOption,
 } from "@/components/searchable-select";
 import { ProcessoDocumentoOrganizerModal } from "@/components/processos/processo-documento-organizer-modal";
+import EventoForm from "@/components/evento-form";
+import {
+  deriveProcessoAudienciasOverview,
+  type ProcessoAudienciaListItem,
+  ProcessoAudienciasList,
+} from "@/components/processos/processo-audiencias-list";
 import {
   buildPrazoWorkspaceSummary,
   formatPrazoRelativeLabel,
@@ -220,9 +228,7 @@ function ProcessoParteFormFields({
         label="Nome"
         placeholder="Nome completo da parte"
         value={form.nome}
-        onValueChange={(value) =>
-          setForm((prev) => ({ ...prev, nome: value }))
-        }
+        onValueChange={(value) => setForm((prev) => ({ ...prev, nome: value }))}
       />
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -381,6 +387,7 @@ const PROCESSO_TAB_KEYS = new Set([
   "prazos",
   "documentos",
   "eventos",
+  "audiencias",
   "procuracoes",
 ]);
 
@@ -546,8 +553,7 @@ const getStatusLabel = (
 ) => getProcessoStatusLabel(status, arquivamentoTipo);
 
 const PROCESSO_HEADER_CHIP_CLASS_NAME = "max-w-full text-[11px] sm:text-xs";
-const PROCESSO_PRAZO_PRINCIPAL_MARKER =
-  "[SISTEMA] PRAZO_PRINCIPAL_PROCESSO";
+const PROCESSO_PRAZO_PRINCIPAL_MARKER = "[SISTEMA] PRAZO_PRINCIPAL_PROCESSO";
 const PROCESSO_PRAZO_PRINCIPAL_TITULO = "Prazo principal do processo";
 
 const getStatusIcon = (status: ProcessoStatus) => {
@@ -695,19 +701,28 @@ export default function ProcessoDetalhesPage() {
 
   const { processo, isCliente, isLoading, isError, error, mutate } =
     useProcessoDetalhado(processoId);
-  const { documentos, isLoading: isLoadingDocs, mutate: mutateDocumentos } =
-    useDocumentosProcesso(processoId);
-  const { eventos, isLoading: isLoadingEventos } =
-    useEventosProcesso(processoId);
+  const {
+    documentos,
+    isLoading: isLoadingDocs,
+    mutate: mutateDocumentos,
+  } = useDocumentosProcesso(processoId);
+  const {
+    eventos,
+    isLoading: isLoadingEventos,
+    mutate: mutateEventos,
+  } = useEventosProcesso(processoId);
   const { movimentacoes, isLoading: isLoadingMovimentacoes } =
     useMovimentacoesProcesso(processoId);
   const { rollout: holidayExperienceRollout } = useHolidayExperienceRollout();
   const { juizes: autoridadesVisiveis, isLoading: isLoadingAutoridades } =
-    useJuizes({
-      search: "",
-      status: JuizStatus.ATIVO,
-      tipoAutoridade: JuizTipoAutoridade.JUIZ,
-    }, !isCliente && !processo?.juiz);
+    useJuizes(
+      {
+        search: "",
+        status: JuizStatus.ATIVO,
+        tipoAutoridade: JuizTipoAutoridade.JUIZ,
+      },
+      !isCliente && !processo?.juiz,
+    );
   const { procuracoes: procuracoesDisponiveis } = useProcuracoesDisponiveis(
     processo?.cliente?.id ?? null,
   );
@@ -753,8 +768,9 @@ export default function ProcessoDetalhesPage() {
   const processoProcedimentoOuRitoLabel =
     processoProcedimentoLabel ?? processoRitoLabel;
   const holidayProcessEnabled =
-    holidayExperienceRollout?.surfaces.find((surface) => surface.key === "process")
-      ?.enabled ?? false;
+    holidayExperienceRollout?.surfaces.find(
+      (surface) => surface.key === "process",
+    )?.enabled ?? false;
 
   const [parteForm, setParteForm] = useState(parteFormInitial);
   const [editingParte, setEditingParte] = useState<ProcessoParte | null>(null);
@@ -797,8 +813,14 @@ export default function ProcessoDetalhesPage() {
     ProcessoDocumentoUploadDraft[]
   >([]);
   const [isUploadingDocumento, setIsUploadingDocumento] = useState(false);
-  const [isSolicitandoAtualizacaoJusbrasil, setIsSolicitandoAtualizacaoJusbrasil] =
-    useState(false);
+  const [
+    isSolicitandoAtualizacaoJusbrasil,
+    setIsSolicitandoAtualizacaoJusbrasil,
+  ] = useState(false);
+  const [isAudienciasModalOpen, setIsAudienciasModalOpen] = useState(false);
+  const [isAudienciaFormOpen, setIsAudienciaFormOpen] = useState(false);
+  const [audienciaEditando, setAudienciaEditando] =
+    useState<ProcessoEvento | null>(null);
   const [abaAtual, setAbaAtual] = useState<string>("informacoes");
   const [documentoPreview, setDocumentoPreview] =
     useState<ProcessoDocumentoPreviewState | null>(null);
@@ -824,6 +846,22 @@ export default function ProcessoDetalhesPage() {
   );
   const { hasPermission: canEditProcessoAutoridade } = usePermissionCheck(
     isCliente ? null : "processos",
+    isCliente ? null : "editar",
+    {
+      enabled: !isCliente,
+      enableEarlyAccess: true,
+    },
+  );
+  const { hasPermission: canCreateAgendaEventos } = usePermissionCheck(
+    isCliente ? null : "agenda",
+    isCliente ? null : "criar",
+    {
+      enabled: !isCliente,
+      enableEarlyAccess: true,
+    },
+  );
+  const { hasPermission: canEditAgendaEventos } = usePermissionCheck(
+    isCliente ? null : "agenda",
     isCliente ? null : "editar",
     {
       enabled: !isCliente,
@@ -889,10 +927,10 @@ export default function ProcessoDetalhesPage() {
     }
 
     return autoridadesDisponiveis.filter((autoridade) => {
-      const nome = `${autoridade.nome} ${autoridade.nomeCompleto || ""}`
-        .toLowerCase();
-      const subtitulo = `${autoridade.vara || ""} ${autoridade.comarca || ""}`
-        .toLowerCase();
+      const nome =
+        `${autoridade.nome} ${autoridade.nomeCompleto || ""}`.toLowerCase();
+      const subtitulo =
+        `${autoridade.vara || ""} ${autoridade.comarca || ""}`.toLowerCase();
 
       return nome.includes(termo) || subtitulo.includes(termo);
     });
@@ -1031,7 +1069,8 @@ export default function ProcessoDetalhesPage() {
         (prazo) => prazo.titulo === PROCESSO_PRAZO_PRINCIPAL_TITULO,
       ) ??
       prazosOrdenados.find(
-        (prazo) => new Date(prazo.dataVencimento).getTime() === prazoPrincipalTimestamp,
+        (prazo) =>
+          new Date(prazo.dataVencimento).getTime() === prazoPrincipalTimestamp,
       );
 
     if (prazoPrincipalItem) {
@@ -1162,6 +1201,26 @@ export default function ProcessoDetalhesPage() {
   const advogadoLink = responsaveisProcesso[0]?.id
     ? `/advogados/${responsaveisProcesso[0].id}`
     : undefined;
+  const canManageAudiencias = !isCliente && canCreateAgendaEventos;
+  const canEditAudiencias = !isCliente && canEditAgendaEventos;
+  const audiencias = eventos.filter(
+    (evento) => evento.tipo === EventoTipo.AUDIENCIA,
+  );
+  const audienciasOverview = deriveProcessoAudienciasOverview(audiencias);
+  const clienteAudienciaId =
+    processo.cliente?.id ?? clientesVinculados[0]?.id ?? null;
+  const audienciaFormPreset = {
+    tipo: EventoTipo.AUDIENCIA,
+    processoId,
+    clienteId: clienteAudienciaId,
+    advogadoResponsavelId: responsaveisProcesso[0]?.id ?? null,
+  };
+  const audienciaFormCopy = {
+    createTitle: "Nova audiência",
+    editTitle: "Editar audiência",
+    createSubmitLabel: "Criar audiência",
+    editSubmitLabel: "Atualizar audiência",
+  };
 
   const quickActions: QuickAction[] = [
     {
@@ -1176,6 +1235,13 @@ export default function ProcessoDetalhesPage() {
       icon: Clock,
       tab: "prazos",
       count: prazosOrdenados.length,
+    },
+    {
+      label: "Audiências",
+      href: "#processo-audiencias",
+      icon: Gavel,
+      tab: "audiencias",
+      count: audiencias.length,
     },
     {
       label: "Documentos",
@@ -1215,6 +1281,33 @@ export default function ProcessoDetalhesPage() {
       mutate();
     });
 
+  const handleOpenAudienciasModal = () => {
+    setIsAudienciasModalOpen(true);
+  };
+
+  const handleCloseAudienciaForm = () => {
+    setIsAudienciaFormOpen(false);
+    setAudienciaEditando(null);
+  };
+
+  const handleCreateAudiencia = () => {
+    setAudienciaEditando(null);
+    setIsAudienciasModalOpen(false);
+    setIsAudienciaFormOpen(true);
+  };
+
+  const handleEditAudiencia = (audiencia: ProcessoAudienciaListItem) => {
+    setAudienciaEditando(audiencia as ProcessoEvento);
+    setIsAudienciasModalOpen(false);
+    setIsAudienciaFormOpen(true);
+  };
+
+  const handleAudienciaFormSuccess = async () => {
+    await Promise.all([mutate(), mutateEventos()]);
+    setIsAudienciaFormOpen(false);
+    setAudienciaEditando(null);
+  };
+
   const isDocumentoPreviewInline = (
     nome?: string | null,
     contentType?: string | null,
@@ -1231,9 +1324,16 @@ export default function ProcessoDetalhesPage() {
 
     const normalizedName = (nome || "").toLowerCase();
 
-    return [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".txt"].some(
-      (extension) => normalizedName.endsWith(extension),
-    );
+    return [
+      ".pdf",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".webp",
+      ".bmp",
+      ".txt",
+    ].some((extension) => normalizedName.endsWith(extension));
   };
 
   const handleOpenDocumentoPreview = (doc: {
@@ -1249,7 +1349,9 @@ export default function ProcessoDetalhesPage() {
     });
   };
 
-  const handleOpenDocumentoOrganizer = (doc: ProcessoDocumentoOrganizerState) => {
+  const handleOpenDocumentoOrganizer = (
+    doc: ProcessoDocumentoOrganizerState,
+  ) => {
     setDocumentoOrganizer(doc);
   };
 
@@ -1852,7 +1954,8 @@ export default function ProcessoDetalhesPage() {
                 <h1 className="break-all text-xl font-semibold leading-[1.05] tracking-tight sm:text-2xl md:text-3xl xl:text-[2.35rem] 2xl:text-[3rem]">
                   {processo.numero}
                 </h1>
-                {processo.numeroCnj && processo.numeroCnj !== processo.numero ? (
+                {processo.numeroCnj &&
+                processo.numeroCnj !== processo.numero ? (
                   <p className="text-[11px] text-default-500 sm:text-xs">
                     CNJ: {processo.numeroCnj}
                   </p>
@@ -1925,7 +2028,11 @@ export default function ProcessoDetalhesPage() {
                       ? Building2
                       : User
                   }
-                  label={clientesVinculados.length > 1 ? "Clientes vinculados" : "Cliente"}
+                  label={
+                    clientesVinculados.length > 1
+                      ? "Clientes vinculados"
+                      : "Cliente"
+                  }
                   href={clienteLink}
                 >
                   {clienteResumo}
@@ -2245,16 +2352,16 @@ export default function ProcessoDetalhesPage() {
                           Este processo está sem juiz vinculado.
                         </p>
                         <p className="mt-1 text-xs text-warning-700/90">
-                          Processos criados por importação ou sincronização podem
-                          vir sem autoridade. Vincule uma existente ou cadastre
-                          uma nova para manter o histórico completo.
+                          Processos criados por importação ou sincronização
+                          podem vir sem autoridade. Vincule uma existente ou
+                          cadastre uma nova para manter o histórico completo.
                         </p>
                       </div>
 
                       {!isCliente && !canEditProcessoAutoridade && (
                         <p className="text-xs text-default-500">
-                          Você não possui permissão para vincular autoridade neste
-                          processo.
+                          Você não possui permissão para vincular autoridade
+                          neste processo.
                         </p>
                       )}
 
@@ -2280,7 +2387,9 @@ export default function ProcessoDetalhesPage() {
                             color="secondary"
                             size="sm"
                             startContent={<UserPlus className="h-4 w-4" />}
-                            variant={showCreateAutoridade ? "solid" : "bordered"}
+                            variant={
+                              showCreateAutoridade ? "solid" : "bordered"
+                            }
                             onPress={() => {
                               setShowCreateAutoridade((prev) => !prev);
                               if (!showCreateAutoridade) {
@@ -2296,163 +2405,166 @@ export default function ProcessoDetalhesPage() {
                       {!isCliente &&
                         canEditProcessoAutoridade &&
                         showSelectAutoridade && (
-                        <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
-                          <Input
-                            label="Buscar juiz do escritório"
-                            placeholder="Digite nome, vara ou comarca"
-                            value={searchAutoridade}
-                            onValueChange={setSearchAutoridade}
-                          />
+                          <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
+                            <Input
+                              label="Buscar juiz do escritório"
+                              placeholder="Digite nome, vara ou comarca"
+                              value={searchAutoridade}
+                              onValueChange={setSearchAutoridade}
+                            />
 
-                          <Select
-                            aria-label="Selecionar juiz existente"
-                            isDisabled={
-                              isLoadingAutoridades ||
-                              autoridadesFiltradas.length === 0
-                            }
-                            label="Juízes disponíveis"
-                            placeholder="Selecione um juiz"
-                            selectedKeys={selectedAutoridadeKeys}
-                            onSelectionChange={(keys) => {
-                              const key = Array.from(keys)[0] as
-                                | string
-                                | undefined;
+                            <Select
+                              aria-label="Selecionar juiz existente"
+                              isDisabled={
+                                isLoadingAutoridades ||
+                                autoridadesFiltradas.length === 0
+                              }
+                              label="Juízes disponíveis"
+                              placeholder="Selecione um juiz"
+                              selectedKeys={selectedAutoridadeKeys}
+                              onSelectionChange={(keys) => {
+                                const key = Array.from(keys)[0] as
+                                  | string
+                                  | undefined;
 
-                              setSelectedAutoridadeId(key ?? "");
-                            }}
-                          >
-                            {autoridadesFiltradas.map((autoridade) => (
-                              <SelectItem
-                                key={autoridade.id}
-                                textValue={`${autoridade.nome} ${autoridade.vara || ""} ${autoridade.comarca || ""}`.trim()}
-                              >
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-medium">
-                                    {autoridade.nome}
-                                  </span>
-                                  <span className="text-xs text-default-500">
-                                    {autoridade.vara || "Vara não informada"}
-                                    {autoridade.comarca
-                                      ? ` · ${autoridade.comarca}`
-                                      : ""}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </Select>
-
-                          <div className="flex justify-end">
-                            <Button
-                              color="primary"
-                              isDisabled={!selectedAutoridadeId}
-                              isLoading={isAssigningAutoridade}
-                              size="sm"
-                              startContent={<Link2 className="h-4 w-4" />}
-                              onPress={handleVincularAutoridadeExistente}
+                                setSelectedAutoridadeId(key ?? "");
+                              }}
                             >
-                              Vincular ao processo
-                            </Button>
-                          </div>
+                              {autoridadesFiltradas.map((autoridade) => (
+                                <SelectItem
+                                  key={autoridade.id}
+                                  textValue={`${autoridade.nome} ${autoridade.vara || ""} ${autoridade.comarca || ""}`.trim()}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">
+                                      {autoridade.nome}
+                                    </span>
+                                    <span className="text-xs text-default-500">
+                                      {autoridade.vara || "Vara não informada"}
+                                      {autoridade.comarca
+                                        ? ` · ${autoridade.comarca}`
+                                        : ""}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </Select>
 
-                          {!isLoadingAutoridades &&
-                            autoridadesFiltradas.length === 0 && (
-                              <p className="text-xs text-default-500">
-                                Nenhum juiz encontrado com esse filtro.
-                              </p>
-                            )}
-                        </div>
-                      )}
+                            <div className="flex justify-end">
+                              <Button
+                                color="primary"
+                                isDisabled={!selectedAutoridadeId}
+                                isLoading={isAssigningAutoridade}
+                                size="sm"
+                                startContent={<Link2 className="h-4 w-4" />}
+                                onPress={handleVincularAutoridadeExistente}
+                              >
+                                Vincular ao processo
+                              </Button>
+                            </div>
+
+                            {!isLoadingAutoridades &&
+                              autoridadesFiltradas.length === 0 && (
+                                <p className="text-xs text-default-500">
+                                  Nenhum juiz encontrado com esse filtro.
+                                </p>
+                              )}
+                          </div>
+                        )}
 
                       {!isCliente &&
                         canEditProcessoAutoridade &&
                         showCreateAutoridade && (
-                        <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
-                          <Input
-                            isRequired
-                            label="Nome do juiz"
-                            placeholder="Ex: Robson Nonato"
-                            value={novoJuizNome}
-                            onValueChange={(value) => {
-                              setNovoJuizNome(value);
-                              setSelectedCatalogoJuizId("");
-                            }}
-                          />
-                          <Input
-                            label="Vara"
-                            placeholder="Ex: 1ª Vara Cível"
-                            value={novoJuizVara}
-                            onValueChange={setNovoJuizVara}
-                          />
-                          <Input
-                            label="Comarca"
-                            placeholder="Ex: Comarca de Salvador"
-                            value={novoJuizComarca}
-                            onValueChange={setNovoJuizComarca}
-                          />
+                          <div className="space-y-3 rounded-xl border border-default-200 bg-default-50/40 p-3">
+                            <Input
+                              isRequired
+                              label="Nome do juiz"
+                              placeholder="Ex: Robson Nonato"
+                              value={novoJuizNome}
+                              onValueChange={(value) => {
+                                setNovoJuizNome(value);
+                                setSelectedCatalogoJuizId("");
+                              }}
+                            />
+                            <Input
+                              label="Vara"
+                              placeholder="Ex: 1ª Vara Cível"
+                              value={novoJuizVara}
+                              onValueChange={setNovoJuizVara}
+                            />
+                            <Input
+                              label="Comarca"
+                              placeholder="Ex: Comarca de Salvador"
+                              value={novoJuizComarca}
+                              onValueChange={setNovoJuizComarca}
+                            />
 
-                          <div className="space-y-2 rounded-lg border border-default-200/70 bg-background/80 p-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-400">
-                              Catálogo global (3+ letras)
-                            </p>
-                            <p className="text-xs text-default-500">
-                              Apenas o nome é reaproveitado entre escritórios.
-                              Os seus dados de vara/comarca podem ser próprios do
-                              seu tenant.
-                            </p>
-                            {isLoadingCatalogoGlobal ? (
-                              <div className="py-2">
-                                <Spinner size="sm" />
-                              </div>
-                            ) : catalogoGlobalJuizes.length > 0 ? (
-                              <div className="grid gap-2">
-                                {catalogoGlobalJuizes.slice(0, 6).map((item) => (
-                                  <button
-                                    key={item.id}
-                                    type="button"
-                                    className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                                      selectedCatalogoJuizId === item.id
-                                        ? "border-primary bg-primary/10"
-                                        : "border-default-200 bg-background hover:border-primary/40"
-                                    }`}
-                                    onClick={() => {
-                                      setSelectedCatalogoJuizId(item.id);
-                                    }}
-                                  >
-                                    <p className="text-sm font-semibold text-default-800">
-                                      {item.nome}
-                                    </p>
-                                    <p className="text-xs text-default-500">
-                                      Identificação global por nome
-                                    </p>
-                                  </button>
-                                ))}
-                              </div>
-                            ) : novoJuizNome.trim().length >= 3 ? (
-                              <p className="text-xs text-default-500">
-                                Nenhuma autoridade encontrada no catálogo global.
+                            <div className="space-y-2 rounded-lg border border-default-200/70 bg-background/80 p-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-default-400">
+                                Catálogo global (3+ letras)
                               </p>
-                            ) : (
                               <p className="text-xs text-default-500">
-                                Digite pelo menos 3 letras para sugerir nomes já
-                                existentes.
+                                Apenas o nome é reaproveitado entre escritórios.
+                                Os seus dados de vara/comarca podem ser próprios
+                                do seu tenant.
                               </p>
-                            )}
-                          </div>
+                              {isLoadingCatalogoGlobal ? (
+                                <div className="py-2">
+                                  <Spinner size="sm" />
+                                </div>
+                              ) : catalogoGlobalJuizes.length > 0 ? (
+                                <div className="grid gap-2">
+                                  {catalogoGlobalJuizes
+                                    .slice(0, 6)
+                                    .map((item) => (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                                          selectedCatalogoJuizId === item.id
+                                            ? "border-primary bg-primary/10"
+                                            : "border-default-200 bg-background hover:border-primary/40"
+                                        }`}
+                                        onClick={() => {
+                                          setSelectedCatalogoJuizId(item.id);
+                                        }}
+                                      >
+                                        <p className="text-sm font-semibold text-default-800">
+                                          {item.nome}
+                                        </p>
+                                        <p className="text-xs text-default-500">
+                                          Identificação global por nome
+                                        </p>
+                                      </button>
+                                    ))}
+                                </div>
+                              ) : novoJuizNome.trim().length >= 3 ? (
+                                <p className="text-xs text-default-500">
+                                  Nenhuma autoridade encontrada no catálogo
+                                  global.
+                                </p>
+                              ) : (
+                                <p className="text-xs text-default-500">
+                                  Digite pelo menos 3 letras para sugerir nomes
+                                  já existentes.
+                                </p>
+                              )}
+                            </div>
 
-                          <div className="flex justify-end">
-                            <Button
-                              color="secondary"
-                              isDisabled={!novoJuizNome.trim()}
-                              isLoading={isCreatingAutoridade}
-                              size="sm"
-                              startContent={<Plus className="h-4 w-4" />}
-                              onPress={handleCriarAutoridadeERelacionar}
-                            >
-                              Cadastrar e vincular
-                            </Button>
+                            <div className="flex justify-end">
+                              <Button
+                                color="secondary"
+                                isDisabled={!novoJuizNome.trim()}
+                                isLoading={isCreatingAutoridade}
+                                size="sm"
+                                startContent={<Plus className="h-4 w-4" />}
+                                onPress={handleCriarAutoridadeERelacionar}
+                              >
+                                Cadastrar e vincular
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
                     </div>
                   )}
                 </div>
@@ -2556,10 +2668,7 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div
-            className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-partes"
-          >
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-partes">
             <Card className="border border-default-200">
               <CardHeader>
                 <div className="flex items-center justify-between w-full">
@@ -2680,7 +2789,9 @@ export default function ProcessoDetalhesPage() {
                     }}
                   >
                     {polos.map((polo) => (
-                      <SelectItem key={polo} textValue={polo}>{polo}</SelectItem>
+                      <SelectItem key={polo} textValue={polo}>
+                        {polo}
+                      </SelectItem>
                     ))}
                   </Select>
 
@@ -2725,8 +2836,6 @@ export default function ProcessoDetalhesPage() {
                     }
                   />
 
-
-
                   <Textarea
                     label="Observações"
                     minRows={2}
@@ -2735,8 +2844,6 @@ export default function ProcessoDetalhesPage() {
                       setParteForm((prev) => ({ ...prev, observacoes: value }))
                     }
                   />
-
-
 
                   <div className="flex justify-end">
                     <Button
@@ -2768,17 +2875,18 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div
-            className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-prazos"
-          >
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-prazos">
             <Card className="border border-default-200">
               <CardHeader>
                 <div className="flex w-full flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
-                    <h3 className="text-lg font-semibold">Prazos do processo</h3>
+                    <h3 className="text-lg font-semibold">
+                      Prazos do processo
+                    </h3>
                     <p className="text-sm text-default-500">
-                      Trate este processo dentro das 3 frentes de prazo e decida se quer seguir com alerta forte ou silenciar notificações futuras.
+                      Trate este processo dentro das 3 frentes de prazo e decida
+                      se quer seguir com alerta forte ou silenciar notificações
+                      futuras.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2809,6 +2917,71 @@ export default function ProcessoDetalhesPage() {
               </CardHeader>
               <Divider />
               <CardBody className="space-y-3">
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardBody className="gap-4 p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Gavel className="h-4 w-4 text-primary" />
+                          <p className="text-sm font-semibold text-foreground">
+                            Audiências vinculadas ao processo
+                          </p>
+                        </div>
+                        {audienciasOverview.proximaAudiencia ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">
+                              Próxima audiência:{" "}
+                              {audienciasOverview.proximaAudiencia.titulo}
+                            </p>
+                            <p className="text-xs text-default-500">
+                              {DateUtils.formatDateTime(
+                                audienciasOverview.proximaAudiencia.dataInicio,
+                              )}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-default-500">
+                            Nenhuma audiência futura vinculada a este processo
+                            no momento.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-3 lg:items-end">
+                        <div className="flex flex-wrap gap-2">
+                          <Chip color="primary" variant="flat">
+                            Próximas: {audienciasOverview.proximas.length}
+                          </Chip>
+                          <Chip variant="flat">
+                            Histórico: {audienciasOverview.historico.length}
+                          </Chip>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            color="primary"
+                            isDisabled={audiencias.length === 0}
+                            size="sm"
+                            variant="flat"
+                            onPress={handleOpenAudienciasModal}
+                          >
+                            Ver todas
+                          </Button>
+                          {canManageAudiencias ? (
+                            <Button
+                              color="primary"
+                              size="sm"
+                              startContent={<Plus className="h-4 w-4" />}
+                              onPress={handleCreateAudiencia}
+                            >
+                              Nova audiência
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Card className="border border-danger/20 bg-danger/5">
                     <CardBody className="gap-1 p-4">
@@ -2868,7 +3041,9 @@ export default function ProcessoDetalhesPage() {
                   <Input
                     label="Buscar prazo"
                     placeholder="Título, fundamento, origem ou responsável"
-                    startContent={<Search className="h-4 w-4 text-default-400" />}
+                    startContent={
+                      <Search className="h-4 w-4 text-default-400" />
+                    }
                     value={prazoSearch}
                     onValueChange={setPrazoSearch}
                   />
@@ -2932,7 +3107,11 @@ export default function ProcessoDetalhesPage() {
                                   {prazo.titulo}
                                 </span>
                                 {isHighlighted ? (
-                                  <Chip color="primary" size="sm" variant="bordered">
+                                  <Chip
+                                    color="primary"
+                                    size="sm"
+                                    variant="bordered"
+                                  >
                                     Alvo da notificação
                                   </Chip>
                                 ) : null}
@@ -3129,11 +3308,15 @@ export default function ProcessoDetalhesPage() {
                           ...prev,
                           tipoPrazoLegal: nextTipoPrazoLegal,
                           titulo:
-                            rule && (!prev.titulo.trim() || prev.tipoPrazoLegal !== nextTipoPrazoLegal)
+                            rule &&
+                            (!prev.titulo.trim() ||
+                              prev.tipoPrazoLegal !== nextTipoPrazoLegal)
                               ? rule.tituloPadrao
                               : prev.titulo,
                           fundamentoLegal:
-                            rule && (!prev.fundamentoLegal.trim() || prev.tipoPrazoLegal !== nextTipoPrazoLegal)
+                            rule &&
+                            (!prev.fundamentoLegal.trim() ||
+                              prev.tipoPrazoLegal !== nextTipoPrazoLegal)
                               ? rule.fundamentoLegal
                               : prev.fundamentoLegal,
                         }));
@@ -3169,8 +3352,6 @@ export default function ProcessoDetalhesPage() {
                           : "Para procedimentos sem regra automatica, informe titulo e fundamento manualmente quando necessario.")}
                     </p>
                   </div>
-
-
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <SearchableSelect
@@ -3268,10 +3449,7 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div
-            className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-documentos"
-          >
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-documentos">
             {!isCliente && (
               <Card className="border border-default-200">
                 <CardHeader>
@@ -3294,7 +3472,9 @@ export default function ProcessoDetalhesPage() {
                     className="hidden"
                     type="file"
                     multiple
-                    onChange={(event) => handleSelectDocumentoFiles(event.target.files)}
+                    onChange={(event) =>
+                      handleSelectDocumentoFiles(event.target.files)
+                    }
                   />
 
                   <div className="grid gap-4 md:grid-cols-2">
@@ -3395,10 +3575,13 @@ export default function ProcessoDetalhesPage() {
                                     maxValue={uploadLimitBytes}
                                     size="sm"
                                     value={upload.file.size}
-                                    valueLabel={`${formatMegabytes(upload.file.size, {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })} de ${formatMegabytes(uploadLimitBytes)}`}
+                                    valueLabel={`${formatMegabytes(
+                                      upload.file.size,
+                                      {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      },
+                                    )} de ${formatMegabytes(uploadLimitBytes)}`}
                                   />
                                 ) : null}
 
@@ -3416,14 +3599,16 @@ export default function ProcessoDetalhesPage() {
                                       });
                                     }}
                                   >
-                                    {PROCESSO_DOCUMENT_TYPE_OPTIONS.map((option) => (
-                                      <SelectItem
-                                        key={option.key}
-                                        textValue={option.label}
-                                      >
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
+                                    {PROCESSO_DOCUMENT_TYPE_OPTIONS.map(
+                                      (option) => (
+                                        <SelectItem
+                                          key={option.key}
+                                          textValue={option.label}
+                                        >
+                                          {option.label}
+                                        </SelectItem>
+                                      ),
+                                    )}
                                   </Select>
 
                                   <div className="flex items-center rounded-xl border border-default-200/80 bg-default-50 px-4 py-3">
@@ -3468,15 +3653,14 @@ export default function ProcessoDetalhesPage() {
                       <li>PDF e imagem: até 25 MB por arquivo.</li>
                       <li>Áudio: até 50 MB por arquivo.</li>
                       <li>Vídeo: até 100 MB por arquivo.</li>
-                      <li>
-                        Formatos aceitos: PDF, imagens, áudios e vídeos.
-                      </li>
+                      <li>Formatos aceitos: PDF, imagens, áudios e vídeos.</li>
                       <li>
                         Os limites existem para segurança, performance e custo
                         operacional do sistema.
                       </li>
                       <li>
-                        Se marcado como visível, o cliente pode acessar no portal.
+                        Se marcado como visível, o cliente pode acessar no
+                        portal.
                       </li>
                     </ul>
                   </div>
@@ -3531,9 +3715,7 @@ export default function ProcessoDetalhesPage() {
                     <CardBody className="gap-2">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <p className="text-sm font-semibold">
-                            {doc.nome}
-                          </p>
+                          <p className="text-sm font-semibold">{doc.nome}</p>
                           <p className="text-xs text-default-400">
                             {DateUtils.formatDate(doc.createdAt)}
                           </p>
@@ -3640,7 +3822,8 @@ export default function ProcessoDetalhesPage() {
                                       id: doc.id,
                                       nome: doc.nome,
                                       descricao: doc.descricao,
-                                      visivelParaCliente: doc.visivelParaCliente,
+                                      visivelParaCliente:
+                                        doc.visivelParaCliente,
                                       metadados: doc.metadados,
                                     })
                                   }
@@ -3674,10 +3857,7 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div
-            className="mt-4 space-y-4 scroll-mt-24"
-            id="processo-eventos"
-          >
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-eventos">
             <Card className="border border-default-200">
               <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -3685,13 +3865,18 @@ export default function ProcessoDetalhesPage() {
                     Agenda do processo
                   </p>
                   <p className="text-xs text-default-500">
-                    Use a agenda para criar ou acompanhar compromissos e eventos relacionados a este processo.
+                    Use a agenda para criar ou acompanhar compromissos e eventos
+                    relacionados a este processo.
                   </p>
                 </div>
                 <Button
                   color="primary"
                   variant="flat"
-                  onPress={() => router.push(`/agenda?processoId=${encodeURIComponent(processoId)}`)}
+                  onPress={() =>
+                    router.push(
+                      `/agenda?processoId=${encodeURIComponent(processoId)}`,
+                    )
+                  }
                 >
                   Abrir agenda
                 </Button>
@@ -3773,6 +3958,69 @@ export default function ProcessoDetalhesPage() {
         </Tab>
 
         <Tab
+          key="audiencias"
+          title={
+            <div className="flex items-center gap-2">
+              <Gavel className="h-4 w-4" />
+              <span>Audiências</span>
+              {audiencias.length > 0 ? (
+                <Chip size="sm" variant="flat">
+                  {audiencias.length}
+                </Chip>
+              ) : null}
+            </div>
+          }
+        >
+          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-audiencias">
+            <Card className="border border-default-200">
+              <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Audiências do processo
+                  </p>
+                  <p className="text-xs text-default-500">
+                    Consulte o histórico completo e registre novas audiências já
+                    vinculadas a este processo.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    color="primary"
+                    isDisabled={audiencias.length === 0}
+                    variant="flat"
+                    onPress={handleOpenAudienciasModal}
+                  >
+                    Ver todas
+                  </Button>
+                  {canManageAudiencias ? (
+                    <Button
+                      color="primary"
+                      startContent={<Plus className="h-4 w-4" />}
+                      onPress={handleCreateAudiencia}
+                    >
+                      Nova audiência
+                    </Button>
+                  ) : null}
+                </div>
+              </CardBody>
+            </Card>
+
+            {isLoadingEventos ? (
+              <div className="flex justify-center py-8">
+                <Spinner />
+              </div>
+            ) : (
+              <ProcessoAudienciasList
+                audiencias={audiencias}
+                canCreate={canManageAudiencias}
+                onCreate={handleCreateAudiencia}
+                onEdit={canEditAudiencias ? handleEditAudiencia : undefined}
+              />
+            )}
+          </div>
+        </Tab>
+
+        <Tab
           key="procuracoes"
           title={
             <div className="flex items-center gap-2">
@@ -3786,7 +4034,10 @@ export default function ProcessoDetalhesPage() {
             </div>
           }
         >
-          <div className="mt-4 space-y-4 scroll-mt-24" id="processo-procuracoes">
+          <div
+            className="mt-4 space-y-4 scroll-mt-24"
+            id="processo-procuracoes"
+          >
             <Card className="border border-default-200">
               <CardHeader>
                 <div className="flex items-center justify-between w-full">
@@ -3960,6 +4211,55 @@ export default function ProcessoDetalhesPage() {
       </Tabs>
 
       <Modal
+        footer={
+          <>
+            <Button
+              variant="light"
+              onPress={() => setIsAudienciasModalOpen(false)}
+            >
+              Fechar
+            </Button>
+            {canManageAudiencias ? (
+              <Button
+                color="primary"
+                startContent={<Plus className="h-4 w-4" />}
+                onPress={handleCreateAudiencia}
+              >
+                Nova audiência
+              </Button>
+            ) : null}
+          </>
+        }
+        isOpen={isAudienciasModalOpen}
+        size="2xl"
+        title="Audiências do processo"
+        onClose={() => setIsAudienciasModalOpen(false)}
+      >
+        <div className="pt-2">
+          <ProcessoAudienciasList
+            audiencias={audiencias}
+            canCreate={canManageAudiencias}
+            onCreate={handleCreateAudiencia}
+            onEdit={canEditAudiencias ? handleEditAudiencia : undefined}
+          />
+        </div>
+      </Modal>
+
+      <EventoForm
+        copy={audienciaFormCopy}
+        evento={audienciaEditando || undefined}
+        isOpen={isAudienciaFormOpen}
+        locks={{
+          tipo: true,
+          processo: true,
+          cliente: true,
+        }}
+        onClose={handleCloseAudienciaForm}
+        onSuccess={handleAudienciaFormSuccess}
+        preset={audienciaFormPreset}
+      />
+
+      <Modal
         closeOnEscape={parteActionId !== editingParte?.id}
         closeOnOverlayClick={parteActionId !== editingParte?.id}
         footer={
@@ -3988,7 +4288,9 @@ export default function ProcessoDetalhesPage() {
         isOpen={Boolean(editingParte)}
         showCloseButton={parteActionId !== editingParte?.id}
         size="lg"
-        title={editingParte ? `Editar parte: ${editingParte.nome}` : "Editar parte"}
+        title={
+          editingParte ? `Editar parte: ${editingParte.nome}` : "Editar parte"
+        }
         onClose={handleCloseEditParte}
       >
         <div className="space-y-4 pt-2">
@@ -4084,4 +4386,3 @@ export default function ProcessoDetalhesPage() {
     </div>
   );
 }
-

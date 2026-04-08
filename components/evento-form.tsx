@@ -2,8 +2,29 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
-  Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Chip, Spinner, Select, SelectItem, Switch } from "@heroui/react";
-import { Calendar, MapPin, Users, FileText, AlertCircle, Video, Link as LinkIcon } from "lucide-react";
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Button,
+  Input,
+  Textarea,
+  Chip,
+  Spinner,
+  Select,
+  SelectItem,
+  Switch,
+} from "@heroui/react";
+import {
+  Calendar,
+  MapPin,
+  Users,
+  FileText,
+  AlertCircle,
+  Video,
+  Link as LinkIcon,
+} from "lucide-react";
 import { toast } from "@/lib/toast";
 import { parseAbsoluteToLocal } from "@internationalized/date";
 
@@ -42,12 +63,35 @@ interface FormEventoData {
   googleCalendarId: string | null;
 }
 
+export interface EventoFormPreset {
+  tipo?: EventoTipo;
+  processoId?: string | null;
+  clienteId?: string | null;
+  advogadoResponsavelId?: string | null;
+}
+
+export interface EventoFormLocks {
+  tipo?: boolean;
+  processo?: boolean;
+  cliente?: boolean;
+}
+
+export interface EventoFormCopy {
+  createTitle?: string;
+  editTitle?: string;
+  createSubmitLabel?: string;
+  editSubmitLabel?: string;
+}
+
 interface EventoFormProps {
   isOpen: boolean;
   onClose: () => void;
-  evento?: Evento; // Evento existente para edição
-  initialDate?: Date; // Data inicial para novo evento
-  onSuccess?: () => void;
+  evento?: Evento;
+  initialDate?: Date;
+  onSuccess?: () => void | Promise<void>;
+  preset?: EventoFormPreset;
+  locks?: EventoFormLocks;
+  copy?: EventoFormCopy;
 }
 
 const tiposEvento = [
@@ -88,6 +132,9 @@ export default function EventoForm({
   evento,
   initialDate,
   onSuccess,
+  preset,
+  locks,
+  copy,
 }: EventoFormProps) {
   const validationAlertRef = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,11 +167,33 @@ export default function EventoForm({
 
   const { formData: selectData, isLoading: isLoadingFormData } =
     useEventoFormData();
+  const isTipoLocked = locks?.tipo === true;
+  const isProcessoLocked = locks?.processo === true;
+  const isClienteLocked = locks?.cliente === true;
+  const modalTitle = evento
+    ? copy?.editTitle || "Editar Evento"
+    : copy?.createTitle || "Novo Evento";
+  const submitLabel = evento
+    ? copy?.editSubmitLabel || "Atualizar Evento"
+    : copy?.createSubmitLabel || "Criar Evento";
 
   // Estado derivado do evento - sem useEffect!
   const initialFormData = useMemo(() => {
+    const applyPreset = (base: FormEventoData): FormEventoData => ({
+      ...base,
+      tipo: preset?.tipo ?? base.tipo,
+      processoId:
+        preset?.processoId !== undefined ? preset.processoId : base.processoId,
+      clienteId:
+        preset?.clienteId !== undefined ? preset.clienteId : base.clienteId,
+      advogadoResponsavelId:
+        preset?.advogadoResponsavelId !== undefined
+          ? preset.advogadoResponsavelId
+          : base.advogadoResponsavelId,
+    });
+
     if (evento) {
-      return {
+      return applyPreset({
         titulo: evento.titulo || "",
         descricao: evento.descricao || "",
         tipo: evento.tipo || EventoTipo.REUNIAO,
@@ -143,15 +212,17 @@ export default function EventoForm({
         advogadoResponsavelId: evento.advogadoResponsavelId || null,
         status: evento.status || EventoStatus.AGENDADO,
         lembreteMinutos: evento.lembreteMinutos || 30,
-        lembretesMinutos:
-          (evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos
-            ?.length
-            ? [...(evento as Evento & { lembretesMinutos?: number[] }).lembretesMinutos]
-            : evento.lembreteMinutos !== null &&
-                evento.lembreteMinutos !== undefined &&
-                evento.lembreteMinutos > 0
-              ? [evento.lembreteMinutos]
-              : [],
+        lembretesMinutos: (evento as Evento & { lembretesMinutos?: number[] })
+          .lembretesMinutos?.length
+          ? [
+              ...(evento as Evento & { lembretesMinutos?: number[] })
+                .lembretesMinutos,
+            ]
+          : evento.lembreteMinutos !== null &&
+              evento.lembreteMinutos !== undefined &&
+              evento.lembreteMinutos > 0
+            ? [evento.lembreteMinutos]
+            : [],
         observacoes: evento.observacoes || "",
         recorrencia: evento.recorrencia || "NENHUMA",
         recorrenciaFim: evento.recorrenciaFim
@@ -159,7 +230,7 @@ export default function EventoForm({
           : null,
         googleEventId: evento.googleEventId || null,
         googleCalendarId: evento.googleCalendarId || null,
-      };
+      });
     }
 
     // Se há initialDate, usar ela para inicializar as datas
@@ -172,7 +243,7 @@ export default function EventoForm({
         )
       : null;
 
-    return {
+    return applyPreset({
       titulo: "",
       descricao: "",
       tipo: EventoTipo.REUNIAO,
@@ -193,8 +264,8 @@ export default function EventoForm({
       recorrenciaFim: null,
       googleEventId: null,
       googleCalendarId: null,
-    } as FormEventoData;
-  }, [evento, initialDate]);
+    } as FormEventoData);
+  }, [evento, initialDate, preset]);
 
   // Participantes derivados do evento
   const participantesIniciais = useMemo(() => {
@@ -274,12 +345,38 @@ export default function EventoForm({
         return {
           key: advogado.id,
           label: nome,
-          textValue: [nome, advogado.usuario.email || ""].filter(Boolean).join(" "),
+          textValue: [nome, advogado.usuario.email || ""]
+            .filter(Boolean)
+            .join(" "),
           description: advogado.usuario.email || undefined,
         };
       }),
     [selectData?.advogados],
   );
+  const selectedClienteOption = useMemo(
+    () =>
+      clienteOptions.find(
+        (cliente) => cliente.key === (formData.clienteId ?? ""),
+      ),
+    [clienteOptions, formData.clienteId],
+  );
+  const selectedProcessoOption = useMemo(
+    () =>
+      processoOptions.find(
+        (processo) => processo.key === (formData.processoId ?? ""),
+      ),
+    [formData.processoId, processoOptions],
+  );
+  const selectedTipoOption = useMemo(
+    () => tiposEvento.find((tipo) => tipo.key === formData.tipo),
+    [formData.tipo],
+  );
+  const lockedClienteLabel =
+    selectedClienteOption?.label ||
+    (formData.clienteId ? "Cliente vinculado ao contexto atual" : "");
+  const lockedProcessoLabel =
+    selectedProcessoOption?.label ||
+    (formData.processoId ? "Processo vinculado ao contexto atual" : "");
   const validationMessages = useMemo(() => Object.values(errors), [errors]);
 
   // Inicializar formData quando modal abre ou evento muda
@@ -294,7 +391,7 @@ export default function EventoForm({
       setParticipantes([]);
       setErrors({});
     }
-  }, [isOpen, evento, initialDate]);
+  }, [isOpen, evento, initialFormData, participantesIniciais]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -328,7 +425,8 @@ export default function EventoForm({
 
     if (formData.recorrencia !== "NENHUMA" && !evento) {
       if (!formData.recorrenciaFim) {
-        newErrors.recorrenciaFim = "Informe até quando a recorrência deve ocorrer";
+        newErrors.recorrenciaFim =
+          "Informe até quando a recorrência deve ocorrer";
       } else {
         const inicio = formData.dataInicio?.toDate();
         const recorrenciaFim = formData.recorrenciaFim.toDate();
@@ -427,7 +525,7 @@ export default function EventoForm({
             ? "Evento atualizado com sucesso!"
             : "Evento criado com sucesso!",
         );
-        onSuccess?.();
+        await onSuccess?.();
         onClose();
       } else {
         toast.error(result.error || "Erro ao salvar evento");
@@ -479,7 +577,7 @@ export default function EventoForm({
           <ModalHeader className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              {evento ? "Editar Evento" : "Novo Evento"}
+              {modalTitle}
             </div>
             <div className="text-sm text-default-500 mt-2">
               <p>
@@ -559,33 +657,49 @@ export default function EventoForm({
 
                 {/* Tipo e Status */}
                 <div className="grid grid-cols-2 gap-4">
-                  <Select
-                    isRequired
-                    color="primary"
-                    errorMessage={errors.tipo}
-                    isInvalid={!!errors.tipo}
-                    label="Tipo"
-                    placeholder="Selecione o tipo"
-                    selectedKeys={formData.tipo ? [formData.tipo] : []}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string | undefined;
+                  {isTipoLocked ? (
+                    <Input
+                      isReadOnly
+                      color="primary"
+                      data-testid="evento-form-tipo-locked"
+                      description="Tipo travado pelo contexto atual."
+                      label="Tipo"
+                      value={selectedTipoOption?.label || "Evento"}
+                      variant="bordered"
+                    />
+                  ) : (
+                    <Select
+                      isRequired
+                      color="primary"
+                      errorMessage={errors.tipo}
+                      isInvalid={!!errors.tipo}
+                      label="Tipo"
+                      placeholder="Selecione o tipo"
+                      selectedKeys={formData.tipo ? [formData.tipo] : []}
+                      onSelectionChange={(keys) => {
+                        const selectedKey = Array.from(keys)[0] as
+                          | string
+                          | undefined;
 
-                      if (!selectedKey) return;
+                        if (!selectedKey) return;
 
-                      setFormData({
-                        ...formData,
-                        tipo: selectedKey as EventoTipo,
-                      });
+                        setFormData({
+                          ...formData,
+                          tipo: selectedKey as EventoTipo,
+                        });
 
-                      if (errors.tipo) {
-                        setErrors({ ...errors, tipo: "" });
-                      }
-                    }}
-                  >
-                    {tiposEvento.map((tipo) => (
-                      <SelectItem key={tipo.key} textValue={tipo.label}>{tipo.label}</SelectItem>
-                    ))}
-                  </Select>
+                        if (errors.tipo) {
+                          setErrors({ ...errors, tipo: "" });
+                        }
+                      }}
+                    >
+                      {tiposEvento.map((tipo) => (
+                        <SelectItem key={tipo.key} textValue={tipo.label}>
+                          {tipo.label}
+                        </SelectItem>
+                      ))}
+                    </Select>
+                  )}
 
                   <Select
                     color="default"
@@ -593,7 +707,9 @@ export default function EventoForm({
                     placeholder="Selecione o status"
                     selectedKeys={formData.status ? [formData.status] : []}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string | undefined;
+                      const selectedKey = Array.from(keys)[0] as
+                        | string
+                        | undefined;
 
                       if (!selectedKey) return;
 
@@ -604,7 +720,9 @@ export default function EventoForm({
                     }}
                   >
                     {statusEvento.map((status) => (
-                      <SelectItem key={status.key} textValue={status.label}>{status.label}</SelectItem>
+                      <SelectItem key={status.key} textValue={status.label}>
+                        {status.label}
+                      </SelectItem>
                     ))}
                   </Select>
                 </div>
@@ -657,18 +775,17 @@ export default function EventoForm({
                         Repetição do evento na agenda
                       </p>
                       <p className="text-xs text-default-500">
-                        Use isso apenas quando o mesmo compromisso precisa reaparecer automaticamente no calendário.
-                        Isso não controla avisos. O aviso é configurado no campo
-                        {" "}
+                        Use isso apenas quando o mesmo compromisso precisa
+                        reaparecer automaticamente no calendário. Isso não
+                        controla avisos. O aviso é configurado no campo{" "}
                         <span className="font-medium text-foreground">
                           Avisar antes do evento
-                        </span>
-                        {" "}
+                        </span>{" "}
                         mais abaixo.
                       </p>
                       <p className="text-xs text-default-500">
-                        No jurídico, isso costuma ser raro. Na maior parte dos casos, deixe como
-                        {" "}
+                        No jurídico, isso costuma ser raro. Na maior parte dos
+                        casos, deixe como{" "}
                         <span className="font-medium text-foreground">
                           Não repetir
                         </span>
@@ -682,7 +799,9 @@ export default function EventoForm({
                         label="Repetição do evento"
                         placeholder="Use apenas se este compromisso se repetir"
                         selectedKeys={
-                          formData.recorrencia ? [formData.recorrencia] : ["NENHUMA"]
+                          formData.recorrencia
+                            ? [formData.recorrencia]
+                            : ["NENHUMA"]
                         }
                         onSelectionChange={(keys) => {
                           const selectedKey =
@@ -692,7 +811,9 @@ export default function EventoForm({
                             ...prev,
                             recorrencia: selectedKey,
                             recorrenciaFim:
-                              selectedKey === "NENHUMA" ? null : prev.recorrenciaFim,
+                              selectedKey === "NENHUMA"
+                                ? null
+                                : prev.recorrenciaFim,
                           }));
                         }}
                       >
@@ -721,7 +842,9 @@ export default function EventoForm({
                         />
                       ) : (
                         <div className="rounded-lg border border-dashed border-default-300 p-3 text-xs text-default-500">
-                          O evento será criado uma única vez. Use a repetição somente se esse mesmo compromisso precisar voltar automaticamente para a agenda.
+                          O evento será criado uma única vez. Use a repetição
+                          somente se esse mesmo compromisso precisar voltar
+                          automaticamente para a agenda.
                         </div>
                       )}
                     </div>
@@ -736,7 +859,8 @@ export default function EventoForm({
                         Tipo de atendimento
                       </p>
                       <p className="text-xs text-default-500">
-                        Marque quando esse compromisso acontecer por videoconferência ou outra plataforma online.
+                        Marque quando esse compromisso acontecer por
+                        videoconferência ou outra plataforma online.
                       </p>
                     </div>
                     <Switch
@@ -766,11 +890,16 @@ export default function EventoForm({
                       isInvalid={!!errors.linkAcesso}
                       label="Link do evento online"
                       placeholder="Ex: https://meet.google.com/abc-defg-hij"
-                      startContent={<LinkIcon className="w-4 h-4 text-primary" />}
+                      startContent={
+                        <LinkIcon className="w-4 h-4 text-primary" />
+                      }
                       value={formData.linkAcesso}
                       variant="bordered"
                       onChange={(e) => {
-                        setFormData({ ...formData, linkAcesso: e.target.value });
+                        setFormData({
+                          ...formData,
+                          linkAcesso: e.target.value,
+                        });
                         if (errors.linkAcesso) {
                           setErrors({ ...errors, linkAcesso: "" });
                         }
@@ -782,7 +911,11 @@ export default function EventoForm({
                     color="danger"
                     errorMessage={errors.local}
                     isInvalid={!!errors.local}
-                    label={formData.isOnline ? "Plataforma / observação do local" : "Local"}
+                    label={
+                      formData.isOnline
+                        ? "Plataforma / observação do local"
+                        : "Local"
+                    }
                     placeholder={
                       formData.isOnline
                         ? "Ex: Sala virtual principal ou observação complementar"
@@ -808,38 +941,63 @@ export default function EventoForm({
 
                 {/* Relacionamentos */}
                 <div className="grid grid-cols-3 gap-4">
-                  <SearchableSelect
-                    color="secondary"
-                    label="Cliente"
-                    placeholder="Selecione um cliente"
-                    items={clienteOptions}
-                    selectedKey={selectedClienteKeys[0] ?? null}
-                    onSelectionChange={(selectedKey) => {
-                      
-                      setFormData({
-                        ...formData,
-                        clienteId: selectedKey ?? null,
-                        processoId: null, // Limpar processo quando cliente muda
-                      });
-                    }}
-                  />
+                  {isClienteLocked ? (
+                    <Input
+                      isReadOnly
+                      color="secondary"
+                      data-testid="evento-form-cliente-locked"
+                      description="Cliente travado pelo contexto atual."
+                      label="Cliente"
+                      value={lockedClienteLabel}
+                      variant="bordered"
+                    />
+                  ) : (
+                    <SearchableSelect
+                      color="secondary"
+                      label="Cliente"
+                      placeholder="Selecione um cliente"
+                      items={clienteOptions}
+                      selectedKey={selectedClienteKeys[0] ?? null}
+                      onSelectionChange={(selectedKey) => {
+                        setFormData({
+                          ...formData,
+                          clienteId: selectedKey ?? null,
+                          processoId: null,
+                        });
+                      }}
+                    />
+                  )}
 
-                  <SearchableSelect
-                    color="warning"
-                    isDisabled={!formData.clienteId}
-                    label="Processo"
-                    placeholder={
-                      formData.clienteId
-                        ? "Selecione um processo"
-                        : "Primeiro selecione um cliente"
-                    }
-                    items={processoOptions}
-                    selectedKey={selectedProcessoKeys[0] ?? null}
-                    onSelectionChange={(selectedKey) => {
-
-                      setFormData({ ...formData, processoId: selectedKey ?? null });
-                    }}
-                  />
+                  {isProcessoLocked ? (
+                    <Input
+                      isReadOnly
+                      color="warning"
+                      data-testid="evento-form-processo-locked"
+                      description="Processo travado pelo contexto atual."
+                      label="Processo"
+                      value={lockedProcessoLabel}
+                      variant="bordered"
+                    />
+                  ) : (
+                    <SearchableSelect
+                      color="warning"
+                      isDisabled={!formData.clienteId}
+                      label="Processo"
+                      placeholder={
+                        formData.clienteId
+                          ? "Selecione um processo"
+                          : "Primeiro selecione um cliente"
+                      }
+                      items={processoOptions}
+                      selectedKey={selectedProcessoKeys[0] ?? null}
+                      onSelectionChange={(selectedKey) => {
+                        setFormData({
+                          ...formData,
+                          processoId: selectedKey ?? null,
+                        });
+                      }}
+                    />
+                  )}
 
                   <SearchableSelect
                     color="success"
@@ -848,7 +1006,6 @@ export default function EventoForm({
                     items={advogadoOptions}
                     selectedKey={selectedAdvogadoKeys[0] ?? null}
                     onSelectionChange={(selectedKey) => {
-
                       setFormData({
                         ...formData,
                         advogadoResponsavelId: selectedKey ?? null,
@@ -913,7 +1070,8 @@ export default function EventoForm({
                       </p>
                     </div>
                     <p className="text-xs text-default-500">
-                      Você pode marcar mais de um aviso para o mesmo evento. Exemplo: 1 dia antes, 1 hora antes e 15 minutos antes.
+                      Você pode marcar mais de um aviso para o mesmo evento.
+                      Exemplo: 1 dia antes, 1 hora antes e 15 minutos antes.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -931,8 +1089,12 @@ export default function EventoForm({
                           onPress={() => {
                             const key = Number(lembrete.key);
                             const nextLembretes = isSelected
-                              ? formData.lembretesMinutos.filter((item) => item !== key)
-                              : [...formData.lembretesMinutos, key].sort((a, b) => b - a);
+                              ? formData.lembretesMinutos.filter(
+                                  (item) => item !== key,
+                                )
+                              : [...formData.lembretesMinutos, key].sort(
+                                  (a, b) => b - a,
+                                );
 
                             setFormData({
                               ...formData,
@@ -954,7 +1116,12 @@ export default function EventoForm({
                       ? `O sistema vai avisar ${formData.lembretesMinutos.length} vez(es): ${formData.lembretesMinutos
                           .slice()
                           .sort((a, b) => b - a)
-                          .map((minutos) => lembretes.find((item) => Number(item.key) === minutos)?.label || `${minutos} minutos antes`)
+                          .map(
+                            (minutos) =>
+                              lembretes.find(
+                                (item) => Number(item.key) === minutos,
+                              )?.label || `${minutos} minutos antes`,
+                          )
                           .join(", ")}.`
                       : "Nenhum aviso automático será enviado antes deste evento."}
                   </div>
@@ -998,7 +1165,7 @@ export default function EventoForm({
               isLoading={isLoading}
               type="submit"
             >
-              {evento ? "Atualizar" : "Criar"} Evento
+              {submitLabel}
             </Button>
           </ModalFooter>
         </form>

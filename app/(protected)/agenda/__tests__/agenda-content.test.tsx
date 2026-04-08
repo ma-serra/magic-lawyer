@@ -10,6 +10,7 @@ const useEventoFormDataMock = jest.fn();
 const useEventosMock = jest.fn();
 const useAgendaResumoMock = jest.fn();
 const useAgendaDisponibilidadeMock = jest.fn();
+const eventoFormMock = jest.fn();
 
 jest.mock("next-auth/react", () => ({
   useSession: () => useSessionMock(),
@@ -43,8 +44,7 @@ jest.mock("framer-motion", () => ({
           whileInView,
           children,
           ...props
-        }: any) =>
-          <div {...props}>{children}</div>,
+        }: any) => <div {...props}>{children}</div>,
     },
   ),
   m: new Proxy(
@@ -64,8 +64,7 @@ jest.mock("framer-motion", () => ({
           whileInView,
           children,
           ...props
-        }: any) =>
-          <div {...props}>{children}</div>,
+        }: any) => <div {...props}>{children}</div>,
     },
   ),
 }));
@@ -85,7 +84,8 @@ jest.mock("@/app/hooks/use-eventos", () => ({
 }));
 
 jest.mock("@/app/hooks/use-agenda-disponibilidade", () => ({
-  useAgendaDisponibilidade: (...args: any[]) => useAgendaDisponibilidadeMock(...args),
+  useAgendaDisponibilidade: (...args: any[]) =>
+    useAgendaDisponibilidadeMock(...args),
 }));
 
 jest.mock("@/app/actions/eventos", () => ({
@@ -99,7 +99,10 @@ jest.mock("@/app/actions/agenda-disponibilidade", () => ({
   salvarMinhaDisponibilidadeAgenda: jest.fn(),
 }));
 
-jest.mock("@/components/evento-form", () => () => null);
+jest.mock("@/components/evento-form", () => (props: any) => {
+  eventoFormMock(props);
+  return null;
+});
 
 jest.mock("@/components/google-calendar-button", () => () => (
   <div>Google Calendar</div>
@@ -209,8 +212,9 @@ describe("AgendaPage", () => {
         advogados: [],
       },
     });
-    useEventosMock.mockImplementation((_filters: any, options?: { enabled?: boolean }) =>
-      buildEventosResponse(options?.enabled),
+    useEventosMock.mockImplementation(
+      (_filters: any, options?: { enabled?: boolean }) =>
+        buildEventosResponse(options?.enabled),
     );
     useAgendaResumoMock.mockReturnValue({
       resumo: {
@@ -257,9 +261,11 @@ describe("AgendaPage", () => {
     expect(screen.getByLabelText(/Filtrar por origem do evento/i)).toBeTruthy();
 
     await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /geral/i }).getAttribute("aria-selected")).toBe(
-        "true",
-      ),
+      expect(
+        screen
+          .getByRole("tab", { name: /geral/i })
+          .getAttribute("aria-selected"),
+      ).toBe("true"),
     );
 
     await user.click(screen.getByRole("tab", { name: /lista/i }));
@@ -268,5 +274,8 @@ describe("AgendaPage", () => {
       await screen.findByRole("heading", { name: /Lista cronológica/i }),
     ).toBeTruthy();
     expect(screen.getAllByText(/Período livre/i).length).toBeGreaterThan(0);
+    expect(eventoFormMock).toHaveBeenCalled();
+    expect(eventoFormMock.mock.calls.at(-1)?.[0]?.preset).toBeUndefined();
+    expect(eventoFormMock.mock.calls.at(-1)?.[0]?.locks).toBeUndefined();
   });
 });
