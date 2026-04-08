@@ -1,25 +1,17 @@
 import useSWR from "swr";
 
 import {
+  getAgendaResumo,
   getEventos,
   getEventoById,
   getEventoFormData,
+  type AgendaResumoData,
+  type EventoFilters,
   type EventoListMeta,
 } from "@/app/actions/eventos";
 
 // Hook para buscar eventos
-export function useEventos(filters?: {
-  dataInicio?: Date;
-  dataFim?: Date;
-  status?: string;
-  tipo?: string;
-  clienteId?: string;
-  processoId?: string;
-  advogadoId?: string;
-  local?: string;
-  titulo?: string;
-  origem?: "google" | "local";
-},
+export function useEventos(filters?: EventoFilters,
 options?: {
   page?: number;
   pageSize?: number;
@@ -52,6 +44,47 @@ options?: {
   return {
     eventos: data?.success ? data.data : [],
     meta: data?.success && data.meta ? data.meta : defaultMeta,
+    isLoading,
+    error: error || (data?.success === false ? data.error : null),
+    mutate,
+  };
+}
+
+// Hook para resumo agregado da agenda
+export function useAgendaResumo(
+  filters?: EventoFilters,
+  options?: {
+    periodoInicio?: Date;
+    periodoFim?: Date;
+    enabled?: boolean;
+  },
+) {
+  const enabled = options?.enabled ?? true;
+  const { data, error, isLoading, mutate } = useSWR(
+    enabled
+      ? ["agenda-resumo", filters, options?.periodoInicio, options?.periodoFim]
+      : null,
+    () =>
+      getAgendaResumo(filters, {
+        periodoInicio: options?.periodoInicio,
+        periodoFim: options?.periodoFim,
+      }),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 0,
+    },
+  );
+
+  const defaultResumo: AgendaResumoData = {
+    totalPeriodo: 0,
+    audienciasPeriodo: 0,
+    eventosHoje: 0,
+    proximoEvento: null,
+  };
+
+  return {
+    resumo: data?.success ? data.data ?? defaultResumo : defaultResumo,
     isLoading,
     error: error || (data?.success === false ? data.error : null),
     mutate,

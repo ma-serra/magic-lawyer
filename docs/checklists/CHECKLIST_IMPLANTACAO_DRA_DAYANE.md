@@ -10,8 +10,8 @@ Use este checklist para separar:
 ### Checklists relacionados
 - [CHECKLIST_TOTAL_MAGICLAWYER.md](./CHECKLIST_TOTAL_MAGICLAWYER.md) - checklist global do produto e referência principal de progresso
 
-**Última atualização:** 07/04/2026  
-**Origem:** reunião de implantação com a Dra. Dayane e feedbacks operacionais enviados entre 03/04/2026 e 07/04/2026  
+**Última atualização:** 08/04/2026  
+**Origem:** reunião de implantação com a Dra. Dayane e feedbacks operacionais enviados entre 03/04/2026 e 08/04/2026  
 **Status:** checklist revisado com critério separado de produção/evidência, código/testes locais e homologação operacional
 
 ---
@@ -102,6 +102,11 @@ Use este checklist para separar:
 - [x] Permitir busca com sugestão e digitação livre no campo "Órgão Julgador".
 - [x] Padronizar a linguagem do fluxo de processo para "Autoridade do caso", separando esse conceito do campo textual "Órgão julgador".
 - [x] Sincronizar em runtime as áreas padrão do processo no tenant, para que escritórios existentes recebam o catálogo no próprio banco sem depender de criação manual.
+- [x] Persistir em banco o catálogo judicial de `tribunal -> comarca/seção -> vara`, deixando de depender apenas do histórico já cadastrado em processos e autoridades.
+- [x] Carregar automaticamente `Comarca / Seção` a partir do tribunal selecionado e do `Órgão julgador` quando houver correspondência determinística.
+- [x] Adotar no fluxo principal o modelo `Área do processo + Rito / Procedimento da área`.
+- [x] Filtrar o campo `Rito / Procedimento da área` de acordo com a área selecionada, cobrindo cível, penal e trabalhista.
+- [x] Remover o campo `Foro` do formulário principal de novo/editar processo, mantendo compatibilidade apenas no banco e na leitura legada.
 
 ### Prazos e agenda
 
@@ -109,12 +114,14 @@ Use este checklist para separar:
 - [x] Permitir vincular prazo a audiência, evento ou andamento.
 - [x] Considerar feriados locais e regionais na contagem de prazo.
 - [x] Permitir evento online com link clicável.
+- [x] Reorganizar a agenda para abrir na visão principal `Geral`, com listagem mensal de todos os eventos, tabs `Geral / Calendário / Lista`, filtros inline sempre visíveis e cards-resumo do período.
 - [x] Melhorar a configuração de lembretes de evento para não depender de um único aviso.
 - [x] Revisar o uso do horário final do evento para conflito de agenda e organização do advogado.
 - [x] Criar atalho do prazo principal para abrir a área de prazos do processo.
 - [x] Melhorar a responsividade e a leitura da área de prazos no contexto do processo.
 - [x] Substituir o conceito operacional de "regime de prazo" por "rito do processo" no fluxo principal.
 - [x] Adicionar "tipo legal do prazo" com sugestão automática de fundamento e regra-base por rito.
+- [x] Permitir prazo manual mesmo quando o processo ainda não possui regra automática de prazo pelo CPC, evitando bloqueio indevido em fluxos penal e trabalhista.
 
 ### Relatórios, cliente e documentos
 
@@ -149,6 +156,10 @@ Use este checklist para separar:
 - [x] `npm test` executado com sucesso em 07/04/2026.
 - [x] `npm run repo:hygiene` executado com sucesso em 07/04/2026 antes do deploy de produção.
 - [x] Deploy de produção atual publicado com sucesso na `main` em 07/04/2026, com status `Ready` na Vercel para o commit `404bea7`.
+- [x] `npm run prisma:push` executado com sucesso em 08/04/2026 para sincronizar `procedimentoProcessual` e o catálogo judicial persistido.
+- [x] `npm run typecheck` executado com sucesso em 08/04/2026.
+- [x] `npm run check:mojibake` executado com sucesso em 08/04/2026.
+- [x] `npm test` executado com sucesso em 08/04/2026.
 
 ### Suporte e implantação
 
@@ -209,11 +220,14 @@ Use este checklist para separar:
 - [ ] Homologar com a Dra. Dayane a nova linguagem de "Autoridade do caso" e a distinção prática entre autoridade, tribunal e órgão julgador.
 - [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão julgador".
 - [ ] Confirmar em uso real o catálogo de áreas padrão já sincronizado no tenant.
+- [ ] Homologar em uso real o novo carregamento automático de `Comarca / Seção` por tribunal, incluindo o cenário `TRF1 -> SJPA`.
+- [ ] Homologar com a Dra. Dayane o novo modelo `Área do processo + Rito / Procedimento da área`, incluindo o caso penal ordinário.
 
 ### Prazos e agenda
 
 - [ ] Homologar com a Dra. Dayane a navegação do prazo principal e a leitura da aba de prazos no processo.
 - [ ] Homologar com a Dra. Dayane o novo fluxo de rito do processo e tipo legal do prazo.
+- [ ] Homologar com a Dra. Dayane a nova visão principal `Geral` da agenda, validando a leitura mensal de todos os eventos e o uso dos filtros inline no fluxo real.
 - [ ] Confirmar em uso real a nova fase processual "Alegações finais" nos cadastros do escritório.
 
 ### Relatórios, cliente e documentos

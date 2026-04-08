@@ -62,6 +62,41 @@ export interface EventoListResponse {
   error?: string;
 }
 
+export interface EventoFilters {
+  dataInicio?: Date;
+  dataFim?: Date;
+  status?: string;
+  tipo?: string;
+  clienteId?: string;
+  processoId?: string;
+  advogadoId?: string;
+  local?: string;
+  titulo?: string;
+  origem?: "google" | "local";
+}
+
+export interface AgendaResumoProximoEvento {
+  id: string;
+  titulo: string;
+  dataInicio: Date;
+  dataFim: Date;
+  tipo: Evento["tipo"];
+  status: Evento["status"];
+}
+
+export interface AgendaResumoData {
+  totalPeriodo: number;
+  audienciasPeriodo: number;
+  eventosHoje: number;
+  proximoEvento: AgendaResumoProximoEvento | null;
+}
+
+export interface AgendaResumoResponse {
+  success: boolean;
+  data?: AgendaResumoData;
+  error?: string;
+}
+
 type EventoRelationshipsValidationResult =
   | {
       valid: false;
@@ -719,6 +754,118 @@ function getEventoFormDataFromEvento(evento: Evento): EventoFormData {
   };
 }
 
+function appendWhereClauses(
+  where: Prisma.EventoWhereInput,
+  clauses: Prisma.EventoWhereInput[],
+) {
+  if (clauses.length === 0) {
+    return;
+  }
+
+  const existingAnd = Array.isArray(where.AND)
+    ? where.AND
+    : where.AND
+      ? [where.AND]
+      : [];
+
+  where.AND = [...existingAnd, ...clauses];
+}
+
+function applyEventoFilters(
+  where: Prisma.EventoWhereInput,
+  context: AgendaSessionContext,
+  filters?: EventoFilters,
+) {
+  if (!filters) {
+    return true;
+  }
+
+  if (filters.dataInicio || filters.dataFim) {
+    // Filtra por sobreposição de intervalo para não ocultar eventos que
+    // iniciam antes do período e terminam dentro/depois dele.
+    const intervalClauses: Prisma.EventoWhereInput[] = [];
+
+    if (filters.dataFim) {
+      intervalClauses.push({
+        dataInicio: {
+          lte: filters.dataFim,
+        },
+      });
+    }
+
+    if (filters.dataInicio) {
+      intervalClauses.push({
+        dataFim: {
+          gte: filters.dataInicio,
+        },
+      });
+    }
+
+    appendWhereClauses(where, intervalClauses);
+  }
+
+  if (filters.status) {
+    where.status = filters.status as any;
+  }
+
+  if (filters.tipo) {
+    where.tipo = filters.tipo as any;
+  }
+
+  if (filters.clienteId) {
+    where.clienteId = filters.clienteId;
+  }
+
+  if (filters.processoId) {
+    where.processoId = filters.processoId;
+  }
+
+  if (filters.advogadoId) {
+    if (
+      !context.isAdmin &&
+      !context.isCliente &&
+      !isAllowedAdvogadoInScope(context, filters.advogadoId)
+    ) {
+      return false;
+    }
+
+    where.advogadoResponsavelId = filters.advogadoId;
+  }
+
+  if (filters.local) {
+    where.local = {
+      contains: filters.local,
+      mode: "insensitive",
+    };
+  }
+
+  if (filters.titulo) {
+    where.titulo = {
+      contains: filters.titulo,
+      mode: "insensitive",
+    };
+  }
+
+  if (filters.origem === "google") {
+    where.googleEventId = {
+      not: null,
+    };
+  } else if (filters.origem === "local") {
+    where.googleEventId = null;
+  }
+
+  return true;
+}
+
+function createAgendaResumoVazio(): AgendaResumoData {
+  return {
+    totalPeriodo: 0,
+    audienciasPeriodo: 0,
+    eventosHoje: 0,
+    proximoEvento: null,
+  };
+}
+
 async function validateEventoRelationships(
   context: AgendaSessionContext,
   formData: Pick<EventoFormData, "processoId" | "clienteId" | "advogadoResponsavelId">,
@@ -842,18 +989,7 @@ async function validateEventoRelationships(
 }
 
 // Buscar eventos do tenant atual
-export async function getEventos(filters?: {
-  dataInicio?: Date;
-  dataFim?: Date;
-  status?: string;
-  tipo?: string;
-  clienteId?: string;
-  processoId?: string;
-  advogadoId?: string;
-  local?: string;
-  titulo?: string;
-  origem?: "google" | "local";
-},
+export async function getEventos(filters?: EventoFilters,
 pagination?: {
   page?: number;
   pageSize?: number;
@@ -862,95 +998,17 @@ pagination?: {
     const context = await requireAgendaContext("visualizar");
     const where: Prisma.EventoWhereInput = buildEventoScopeWhere(context);
 
-    if (filters?.dataInicio || filters?.dataFim) {
-      // Filtra por sobreposição de intervalo para não ocultar eventos que
-      // iniciam antes do período e terminam dentro/depois dele.
-      const intervalClauses: Prisma.EventoWhereInput[] = [];
-
-      if (filters.dataFim) {
-        intervalClauses.push({
-          dataInicio: {
-            lte: filters.dataFim,
-          },
-        });
-      }
-
-      if (filters.dataInicio) {
-        intervalClauses.push({
-          dataFim: {
-            gte: filters.dataInicio,
-          },
-        });
-      }
-
-      if (intervalClauses.length > 0) {
-        const existingAnd = Array.isArray(where.AND)
-          ? where.AND
-          : where.AND
-            ? [where.AND]
-            : [];
-
-        where.AND = [...existingAnd, ...intervalClauses];
-      }
-    }
-
-    if (filters?.status) {
-      where.status = filters.status as any;
-    }
-
-    if (filters?.tipo) {
-      where.tipo = filters.tipo as any;
-    }
-
-    if (filters?.clienteId) {
-      where.clienteId = filters.clienteId;
-    }
-
-    if (filters?.processoId) {
-      where.processoId = filters.processoId;
-    }
-
-    if (filters?.advogadoId) {
-      if (
-        !context.isAdmin &&
-        !context.isCliente &&
-        !isAllowedAdvogadoInScope(context, filters.advogadoId)
-      ) {
-        const page = normalizePage(pagination?.page);
-        const pageSize = normalizePageSize(pagination?.pageSize);
-        return {
-          success: true,
-          data: [],
-          meta: buildEventoListMeta(0, page, pageSize),
-        };
-      }
-      where.advogadoResponsavelId = filters.advogadoId;
-    }
-
-    if (filters?.local) {
-      where.local = {
-        contains: filters.local,
-        mode: "insensitive",
-      };
-    }
-
-    if (filters?.titulo) {
-      where.titulo = {
-        contains: filters.titulo,
-        mode: "insensitive",
-      };
-    }
-
-    if (filters?.origem === "google") {
-      where.googleEventId = {
-        not: null,
-      };
-    } else if (filters?.origem === "local") {
-      where.googleEventId = null;
-    }
-
     const page = normalizePage(pagination?.page);
     const pageSize = normalizePageSize(pagination?.pageSize);
+
+    if (!applyEventoFilters(where, context, filters)) {
+      return {
+        success: true,
+        data: [],
+        meta: buildEventoListMeta(0, page, pageSize),
+      };
+    }
+
     const skip = (page - 1) * pageSize;
     const [total, eventos] = await prisma.$transaction([
       prisma.evento.count({ where }),
@@ -1038,6 +1096,121 @@ pagination?: {
     return { success: true, data, meta };
   } catch (error) {
     logger.error("Erro ao buscar eventos:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getAgendaResumo(
+  filters?: EventoFilters,
+  options?: {
+    periodoInicio?: Date;
+    periodoFim?: Date;
+  },
+): Promise<AgendaResumoResponse> {
+  try {
+    const context = await requireAgendaContext("visualizar");
+    const now = new Date();
+    const periodoInicio =
+      options?.periodoInicio ??
+      new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const periodoFim =
+      options?.periodoFim ??
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+    const todayEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const buildScopedWhere = (nextFilters?: EventoFilters) => {
+      const where = buildEventoScopeWhere(context);
+      const mergedFilters: EventoFilters = {
+        ...filters,
+        ...nextFilters,
+      };
+
+      return applyEventoFilters(where, context, mergedFilters) ? where : null;
+    };
+
+    const periodoWhere = buildScopedWhere({
+      dataInicio: periodoInicio,
+      dataFim: periodoFim,
+    });
+    const todayWhere = buildScopedWhere({
+      dataInicio: todayStart,
+      dataFim: todayEnd,
+    });
+    const upcomingWhere = buildScopedWhere();
+
+    if (!periodoWhere || !todayWhere || !upcomingWhere) {
+      return {
+        success: true,
+        data: createAgendaResumoVazio(),
+      };
+    }
+
+    const audienciasWhere: Prisma.EventoWhereInput = {
+      ...periodoWhere,
+    };
+    appendWhereClauses(audienciasWhere, [{ tipo: "AUDIENCIA" as any }]);
+    appendWhereClauses(upcomingWhere, [
+      {
+        dataFim: {
+          gte: now,
+        },
+      },
+    ]);
+
+    const [totalPeriodo, audienciasPeriodo, eventosHoje, proximoEvento] =
+      await prisma.$transaction([
+        prisma.evento.count({ where: periodoWhere }),
+        prisma.evento.count({ where: audienciasWhere }),
+        prisma.evento.count({ where: todayWhere }),
+        prisma.evento.findFirst({
+          where: upcomingWhere,
+          orderBy: {
+            dataInicio: "asc",
+          },
+          select: {
+            id: true,
+            titulo: true,
+            dataInicio: true,
+            dataFim: true,
+            tipo: true,
+            status: true,
+          },
+        }),
+      ]);
+
+    return {
+      success: true,
+      data: {
+        totalPeriodo,
+        audienciasPeriodo,
+        eventosHoje,
+        proximoEvento,
+      },
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar resumo da agenda:", error);
 
     return {
       success: false,
