@@ -56,6 +56,7 @@ bun.lockb
 /generated/prisma
 redis-url.txt
 tmp/
+.codex-tmp/
 
 # local automation artifacts
 .playwright-cli/
