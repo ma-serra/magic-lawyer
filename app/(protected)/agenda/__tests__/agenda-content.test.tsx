@@ -9,6 +9,7 @@ const useHolidayExperienceRolloutMock = jest.fn();
 const useEventoFormDataMock = jest.fn();
 const useEventosMock = jest.fn();
 const useAgendaResumoMock = jest.fn();
+const useAgendaCalendarMarkersMock = jest.fn();
 const useAgendaDisponibilidadeMock = jest.fn();
 const eventoFormMock = jest.fn();
 
@@ -81,6 +82,8 @@ jest.mock("@/app/hooks/use-eventos", () => ({
   useEventoFormData: () => useEventoFormDataMock(),
   useEventos: (...args: any[]) => useEventosMock(...args),
   useAgendaResumo: (...args: any[]) => useAgendaResumoMock(...args),
+  useAgendaCalendarMarkers: (...args: any[]) =>
+    useAgendaCalendarMarkersMock(...args),
 }));
 
 jest.mock("@/app/hooks/use-agenda-disponibilidade", () => ({
@@ -110,6 +113,12 @@ jest.mock("@/components/google-calendar-button", () => () => (
 
 jest.mock("@/components/google-calendar-status", () => () => (
   <div>Status Google Calendar</div>
+));
+
+jest.mock("@/components/agenda/agenda-daily-calendar", () => (props: any) => (
+  <div data-testid="agenda-daily-calendar">
+    {props.markerDateKeys?.join(",") || "sem-marcadores"}
+  </div>
 ));
 
 jest.mock("@/components/holiday-impact/holiday-impact-panel", () => ({
@@ -233,6 +242,16 @@ describe("AgendaPage", () => {
       isLoading: false,
       mutate: jest.fn(),
     });
+    useAgendaCalendarMarkersMock.mockImplementation(
+      (_filters: any, options?: { enabled?: boolean }) => ({
+        markers: options?.enabled
+          ? [{ dateKey: "2026-04-08", total: 1 }]
+          : [],
+        isLoading: false,
+        error: null,
+        mutate: jest.fn(),
+      }),
+    );
     useAgendaDisponibilidadeMock.mockReturnValue({
       disponibilidade: [
         {
@@ -277,5 +296,20 @@ describe("AgendaPage", () => {
     expect(eventoFormMock).toHaveBeenCalled();
     expect(eventoFormMock.mock.calls.at(-1)?.[0]?.preset).toBeUndefined();
     expect(eventoFormMock.mock.calls.at(-1)?.[0]?.locks).toBeUndefined();
+  });
+
+  it("abre a aba calendario e mantem o painel do dia selecionado", async () => {
+    const user = userEvent.setup();
+
+    render(<AgendaPage />);
+
+    await user.click(screen.getByRole("tab", { name: /calend.rio/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: /Calend.rio di.rio/i }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("agenda-daily-calendar")).toBeTruthy();
+    expect(screen.getByText(/Eventos de/i)).toBeTruthy();
+    expect(screen.getAllByText(/Audiencia mensal/i).length).toBeGreaterThan(0);
   });
 });

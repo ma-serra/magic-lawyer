@@ -97,6 +97,17 @@ export interface AgendaResumoResponse {
   error?: string;
 }
 
+export interface AgendaCalendarMarker {
+  dateKey: string;
+  total: number;
+}
+
+export interface AgendaCalendarMarkersResponse {
+  success: boolean;
+  data?: AgendaCalendarMarker[];
+  error?: string;
+}
+
 type EventoRelationshipsValidationResult =
   | {
       valid: false;
@@ -866,6 +877,84 @@ function createAgendaResumoVazio(): AgendaResumoData {
   };
 }
 
+function formatAgendaMarkerDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+}
+
+function endOfLocalDay(date: Date) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+}
+
+function addLocalDays(date: Date, days: number) {
+  const next = new Date(date);
+
+  next.setDate(next.getDate() + days);
+
+  return next;
+}
+
+function createAgendaCalendarMarkersData(
+  eventos: Array<Pick<Evento, "dataInicio" | "dataFim">>,
+  periodoInicio: Date,
+  periodoFim: Date,
+): AgendaCalendarMarker[] {
+  const rangeStart = startOfLocalDay(periodoInicio);
+  const rangeEnd = startOfLocalDay(periodoFim);
+  const totalsByDate = new Map<string, number>();
+
+  for (const evento of eventos) {
+    const eventStartDay = startOfLocalDay(evento.dataInicio);
+    const eventEndDay = startOfLocalDay(evento.dataFim);
+    const markerStart = new Date(
+      Math.max(eventStartDay.getTime(), rangeStart.getTime()),
+    );
+    const markerEnd = new Date(Math.min(eventEndDay.getTime(), rangeEnd.getTime()));
+
+    if (markerEnd.getTime() < markerStart.getTime()) {
+      continue;
+    }
+
+    for (
+      let cursor = markerStart;
+      cursor.getTime() <= markerEnd.getTime();
+      cursor = addLocalDays(cursor, 1)
+    ) {
+      const dateKey = formatAgendaMarkerDateKey(cursor);
+      const currentTotal = totalsByDate.get(dateKey) ?? 0;
+
+      totalsByDate.set(dateKey, currentTotal + 1);
+    }
+  }
+
+  return Array.from(totalsByDate.entries())
+    .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
+    .map(([dateKey, total]) => ({ dateKey, total }));
+}
+
 async function validateEventoRelationships(
   context: AgendaSessionContext,
   formData: Pick<EventoFormData, "processoId" | "clienteId" | "advogadoResponsavelId">,
@@ -1211,6 +1300,63 @@ export async function getAgendaResumo(
     };
   } catch (error) {
     logger.error("Erro ao buscar resumo da agenda:", error);
+
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Erro interno do servidor",
+    };
+  }
+}
+
+export async function getAgendaCalendarMarkers(
+  filters?: EventoFilters,
+  options?: {
+    periodoInicio?: Date;
+    periodoFim?: Date;
+  },
+): Promise<AgendaCalendarMarkersResponse> {
+  try {
+    const context = await requireAgendaContext("visualizar");
+    const now = new Date();
+    const periodoInicio =
+      options?.periodoInicio ??
+      new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const periodoFim =
+      options?.periodoFim ??
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const where: Prisma.EventoWhereInput = buildEventoScopeWhere(context);
+
+    if (
+      !applyEventoFilters(where, context, {
+        ...filters,
+        dataInicio: periodoInicio,
+        dataFim: periodoFim,
+      })
+    ) {
+      return {
+        success: true,
+        data: [],
+      };
+    }
+
+    const eventos = await prisma.evento.findMany({
+      where,
+      orderBy: {
+        dataInicio: "asc",
+      },
+      select: {
+        dataInicio: true,
+        dataFim: true,
+      },
+    });
+
+    return {
+      success: true,
+      data: createAgendaCalendarMarkersData(eventos, periodoInicio, periodoFim),
+    };
+  } catch (error) {
+    logger.error("Erro ao buscar marcadores do calendario da agenda:", error);
 
     return {
       success: false,

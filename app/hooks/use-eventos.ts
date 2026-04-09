@@ -1,10 +1,12 @@
 import useSWR from "swr";
 
 import {
+  getAgendaCalendarMarkers,
   getAgendaResumo,
   getEventos,
   getEventoById,
   getEventoFormData,
+  type AgendaCalendarMarker,
   type AgendaResumoData,
   type EventoFilters,
   type EventoListMeta,
@@ -179,4 +181,44 @@ export function useEventosMes() {
     dataInicio: inicioMes,
     dataFim: fimMes,
   });
+}
+
+export function useAgendaCalendarMarkers(
+  filters?: EventoFilters,
+  options?: {
+    periodoInicio?: Date;
+    periodoFim?: Date;
+    enabled?: boolean;
+  },
+) {
+  const enabled = options?.enabled ?? true;
+  const { data, error, isLoading, mutate } = useSWR(
+    enabled
+      ? [
+          "agenda-calendar-markers",
+          filters,
+          options?.periodoInicio,
+          options?.periodoFim,
+        ]
+      : null,
+    () =>
+      getAgendaCalendarMarkers(filters, {
+        periodoInicio: options?.periodoInicio,
+        periodoFim: options?.periodoFim,
+      }),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 0,
+    },
+  );
+
+  const defaultMarkers: AgendaCalendarMarker[] = [];
+
+  return {
+    markers: data?.success ? data.data ?? defaultMarkers : defaultMarkers,
+    isLoading,
+    error: error || (data?.success === false ? data.error : null),
+    mutate,
+  };
 }

@@ -50,7 +50,6 @@ import {
   Tabs,
   Tooltip,
 } from "@heroui/react";
-import { Calendar as CalendarComponent } from "@heroui/react";
 import {
   getLocalTimeZone,
   startOfMonth,
@@ -71,6 +70,7 @@ import {
 } from "@/app/actions/agenda-disponibilidade";
 import { useAgendaDisponibilidade } from "@/app/hooks/use-agenda-disponibilidade";
 import {
+  useAgendaCalendarMarkers,
   useAgendaResumo,
   useEventos,
   useEventoFormData,
@@ -88,6 +88,7 @@ import EventoForm from "@/components/evento-form";
 import GoogleCalendarButton from "@/components/google-calendar-button";
 import GoogleCalendarStatusCard from "@/components/google-calendar-status";
 import { HolidayImpactPanel } from "@/components/holiday-impact/holiday-impact-panel";
+import AgendaDailyCalendar from "@/components/agenda/agenda-daily-calendar";
 import {
   PeopleEmptyState,
   PeopleMetricCard,
@@ -244,6 +245,13 @@ export default function AgendaPage() {
     () => DateUtils.fromCalendarDate(selectedDate),
     [selectedDate],
   );
+  const calendarMonthRange = useMemo(
+    () => ({
+      start: selectedDateDayjs.startOf("month").toDate(),
+      end: selectedDateDayjs.endOf("month").toDate(),
+    }),
+    [selectedDateDayjs],
+  );
 
   const filtrosGeneral = useMemo(
     () => ({
@@ -315,6 +323,14 @@ export default function AgendaPage() {
     periodoInicio: generalMonthRange.start,
     periodoFim: generalMonthRange.end,
     enabled: isHydrated,
+  });
+  const {
+    markers: agendaCalendarMarkers,
+    mutate: mutateAgendaCalendarMarkers,
+  } = useAgendaCalendarMarkers(filtrosBase, {
+    periodoInicio: calendarMonthRange.start,
+    periodoFim: calendarMonthRange.end,
+    enabled: viewMode === "calendar",
   });
 
   useEffect(() => {
@@ -403,6 +419,10 @@ export default function AgendaPage() {
   const generalDayGroups = useMemo(
     () => groupEventosByDay(eventosGeraisFiltrados),
     [eventosGeraisFiltrados],
+  );
+  const agendaCalendarMarkerDateKeys = useMemo(
+    () => agendaCalendarMarkers.map((marker) => marker.dateKey),
+    [agendaCalendarMarkers],
   );
   const confirmacoesVisiveis = useMemo(
     () =>
@@ -509,6 +529,7 @@ export default function AgendaPage() {
       mutateGeneral(),
       mutateDia(),
       mutateLista(),
+      mutateAgendaCalendarMarkers(),
       mutateResumo(),
     ]).then(() => undefined);
 
@@ -1288,34 +1309,10 @@ export default function AgendaPage() {
               </div>
             </CardHeader>
             <CardBody className="p-0">
-              <CalendarComponent
-                aria-label="Agenda"
-                classNames={{
-                  base: "w-full max-w-full",
-                  cell: "h-16 min-w-0 w-full text-center text-lg font-medium",
-                  content: "w-full max-w-full overflow-hidden",
-                  grid: "w-full max-w-full",
-                }}
-                focusedValue={selectedDate as any}
-                nextButtonProps={{
-                  size: "lg",
-                  variant: "bordered",
-                }}
-                prevButtonProps={{
-                  size: "lg",
-                  variant: "bordered",
-                }}
-                topContent={
-                  <div className="border-b border-divider/70 bg-content1 px-4 py-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        radius="full"
-                        size="sm"
-                        variant="bordered"
-                        onPress={() => setSelectedDate(today(getLocalTimeZone()))}
-                      >
-                        Hoje
-                      </Button>
+              <AgendaDailyCalendar
+                markerDateKeys={agendaCalendarMarkerDateKeys}
+                selectedDate={selectedDate as any}
+                topContent={<>
                       <Button
                         radius="full"
                         size="sm"
@@ -1345,9 +1342,7 @@ export default function AgendaPage() {
                       >
                         Próximo mês
                       </Button>
-                    </div>
-                  </div>
-                }
+                </>}
                 value={selectedDate as any}
                 onChange={setSelectedDate as any}
                 onFocusChange={setSelectedDate as any}
