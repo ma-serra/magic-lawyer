@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@heroui/button";
 import { Scale } from "lucide-react";
 
@@ -23,6 +23,7 @@ type CausaQuickCreated = {
 
 type ProcessCauseQuickCreateModalProps = {
   isOpen: boolean;
+  initialNome?: string;
   onClose: () => void;
   onCreated: (causa: CausaQuickCreated) => void | Promise<void>;
 };
@@ -35,11 +36,23 @@ const INITIAL_FORM_STATE: CausaProcessualFormValue = {
 
 export function ProcessCauseQuickCreateModal({
   isOpen,
+  initialNome,
   onClose,
   onCreated,
 }: ProcessCauseQuickCreateModalProps) {
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || isSaving) {
+      return;
+    }
+
+    setFormState({
+      ...INITIAL_FORM_STATE,
+      nome: initialNome?.trim() || "",
+    });
+  }, [initialNome, isOpen, isSaving]);
 
   const handleClose = () => {
     if (isSaving) {

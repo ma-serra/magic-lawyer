@@ -28,6 +28,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/searchable-select";
+import { ProcessCauseSelector } from "@/components/processos/process-cause-selector";
 
 export type ProcessoClassificationValue = Pick<
   ProcessoCreateInput,
@@ -72,7 +73,7 @@ type ProcessClassificationSectionProps = {
   canQuickCreateCatalog?: boolean;
   canQuickCreateArea?: boolean;
   onOpenClassModal: () => void;
-  onOpenCauseModal: () => void;
+  onOpenCauseModal: (prefill?: string) => void;
   onOpenAreaModal: () => void;
 };
 
@@ -120,17 +121,6 @@ export function ProcessClassificationSection({
       (value.causaIds ?? []).filter((causaId) => causaOptionKeys.has(causaId)),
     [causaOptionKeys, value.causaIds],
   );
-  const assuntosSelecionadosResumo = useMemo(() => {
-    if (selectedCausaKeys.length === 0) {
-      return "";
-    }
-
-    const causeMap = new Map(causas.map((causa) => [causa.id, causa.nome]));
-    return selectedCausaKeys
-      .map((causaId) => causeMap.get(causaId))
-      .filter(Boolean)
-      .join(", ");
-  }, [causas, selectedCausaKeys]);
   const selectedAreaKeys = value.areaId ? [value.areaId] : [];
   const selectedArea = useMemo(
     () => areas.find((area) => area.id === value.areaId),
@@ -202,62 +192,18 @@ export function ProcessClassificationSection({
         </div>
 
         <div className="space-y-2 lg:col-span-2">
-          <Select
-            description="Temas juridicos do caso. Voce pode selecionar mais de um assunto."
+          <ProcessCauseSelector
+            canQuickCreateCatalog={canQuickCreateCatalog}
+            causas={causas}
             isLoading={isLoadingCausas}
-            label="Assuntos do processo"
-            placeholder="Selecione um ou mais assuntos"
-            selectedKeys={selectedCausaKeys}
-            selectionMode="multiple"
-            onSelectionChange={(keys) => {
-              const nextKeys =
-                keys === "all"
-                  ? causas.map((causa) => causa.id)
-                  : (Array.from(keys) as string[]);
-
+            selectedCauseIds={selectedCausaKeys}
+            onChange={(nextIds) =>
               onPatch({
-                causaIds: nextKeys.filter((causaId) =>
-                  causaOptionKeys.has(causaId),
-                ),
-              });
-            }}
-          >
-            {causas.map((causa) => (
-              <SelectItem
-                key={causa.id}
-                textValue={`${causa.nome}${causa.codigoCnj ? ` • ${causa.codigoCnj}` : ""}`}
-              >
-                {causa.nome}
-                {causa.codigoCnj ? ` • ${causa.codigoCnj}` : ""}
-              </SelectItem>
-            ))}
-          </Select>
-          {assuntosSelecionadosResumo ? (
-            <p className="text-xs text-default-500">
-              Selecionados: {assuntosSelecionadosResumo}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
-            {canQuickCreateCatalog ? (
-              <Button
-                color="secondary"
-                size="sm"
-                variant="light"
-                onPress={onOpenCauseModal}
-              >
-                Nao encontrou o assunto? Criar agora
-              </Button>
-            ) : null}
-            <Button
-              as={Link}
-              color="secondary"
-              href="/causas"
-              size="sm"
-              variant="light"
-            >
-              Gerenciar assuntos processuais
-            </Button>
-          </div>
+                causaIds: nextIds.filter((causaId) => causaOptionKeys.has(causaId)),
+              })
+            }
+            onOpenCreate={onOpenCauseModal}
+          />
         </div>
 
         <Select

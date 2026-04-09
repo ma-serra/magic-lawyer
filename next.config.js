@@ -2,6 +2,7 @@ const { withWorkflow } = require("workflow/next");
 
 /** @type {import('next').NextConfig} */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
+const isTest = process.env.NODE_ENV === "test" || Boolean(process.env.JEST_WORKER_ID);
 
 const nextConfig = {
   output: isVercel ? undefined : "standalone",
@@ -35,4 +36,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withWorkflow(nextConfig);
+module.exports = isTest ? nextConfig : withWorkflow(nextConfig);

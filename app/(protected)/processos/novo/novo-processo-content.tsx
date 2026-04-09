@@ -103,6 +103,7 @@ export function NovoProcessoContent() {
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isCauseModalOpen, setIsCauseModalOpen] = useState(false);
+  const [causeModalDraftName, setCauseModalDraftName] = useState("");
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
   const [advogadoPickerKey, setAdvogadoPickerKey] = useState<string | null>(
     null,
@@ -428,7 +429,12 @@ export function NovoProcessoContent() {
       const baseOptions = comarcas.map((comarca) => ({
         key: comarca.id,
         label: comarca.label,
-        textValue: [comarca.sigla || "", comarca.nome, comarca.label]
+        textValue: [
+          comarca.sigla || "",
+          comarca.nome,
+          comarca.label,
+          ...(comarca.aliases ?? []),
+        ]
           .filter(Boolean)
           .join(" "),
       }));
@@ -458,7 +464,12 @@ export function NovoProcessoContent() {
       const baseOptions = varas.map((vara) => ({
         key: vara.id,
         label: vara.label,
-        textValue: [vara.sigla || "", vara.nome, vara.label]
+        textValue: [
+          vara.sigla || "",
+          vara.nome,
+          vara.label,
+          ...(vara.aliases ?? []),
+        ]
           .filter(Boolean)
           .join(" "),
       }));
@@ -518,13 +529,6 @@ export function NovoProcessoContent() {
       ),
     [advogadoOptions, selectedAdvogadoKeys],
   );
-  const assuntosSelecionadosResumo = useMemo(() => {
-    const names = causas
-      .filter((causa) => selectedCausaKeys.includes(causa.id))
-      .map((causa) => causa.nome);
-
-    return names.join(" • ");
-  }, [causas, selectedCausaKeys]);
   const polos = useMemo(() => Object.values(ProcessoPolo), []);
   const canQuickCreateArea =
     isSuperAdmin || isAdmin || permissions.canManageOfficeSettings;
@@ -1277,7 +1281,10 @@ export function NovoProcessoContent() {
                 value={formData}
                 formatGrauLabel={formatGrauLabel}
                 onOpenAreaModal={() => setIsAreaModalOpen(true)}
-                onOpenCauseModal={() => setIsCauseModalOpen(true)}
+                onOpenCauseModal={(prefill) => {
+                  setCauseModalDraftName(prefill?.trim() || "");
+                  setIsCauseModalOpen(true);
+                }}
                 onOpenClassModal={() => setIsClassModalOpen(true)}
                 onPatch={(patch) =>
                   setFormData((prev) => ({
@@ -1515,8 +1522,12 @@ export function NovoProcessoContent() {
         }}
       />
       <ProcessCauseQuickCreateModal
+        initialNome={causeModalDraftName}
         isOpen={isCauseModalOpen}
-        onClose={() => setIsCauseModalOpen(false)}
+        onClose={() => {
+          setCauseModalDraftName("");
+          setIsCauseModalOpen(false);
+        }}
         onCreated={async (causa) => {
           await mutateCausas();
           setFormData((prev) => {
@@ -1529,6 +1540,7 @@ export function NovoProcessoContent() {
               causaIds: nextIds,
             };
           });
+          setCauseModalDraftName("");
           setIsCauseModalOpen(false);
         }}
       />

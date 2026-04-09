@@ -10,8 +10,8 @@ Use este checklist para separar:
 ### Checklists relacionados
 - [CHECKLIST_TOTAL_MAGICLAWYER.md](./CHECKLIST_TOTAL_MAGICLAWYER.md) - checklist global do produto e referência principal de progresso
 
-**Última atualização:** 08/04/2026  
-**Origem:** reunião de implantação com a Dra. Dayane e feedbacks operacionais enviados entre 03/04/2026 e 08/04/2026  
+**Última atualização:** 09/04/2026  
+**Origem:** reunião de implantação com a Dra. Dayane, feedbacks operacionais enviados entre 03/04/2026 e 09/04/2026 e entregas técnicas realizadas em 09/04/2026  
 **Status:** checklist revisado com critério separado de produção/evidência, código/testes locais e homologação operacional
 
 ---
@@ -27,6 +27,8 @@ Use este checklist para separar:
 - [x] 06/04/2026 `0481b13` - `feat: formalize rito processual and deadline context`
 - [x] 07/04/2026 `042b76a` - `feat: improve process intake and legal catalogs`
 - [x] 07/04/2026 `404bea7` - `chore: allow controlled process cause cleanup`
+- [x] 09/04/2026 `9c37615` - `feat: mark agenda calendar days with events`
+- [x] 09/04/2026 `a4d3bc9` - `fix: circle agenda event days in orange`
 
 ---
 
@@ -109,6 +111,10 @@ Use este checklist para separar:
 - [x] Remover o campo `Foro` do formulário principal de novo/editar processo, mantendo compatibilidade apenas no banco e na leitura legada.
 - [x] Suprimir o popup crítico de prazo nas telas de novo/editar processo para não bloquear o cadastro operacional.
 - [x] Completar em banco o catálogo judicial de `TRF1 -> SJPA` com varas persistidas para uso real no formulário de processos.
+- [x] Expandir o catálogo judicial oficial de `TRF1 -> SJBA + SJPA`, cobrindo capital e subseções da Bahia e do Pará para uso real no formulário de processos.
+- [x] Reconciliar o catálogo judicial persistido com aliases canônicos, evitando duplicação entre nomenclatura legada e nomenclatura oficial em `comarca/seção/vara`.
+- [x] Reforçar a UX de `Assuntos do processo` no novo/editar processo com busca real, seleção/remoção inline, CTA visível de criação e estado vazio com criação rápida para admin.
+- [x] Prefill do assunto digitado na criação rápida de `Assuntos do processo`, reduzindo atrito no fluxo principal do cadastro.
 
 ### Prazos e agenda
 
@@ -121,6 +127,8 @@ Use este checklist para separar:
 - [x] Revisar o uso do horário final do evento para conflito de agenda e organização do advogado.
 - [x] Criar atalho do prazo principal para abrir a área de prazos do processo.
 - [x] Melhorar a responsividade e a leitura da área de prazos no contexto do processo.
+- [x] Marcar no modo `Calendário` os dias do mês que possuem evento, mesmo quando outro dia estiver selecionado.
+- [x] Destacar os dias com evento no calendário diário com aro/círculo laranja visível no número.
 - [x] Adicionar no processo um resumo de audiências com próxima audiência, contadores e ações rápidas no card principal de prazos.
 - [x] Criar a aba `Audiências` no processo, separada da aba `Eventos`, com listagem de próximas audiências e histórico.
 - [x] Reutilizar o modal de evento como modal contextual de audiência já vinculado ao processo, com tipo, cliente e processo travados.
@@ -167,6 +175,12 @@ Use este checklist para separar:
 - [x] `npm test` executado com sucesso em 08/04/2026.
 - [x] `npx jest --runInBand --runTestsByPath "app/(protected)/agenda/__tests__/agenda-content.test.tsx" "components/__tests__/evento-form.test.tsx" "components/processos/__tests__/processo-audiencias-list.test.tsx"` executado com sucesso em 08/04/2026.
 - [x] Teste visual local executado em 08/04/2026 no tenant `ml-test`, sem gravar processo e sem poluir a base da Dra. Dayane, validando ausência de popup bloqueante e seleção `TRF1 -> SJPA -> 8A VARA FEDERAL DE JUIZADO ESPECIAL CIVEL`.
+- [x] `npx jest --runInBand --testPathPatterns agenda-content.test.tsx` executado com sucesso em 09/04/2026.
+- [x] `npx jest "app/actions/__tests__/eventos.calendar-markers.test.ts" "components/agenda/__tests__/agenda-daily-calendar.test.tsx" --runInBand` executado com sucesso em 09/04/2026.
+- [x] `npx jest "app/actions/__tests__/tribunais.catalog.test.ts" "components/processos/__tests__/process-cause-selector.test.tsx" "components/processos/__tests__/process-cause-quick-create-modal.test.tsx" --runInBand` executado com sucesso em 09/04/2026.
+- [x] `npx tsc --noEmit` executado com sucesso em 09/04/2026.
+- [x] Teste visual local executado em 09/04/2026 no tenant da Dra. Dayane, validando em `junho/2026` que `09/06/2026` permanece destacado no calendário mesmo com `08/06/2026` selecionado.
+- [x] Deploy de produção versionado e publicado em 09/04/2026 nas versões `1.0.14-beta.6` e `1.0.14-beta.7`, com status `success` na Vercel para o commit `a4d3bc9`.
 
 ### Suporte e implantação
 
@@ -223,11 +237,15 @@ Use este checklist para separar:
 - [ ] Homologar em uso real o novo cadastro de cliente com e-mail opcional e acesso inline.
 - [ ] Homologar com a Dra. Dayane o novo fluxo de classe processual + assuntos do processo.
 - [ ] Homologar com a Dra. Dayane a criação rápida inline de área, classe e assunto no formulário do processo.
+- [ ] Homologar com a Dra. Dayane o novo campo `Assuntos do processo` com busca real, chips selecionados e CTA de criação no estado vazio do formulário.
 - [ ] Homologar com a Dra. Dayane o novo catálogo jurídico padrão de classes e assuntos no cadastro de processos reais.
 - [ ] Homologar com a Dra. Dayane a nova linguagem de "Autoridade do caso" e a distinção prática entre autoridade, tribunal e órgão julgador.
 - [ ] Confirmar em uso real a experiência de digitação livre no campo "Órgão julgador".
 - [ ] Confirmar em uso real o catálogo de áreas padrão já sincronizado no tenant.
 - [ ] Homologar em uso real o novo carregamento automático de `Comarca / Seção` por tribunal, incluindo o cenário `TRF1 -> SJPA`.
+- [ ] Homologar em uso real o novo catálogo oficial `TRF1 -> SJBA -> 16A VARA FEDERAL CIVEL` no tenant da Dra. Dayane.
+- [ ] Homologar em uso real pelo menos uma subseção da Bahia no fluxo `TRF1`, como `Feira de Santana` ou `Vitoria da Conquista`.
+- [ ] Homologar em uso real pelo menos uma subseção do Pará no fluxo `TRF1`, como `Maraba` ou `Santarem`.
 - [ ] Homologar em uso real que o popup crítico de prazo não volta a bloquear o cadastro de novo/editar processo no tenant da Dra. Dayane.
 - [ ] Homologar com a Dra. Dayane o novo modelo `Área do processo + Rito / Procedimento da área`, incluindo o caso penal ordinário.
 
@@ -236,6 +254,7 @@ Use este checklist para separar:
 - [ ] Homologar com a Dra. Dayane a navegação do prazo principal e a leitura da aba de prazos no processo.
 - [ ] Homologar com a Dra. Dayane o novo fluxo de rito do processo e tipo legal do prazo.
 - [ ] Homologar com a Dra. Dayane a nova visão principal `Geral` da agenda, validando a leitura mensal de todos os eventos e o uso dos filtros inline no fluxo real.
+- [ ] Homologar com a Dra. Dayane a nova marcação visual do modo `Calendário`, confirmando que o aro laranja atende a leitura mensal dos dias com evento.
 - [ ] Homologar com a Dra. Dayane a nova aba `Audiências` no processo, incluindo o card-resumo, o modal `Ver todas` e a criação de nova audiência já vinculada ao processo.
 - [ ] Confirmar em uso real a nova fase processual "Alegações finais" nos cadastros do escritório.
 

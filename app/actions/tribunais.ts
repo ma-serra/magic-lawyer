@@ -5,7 +5,9 @@ import { getRedisInstance } from "@/app/lib/notifications/redis-singleton";
 import {
   buildJudicialCatalogLabel,
   findJudicialCatalogMatch,
+  getJudicialLocationDefaultBySlug,
   getJudicialLocationDefaultsByTribunalSigla,
+  getJudicialVaraDefaultBySlug,
   normalizeJudicialCatalogText,
   slugifyJudicialCatalogValue,
 } from "@/app/lib/tribunais/judicial-location-defaults";
@@ -894,11 +896,58 @@ function sortCatalogValues(values: string[]) {
   return values.sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
+function buildCatalogAliases(values?: string[] | null) {
+  return Array.from(
+    new Set(values?.map((value) => value?.trim()).filter(Boolean) as string[]),
+  );
+}
+
+function buildCatalogMatchItem<T extends { nome: string; sigla?: string | null }>(
+  item: T & { aliases?: string[] | null },
+) {
+  return {
+    ...item,
+    label: buildJudicialCatalogLabel(item),
+    aliases: buildCatalogAliases(item.aliases),
+  };
+}
+
+function matchesDefaultCatalogItem(
+  defaultItem: {
+    nome: string;
+    sigla?: string | null;
+    aliases?: string[] | null;
+  },
+  candidate: {
+    nome: string;
+    sigla?: string | null;
+  },
+) {
+  const defaultMatchItem = buildCatalogMatchItem(defaultItem);
+  const candidateValues = [
+    candidate.nome,
+    candidate.sigla,
+    buildJudicialCatalogLabel(candidate),
+  ].filter(Boolean) as string[];
+
+  return candidateValues.some(
+    (candidateValue) =>
+      findJudicialCatalogMatch([defaultMatchItem], candidateValue) !== null,
+  );
+}
+
 function resolveLocalidadeTipo(value?: string | null) {
   const normalized = normalizeJudicialCatalogText(value);
 
   if (!normalized) {
     return null;
+  }
+
+  if (
+    normalized.startsWith("ssj") ||
+    normalized.includes("subsecao judiciaria")
+  ) {
+    return "SUBSECAO_JUDICIARIA";
   }
 
   if (normalized.startsWith("sj") || normalized.includes("secao judiciaria")) {
@@ -935,17 +984,12 @@ function normalizeObservedLocalidade(params: {
   const defaults = getJudicialLocationDefaultsByTribunalSigla(
     params.tribunal.sigla,
   );
-  const defaultMatch = defaults?.localidades.find((item) => {
-    const itemSigla = normalizeJudicialCatalogText(item.sigla);
-    const itemNome = normalizeJudicialCatalogText(item.nome);
-
-    return (
-      normalizedValue === itemSigla ||
-      normalizedValue === itemNome ||
-      normalizedValue.includes(itemSigla) ||
-      normalizedValue.includes(itemNome)
-    );
-  });
+  const defaultMatch = defaults
+    ? findJudicialCatalogMatch(
+        defaults.localidades.map((item) => buildCatalogMatchItem(item)),
+        originalValue,
+      )
+    : null;
 
   if (defaultMatch) {
     return {
@@ -969,11 +1013,36 @@ function normalizeObservedLocalidade(params: {
   };
 }
 
-function normalizeObservedVara(value?: string | null) {
-  const originalValue = normalizeCatalogValue(value);
+function normalizeObservedVara(params: {
+  tribunalSigla?: string | null;
+  localidadeSlug?: string | null;
+  value?: string | null;
+}) {
+  const { tribunalSigla, localidadeSlug } = params;
+  const originalValue = normalizeCatalogValue(params.value);
 
   if (!originalValue) {
     return null;
+  }
+
+  const defaultVaras =
+    getJudicialLocationDefaultBySlug(tribunalSigla, localidadeSlug)?.varas ?? [];
+  const defaultMatch =
+    defaultVaras.length > 0
+      ? findJudicialCatalogMatch(
+          defaultVaras.map((item) => buildCatalogMatchItem(item)),
+          originalValue,
+        )
+      : null;
+
+  if (defaultMatch) {
+    return {
+      slug: defaultMatch.slug,
+      nome: defaultMatch.nome,
+      sigla: defaultMatch.sigla ?? null,
+      tipo: defaultMatch.tipo ?? "VARA",
+      ordem: defaultMatch.ordem ?? null,
+    };
   }
 
   const slug = slugifyJudicialCatalogValue(originalValue);
@@ -992,6 +1061,7 @@ function normalizeObservedVara(value?: string | null) {
     tipo: originalValue.toLowerCase().includes("juizado")
       ? "JUIZADO"
       : "VARA",
+    ordem: null,
   };
 }
 
@@ -1005,116 +1075,319 @@ async function upsertDefaultJudicialCatalogForTribunal(tribunal: {
     return;
   }
 
-  const existingLocalidades = await prisma.tribunalLocalidade.findMany({
-    where: { tribunalId: tribunal.id },
-    select: {
-      id: true,
-      slug: true,
-      nome: true,
-      sigla: true,
-      tipo: true,
-      ordem: true,
-      ativo: true,
-    },
-  });
-
-  const localidadeBySlug = new Map(
-    existingLocalidades.map((item) => [item.slug, item]),
-  );
   const defaultLocalidades = defaults.localidades;
-  const missingLocalidades = defaultLocalidades.filter(
-    (item) => !localidadeBySlug.has(item.slug),
-  );
+  const selectLocalidade = {
+    id: true,
+    slug: true,
+    nome: true,
+    sigla: true,
+    tipo: true,
+    ordem: true,
+    ativo: true,
+  } as const;
+  const selectVara = {
+    id: true,
+    slug: true,
+    nome: true,
+    sigla: true,
+    tipo: true,
+    ordem: true,
+    ativo: true,
+  } as const;
 
-  if (missingLocalidades.length > 0) {
-    await prisma.tribunalLocalidade.createMany({
-      data: missingLocalidades.map((item) => ({
-        tribunalId: tribunal.id,
-        slug: item.slug,
-        nome: item.nome,
-        sigla: item.sigla ?? null,
-        tipo: item.tipo ?? null,
-        ordem: item.ordem ?? null,
-        ativo: true,
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  const refreshedLocalidades = await prisma.tribunalLocalidade.findMany({
-    where: { tribunalId: tribunal.id },
-    select: {
-      id: true,
-      slug: true,
-      nome: true,
-      sigla: true,
-      tipo: true,
-      ordem: true,
-      ativo: true,
+  const buildLocalidadeUpdateData = (
+    existingItem: {
+      slug: string;
+      nome: string;
+      sigla: string | null;
+      tipo: string | null;
+      ordem: number | null;
+      ativo: boolean;
     },
-  });
-  const refreshedBySlug = new Map(refreshedLocalidades.map((item) => [item.slug, item]));
-
-  for (const item of defaultLocalidades) {
-    const existingItem = refreshedBySlug.get(item.slug);
-
-    if (!existingItem) {
-      continue;
-    }
-
+    defaultItem: (typeof defaultLocalidades)[number],
+  ) => {
     const data: Record<string, unknown> = {};
 
+    if (existingItem.slug !== defaultItem.slug) {
+      data.slug = defaultItem.slug;
+    }
+    if (existingItem.nome !== defaultItem.nome) {
+      data.nome = defaultItem.nome;
+    }
+    if ((existingItem.sigla ?? null) !== (defaultItem.sigla ?? null)) {
+      data.sigla = defaultItem.sigla ?? null;
+    }
+    if ((existingItem.tipo ?? null) !== (defaultItem.tipo ?? null)) {
+      data.tipo = defaultItem.tipo ?? null;
+    }
+    if ((existingItem.ordem ?? null) !== (defaultItem.ordem ?? null)) {
+      data.ordem = defaultItem.ordem ?? null;
+    }
     if (!existingItem.ativo) {
       data.ativo = true;
     }
-    if (!existingItem.nome?.trim()) {
-      data.nome = item.nome;
+
+    return data;
+  };
+
+  const buildVaraUpdateData = (
+    existingItem: {
+      slug: string;
+      nome: string;
+      sigla: string | null;
+      tipo: string | null;
+      ordem: number | null;
+      ativo: boolean;
+    },
+    defaultItem: NonNullable<(typeof defaultLocalidades)[number]["varas"]>[number],
+  ) => {
+    const data: Record<string, unknown> = {};
+
+    if (existingItem.slug !== defaultItem.slug) {
+      data.slug = defaultItem.slug;
     }
-    if (!existingItem.sigla?.trim() && item.sigla) {
-      data.sigla = item.sigla;
+    if (existingItem.nome !== defaultItem.nome) {
+      data.nome = defaultItem.nome;
     }
-    if (!existingItem.tipo?.trim() && item.tipo) {
-      data.tipo = item.tipo;
+    if ((existingItem.sigla ?? null) !== (defaultItem.sigla ?? null)) {
+      data.sigla = defaultItem.sigla ?? null;
     }
-    if (existingItem.ordem == null && item.ordem != null) {
-      data.ordem = item.ordem;
+    if ((existingItem.tipo ?? null) !== (defaultItem.tipo ?? null)) {
+      data.tipo = defaultItem.tipo ?? null;
+    }
+    if ((existingItem.ordem ?? null) !== (defaultItem.ordem ?? null)) {
+      data.ordem = defaultItem.ordem ?? null;
+    }
+    if (!existingItem.ativo) {
+      data.ativo = true;
     }
 
-    if (Object.keys(data).length > 0) {
-      await prisma.tribunalLocalidade.update({
-        where: { id: existingItem.id },
-        data,
-      });
-    }
+    return data;
+  };
 
-    const existingVaras = await prisma.tribunalVara.findMany({
+  const syncDefaultVarasForLocalidade = async (
+    localidadeId: string,
+    defaultVaras: NonNullable<(typeof defaultLocalidades)[number]["varas"]>,
+  ) => {
+    let existingVaras = await prisma.tribunalVara.findMany({
       where: {
         tribunalId: tribunal.id,
-        localidadeId: existingItem.id,
+        localidadeId,
       },
-      select: { slug: true, id: true, ativo: true, nome: true, sigla: true, tipo: true },
+      select: selectVara,
     });
-    const existingVaraBySlug = new Map(existingVaras.map((vara) => [vara.slug, vara]));
-    const defaultVaras = item.varas ?? [];
-    const missingVaras = defaultVaras.filter(
-      (vara) => !existingVaraBySlug.has(vara.slug),
+    const matchedVaras = new Set<string>();
+
+    for (const defaultVara of defaultVaras) {
+      let existingVara =
+        existingVaras.find((item) => item.slug === defaultVara.slug) ??
+        existingVaras.find(
+          (item) =>
+            !matchedVaras.has(item.id) &&
+            matchesDefaultCatalogItem(defaultVara, item),
+        );
+
+      if (!existingVara) {
+        existingVara = await prisma.tribunalVara.create({
+          data: {
+            tribunalId: tribunal.id,
+            localidadeId,
+            slug: defaultVara.slug,
+            nome: defaultVara.nome,
+            sigla: defaultVara.sigla ?? null,
+            tipo: defaultVara.tipo ?? null,
+            ordem: defaultVara.ordem ?? null,
+            ativo: true,
+          },
+          select: selectVara,
+        });
+        existingVaras = [...existingVaras, existingVara];
+      } else {
+        const data = buildVaraUpdateData(existingVara, defaultVara);
+
+        if (Object.keys(data).length > 0) {
+          const updatedVara = await prisma.tribunalVara.update({
+            where: { id: existingVara.id },
+            data,
+            select: selectVara,
+          });
+          existingVara = updatedVara;
+          existingVaras = existingVaras.map((item) =>
+            item.id === updatedVara.id ? updatedVara : item,
+          );
+        }
+      }
+
+      matchedVaras.add(existingVara.id);
+    }
+
+    const duplicateVaras = existingVaras.filter(
+      (item) =>
+        !matchedVaras.has(item.id) &&
+        defaultVaras.some((defaultVara) => matchesDefaultCatalogItem(defaultVara, item)),
     );
 
-    if (missingVaras.length > 0) {
-      await prisma.tribunalVara.createMany({
-        data: missingVaras.map((vara) => ({
-          tribunalId: tribunal.id,
-          localidadeId: existingItem.id,
-          slug: vara.slug,
-          nome: vara.nome,
-          sigla: vara.sigla ?? null,
-          tipo: vara.tipo ?? null,
-          ordem: vara.ordem ?? null,
-          ativo: true,
-        })),
-        skipDuplicates: true,
+    for (const duplicateVara of duplicateVaras) {
+      if (!duplicateVara.ativo) {
+        continue;
+      }
+
+      await prisma.tribunalVara.update({
+        where: { id: duplicateVara.id },
+        data: { ativo: false },
+        select: selectVara,
       });
     }
+  };
+
+  const consolidateLegacyLocalidade = async (params: {
+    legacyId: string;
+    canonicalId: string;
+  }) => {
+    const { legacyId, canonicalId } = params;
+
+    if (legacyId === canonicalId) {
+      return;
+    }
+
+    const [legacyVaras, canonicalVaras] = await Promise.all([
+      prisma.tribunalVara.findMany({
+        where: {
+          tribunalId: tribunal.id,
+          localidadeId: legacyId,
+        },
+        select: selectVara,
+      }),
+      prisma.tribunalVara.findMany({
+        where: {
+          tribunalId: tribunal.id,
+          localidadeId: canonicalId,
+        },
+        select: selectVara,
+      }),
+    ]);
+
+    const canonicalSlugs = new Set(canonicalVaras.map((item) => item.slug));
+
+    for (const legacyVara of legacyVaras) {
+      if (canonicalSlugs.has(legacyVara.slug)) {
+        if (legacyVara.ativo) {
+          await prisma.tribunalVara.update({
+            where: { id: legacyVara.id },
+            data: { ativo: false },
+            select: selectVara,
+          });
+        }
+        continue;
+      }
+
+      await prisma.tribunalVara.update({
+        where: { id: legacyVara.id },
+        data: { localidadeId: canonicalId },
+        select: selectVara,
+      });
+      canonicalSlugs.add(legacyVara.slug);
+    }
+
+    await prisma.tribunalLocalidade.update({
+      where: { id: legacyId },
+      data: { ativo: false },
+      select: selectLocalidade,
+    });
+  };
+
+  let existingLocalidades = await prisma.tribunalLocalidade.findMany({
+    where: { tribunalId: tribunal.id },
+    select: selectLocalidade,
+  });
+  const canonicalLocalidadeBySlug = new Map<string, (typeof existingLocalidades)[number]>();
+  const matchedLocalidadeIds = new Set<string>();
+
+  for (const defaultLocalidade of defaultLocalidades) {
+    let existingLocalidade =
+      existingLocalidades.find((item) => item.slug === defaultLocalidade.slug) ??
+      existingLocalidades.find(
+        (item) =>
+          !matchedLocalidadeIds.has(item.id) &&
+          matchesDefaultCatalogItem(defaultLocalidade, item),
+      );
+
+    if (!existingLocalidade) {
+      existingLocalidade = await prisma.tribunalLocalidade.create({
+        data: {
+          tribunalId: tribunal.id,
+          slug: defaultLocalidade.slug,
+          nome: defaultLocalidade.nome,
+          sigla: defaultLocalidade.sigla ?? null,
+          tipo: defaultLocalidade.tipo ?? null,
+          ordem: defaultLocalidade.ordem ?? null,
+          ativo: true,
+        },
+        select: selectLocalidade,
+      });
+      existingLocalidades = [...existingLocalidades, existingLocalidade];
+    } else {
+      const data = buildLocalidadeUpdateData(existingLocalidade, defaultLocalidade);
+
+      if (Object.keys(data).length > 0) {
+        const updatedLocalidade = await prisma.tribunalLocalidade.update({
+          where: { id: existingLocalidade.id },
+          data,
+          select: selectLocalidade,
+        });
+        existingLocalidade = updatedLocalidade;
+        existingLocalidades = existingLocalidades.map((item) =>
+          item.id === updatedLocalidade.id ? updatedLocalidade : item,
+        );
+      }
+    }
+
+    matchedLocalidadeIds.add(existingLocalidade.id);
+    canonicalLocalidadeBySlug.set(defaultLocalidade.slug, existingLocalidade);
+  }
+
+  const duplicateLocalidades = existingLocalidades.filter(
+    (item) =>
+      !matchedLocalidadeIds.has(item.id) &&
+      defaultLocalidades.some((defaultLocalidade) =>
+        matchesDefaultCatalogItem(defaultLocalidade, item),
+      ),
+  );
+
+  for (const duplicateLocalidade of duplicateLocalidades) {
+    const matchedDefaultLocalidade = defaultLocalidades.find((defaultLocalidade) =>
+      matchesDefaultCatalogItem(defaultLocalidade, duplicateLocalidade),
+    );
+
+    if (!matchedDefaultLocalidade) {
+      continue;
+    }
+
+    const canonicalLocalidade = canonicalLocalidadeBySlug.get(
+      matchedDefaultLocalidade.slug,
+    );
+
+    if (!canonicalLocalidade) {
+      continue;
+    }
+
+    await consolidateLegacyLocalidade({
+      legacyId: duplicateLocalidade.id,
+      canonicalId: canonicalLocalidade.id,
+    });
+  }
+
+  for (const defaultLocalidade of defaultLocalidades) {
+    const canonicalLocalidade = canonicalLocalidadeBySlug.get(defaultLocalidade.slug);
+
+    if (!canonicalLocalidade || !defaultLocalidade.varas?.length) {
+      continue;
+    }
+
+    await syncDefaultVarasForLocalidade(
+      canonicalLocalidade.id,
+      defaultLocalidade.varas,
+    );
   }
 }
 
@@ -1162,6 +1435,7 @@ async function backfillObservedJudicialCatalogForTribunal(tribunal: {
           nome: string;
           sigla: string | null;
           tipo: string | null;
+          ordem: number | null;
         }
       >;
     }
@@ -1184,7 +1458,11 @@ async function backfillObservedJudicialCatalogForTribunal(tribunal: {
       });
     }
 
-    const normalizedVara = normalizeObservedVara(item.vara);
+    const normalizedVara = normalizeObservedVara({
+      tribunalSigla: tribunal.sigla,
+      localidadeSlug: localidade.slug,
+      value: item.vara,
+    });
 
     if (normalizedVara) {
       observedLocalidades
@@ -1261,6 +1539,7 @@ async function backfillObservedJudicialCatalogForTribunal(tribunal: {
         nome: item.nome,
         sigla: item.sigla,
         tipo: item.tipo,
+        ordem: item.ordem,
         ativo: true,
       })),
       skipDuplicates: true,
@@ -1307,7 +1586,7 @@ export async function listComarcasPorTribunal(tribunalId?: string) {
       return { success: true, comarcas: [] };
     }
 
-    await ensureJudicialCatalogSeededForTribunal(tribunalId);
+    const tribunal = await ensureJudicialCatalogSeededForTribunal(tribunalId);
 
     const comarcas = await prisma.tribunalLocalidade.findMany({
       where: {
@@ -1316,6 +1595,7 @@ export async function listComarcasPorTribunal(tribunalId?: string) {
       },
       select: {
         id: true,
+        slug: true,
         nome: true,
         sigla: true,
         tipo: true,
@@ -1331,6 +1611,8 @@ export async function listComarcasPorTribunal(tribunalId?: string) {
         sigla: item.sigla,
         tipo: item.tipo,
         label: buildJudicialCatalogLabel(item),
+        aliases:
+          getJudicialLocationDefaultBySlug(tribunal?.sigla, item.slug)?.aliases ?? [],
       })),
     };
   } catch (error) {
@@ -1358,7 +1640,9 @@ export async function listVarasPorTribunal(params: {
       return { success: true, varas: [] };
     }
 
-    await ensureJudicialCatalogSeededForTribunal(params.tribunalId);
+    const tribunal = await ensureJudicialCatalogSeededForTribunal(
+      params.tribunalId,
+    );
 
     const comarca = normalizeCatalogValue(params.comarca);
     let localidadeId: string | null = null;
@@ -1386,6 +1670,7 @@ export async function listVarasPorTribunal(params: {
           },
           select: {
             id: true,
+            slug: true,
             nome: true,
             sigla: true,
           },
@@ -1395,6 +1680,9 @@ export async function listVarasPorTribunal(params: {
           localidades.map((item) => ({
             ...item,
             label: buildJudicialCatalogLabel(item),
+            aliases:
+              getJudicialLocationDefaultBySlug(tribunal?.sigla, item.slug)
+                ?.aliases ?? [],
           })),
           comarca,
         );
@@ -1417,9 +1705,15 @@ export async function listVarasPorTribunal(params: {
       },
       select: {
         id: true,
+        slug: true,
         nome: true,
         sigla: true,
         tipo: true,
+        localidade: {
+          select: {
+            slug: true,
+          },
+        },
       },
       orderBy: [{ ordem: "asc" }, { nome: "asc" }],
     });
@@ -1432,6 +1726,12 @@ export async function listVarasPorTribunal(params: {
         sigla: item.sigla,
         tipo: item.tipo,
         label: buildJudicialCatalogLabel(item),
+        aliases:
+          getJudicialVaraDefaultBySlug(
+            tribunal?.sigla,
+            item.localidade.slug,
+            item.slug,
+          )?.aliases ?? [],
       })),
     };
   } catch (error) {

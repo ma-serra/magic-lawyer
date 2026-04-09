@@ -104,6 +104,7 @@ export default function EditarProcessoPage() {
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isCauseModalOpen, setIsCauseModalOpen] = useState(false);
+  const [causeModalDraftName, setCauseModalDraftName] = useState("");
   const [inlineJuizes, setInlineJuizes] = useState<JuizSerializado[]>([]);
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
   const {
@@ -437,7 +438,12 @@ export default function EditarProcessoPage() {
       const baseOptions = comarcas.map((comarca) => ({
         key: comarca.id,
         label: comarca.label,
-        textValue: [comarca.sigla || "", comarca.nome, comarca.label]
+        textValue: [
+          comarca.sigla || "",
+          comarca.nome,
+          comarca.label,
+          ...(comarca.aliases ?? []),
+        ]
           .filter(Boolean)
           .join(" "),
       }));
@@ -467,7 +473,12 @@ export default function EditarProcessoPage() {
       const baseOptions = varas.map((vara) => ({
         key: vara.id,
         label: vara.label,
-        textValue: [vara.sigla || "", vara.nome, vara.label]
+        textValue: [
+          vara.sigla || "",
+          vara.nome,
+          vara.label,
+          ...(vara.aliases ?? []),
+        ]
           .filter(Boolean)
           .join(" "),
       }));
@@ -1204,7 +1215,10 @@ export default function EditarProcessoPage() {
                 tribunalOptions={tribunalOptions}
                 value={formData}
                 onOpenAreaModal={() => setIsAreaModalOpen(true)}
-                onOpenCauseModal={() => setIsCauseModalOpen(true)}
+                onOpenCauseModal={(prefill) => {
+                  setCauseModalDraftName(prefill?.trim() || "");
+                  setIsCauseModalOpen(true);
+                }}
                 onOpenClassModal={() => setIsClassModalOpen(true)}
                 onPatch={(patch) =>
                   setFormData((prev) =>
@@ -1399,8 +1413,12 @@ export default function EditarProcessoPage() {
         }}
       />
       <ProcessCauseQuickCreateModal
+        initialNome={causeModalDraftName}
         isOpen={isCauseModalOpen}
-        onClose={() => setIsCauseModalOpen(false)}
+        onClose={() => {
+          setCauseModalDraftName("");
+          setIsCauseModalOpen(false);
+        }}
         onCreated={async (causa) => {
           await mutateCausas();
           setFormData((prev) =>
@@ -1413,6 +1431,7 @@ export default function EditarProcessoPage() {
                 }
               : prev,
           );
+          setCauseModalDraftName("");
           setIsCauseModalOpen(false);
         }}
       />
