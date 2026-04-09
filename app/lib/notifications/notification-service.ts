@@ -7,6 +7,11 @@ import { EmailChannel } from "./channels/email-channel";
 import { NotificationFactory } from "./domain/notification-factory";
 import { NotificationPolicy } from "./domain/notification-policy";
 import {
+  buildFallbackNotificationTemplate,
+  getNotificationTemplate,
+  renderNotificationTemplate,
+} from "./notification-rendering";
+import {
   estimateNotificationDeliveryCost,
   sortNotificationChannels,
   summarizeNotificationPayload,
@@ -229,9 +234,12 @@ export class NotificationService {
       }
 
       const template =
-        (await this.generateTemplate(event)) ??
-        this.buildFallbackTemplate(event);
-      const { title, message } = this.replaceVariables(template, event.payload);
+        (await this.generateTemplateV2(event)) ??
+        this.buildFallbackTemplateV2(event);
+      const { title, message } = this.replaceVariablesV2(
+        template,
+        event.payload,
+      );
       const resolution = await this.resolveChannelsForDelivery({
         event,
         preferenceChannels: preferences.channels,
@@ -558,6 +566,30 @@ export class NotificationService {
       title: defaultTitle,
       message: defaultMessage,
     };
+  }
+
+  private static async generateTemplateV2(
+    event: NotificationEvent,
+  ): Promise<NotificationTemplate | null> {
+    return getNotificationTemplate(event.tenantId, event.type);
+  }
+
+  private static replaceVariablesV2(
+    template: NotificationTemplate,
+    payload: Record<string, any>,
+  ): { title: string; message: string } {
+    const rendered = renderNotificationTemplate(template, payload);
+
+    return {
+      title: rendered.title,
+      message: rendered.message,
+    };
+  }
+
+  private static buildFallbackTemplateV2(
+    event: NotificationEvent,
+  ): NotificationTemplate {
+    return buildFallbackNotificationTemplate(event.type, event.payload);
   }
 
   /**

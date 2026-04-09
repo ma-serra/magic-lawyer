@@ -43,6 +43,12 @@ type TelegramSendMessageResult = {
   metadata?: Record<string, unknown>;
 };
 
+type TelegramRenderedNotification = {
+  text: string;
+  actionUrl?: string | null;
+  actionText?: string | null;
+};
+
 type TelegramUpdate = {
   update_id: number;
   message?: {
@@ -197,13 +203,13 @@ function formatTelegramValue(value: unknown) {
 function getUrgencyBadge(urgency?: string) {
   switch (urgency) {
     case "CRITICAL":
-      return { icon: "🔴", label: "Crítico" };
+      return { icon: "[CRITICO]", label: "Critico" };
     case "HIGH":
-      return { icon: "🟡", label: "Alta atenção" };
+      return { icon: "[ALTA]", label: "Alta atencao" };
     case "MEDIUM":
-      return { icon: "🟢", label: "Acompanhamento" };
+      return { icon: "[MEDIA]", label: "Acompanhamento" };
     default:
-      return { icon: "⚪️", label: "Informativo" };
+      return { icon: "[INFO]", label: "Informativo" };
   }
 }
 
@@ -211,8 +217,15 @@ function getTelegramEventLabel(type: string) {
   const labels: Record<string, string> = {
     "processo.updated": "Processo atualizado",
     "processo.status_changed": "Status do processo alterado",
-    "andamento.created": "Nova movimentação no processo",
-    "andamento.updated": "Movimentação atualizada",
+    "andamento.created": "Nova movimentacao no processo",
+    "andamento.updated": "Movimentacao atualizada",
+    "evento.created": "Novo evento agendado",
+    "evento.updated": "Evento atualizado",
+    "evento.cancelled": "Evento cancelado",
+    "evento.confirmation_updated": "Confirmacao do evento atualizada",
+    "evento.reminder_1h": "Lembrete de evento",
+    "evento.reminder_1d": "Lembrete de evento",
+    "evento.reminder_custom": "Lembrete de evento",
     "prazo.created": "Novo prazo registrado",
     "prazo.updated": "Prazo atualizado",
     "prazo.digest_30d": "Radar de prazo em 30 dias",
@@ -224,7 +237,7 @@ function getTelegramEventLabel(type: string) {
     "prazo.expired": "Prazo vencido",
   };
 
-  return labels[type] || type.replace(/\./g, " • ").replace(/_/g, " ");
+  return labels[type] || type.replace(/\./g, " - ").replace(/_/g, " ");
 }
 
 function buildTelegramDetailLines(
@@ -260,7 +273,7 @@ function buildTelegramDetailLines(
           return null;
         }
 
-        return `${label}: ${before || "—"} → ${after || "—"}`;
+        return `${label}: ${before || "-"} -> ${after || "-"}`;
       })
       .filter((line): line is string => Boolean(line));
 
@@ -298,11 +311,11 @@ function buildTelegramMessage(params: {
   addRow("Evento", getTelegramEventLabel(params.type));
   addRow("Processo", payload.processoNumero || payload.numero);
   addRow("Cliente", payload.clienteNome);
-  addRow("Título", payload.titulo || payload.processoTitulo);
+  addRow("Titulo", payload.titulo || payload.processoTitulo);
   addRow("Origem", payload.sourceLabel);
   addRow("Modificado por", payload.actorName);
   addRow(
-    payload.dataMovimentacao ? "Data da movimentação" : "Data do vencimento",
+    payload.dataMovimentacao ? "Data da movimentacao" : "Data do vencimento",
     payload.dataMovimentacao || payload.dataVencimento,
   );
   addRow("Status", payload.statusSummary || payload.statusLabel || payload.status);
@@ -314,7 +327,7 @@ function buildTelegramMessage(params: {
       ? [
           "",
           "<b>Detalhes do processo</b>",
-          ...detailLines.map((line) => `• ${escapeTelegramHtml(line)}`),
+          ...detailLines.map((line) => `- ${escapeTelegramHtml(line)}`),
         ].join("\n")
       : "";
   const actionBlock =
@@ -1149,6 +1162,125 @@ export async function sendTelegramNotification(params: {
       metadata: {
         chatId: binding.chatId,
         telegramUsername: binding.username,
+      },
+    };
+  }
+}
+
+export async function renderTelegramNotification(params: {
+  tenantId: string;
+  title: string;
+  message: string;
+  type: string;
+  urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
+  payload?: Record<string, unknown> | null;
+  actionUrl?: string | null;
+  actionText?: string | null;
+}): Promise<TelegramRenderedNotification> {
+  let actionUrl = params.actionUrl ?? null;
+  const actionText =
+    params.actionText ??
+    resolveNotificationActionText(params.type, params.payload ?? {});
+
+  if (!actionUrl) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: params.tenantId },
+      select: {
+        slug: true,
+        domain: true,
+        branding: { select: { customDomainText: true } },
+      },
+    });
+
+    const tenantBaseUrl = resolveTenantBaseUrl(tenant);
+    actionUrl = resolveNotificationUrl(
+      params.type,
+      params.payload ?? {},
+      tenantBaseUrl,
+    );
+  }
+
+  return {
+    text: buildTelegramMessage({
+      title: params.title,
+      message: params.message,
+      type: params.type,
+      urgency: params.urgency,
+      payload: params.payload,
+      actionUrl,
+      actionText,
+    }),
+    actionUrl,
+    actionText,
+  };
+}
+
+export async function sendTelegramNotificationToChatId(params: {
+  tenantId: string;
+  chatId: string;
+  title: string;
+  message: string;
+  type: string;
+  urgency?: "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
+  payload?: Record<string, unknown> | null;
+  username?: string | null;
+  actionUrl?: string | null;
+  actionText?: string | null;
+}): Promise<TelegramSendMessageResult> {
+  const provider = await getActiveTelegramProvider(params.tenantId);
+
+  if (!provider) {
+    return {
+      success: false,
+      error: "Bot do Telegram nao configurado para o escritorio.",
+      metadata: {
+        chatId: params.chatId,
+        telegramUsername: params.username ?? null,
+      },
+    };
+  }
+
+  const rendered = await renderTelegramNotification({
+    tenantId: params.tenantId,
+    title: params.title,
+    message: params.message,
+    type: params.type,
+    urgency: params.urgency,
+    payload: params.payload,
+    actionUrl: params.actionUrl,
+    actionText: params.actionText,
+  });
+
+  const body = new URLSearchParams({
+    chat_id: params.chatId,
+    text: rendered.text,
+    parse_mode: "HTML",
+    disable_web_page_preview: "true",
+  });
+
+  try {
+    const result = await callTelegramApi<{
+      message_id?: number;
+      chat?: { id?: number | string };
+      date?: number;
+    }>(provider.botToken, "sendMessage", body);
+
+    return {
+      success: true,
+      messageId: result.message_id ? String(result.message_id) : undefined,
+      metadata: {
+        chatId: params.chatId,
+        telegramUsername: params.username ?? null,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Falha desconhecida no Telegram.",
+      metadata: {
+        chatId: params.chatId,
+        telegramUsername: params.username ?? null,
       },
     };
   }

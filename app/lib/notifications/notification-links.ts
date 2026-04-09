@@ -87,6 +87,9 @@ export function resolveNotificationPath(
   const processoId = readNotificationString(payload.processoId);
   const clienteId = readNotificationString(payload.clienteId);
   const prazoId = readNotificationString(payload.prazoId);
+  const eventoId =
+    readNotificationString(payload.eventoId) ||
+    readNotificationString(payload.referenciaId);
   const referenciaTipo = readNotificationString(payload.referenciaTipo);
 
   if (
@@ -119,6 +122,13 @@ export function resolveNotificationPath(
 
   if (notificationType === "documento.uploaded" && processoId) {
     return `/processos/${processoId}?tab=documentos`;
+  }
+
+  if (
+    notificationType.startsWith("evento.") ||
+    referenciaTipo === "evento"
+  ) {
+    return eventoId ? `/agenda/${encodeURIComponent(eventoId)}` : "/agenda";
   }
 
   if (processoId) {
@@ -186,7 +196,12 @@ export function resolveNotificationActionText(
 
     case "evento.created":
     case "evento.updated":
+    case "evento.cancelled":
     case "evento.confirmation_updated":
+    case "evento.reminder_1h":
+    case "evento.reminder_1d":
+    case "evento.reminder_custom":
+    case "evento.google_synced":
       return "Ver evento";
 
     case "andamento.created":

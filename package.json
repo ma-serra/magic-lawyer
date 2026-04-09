@@ -35,6 +35,7 @@
     "cleanup:asaas": "node scripts/cleanup-asaas.js",
     "notifications:test": "npx tsx scripts/test-notifications.ts",
     "notifications:smoke": "npx tsx scripts/smoke-test-notifications.ts",
+    "notifications:event-preview": "npx tsx scripts/send-event-notification-preview.ts",
     "notifications:webhook": "npx tsx scripts/test-asaas-webhook.ts",
     "notifications:crons": "curl -sSf -X GET \"http://localhost:9192/api/cron/check-deadlines\" -H \"Authorization: Bearer ${CRON_SECRET:-test-secret}\" > /dev/null && curl -sSf -X GET \"http://localhost:9192/api/cron/check-contracts\" -H \"Authorization: Bearer ${CRON_SECRET:-test-secret}\" > /dev/null",
     "notifications:all": "npm run notifications:test && npm run notifications:webhook && npm run notifications:smoke && npm run notifications:crons",
