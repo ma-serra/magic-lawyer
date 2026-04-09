@@ -120,7 +120,7 @@ export default function AgendaDailyCalendar({
           base: "w-full max-w-full",
           cell: "h-16 min-w-0 w-full text-center text-lg font-medium",
           cellButton:
-            "relative after:pointer-events-none after:absolute after:bottom-1.5 after:left-1/2 after:h-1.5 after:w-1.5 after:-translate-x-1/2 after:rounded-full after:bg-warning-400 after:opacity-0 after:content-[''] data-[has-events=true]:after:opacity-100 data-[selected=true]:after:bg-warning-200 data-[outside-month=true]:after:opacity-0",
+            "relative data-[has-events=true]:bg-warning-400/10 data-[has-events=true]:ring-2 data-[has-events=true]:ring-inset data-[has-events=true]:ring-warning-400/90 data-[selected=true]:data-[has-events=true]:bg-primary data-[selected=true]:data-[has-events=true]:ring-warning-300 data-[outside-month=true]:bg-transparent data-[outside-month=true]:ring-0",
           content: "w-full max-w-full overflow-hidden",
           grid: "w-full max-w-full",
         }}
